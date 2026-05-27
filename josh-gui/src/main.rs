@@ -1,3 +1,4 @@
+use std::collections::{HashMap, HashSet};
 use std::sync::OnceLock;
 
 use dioxus::prelude::*;
@@ -19,12 +20,79 @@ enum Page {
 }
 
 fn app() -> Element {
-    let rows = use_signal(load_rows);
+    let list_data = use_signal(load_rows);
     let page = use_signal(|| Page::List);
+    let mut selected_change = use_signal(|| None::<String>);
+
+    use_effect(move || {
+        if let Ok(data) = &*list_data.read() {
+            if let Some(first) = data.rows.first() {
+                let cid = first.change_id.clone();
+                if selected_change.read().is_none() {
+                    selected_change.set(Some(cid));
+                }
+            }
+        }
+    });
+
+    use_effect(move || {
+        if matches!(&*page.read(), Page::List) {
+            let _ = dioxus::document::eval(
+                "setTimeout(function(){var el=document.querySelector('.app');if(el)el.focus();},0)",
+            );
+        }
+    });
+
+    use_effect(move || {
+        let cid = selected_change.read();
+        if let Some(cid) = cid.as_deref() {
+            if let Ok(data) = &*list_data.read() {
+                if let Some(row) = data.rows.iter().find(|r| r.change_id == cid) {
+                    let js = format!(
+                        "var el=document.getElementById('change-{0}');if(el)el.scrollIntoView({{block:'nearest'}});",
+                        row.sha
+                    );
+                    let _ = dioxus::document::eval(&js);
+                }
+            }
+        }
+    });
+
+    let on_keydown = move |evt: dioxus::events::KeyboardEvent| {
+        use dioxus::prelude::Key;
+        let is_nav = match evt.key() {
+            Key::ArrowDown | Key::ArrowUp => true,
+            Key::Character(ref c) => c == "j" || c == "k",
+            _ => false,
+        };
+        if !is_nav {
+            return;
+        }
+        evt.prevent_default();
+
+        if let Ok(data) = &*list_data.read() {
+            let ids: Vec<&str> = data.rows.iter().map(|r| r.change_id.as_str()).collect();
+            let cur = {
+                let sel = selected_change.read();
+                sel.as_deref()
+                    .and_then(|cid| ids.iter().position(|id| *id == cid))
+            };
+            let next = match (evt.key(), cur) {
+                (Key::ArrowDown, Some(i)) if i + 1 < ids.len() => Some(i + 1),
+                (Key::ArrowUp, Some(i)) if i > 0 => Some(i - 1),
+                (Key::Character(ref c), Some(i)) if c == "j" && i + 1 < ids.len() => Some(i + 1),
+                (Key::Character(ref c), Some(i)) if c == "k" && i > 0 => Some(i - 1),
+                _ => None,
+            };
+            if let Some(i) = next {
+                selected_change.set(Some(ids[i].to_string()));
+            }
+        }
+    };
 
     rsx! {
         style { {include_str!("style.css")} }
-        div { class: "app",
+        div { class: "app", tabindex: "0", onkeydown: on_keydown,
             div { class: "header",
                 svg {
                     width: "28",
@@ -39,10 +107,10 @@ fn app() -> Element {
                         fill: "#E62200",
                     }
                 }
-                {breadcrumb(&page.read(), page, rows)}
+                {breadcrumb(&page.read(), page, list_data)}
             }
             match &*page.read() {
-                Page::List => list_view(rows, page),
+                Page::List => list_view(list_data, page, selected_change),
                 Page::Detail { sha } => detail_view(sha.clone(), page),
                 Page::FileDiff { sha, path } => file_diff_view(sha.clone(), path.clone(), page),
             }
@@ -64,32 +132,28 @@ fn repo_name() -> String {
     dir
 }
 
-fn subject_from_rows(rows: &anyhow::Result<Vec<Row>>, sha: &str) -> String {
-    let Ok(rows) = rows else {
+fn subject_from_rows(list_data: &anyhow::Result<ListData>, sha: &str) -> String {
+    let Ok(data) = list_data else {
         return String::new();
     };
-    rows.iter()
-        .find_map(|r| match r {
-            Row::Change {
-                sha: s, subject, ..
-            }
-            | Row::Contributing {
-                sha: s, subject, ..
-            } if s == sha => Some(subject.clone()),
-            _ => None,
-        })
+    data.rows
+        .iter()
+        .find(|r| r.sha == sha)
+        .map(|r| r.subject.clone())
         .unwrap_or_default()
 }
 
 fn breadcrumb(
     page: &Page,
     mut page_signal: Signal<Page>,
-    rows: Signal<anyhow::Result<Vec<Row>>>,
+    list_data: Signal<anyhow::Result<ListData>>,
 ) -> Element {
     let repo = repo_name();
     let subject = match page {
         Page::List => String::new(),
-        Page::Detail { sha } | Page::FileDiff { sha, .. } => subject_from_rows(&rows.read(), sha),
+        Page::Detail { sha } | Page::FileDiff { sha, .. } => {
+            subject_from_rows(&list_data.read(), sha)
+        }
     };
 
     match page {
@@ -135,51 +199,98 @@ fn breadcrumb(
     }
 }
 
-fn list_view(rows: Signal<anyhow::Result<Vec<Row>>>, mut page: Signal<Page>) -> Element {
-    match &*rows.read() {
-        Ok(rows) if rows.is_empty() => rsx! {
+fn list_view(
+    list_data: Signal<anyhow::Result<ListData>>,
+    mut page: Signal<Page>,
+    mut selected_change: Signal<Option<String>>,
+) -> Element {
+    match &*list_data.read() {
+        Ok(data) if data.rows.is_empty() => rsx! {
             p { "No outgoing changes found." }
         },
-        Ok(rows) => rsx! {
-            div { class: "scroll-table",
-                table { class: "changes",
-                thead {
-                    tr {
-                        th { "Change-Id" }
-                        th { "Subject" }
-                        th { "Author" }
-                        th { "Series" }
+        Ok(data) => {
+            let sel_cid = selected_change.read();
+            let related: HashSet<&str> = if let Some(cid) = sel_cid.as_deref() {
+                let mut set = HashSet::new();
+                if let Some(deps) = data.dependencies.get(cid) {
+                    for d in deps {
+                        set.insert(d.as_str());
                     }
                 }
-                tbody {
-                    for row in rows.iter() {
-                        match row {
-                            Row::Change { change_id, sha, subject, author, series } => {
-                                let s = sha.clone();
-                                rsx! {
-                                    tr {
-                                        onclick: move |_| page.set(Page::Detail { sha: s.clone() }),
-                                        td { code { "{change_id}" } }
-                                        td { "{subject}" }
-                                        td { "{author}" }
-                                        td { "{series}" }
+                if let Some(dep_by) = data.dependents.get(cid) {
+                    for d in dep_by {
+                        set.insert(d.as_str());
+                    }
+                }
+                set
+            } else {
+                HashSet::new()
+            };
+
+            let row_items: Vec<(String, String, String)> = data
+                .rows
+                .iter()
+                .map(|row| {
+                    let is_sel = sel_cid.as_deref() == Some(&row.change_id);
+                    let class = if is_sel {
+                        "selected"
+                    } else if related.contains(row.change_id.as_str()) {
+                        "related"
+                    } else {
+                        ""
+                    };
+                    (class.to_string(), row.sha.clone(), row.change_id.clone())
+                })
+                .collect();
+
+            rsx! {
+                div { class: "scroll-table",
+                    table { class: "changes",
+                        thead {
+                            tr {
+                                th { "Change-Id" }
+                                th { "Subject" }
+                                th { "Author" }
+                                th { "Series" }
+                            }
+                        }
+                        tbody {
+                            for (i, item) in row_items.iter().enumerate() {
+                                {
+                                    let row = &data.rows[i];
+                                    let class = &item.0;
+                                    let sha = &item.1;
+                                    let cid = &item.2;
+                                    rsx! {
+                                        tr {
+                                            id: "change-{row.sha}",
+                                            class: "{class}",
+                                            onclick: {
+                                                let s = sha.clone();
+                                                move |_| page.set(Page::Detail { sha: s.clone() })
+                                            },
+                                            td {
+                                                onclick: {
+                                                    let c = cid.clone();
+                                                    move |evt| {
+                                                        evt.stop_propagation();
+                                                        selected_change.set(Some(c.clone()));
+                                                    }
+                                                },
+                                                code { "{row.change_id}" }
+                                            }
+                                            td { "{row.subject}" }
+                                            td { "{row.author}" }
+                                            td { "{row.series}" }
+                                        }
                                     }
                                 }
-                            },
-                            Row::Stack { change_id, sha: _, subject, author, series } => rsx! {
-                                tr { class: "stack",
-                                    td { code { class: "muted", "{change_id}" } }
-                                    td { "{subject}" }
-                                    td { "{author}" }
-                                    td { "{series}" }
-                                }
-                            },
+                            }
                         }
                     }
                 }
             }
-            }
-        },
+        }
         Err(e) => rsx! {
             p { class: "error", "Error: {e}" }
         },
@@ -1220,29 +1331,37 @@ fn save_comment(
 }
 
 #[derive(Clone)]
-enum Row {
-    Change {
-        change_id: String,
-        sha: String,
-        subject: String,
-        author: String,
-        series: String,
-    },
-    Stack {
-        change_id: String,
-        sha: String,
-        subject: String,
-        author: String,
-        series: String,
-    },
+struct Row {
+    change_id: String,
+    sha: String,
+    subject: String,
+    author: String,
+    series: String,
 }
 
-fn load_rows() -> anyhow::Result<Vec<Row>> {
+struct ListData {
+    rows: Vec<Row>,
+    dependencies: HashMap<String, Vec<String>>,
+    dependents: HashMap<String, Vec<String>>,
+}
+
+fn load_rows() -> anyhow::Result<ListData> {
     let repo = git2::Repository::discover(".")?;
 
     let changes = josh_changes::list_changes(&repo)?;
 
-    let mut groups: Vec<(Row, Vec<Row>)> = Vec::new();
+    let mut oid_to_change_id: HashMap<String, String> = HashMap::new();
+    for change in &changes {
+        oid_to_change_id.insert(
+            change.commit().to_string(),
+            change.id().unwrap_or("").to_string(),
+        );
+    }
+
+    let mut rows = Vec::new();
+    let mut dependencies: HashMap<String, Vec<String>> = HashMap::new();
+    let mut dep_counts: HashMap<String, usize> = HashMap::new();
+
     for change in &changes {
         let commit = repo.find_commit(change.commit())?;
         let subject = commit
@@ -1253,39 +1372,45 @@ fn load_rows() -> anyhow::Result<Vec<Row>> {
             .unwrap_or("")
             .to_string();
 
-        let change_row = Row::Change {
-            change_id: change.id().unwrap_or("").to_string(),
+        let change_id = change.id().unwrap_or("").to_string();
+
+        rows.push(Row {
+            change_id: change_id.clone(),
             sha: change.commit().to_string(),
             subject,
             author: change.author().to_string(),
             series: change.series().join(", "),
-        };
+        });
 
-        let mut stack_rows = Vec::new();
+        let mut deps: Vec<String> = Vec::new();
         for oid in change.contributing(&repo)? {
-            if let Ok(c) = repo.find_commit(oid) {
-                let msg = c.message().unwrap_or("");
-                let c_subject = msg.lines().next().unwrap_or("").to_string();
-                let c_author = c.author().email().unwrap_or("").to_string();
-                let (c_change_id, c_series) = josh_changes::parse_change_meta(msg);
-                stack_rows.push(Row::Stack {
-                    change_id: c_change_id.unwrap_or_default(),
-                    sha: oid.to_string(),
-                    subject: c_subject,
-                    author: c_author,
-                    series: c_series.join(", "),
-                });
+            let oid_str = oid.to_string();
+            if let Some(dep_id) = oid_to_change_id.get(&oid_str) {
+                if dep_id != &change_id {
+                    deps.push(dep_id.clone());
+                }
             }
         }
-        groups.push((change_row, stack_rows));
+        let count = deps.len();
+        dependencies.insert(change_id.clone(), deps);
+        dep_counts.insert(change_id, count);
     }
 
-    groups.sort_by_key(|(_, contrib)| contrib.len());
-
-    let mut rows = Vec::new();
-    for (change_row, stack_rows) in groups {
-        rows.push(change_row);
-        rows.extend(stack_rows);
+    let mut dependents: HashMap<String, Vec<String>> = HashMap::new();
+    for (cid, deps) in &dependencies {
+        for dep_id in deps {
+            dependents
+                .entry(dep_id.clone())
+                .or_default()
+                .push(cid.clone());
+        }
     }
-    Ok(rows)
+
+    rows.sort_by_key(|r| dep_counts.get(&r.change_id).copied().unwrap_or(0));
+
+    Ok(ListData {
+        rows,
+        dependencies,
+        dependents,
+    })
 }
