@@ -5,6 +5,7 @@ use josh_core::git::normalize_repo_path;
 use crate::config::read_remote_config;
 use crate::forge::Forge;
 use crate::forge::github;
+use serde_json;
 
 /// Arguments for `josh changes sync`.
 #[derive(Debug, clap::Parser)]
@@ -274,6 +275,129 @@ pub fn handle_sync(
                 total_comments, synced, skipped
             );
 
+            // Build the set of open change IDs from the PRs we just synced.
+            let open_change_ids: std::collections::HashSet<String> = prs
+                .iter()
+                .map(|pr| {
+                    let (existing_id, _) = josh_changes::parse_change_meta(&pr.head_commit_message);
+                    existing_id
+                        .unwrap_or_else(|| format!("{}/{}/pull/{}", owner, repo_name, pr.number))
+                })
+                .collect();
+
+            let all_changes = josh_changes::list_changes(repo)?;
+            let mut cleaned = 0usize;
+
+            for change in &all_changes {
+                let change_id = match change.id() {
+                    Some(id) => id,
+                    None => continue,
+                };
+
+                if open_change_ids.contains(change_id) {
+                    continue;
+                }
+
+                // Determine the PR number for this change.
+                let pr_number: i64 =
+                    match parse_pr_number_from_change_id(change_id, &owner, &repo_name) {
+                        Some(n) => n,
+                        None => {
+                            // Custom Change-Id; try reading stored PR data.
+                            match josh_changes::read_pr_data(repo, change_id) {
+                                Ok(Some(json)) => {
+                                    match serde_json::from_str::<serde_json::Value>(&json) {
+                                        Ok(v) => match v.get("number").and_then(|n| n.as_i64()) {
+                                            Some(n) => n,
+                                            None => {
+                                                eprintln!(
+                                                    "  Change '{}': no PR number in stored data \
+                                                 -- skipping",
+                                                    change_id
+                                                );
+                                                continue;
+                                            }
+                                        },
+                                        Err(e) => {
+                                            eprintln!(
+                                                "  Change '{}': invalid stored PR data: {} \
+                                             -- skipping",
+                                                change_id, e
+                                            );
+                                            continue;
+                                        }
+                                    }
+                                }
+                                Ok(None) => {
+                                    // Purely local change with no PR data at all.
+                                    continue;
+                                }
+                                Err(e) => {
+                                    eprintln!(
+                                        "  Change '{}': failed to read PR data: {} -- skipping",
+                                        change_id, e
+                                    );
+                                    continue;
+                                }
+                            }
+                        }
+                    };
+
+                // Fetch the current PR data from GitHub.
+                let pr_data = match api.get_pr_comments(&owner, &repo_name, pr_number).await {
+                    Ok(d) => d,
+                    Err(e) => {
+                        eprintln!(
+                            "  Change '{}' (PR #{}): failed to fetch PR data: {} -- skipping",
+                            change_id, pr_number, e
+                        );
+                        continue;
+                    }
+                };
+
+                // Guard: if the PR is still open, do not delete the change.
+                if pr_data.state == "OPEN" {
+                    // Record the current state even if unexpectedly open.
+                    let json = serde_json::to_string(&pr_data)?;
+                    josh_changes::store_pr_data(repo, change_id, &json)?;
+                    eprintln!(
+                        "  Change '{}' (PR #{}): unexpectedly still OPEN on GitHub \
+                         -- skipping deletion",
+                        change_id, pr_number
+                    );
+                    continue;
+                }
+
+                // Commit 1: store the updated PR data (final CLOSED/MERGED state).
+                let json = serde_json::to_string(&pr_data)?;
+                if let Err(e) = josh_changes::store_pr_data(repo, change_id, &json) {
+                    eprintln!(
+                        "  Change '{}' (PR #{}): failed to store updated PR data: {} \
+                         -- skipping deletion",
+                        change_id, pr_number, e
+                    );
+                    continue;
+                }
+
+                // Commit 2: delete the change from refs/josh/changes.
+                if let Err(e) = josh_changes::delete_change(repo, change_id) {
+                    eprintln!(
+                        "  Change '{}' (PR #{}): failed to delete: {}",
+                        change_id, pr_number, e
+                    );
+                } else {
+                    println!(
+                        "  Cleaned up '{}' (PR #{}: {})",
+                        change_id, pr_number, pr_data.state
+                    );
+                    cleaned += 1;
+                }
+            }
+
+            if cleaned > 0 {
+                println!("Cleaned up {} closed/merged changes.", cleaned);
+            }
+
             if args.push {
                 let mut total_posted = 0usize;
                 for pr in &prs {
@@ -385,4 +509,10 @@ fn parse_changes_target(head_ref_name: &str) -> Option<&str> {
         end += part.len() + 1;
     }
     None
+}
+
+/// Extract the PR number from a synthetic change ID of the form `{owner}/{repo}/pull/{N}`.
+fn parse_pr_number_from_change_id(change_id: &str, owner: &str, repo: &str) -> Option<i64> {
+    let prefix = format!("{}/{}/pull/", owner, repo);
+    change_id.strip_prefix(&prefix)?.parse().ok()
 }
