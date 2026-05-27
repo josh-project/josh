@@ -97,84 +97,6 @@ pub fn detail_view(sha: String, mut page: Signal<Page>) -> Element {
                                 }
                             }
                         }
-                        div { class: "vote-section",
-                            h2 { "Vote" }
-                            if let Some(ref vote) = data.local_vote {
-                                div { class: "current-vote",
-                                    span { class: "vote-state vote-{vote.state}",
-                                        "{vote_state_display(&vote.state)}"
-                                    }
-                                    if !vote.body.is_empty() {
-                                        pre { class: "vote-body", "{vote.body}" }
-                                    }
-                                }
-                            }
-                            textarea {
-                                class: "vote-textarea",
-                                placeholder: "Review comment (optional)...",
-                                value: "{vote_body}",
-                                oninput: move |evt| vote_body.set(evt.value()),
-                            }
-                            div { class: "vote-actions",
-                                {
-                                    let sha = sha.clone();
-                                    rsx! {
-                                        button {
-                                            class: "vote-btn approve",
-                                            onclick: move |_| {
-                                                let body = vote_body.read().clone();
-                                                let _ = save_vote(
-                                                    &sha, "approved", &body,
-                                                );
-                                                vote_body.set(String::new());
-                                                page.set(Page::Detail {
-                                                    sha: sha.clone(),
-                                                });
-                                            },
-                                            "Approve"
-                                        }
-                                    }
-                                }
-                                {
-                                    let sha = sha.clone();
-                                    rsx! {
-                                        button {
-                                            class: "vote-btn neutral",
-                                            onclick: move |_| {
-                                                let body = vote_body.read().clone();
-                                                let _ = save_vote(
-                                                    &sha, "neutral", &body,
-                                                );
-                                                vote_body.set(String::new());
-                                                page.set(Page::Detail {
-                                                    sha: sha.clone(),
-                                                });
-                                            },
-                                            "Neutral"
-                                        }
-                                    }
-                                }
-                                {
-                                    let sha = sha.clone();
-                                    rsx! {
-                                        button {
-                                            class: "vote-btn revise",
-                                            onclick: move |_| {
-                                                let body = vote_body.read().clone();
-                                                let _ = save_vote(
-                                                    &sha, "changes_requested", &body,
-                                                );
-                                                vote_body.set(String::new());
-                                                page.set(Page::Detail {
-                                                    sha: sha.clone(),
-                                                });
-                                            },
-                                            "Revise"
-                                        }
-                                    }
-                                }
-                            }
-                        }
                         if !data.stack.is_empty() {
                             h2 { "Stack" }
                             div { class: "stack-list",
@@ -285,6 +207,84 @@ pub fn detail_view(sha: String, mut page: Signal<Page>) -> Element {
                                                     }
                                                 }
                                             }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        div { class: "vote-section",
+                            h2 { "Vote" }
+                            if let Some(ref vote) = data.local_vote {
+                                div { class: "current-vote",
+                                    span { class: "vote-state vote-{vote.state}",
+                                        "{vote_state_display(&vote.state)}"
+                                    }
+                                    if !vote.body.is_empty() {
+                                        pre { class: "vote-body", "{vote.body}" }
+                                    }
+                                }
+                            }
+                            textarea {
+                                class: "vote-textarea",
+                                placeholder: "Review comment (optional)...",
+                                value: "{vote_body}",
+                                oninput: move |evt| vote_body.set(evt.value()),
+                            }
+                            div { class: "vote-actions",
+                                {
+                                    let sha = sha.clone();
+                                    rsx! {
+                                        button {
+                                            class: "vote-btn approve",
+                                            onclick: move |_| {
+                                                let body = vote_body.read().clone();
+                                                let _ = save_vote(
+                                                    &sha, "approved", &body,
+                                                );
+                                                vote_body.set(String::new());
+                                                page.set(Page::Detail {
+                                                    sha: sha.clone(),
+                                                });
+                                            },
+                                            "Approve"
+                                        }
+                                    }
+                                }
+                                {
+                                    let sha = sha.clone();
+                                    rsx! {
+                                        button {
+                                            class: "vote-btn neutral",
+                                            onclick: move |_| {
+                                                let body = vote_body.read().clone();
+                                                let _ = save_vote(
+                                                    &sha, "neutral", &body,
+                                                );
+                                                vote_body.set(String::new());
+                                                page.set(Page::Detail {
+                                                    sha: sha.clone(),
+                                                });
+                                            },
+                                            "Neutral"
+                                        }
+                                    }
+                                }
+                                {
+                                    let sha = sha.clone();
+                                    rsx! {
+                                        button {
+                                            class: "vote-btn revise",
+                                            onclick: move |_| {
+                                                let body = vote_body.read().clone();
+                                                let _ = save_vote(
+                                                    &sha, "changes_requested", &body,
+                                                );
+                                                vote_body.set(String::new());
+                                                page.set(Page::Detail {
+                                                    sha: sha.clone(),
+                                                });
+                                            },
+                                            "Revise"
                                         }
                                     }
                                 }
