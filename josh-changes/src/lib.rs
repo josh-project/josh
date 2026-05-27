@@ -1127,6 +1127,61 @@ pub fn store_pr_data(repo: &git2::Repository, change_id: &str, json: &str) -> an
     Ok(())
 }
 
+/// Read stored GitHub PR data JSON for a change, if it exists.
+pub fn read_pr_data(repo: &git2::Repository, change_id: &str) -> anyhow::Result<Option<String>> {
+    let tree = match repo.find_reference("refs/josh/changes") {
+        Ok(r) => r.peel_to_tree()?,
+        Err(_) => return Ok(None),
+    };
+    let gh_path = std::path::Path::new("gh").join(encode_change_id_path(change_id));
+    let subtree = match get_tree(repo, &tree, &gh_path) {
+        Some(t) => t,
+        None => return Ok(None),
+    };
+    for entry in subtree.iter() {
+        if let Ok(blob) = entry.to_object(repo).and_then(|o| o.peel_to_blob()) {
+            return Ok(Some(String::from_utf8_lossy(blob.content()).to_string()));
+        }
+    }
+    Ok(None)
+}
+
+/// Delete all stored data for a change from refs/josh/changes.
+/// Removes entries from diffs/, comments/C/, comments/F/, gh/, and gh_ids/ subtrees.
+pub fn delete_change(repo: &git2::Repository, change_id: &str) -> anyhow::Result<()> {
+    let encoded = encode_change_id_path(change_id);
+
+    let base_tree = match repo.find_reference("refs/josh/changes") {
+        Ok(r) => r.peel_to_tree()?,
+        Err(_) => return Ok(()),
+    };
+
+    let mut tree = base_tree;
+    for prefix in &["diffs", "comments/C", "comments/F", "gh", "gh_ids"] {
+        let path = std::path::Path::new(prefix).join(&encoded);
+        if tree.get_path(&path).is_ok() {
+            tree = josh_core::filter::tree::insert(repo, &tree, &path, git2::Oid::zero(), 0)?;
+        }
+    }
+
+    let sig = repo.signature()?;
+    let parent_commit = repo
+        .find_reference("refs/josh/changes")
+        .ok()
+        .and_then(|r| r.peel_to_commit().ok());
+    let parents: Vec<&git2::Commit> = parent_commit.iter().collect();
+    repo.commit(
+        Some("refs/josh/changes"),
+        &sig,
+        &sig,
+        "update refs/josh/changes\n",
+        &tree,
+        &parents,
+    )?;
+
+    Ok(())
+}
+
 /// Store a GitHub node ID for a local comment, marking it as posted.
 pub fn store_github_id(
     repo: &git2::Repository,
