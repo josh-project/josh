@@ -20,6 +20,10 @@ pub struct SyncArgs {
     /// Skip GitHub comment syncing; only update refs/josh/changes locally.
     #[arg(long = "local")]
     pub local: bool,
+
+    /// Push local comments that haven't been posted to GitHub yet.
+    #[arg(long = "push")]
+    pub push: bool,
 }
 
 pub fn handle_sync(
@@ -269,6 +273,92 @@ pub fn handle_sync(
                 "Synced {} comments across {} PRs ({} skipped).",
                 total_comments, synced, skipped
             );
+
+            if args.push {
+                let mut total_posted = 0usize;
+                for pr in &prs {
+                    let head_oid = match git2::Oid::from_str(&pr.head_oid) {
+                        Ok(o) => o,
+                        Err(e) => {
+                            eprintln!("PR #{}: bad head OID for comment push: {}", pr.number, e);
+                            continue;
+                        }
+                    };
+                    let pr_head = match repo.find_commit(head_oid) {
+                        Ok(c) => c,
+                        Err(_) => {
+                            eprintln!(
+                                "PR #{}: head commit not available — skipping comment push",
+                                pr.number
+                            );
+                            continue;
+                        }
+                    };
+                    let base_oid = match git2::Oid::from_str(&pr.base_ref_oid) {
+                        Ok(o) => o,
+                        Err(e) => {
+                            eprintln!("PR #{}: bad base OID for comment push: {}", pr.number, e);
+                            continue;
+                        }
+                    };
+                    let target = match repo.find_commit(base_oid) {
+                        Ok(c) => c,
+                        Err(_) => {
+                            eprintln!(
+                                "PR #{}: base commit not available — skipping comment push",
+                                pr.number
+                            );
+                            continue;
+                        }
+                    };
+                    let mut change = josh_changes::Change::new(repo, &pr_head);
+                    let base = repo.merge_base(target.id(), pr_head.id())?;
+                    change.set_base(base);
+
+                    match api
+                        .find_pull_request_by_head(&owner, &repo_name, &pr.head_ref_name)
+                        .await
+                    {
+                        Ok(Some((pr_node_id, _, _))) => {
+                            match josh_github_changes::post_local_comments(
+                                &api,
+                                repo,
+                                &change,
+                                &pr_node_id,
+                            )
+                            .await
+                            {
+                                Ok(n) => {
+                                    total_posted += n;
+                                    if n > 0 {
+                                        println!(
+                                            "  PR #{}: posted {} local comments",
+                                            pr.number, n
+                                        );
+                                    }
+                                }
+                                Err(e) => {
+                                    eprintln!(
+                                        "  PR #{}: failed to post comments: {}",
+                                        pr.number, e
+                                    );
+                                }
+                            }
+                        }
+                        Ok(None) => {
+                            eprintln!(
+                                "  No open PR found for {} — skipping comment push",
+                                pr.head_ref_name
+                            );
+                        }
+                        Err(e) => {
+                            eprintln!("  Failed to look up PR for {}: {}", pr.head_ref_name, e);
+                        }
+                    }
+                }
+                println!("Posted {} local comments to GitHub.", total_posted);
+            }
+
             Ok::<_, anyhow::Error>(())
         })?;
     } else {

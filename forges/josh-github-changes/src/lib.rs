@@ -235,6 +235,10 @@ fn write_pr_comments(
             Some(&comment.timestamp),
             blob_commit.as_deref(),
         )?;
+        // Record the GitHub node ID so this comment is tracked as "already posted".
+        if let Some(change_id) = change.id() {
+            josh_changes::store_github_id(repo, change_id, &hash, &comment.id)?;
+        }
         id_map.insert(comment.id.clone(), hash);
     }
 
@@ -301,4 +305,114 @@ pub async fn sync_change_comments_by_pr_number(
     josh_changes::store_pr_data(repo, change_id, &json)?;
 
     write_pr_comments(repo, change, &pr_data)
+}
+
+/// Post local comments (those without a `github_id`) to a GitHub PR.
+/// Returns the number of comments successfully posted.
+pub async fn post_local_comments(
+    connection: &GithubApiConnection,
+    repo: &git2::Repository,
+    change: &josh_changes::Change,
+    pr_node_id: &str,
+) -> anyhow::Result<usize> {
+    let change_id = match change.id() {
+        Some(id) => id,
+        None => return Ok(0),
+    };
+
+    let comments = josh_changes::read_comments(repo, change)?;
+    if comments.is_empty() {
+        return Ok(0);
+    }
+
+    let github_ids = josh_changes::read_github_ids(repo, change_id)?;
+
+    // Collect unposted comments (no github_id mapping yet).
+    let mut unposted: Vec<&josh_changes::Comment> = comments
+        .iter()
+        .filter(|c| !github_ids.contains_key(&c.id))
+        .collect();
+    if unposted.is_empty() {
+        return Ok(0);
+    }
+
+    // Topological sort: post parents before children that reply to them.
+    let mut posted_count = 0usize;
+    let mut new_ids: std::collections::HashMap<String, String> = github_ids;
+
+    while !unposted.is_empty() {
+        let mut progressed = false;
+        let mut remaining = Vec::new();
+
+        for comment in unposted.drain(..) {
+            let can_post = match &comment.reply_to {
+                Some(parent_hash) => new_ids.contains_key(parent_hash.as_str()),
+                None => true,
+            };
+            if !can_post {
+                remaining.push(comment);
+                continue;
+            }
+
+            let github_id = if let Some(ref file) = comment.file {
+                if let Some(parent_hash) = &comment.reply_to {
+                    let parent_gh_id = match new_ids.get(parent_hash.as_str()) {
+                        Some(id) => id,
+                        None => {
+                            remaining.push(comment);
+                            continue;
+                        }
+                    };
+                    connection
+                        .add_pull_request_review_thread_reply(parent_gh_id, &comment.message)
+                        .await?
+                } else {
+                    let line = comment
+                        .location
+                        .as_ref()
+                        .map_or(1, |loc| loc.start_line as i64);
+                    connection
+                        .add_pull_request_review_thread(pr_node_id, &comment.message, file, line)
+                        .await?
+                }
+            } else {
+                connection.add_comment(pr_node_id, &comment.message).await?
+            };
+
+            josh_changes::store_github_id(repo, change_id, &comment.id, &github_id)?;
+            new_ids.insert(comment.id.clone(), github_id);
+            posted_count += 1;
+            progressed = true;
+        }
+
+        if !progressed {
+            // Orphan reply_to references — post remaining as standalone.
+            for comment in remaining.drain(..) {
+                let github_id = if comment.file.is_some() {
+                    let line = comment
+                        .location
+                        .as_ref()
+                        .map_or(1, |loc| loc.start_line as i64);
+                    connection
+                        .add_pull_request_review_thread(
+                            pr_node_id,
+                            &comment.message,
+                            comment.file.as_deref().unwrap_or(""),
+                            line,
+                        )
+                        .await?
+                } else {
+                    connection.add_comment(pr_node_id, &comment.message).await?
+                };
+                josh_changes::store_github_id(repo, change_id, &comment.id, &github_id)?;
+                new_ids.insert(comment.id.clone(), github_id);
+                posted_count += 1;
+            }
+            break;
+        }
+
+        unposted = remaining;
+    }
+
+    Ok(posted_count)
 }

@@ -1127,6 +1127,48 @@ pub fn store_pr_data(repo: &git2::Repository, change_id: &str, json: &str) -> an
     Ok(())
 }
 
+/// Store a GitHub node ID for a local comment, marking it as posted.
+pub fn store_github_id(
+    repo: &git2::Repository,
+    change_id: &str,
+    local_hash: &str,
+    github_id: &str,
+) -> anyhow::Result<()> {
+    let blob_oid = repo.blob(github_id.as_bytes())?;
+    let path = std::path::Path::new("gh_ids")
+        .join(encode_change_id_path(change_id))
+        .join(local_hash);
+    write_changes_tree(repo, &path, blob_oid, None, None)?;
+    Ok(())
+}
+
+/// Read all GitHub node IDs for a change's comments.
+/// Returns a map from local comment hash → GitHub node ID.
+pub fn read_github_ids(
+    repo: &git2::Repository,
+    change_id: &str,
+) -> anyhow::Result<std::collections::HashMap<String, String>> {
+    let tree = match repo.find_reference("refs/josh/changes") {
+        Ok(r) => r.peel_to_tree()?,
+        Err(_) => return Ok(Default::default()),
+    };
+    let gh_ids_path = std::path::Path::new("gh_ids").join(encode_change_id_path(change_id));
+    let subtree = match get_tree(repo, &tree, &gh_ids_path) {
+        Some(t) => t,
+        None => return Ok(Default::default()),
+    };
+    let mut map = std::collections::HashMap::new();
+    for entry in subtree.iter() {
+        if let Some(name) = entry.name() {
+            if let Ok(blob) = entry.to_object(repo).and_then(|o| o.peel_to_blob()) {
+                let github_id = String::from_utf8_lossy(blob.content()).trim().to_string();
+                map.insert(name.to_string(), github_id);
+            }
+        }
+    }
+    Ok(map)
+}
+
 fn parse_timestamp(s: Option<&str>) -> git2::Time {
     let Some(s) = s else {
         return git2::Time::new(0, 0);

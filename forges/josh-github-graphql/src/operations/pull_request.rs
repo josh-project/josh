@@ -3,10 +3,12 @@ use anyhow::anyhow;
 use serde::Serialize;
 
 use josh_github_codegen_graphql::{
+    add_comment, add_pull_request_review_thread, add_pull_request_review_thread_reply,
     close_pull_request, convert_pull_request_to_draft, create_pull_request, get_pr_by_head,
     get_pr_comments, list_open_p_rs, mark_pull_request_ready_for_review, update_pull_request,
-    ClosePullRequest, ConvertPullRequestToDraft, CreatePullRequest, GetPrByHead, GetPrComments,
-    ListOpenPRs, MarkPullRequestReadyForReview, UpdatePullRequest,
+    AddComment, AddPullRequestReviewThread, AddPullRequestReviewThreadReply, ClosePullRequest,
+    ConvertPullRequestToDraft, CreatePullRequest, GetPrByHead, GetPrComments, ListOpenPRs,
+    MarkPullRequestReadyForReview, UpdatePullRequest,
 };
 
 #[derive(Debug, Serialize)]
@@ -412,5 +414,70 @@ impl GithubApiConnection {
         };
 
         Ok(())
+    }
+
+    /// Post a general comment to a PR. Returns the GitHub comment node ID.
+    pub async fn add_comment(&self, subject_id: &str, body: &str) -> anyhow::Result<String> {
+        let variables = add_comment::Variables {
+            subject_id: subject_id.to_string(),
+            body: body.to_string(),
+        };
+        let response = self.make_request::<AddComment>(variables).await?;
+        let node = response
+            .add_comment
+            .ok_or_else(|| anyhow!("addComment returned null"))?
+            .comment_edge
+            .ok_or_else(|| anyhow!("addComment commentEdge is null"))?
+            .node
+            .ok_or_else(|| anyhow!("addComment node is null"))?;
+        Ok(node.id)
+    }
+
+    /// Post a file-level review thread comment. Returns the review thread node ID.
+    pub async fn add_pull_request_review_thread(
+        &self,
+        pull_request_id: &str,
+        body: &str,
+        path: &str,
+        line: i64,
+    ) -> anyhow::Result<String> {
+        let variables = add_pull_request_review_thread::Variables {
+            pull_request_id: pull_request_id.to_string(),
+            body: body.to_string(),
+            path: path.to_string(),
+            line,
+            side: add_pull_request_review_thread::DiffSide::Right,
+            subject_type: add_pull_request_review_thread::PullRequestReviewThreadSubjectType::Line,
+        };
+        let response = self
+            .make_request::<AddPullRequestReviewThread>(variables)
+            .await?;
+        let thread = response
+            .add_pull_request_review_thread
+            .ok_or_else(|| anyhow!("addPullRequestReviewThread returned null"))?
+            .thread
+            .ok_or_else(|| anyhow!("addPullRequestReviewThread thread is null"))?;
+        Ok(thread.id)
+    }
+
+    /// Reply to an existing review thread. Returns the reply comment node ID.
+    pub async fn add_pull_request_review_thread_reply(
+        &self,
+        thread_id: &str,
+        body: &str,
+    ) -> anyhow::Result<String> {
+        let variables = add_pull_request_review_thread_reply::Variables {
+            pull_request_review_thread_id: thread_id.to_string(),
+            body: body.to_string(),
+        };
+        let response = self
+            .make_request::<AddPullRequestReviewThreadReply>(variables)
+            .await?;
+        let comment = response
+            .add_pull_request_review_thread_reply
+            .ok_or_else(|| anyhow!("addPullRequestReviewThreadReply returned null"))?
+            .comment
+            .ok_or_else(|| anyhow!("addPullRequestReviewThreadReply comment is null"))?;
+        Ok(comment.id)
     }
 }
