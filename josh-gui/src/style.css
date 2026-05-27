@@ -549,3 +549,15 @@ textarea.comment-input:focus {
     margin-top: 0.5rem;
 }
 
+td.review-approved {
+    color: #7ec699;
+}
+
+td.review-changes-requested {
+    color: #e06c75;
+}
+
+td.review-review-required {
+    color: #d19a66;
+}
+
