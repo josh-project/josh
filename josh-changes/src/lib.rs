@@ -1290,6 +1290,99 @@ fn write_changes_tree(
     Ok(())
 }
 
+#[derive(Debug, Clone, serde::Deserialize)]
+pub struct VoteData {
+    pub state: String,
+    pub body: String,
+}
+
+pub fn write_vote(
+    repo: &git2::Repository,
+    change: &Change,
+    state: &str,
+    body: &str,
+    author: Option<&str>,
+    timestamp: Option<&str>,
+) -> anyhow::Result<String> {
+    let change_id = change
+        .id()
+        .ok_or_else(|| anyhow::anyhow!("commit {} has no Change-Id", change.commit()))?;
+
+    let json = serde_json::json!({"state": state, "body": body});
+    let content = json.to_string();
+    let content_hash =
+        git2::Oid::hash_object(git2::ObjectType::Blob, content.as_bytes())?.to_string();
+    let blob_oid = repo.blob(content.as_bytes())?;
+
+    let path = std::path::Path::new("votes")
+        .join(encode_change_id_path(&change_id))
+        .join(&content_hash);
+    write_changes_tree(repo, &path, blob_oid, author, timestamp)?;
+
+    Ok(content_hash)
+}
+
+pub fn read_vote(repo: &git2::Repository, change_id: &str) -> anyhow::Result<Option<VoteData>> {
+    // Verify the ref exists before proceeding.
+    let _obj = match repo.find_reference("refs/josh/changes") {
+        Ok(r) => r.peel_to_commit()?,
+        Err(_) => return Ok(None),
+    };
+
+    let path = std::path::Path::new("votes").join(encode_change_id_path(change_id));
+
+    let mut revwalk = repo.revwalk()?;
+    revwalk.push_ref("refs/josh/changes")?;
+
+    for oid in revwalk {
+        let commit = repo.find_commit(oid?)?;
+        let tree = commit.tree()?;
+
+        let current_votes = match get_tree(repo, &tree, &path) {
+            Some(t) => t,
+            None => continue,
+        };
+
+        let entries: Vec<String> = current_votes
+            .iter()
+            .filter_map(|e| e.name().map(String::from))
+            .collect();
+
+        if entries.is_empty() {
+            continue;
+        }
+
+        let new_entries: Vec<String> = if let Ok(parent) = commit.parent(0) {
+            let parent_tree = parent.tree()?;
+            let parent_entries: std::collections::HashSet<String> =
+                get_tree(repo, &parent_tree, &path)
+                    .map(|t| {
+                        t.iter()
+                            .filter_map(|e| e.name().map(String::from))
+                            .collect()
+                    })
+                    .unwrap_or_default();
+            entries
+                .into_iter()
+                .filter(|e| !parent_entries.contains(e))
+                .collect()
+        } else {
+            entries
+        };
+
+        if let Some(name) = new_entries.first() {
+            let entry = current_votes
+                .get_name(name)
+                .ok_or_else(|| anyhow!("vote blob not found in tree"))?;
+            let blob = entry.to_object(repo)?.peel_to_blob()?;
+            let data: VoteData = serde_json::from_slice(blob.content())?;
+            return Ok(Some(data));
+        }
+    }
+
+    Ok(None)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
