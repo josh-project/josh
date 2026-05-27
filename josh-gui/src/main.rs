@@ -6,9 +6,9 @@ mod list;
 use dioxus::prelude::*;
 
 use common::breadcrumb;
-use detail::detail_view;
-use diff::file_diff_view;
-use list::{list_view, load_rows};
+use detail::DetailView;
+use diff::FileDiffView;
+use list::{ListView, load_rows};
 
 fn main() {
     dioxus::LaunchBuilder::new()
@@ -117,9 +117,9 @@ fn app() -> Element {
                 {breadcrumb(&page.read(), page, list_data)}
             }
             match &*page.read() {
-                Page::List => list_view(list_data, page, selected_change),
-                Page::Detail { sha } => detail_view(sha.clone(), page),
-                Page::FileDiff { sha, path } => file_diff_view(sha.clone(), path.clone(), page),
+                Page::List => rsx! { ListView { list_data, page, selected_change } },
+                Page::Detail { sha } => rsx! { DetailView { sha: sha.clone(), page } },
+                Page::FileDiff { sha, path } => rsx! { FileDiffView { sha: sha.clone(), path: path.clone(), page } },
             }
         }
     }

@@ -49,7 +49,8 @@ fn vote_state_display(state: &str) -> &'static str {
     }
 }
 
-pub fn detail_view(sha: String, mut page: Signal<Page>) -> Element {
+#[component]
+pub fn DetailView(sha: String, mut page: Signal<Page>) -> Element {
     let data = load_detail(&sha);
     let mut vote_body = use_signal(String::new);
 
