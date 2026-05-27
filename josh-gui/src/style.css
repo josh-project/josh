@@ -561,6 +561,18 @@ td.review-review-required {
     color: #d19a66;
 }
 
+td.vote-approve {
+    color: #7ec699;
+}
+
+td.vote-discuss {
+    color: #d19a66;
+}
+
+td.vote-revise {
+    color: #e06c75;
+}
+
 td.check-success {
     color: #7ec699;
 }
@@ -596,15 +608,15 @@ span.vote-state {
     font-size: 0.9rem;
 }
 
-span.vote-state.vote-approved {
+span.vote-state.vote-approve {
     color: #7ec699;
 }
 
-span.vote-state.vote-neutral {
+span.vote-state.vote-discuss {
     color: #d19a66;
 }
 
-span.vote-state.vote-changes_requested {
+span.vote-state.vote-revise {
     color: #e06c75;
 }
 
@@ -662,12 +674,12 @@ button.vote-btn.approve:hover {
     background: #2a4a2a;
 }
 
-button.vote-btn.neutral {
+button.vote-btn.discuss {
     color: #d19a66;
     border-color: #d19a66;
 }
 
-button.vote-btn.neutral:hover {
+button.vote-btn.discuss:hover {
     background: #3a3020;
 }
 

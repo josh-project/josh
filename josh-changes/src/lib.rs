@@ -1296,6 +1296,15 @@ pub struct VoteData {
     pub body: String,
 }
 
+pub fn vote_state_to_github_review(state: &str) -> &'static str {
+    match state {
+        "approve" => "APPROVED",
+        "discuss" => "COMMENTED",
+        "revise" => "CHANGES_REQUESTED",
+        _ => "COMMENTED",
+    }
+}
+
 pub fn write_vote(
     repo: &git2::Repository,
     change: &Change,
