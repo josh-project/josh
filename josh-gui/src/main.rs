@@ -19,6 +19,24 @@ enum Page {
     FileDiff { sha: String, path: String },
 }
 
+fn review_decision_label(rd: &str) -> &'static str {
+    match rd {
+        "Approved" => "approved",
+        "ChangesRequested" => "changes-requested",
+        "ReviewRequired" => "review-required",
+        _ => "",
+    }
+}
+
+fn review_decision_display(rd: &str) -> &'static str {
+    match rd {
+        "Approved" => "Approved",
+        "ChangesRequested" => "Changes requested",
+        "ReviewRequired" => "Review required",
+        _ => "",
+    }
+}
+
 fn app() -> Element {
     let list_data = use_signal(load_rows);
     let page = use_signal(|| Page::List);
@@ -252,6 +270,7 @@ fn list_view(
                                 th { "Subject" }
                                 th { "Author" }
                                 th { "Series" }
+                                th { "Review" }
                             }
                         }
                         tbody {
@@ -282,6 +301,10 @@ fn list_view(
                                             td { "{row.subject}" }
                                             td { "{row.author}" }
                                             td { "{row.series}" }
+                                            td {
+                                                class: "review-{review_decision_label(&row.review_decision)}",
+                                                "{review_decision_display(&row.review_decision)}"
+                                            }
                                         }
                                     }
                                 }
@@ -340,6 +363,12 @@ fn detail_view(sha: String, mut page: Signal<Page>) -> Element {
                                                 "{pr.title}"
                                             }
                                             span { class: "pr-state", " {pr.state}" }
+                                            if !pr.review_decision.is_empty() {
+                                                span {
+                                                    class: "pr-state review-{review_decision_label(&pr.review_decision)}",
+                                                    " {review_decision_display(&pr.review_decision)}"
+                                                }
+                                            }
                                         }
                                     }
                                 }
@@ -1174,6 +1203,7 @@ struct PrInfo {
     url: String,
     title: String,
     state: String,
+    review_decision: String,
 }
 
 fn load_detail(sha: &str) -> anyhow::Result<DetailData> {
@@ -1243,6 +1273,10 @@ fn load_detail(sha: &str) -> anyhow::Result<DetailData> {
                             url: v["url"].as_str().unwrap_or("").to_string(),
                             title: v["title"].as_str().unwrap_or("").to_string(),
                             state: v["state"].as_str().unwrap_or("").to_string(),
+                            review_decision: v["review_decision"]
+                                .as_str()
+                                .unwrap_or("")
+                                .to_string(),
                         })
                 });
 
@@ -1337,6 +1371,7 @@ struct Row {
     subject: String,
     author: String,
     series: String,
+    review_decision: String,
 }
 
 struct ListData {
@@ -1374,12 +1409,23 @@ fn load_rows() -> anyhow::Result<ListData> {
 
         let change_id = change.id().unwrap_or("").to_string();
 
+        let review_decision = josh_changes::read_pr_data(&repo, &change_id)
+            .ok()
+            .flatten()
+            .and_then(|json| {
+                serde_json::from_str::<serde_json::Value>(&json)
+                    .ok()
+                    .and_then(|v| v["review_decision"].as_str().map(|s| s.to_string()))
+            })
+            .unwrap_or_default();
+
         rows.push(Row {
             change_id: change_id.clone(),
             sha: change.commit().to_string(),
             subject,
             author: change.author().to_string(),
             series: change.series().join(", "),
+            review_decision,
         });
 
         let mut deps: Vec<String> = Vec::new();
