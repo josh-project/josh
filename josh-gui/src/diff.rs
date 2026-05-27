@@ -194,8 +194,14 @@ fn build_diff_with_comments(
     items
 }
 
-pub fn file_diff_view(sha: String, path: String, mut page: Signal<Page>) -> Element {
-    let detail = use_signal(|| detail::load_detail(&sha));
+#[component]
+pub fn FileDiffView(sha: String, path: String, mut page: Signal<Page>) -> Element {
+    let mut detail = use_signal(|| detail::load_detail(&sha));
+    let mut prev_sha = use_signal(|| sha.clone());
+    if *prev_sha.read() != sha {
+        detail.set(detail::load_detail(&sha));
+        prev_sha.set(sha.clone());
+    }
     let (prev_file, next_file) = detail
         .read()
         .as_ref()

@@ -24,7 +24,8 @@ pub struct ListData {
     pub dependents: HashMap<String, Vec<String>>,
 }
 
-pub fn list_view(
+#[component]
+pub fn ListView(
     list_data: Signal<anyhow::Result<ListData>>,
     mut page: Signal<Page>,
     mut selected_change: Signal<Option<String>>,
