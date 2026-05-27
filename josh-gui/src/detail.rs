@@ -30,6 +30,7 @@ pub struct DetailData {
     pub revisions: Vec<josh_changes::Revision>,
     pub stack: Vec<StackCommit>,
     pub pr_info: Option<PrInfo>,
+    pub local_vote: Option<josh_changes::VoteData>,
 }
 
 pub struct PrInfo {
@@ -39,8 +40,18 @@ pub struct PrInfo {
     pub review_decision: String,
 }
 
+fn vote_state_display(state: &str) -> &'static str {
+    match state {
+        "approved" => "Approved",
+        "neutral" => "Neutral",
+        "changes_requested" => "Changes requested",
+        _ => "",
+    }
+}
+
 pub fn detail_view(sha: String, mut page: Signal<Page>) -> Element {
     let data = load_detail(&sha);
+    let mut vote_body = use_signal(String::new);
 
     match &data {
         Err(e) => rsx! {
@@ -81,6 +92,84 @@ pub fn detail_view(sha: String, mut page: Signal<Page>) -> Element {
                                                     " {review_decision_display(&pr.review_decision)}"
                                                 }
                                             }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        div { class: "vote-section",
+                            h2 { "Vote" }
+                            if let Some(ref vote) = data.local_vote {
+                                div { class: "current-vote",
+                                    span { class: "vote-state vote-{vote.state}",
+                                        "{vote_state_display(&vote.state)}"
+                                    }
+                                    if !vote.body.is_empty() {
+                                        pre { class: "vote-body", "{vote.body}" }
+                                    }
+                                }
+                            }
+                            textarea {
+                                class: "vote-textarea",
+                                placeholder: "Review comment (optional)...",
+                                value: "{vote_body}",
+                                oninput: move |evt| vote_body.set(evt.value()),
+                            }
+                            div { class: "vote-actions",
+                                {
+                                    let sha = sha.clone();
+                                    rsx! {
+                                        button {
+                                            class: "vote-btn approve",
+                                            onclick: move |_| {
+                                                let body = vote_body.read().clone();
+                                                let _ = save_vote(
+                                                    &sha, "approved", &body,
+                                                );
+                                                vote_body.set(String::new());
+                                                page.set(Page::Detail {
+                                                    sha: sha.clone(),
+                                                });
+                                            },
+                                            "Approve"
+                                        }
+                                    }
+                                }
+                                {
+                                    let sha = sha.clone();
+                                    rsx! {
+                                        button {
+                                            class: "vote-btn neutral",
+                                            onclick: move |_| {
+                                                let body = vote_body.read().clone();
+                                                let _ = save_vote(
+                                                    &sha, "neutral", &body,
+                                                );
+                                                vote_body.set(String::new());
+                                                page.set(Page::Detail {
+                                                    sha: sha.clone(),
+                                                });
+                                            },
+                                            "Neutral"
+                                        }
+                                    }
+                                }
+                                {
+                                    let sha = sha.clone();
+                                    rsx! {
+                                        button {
+                                            class: "vote-btn revise",
+                                            onclick: move |_| {
+                                                let body = vote_body.read().clone();
+                                                let _ = save_vote(
+                                                    &sha, "changes_requested", &body,
+                                                );
+                                                vote_body.set(String::new());
+                                                page.set(Page::Detail {
+                                                    sha: sha.clone(),
+                                                });
+                                            },
+                                            "Revise"
                                         }
                                     }
                                 }
@@ -322,6 +411,10 @@ pub fn load_detail(sha: &str) -> anyhow::Result<DetailData> {
 
     let comments = josh_changes::read_comments(&repo, &change).unwrap_or_default();
     let revisions = josh_changes::read_revisions(&repo, &change).unwrap_or_default();
+    let local_vote = change_id
+        .as_ref()
+        .and_then(|cid| josh_changes::read_vote(&repo, cid).ok())
+        .flatten();
 
     Ok(DetailData {
         change_id: change_id.unwrap_or_default(),
@@ -336,6 +429,7 @@ pub fn load_detail(sha: &str) -> anyhow::Result<DetailData> {
         revisions,
         stack,
         pr_info,
+        local_vote,
     })
 }
 
@@ -364,4 +458,12 @@ pub fn save_comment(
     };
 
     josh_changes::write_comment(&repo, &change, &meta, None, None)
+}
+
+pub fn save_vote(sha: &str, state: &str, body: &str) -> anyhow::Result<String> {
+    let repo = git2::Repository::discover(".")?;
+    let oid = git2::Oid::from_str(sha)?;
+    let commit = repo.find_commit(oid)?;
+    let change = josh_changes::Change::new(&repo, &commit);
+    josh_changes::write_vote(&repo, &change, state, body, None, None)
 }

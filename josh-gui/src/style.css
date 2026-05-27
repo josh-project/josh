@@ -573,3 +573,110 @@ td.check-pending {
     color: #d19a66;
 }
 
+.vote-section {
+    margin-top: 1.5rem;
+}
+
+.vote-section h2 {
+    font-size: 1.1rem;
+    color: #ddd;
+    margin-bottom: 0.5rem;
+}
+
+.current-vote {
+    margin-bottom: 0.75rem;
+    padding: 0.5rem;
+    background: #2a2a2a;
+    border-radius: 4px;
+    border-left: 3px solid #555;
+}
+
+span.vote-state {
+    font-weight: 600;
+    font-size: 0.9rem;
+}
+
+span.vote-state.vote-approved {
+    color: #7ec699;
+}
+
+span.vote-state.vote-neutral {
+    color: #d19a66;
+}
+
+span.vote-state.vote-changes_requested {
+    color: #e06c75;
+}
+
+pre.vote-body {
+    margin-top: 0.4rem;
+    font-size: 0.85rem;
+    color: #aaa;
+    white-space: pre-wrap;
+}
+
+textarea.vote-textarea {
+    width: 100%;
+    min-height: 4rem;
+    background: #222;
+    color: #ccc;
+    border: 1px solid #444;
+    border-radius: 4px;
+    padding: 0.4rem;
+    font-size: 0.85rem;
+    font-family: inherit;
+    resize: vertical;
+    box-sizing: border-box;
+}
+
+textarea.vote-textarea:focus {
+    border-color: #666;
+    outline: none;
+}
+
+.vote-actions {
+    display: flex;
+    gap: 0.5rem;
+    margin-top: 0.5rem;
+}
+
+button.vote-btn {
+    padding: 0.25rem 0.75rem;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 0.85rem;
+    background: #333;
+    border: 1px solid #555;
+}
+
+button.vote-btn:hover {
+    background: #444;
+}
+
+button.vote-btn.approve {
+    color: #7ec699;
+    border-color: #7ec699;
+}
+
+button.vote-btn.approve:hover {
+    background: #2a4a2a;
+}
+
+button.vote-btn.neutral {
+    color: #d19a66;
+    border-color: #d19a66;
+}
+
+button.vote-btn.neutral:hover {
+    background: #3a3020;
+}
+
+button.vote-btn.revise {
+    color: #e06c75;
+    border-color: #e06c75;
+}
+
+button.vote-btn.revise:hover {
+    background: #3a2020;
+}
+
