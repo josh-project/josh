@@ -1,22 +1,29 @@
-use git_tree_viewer::{show_repo_viewer, AppMode};
+use git_tree_viewer::{show_repo_viewer, AppMode, RepoSource};
 
 use clap::Parser;
 use std::env;
+
+#[derive(Clone, Copy, clap::ValueEnum)]
+enum AppModeArg {
+    Browse,
+    Trace,
+}
 
 #[derive(Parser)]
 #[command(author, version, about, long_about = None)]
 struct Args {
     #[arg(long)]
-    commit: Option<String>,
+    rev_spec: Option<String>,
+
     #[arg(long, value_enum)]
-    mode: Option<AppMode>,
+    mode: Option<AppModeArg>,
 }
 
-fn select_mode() -> AppMode {
+fn select_mode() -> Option<AppModeArg> {
     let (tx, rx) = std::sync::mpsc::channel();
 
     struct ModeDialog {
-        tx: std::sync::mpsc::Sender<AppMode>,
+        tx: std::sync::mpsc::Sender<Option<AppModeArg>>,
     }
 
     impl eframe::App for ModeDialog {
@@ -32,7 +39,7 @@ fn select_mode() -> AppMode {
                             .add_sized([120.0, 40.0], egui::Button::new("Browse"))
                             .clicked()
                         {
-                            self.tx.send(AppMode::Browse).ok();
+                            self.tx.send(Some(AppModeArg::Browse)).ok();
                             ui.ctx().send_viewport_cmd(egui::ViewportCommand::Close);
                         }
                         ui.add_space(12.0);
@@ -40,7 +47,7 @@ fn select_mode() -> AppMode {
                             .add_sized([120.0, 40.0], egui::Button::new("Trace"))
                             .clicked()
                         {
-                            self.tx.send(AppMode::Trace).ok();
+                            self.tx.send(Some(AppModeArg::Trace)).ok();
                             ui.ctx().send_viewport_cmd(egui::ViewportCommand::Close);
                         }
                     });
@@ -59,22 +66,35 @@ fn select_mode() -> AppMode {
     eframe::run_native(
         "Git Tree Viewer",
         options,
-        Box::new(move |_cc| {
-            Ok(Box::new(ModeDialog { tx }))
-        }),
+        Box::new(move |_cc| Ok(Box::new(ModeDialog { tx }))),
     )
     .ok();
 
-    rx.recv().unwrap_or(AppMode::Browse)
+    rx.recv().unwrap_or_default()
 }
 
 fn main() {
     let args = Args::parse();
     let current_dir = env::current_dir().expect("Failed to get current directory");
 
-    let mode = args.mode.unwrap_or_else(select_mode);
+    let (mode, repo_source) = match args.mode.or_else(select_mode) {
+        Some(AppModeArg::Browse) => (
+            AppMode::Browse {
+                rev_spec: args.rev_spec,
+            },
+            RepoSource::Path(current_dir),
+        ),
+        Some(AppModeArg::Trace) => (
+            { AppMode::Trace },
+            RepoSource::new_temp().expect("Failed to create temp repo"),
+        ),
+        None => {
+            eprintln!("No mode selected, exiting");
+            return;
+        }
+    };
 
-    if let Err(e) = show_repo_viewer(current_dir, args.commit.as_deref(), mode) {
+    if let Err(e) = show_repo_viewer(mode, repo_source) {
         eprintln!("Error running viewer: {}", e);
         std::process::exit(1);
     }

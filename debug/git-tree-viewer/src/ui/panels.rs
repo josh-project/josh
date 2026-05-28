@@ -72,10 +72,10 @@ fn show_sessions_section(ui: &mut egui::Ui, app: &mut GitDebugApp) {
             for trace in &filtered {
                 if let Ok(oid) = git2::Oid::from_str(&trace.commit) {
                     let short_id = &trace.commit[..SHA_SHORT_LEN.min(trace.commit.len())];
-                    let selected = app.selected_commit == oid;
+                    let selected = app.selected_commit == Some(oid);
                     if show_commit_bubble(ui, selected, short_id, &trace.label).clicked() {
-                        app.history_start = oid;
-                        app.selected_commit = oid;
+                        app.history_start = Some(oid);
+                        app.selected_commit = Some(oid);
                         app.selected_file = None;
                         app.file_content = None;
                     }
@@ -97,7 +97,7 @@ fn show_left_panel(ui: &mut egui::Ui, app: &mut GitDebugApp) {
                     show_commits_section(ui, app);
                 });
         }
-        crate::AppMode::Browse => {
+        crate::AppMode::Browse { .. } => {
             show_commits_section(ui, app);
         }
     }
@@ -106,9 +106,14 @@ fn show_left_panel(ui: &mut egui::Ui, app: &mut GitDebugApp) {
 fn show_central_panel(ui: &mut egui::Ui, app: &mut GitDebugApp) {
     ui.heading("Tree contents");
 
+    let selected_commit = match app.selected_commit {
+        None => return,
+        Some(oid) => oid,
+    };
+
     let tree_id = app
         .repo
-        .find_commit(app.selected_commit)
+        .find_commit(selected_commit)
         .expect("Failed to find commit")
         .tree()
         .expect("Failed to get tree")

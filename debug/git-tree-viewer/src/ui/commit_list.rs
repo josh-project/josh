@@ -57,13 +57,20 @@ pub fn show_commit_bubble(
 pub fn show_commits(
     ui: &mut egui::Ui,
     repo: &Repository,
-    history_start: Oid,
-    selected_commit: &mut Oid,
+    history_start: Option<Oid>,
+    selected_commit: &mut Option<Oid>,
     selected_file: &mut Option<(String, Oid)>,
     file_content: &mut Option<String>,
 ) {
+    let history_start = match history_start {
+        None => return,
+        Some(oid) => oid,
+    };
+
     let mut revwalk = repo.revwalk().expect("Failed to get revwalk");
-    revwalk.push(history_start).expect("Failed to push history start");
+    revwalk
+        .push(history_start)
+        .expect("Failed to push history start");
     revwalk
         .set_sorting(git2::Sort::NONE)
         .expect("Failed to set sorting");
@@ -90,9 +97,9 @@ pub fn show_commits(
         commits
             .into_iter()
             .for_each(|(commit_id, short_id, message)| {
-                let commit_selected = *selected_commit == commit_id;
+                let commit_selected = *selected_commit == Some(commit_id);
                 if show_commit_bubble(ui, commit_selected, &short_id, &message).clicked() {
-                    *selected_commit = commit_id;
+                    *selected_commit = Some(commit_id);
                     *selected_file = None;
                     *file_content = None;
                 }
