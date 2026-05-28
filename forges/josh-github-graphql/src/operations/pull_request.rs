@@ -3,10 +3,11 @@ use anyhow::anyhow;
 use serde::Serialize;
 
 use josh_github_codegen_graphql::{
-    add_comment, add_pull_request_review_thread, add_pull_request_review_thread_reply,
-    close_pull_request, convert_pull_request_to_draft, create_pull_request, get_pr_by_head,
-    get_pr_comments, list_open_p_rs, mark_pull_request_ready_for_review, update_pull_request,
-    AddComment, AddPullRequestReviewThread, AddPullRequestReviewThreadReply, ClosePullRequest,
+    add_comment, add_pull_request_review, add_pull_request_review_thread,
+    add_pull_request_review_thread_reply, close_pull_request, convert_pull_request_to_draft,
+    create_pull_request, get_pr_by_head, get_pr_comments, list_open_p_rs,
+    mark_pull_request_ready_for_review, update_pull_request, AddComment, AddPullRequestReview,
+    AddPullRequestReviewThread, AddPullRequestReviewThreadReply, ClosePullRequest,
     ConvertPullRequestToDraft, CreatePullRequest, GetPrByHead, GetPrComments, ListOpenPRs,
     MarkPullRequestReadyForReview, UpdatePullRequest,
 };
@@ -481,5 +482,35 @@ impl GithubApiConnection {
             .comment
             .ok_or_else(|| anyhow!("addPullRequestReviewThreadReply comment is null"))?;
         Ok(comment.id)
+    }
+
+    /// Submit a pull request review (approve, comment, or request changes).
+    /// Returns the review node ID.
+    pub async fn add_pull_request_review(
+        &self,
+        pull_request_id: &str,
+        event: &str,
+        body: Option<&str>,
+        commit_oid: Option<&str>,
+    ) -> anyhow::Result<String> {
+        let event = match event {
+            "APPROVE" => add_pull_request_review::PullRequestReviewEvent::Approve,
+            "COMMENT" => add_pull_request_review::PullRequestReviewEvent::Comment,
+            "REQUEST_CHANGES" => add_pull_request_review::PullRequestReviewEvent::RequestChanges,
+            other => return Err(anyhow!("unknown review event: {}", other)),
+        };
+        let variables = add_pull_request_review::Variables {
+            pull_request_id: pull_request_id.to_string(),
+            event,
+            body: body.map(String::from),
+            commit_oid: commit_oid.map(String::from),
+        };
+        let response = self.make_request::<AddPullRequestReview>(variables).await?;
+        let review = response
+            .add_pull_request_review
+            .ok_or_else(|| anyhow!("addPullRequestReview returned null"))?
+            .pull_request_review
+            .ok_or_else(|| anyhow!("addPullRequestReview pullRequestReview is null"))?;
+        Ok(review.id)
     }
 }

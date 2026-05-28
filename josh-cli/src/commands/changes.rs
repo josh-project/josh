@@ -38,7 +38,10 @@ pub fn handle_list(
             }
         }
 
-        let comments = josh_changes::read_comments(repo, change).unwrap_or_default();
+        let comments = change
+            .id()
+            .map(|cid| josh_changes::read_comments(repo, cid).unwrap_or_default())
+            .unwrap_or_default();
         if !comments.is_empty() {
             println!();
             for c in &comments {

@@ -193,7 +193,7 @@ pub fn load_rows() -> anyhow::Result<ListData> {
             })
             .unwrap_or_default();
 
-        let local_vote = josh_changes::read_vote(&repo, &change_id)
+        let local_vote = josh_changes::read_vote(&repo, &change_id, None)
             .ok()
             .flatten()
             .map(|v| v.state);

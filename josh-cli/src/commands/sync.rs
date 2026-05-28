@@ -400,44 +400,11 @@ pub fn handle_sync(
 
             if args.push {
                 let mut total_posted = 0usize;
+                let mut total_votes_posted = 0usize;
                 for pr in &prs {
-                    let head_oid = match git2::Oid::from_str(&pr.head_oid) {
-                        Ok(o) => o,
-                        Err(e) => {
-                            eprintln!("PR #{}: bad head OID for comment push: {}", pr.number, e);
-                            continue;
-                        }
-                    };
-                    let pr_head = match repo.find_commit(head_oid) {
-                        Ok(c) => c,
-                        Err(_) => {
-                            eprintln!(
-                                "PR #{}: head commit not available — skipping comment push",
-                                pr.number
-                            );
-                            continue;
-                        }
-                    };
-                    let base_oid = match git2::Oid::from_str(&pr.base_ref_oid) {
-                        Ok(o) => o,
-                        Err(e) => {
-                            eprintln!("PR #{}: bad base OID for comment push: {}", pr.number, e);
-                            continue;
-                        }
-                    };
-                    let target = match repo.find_commit(base_oid) {
-                        Ok(c) => c,
-                        Err(_) => {
-                            eprintln!(
-                                "PR #{}: base commit not available — skipping comment push",
-                                pr.number
-                            );
-                            continue;
-                        }
-                    };
-                    let mut change = josh_changes::Change::new(repo, &pr_head);
-                    let base = repo.merge_base(target.id(), pr_head.id())?;
-                    change.set_base(base);
+                    let (existing_id, _) = josh_changes::parse_change_meta(&pr.head_commit_message);
+                    let change_id = existing_id
+                        .unwrap_or_else(|| format!("{}/{}/pull/{}", owner, repo_name, pr.number));
 
                     match api
                         .find_pull_request_by_head(&owner, &repo_name, &pr.head_ref_name)
@@ -447,7 +414,7 @@ pub fn handle_sync(
                             match josh_github_changes::post_local_comments(
                                 &api,
                                 repo,
-                                &change,
+                                &change_id,
                                 &pr_node_id,
                             )
                             .await
@@ -468,6 +435,26 @@ pub fn handle_sync(
                                     );
                                 }
                             }
+
+                            match josh_github_changes::post_local_votes(
+                                &api,
+                                repo,
+                                &change_id,
+                                &pr_node_id,
+                                &pr.head_oid,
+                            )
+                            .await
+                            {
+                                Ok(n) => {
+                                    total_votes_posted += n;
+                                    if n > 0 {
+                                        println!("  PR #{}: posted {} votes", pr.number, n);
+                                    }
+                                }
+                                Err(e) => {
+                                    eprintln!("  PR #{}: failed to post votes: {}", pr.number, e);
+                                }
+                            }
                         }
                         Ok(None) => {
                             eprintln!(
@@ -480,7 +467,10 @@ pub fn handle_sync(
                         }
                     }
                 }
-                println!("Posted {} local comments to GitHub.", total_posted);
+                println!(
+                    "Posted {} local comments and {} votes to GitHub.",
+                    total_posted, total_votes_posted
+                );
             }
 
             Ok::<_, anyhow::Error>(())

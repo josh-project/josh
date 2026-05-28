@@ -794,12 +794,7 @@ fn collect_comments_under(
     Ok(comments)
 }
 
-pub fn read_comments(repo: &git2::Repository, change: &Change) -> anyhow::Result<Vec<Comment>> {
-    let change_id = match change.id() {
-        Some(id) => id,
-        None => return Ok(Vec::new()),
-    };
-
+pub fn read_comments(repo: &git2::Repository, change_id: &str) -> anyhow::Result<Vec<Comment>> {
     let tree = match repo.find_reference("refs/josh/changes") {
         Ok(r) => r.peel_to_tree()?,
         Err(_) => return Ok(Vec::new()),
@@ -1157,7 +1152,15 @@ pub fn delete_change(repo: &git2::Repository, change_id: &str) -> anyhow::Result
     };
 
     let mut tree = base_tree;
-    for prefix in &["diffs", "comments/C", "comments/F", "gh", "gh_ids"] {
+    for prefix in &[
+        "diffs",
+        "comments/C",
+        "comments/F",
+        "gh",
+        "gh_ids",
+        "votes",
+        "gh_vote_ids",
+    ] {
         let path = std::path::Path::new(prefix).join(&encoded);
         if tree.get_path(&path).is_ok() {
             tree = josh_core::filter::tree::insert(repo, &tree, &path, git2::Oid::zero(), 0)?;
@@ -1218,6 +1221,47 @@ pub fn read_github_ids(
             if let Ok(blob) = entry.to_object(repo).and_then(|o| o.peel_to_blob()) {
                 let github_id = String::from_utf8_lossy(blob.content()).trim().to_string();
                 map.insert(name.to_string(), github_id);
+            }
+        }
+    }
+    Ok(map)
+}
+
+pub fn store_github_vote_id(
+    repo: &git2::Repository,
+    change_id: &str,
+    user: &str,
+    vote_data: &VoteData,
+) -> anyhow::Result<()> {
+    let json = serde_json::to_string(vote_data)?;
+    let blob_oid = repo.blob(json.as_bytes())?;
+    let path = std::path::Path::new("gh_vote_ids")
+        .join(encode_change_id_path(change_id))
+        .join(user);
+    write_changes_tree(repo, &path, blob_oid, None, None)?;
+    Ok(())
+}
+
+pub fn read_github_vote_ids(
+    repo: &git2::Repository,
+    change_id: &str,
+) -> anyhow::Result<std::collections::HashMap<String, VoteData>> {
+    let tree = match repo.find_reference("refs/josh/changes") {
+        Ok(r) => r.peel_to_tree()?,
+        Err(_) => return Ok(Default::default()),
+    };
+    let path = std::path::Path::new("gh_vote_ids").join(encode_change_id_path(change_id));
+    let subtree = match get_tree(repo, &tree, &path) {
+        Some(t) => t,
+        None => return Ok(Default::default()),
+    };
+    let mut map = std::collections::HashMap::new();
+    for entry in subtree.iter() {
+        if let Some(user) = entry.name() {
+            if let Ok(blob) = entry.to_object(repo).and_then(|o| o.peel_to_blob()) {
+                if let Ok(data) = serde_json::from_slice::<VoteData>(blob.content()) {
+                    map.insert(user.to_string(), data);
+                }
             }
         }
     }
@@ -1290,18 +1334,18 @@ fn write_changes_tree(
     Ok(())
 }
 
-#[derive(Debug, Clone, serde::Deserialize)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct VoteData {
     pub state: String,
-    pub body: String,
+    pub sha: String,
 }
 
 pub fn vote_state_to_github_review(state: &str) -> &'static str {
     match state {
-        "approve" => "APPROVED",
-        "discuss" => "COMMENTED",
-        "revise" => "CHANGES_REQUESTED",
-        _ => "COMMENTED",
+        "approve" => "APPROVE",
+        "discuss" => "COMMENT",
+        "revise" => "REQUEST_CHANGES",
+        _ => "COMMENT",
     }
 }
 
@@ -1309,7 +1353,6 @@ pub fn write_vote(
     repo: &git2::Repository,
     change: &Change,
     state: &str,
-    body: &str,
     author: Option<&str>,
     timestamp: Option<&str>,
 ) -> anyhow::Result<String> {
@@ -1317,79 +1360,132 @@ pub fn write_vote(
         .id()
         .ok_or_else(|| anyhow::anyhow!("commit {} has no Change-Id", change.commit()))?;
 
-    let json = serde_json::json!({"state": state, "body": body});
+    let json = serde_json::json!({"state": state, "sha": change.commit().to_string()});
     let content = json.to_string();
     let content_hash =
         git2::Oid::hash_object(git2::ObjectType::Blob, content.as_bytes())?.to_string();
     let blob_oid = repo.blob(content.as_bytes())?;
 
+    let mut tb = repo.treebuilder(None)?;
+    tb.insert(&blob_oid.to_string(), blob_oid, git2::FileMode::Blob.into())?;
+    let tree_oid = tb.write()?;
+
+    let user = match author {
+        Some(name) => name.to_string(),
+        None => repo.signature()?.email().unwrap_or("unknown").to_string(),
+    };
+
     let path = std::path::Path::new("votes")
         .join(encode_change_id_path(&change_id))
-        .join(&content_hash);
-    write_changes_tree(repo, &path, blob_oid, author, timestamp)?;
+        .join(&user);
+
+    let base_tree = repo
+        .find_reference("refs/josh/changes")
+        .ok()
+        .and_then(|r| r.peel_to_tree().ok())
+        .unwrap_or_else(|| repo.find_tree(josh_core::filter::tree::empty_id()).unwrap());
+
+    if let Some(existing) = base_tree
+        .get_path(&path)
+        .ok()
+        .and_then(|e| e.to_object(repo).ok())
+    {
+        if existing.id() == tree_oid {
+            return Ok(content_hash);
+        }
+    }
+
+    let tree = josh_core::filter::tree::insert(repo, &base_tree, &path, tree_oid, 0o0040000)?;
+
+    let sig = match author {
+        Some(name) => {
+            let email = format!("{}@github", name);
+            let time = parse_timestamp(timestamp);
+            git2::Signature::new(name, &email, &time)?
+        }
+        None => repo.signature()?,
+    };
+    let parent_commit = repo
+        .find_reference("refs/josh/changes")
+        .ok()
+        .and_then(|r| r.peel_to_commit().ok());
+    let parents: Vec<&git2::Commit> = parent_commit.iter().collect();
+    repo.commit(
+        Some("refs/josh/changes"),
+        &sig,
+        &sig,
+        "update refs/josh/changes\n",
+        &tree,
+        &parents,
+    )?;
 
     Ok(content_hash)
 }
 
-pub fn read_vote(repo: &git2::Repository, change_id: &str) -> anyhow::Result<Option<VoteData>> {
-    // Verify the ref exists before proceeding.
-    let _obj = match repo.find_reference("refs/josh/changes") {
-        Ok(r) => r.peel_to_commit()?,
+pub fn read_vote(
+    repo: &git2::Repository,
+    change_id: &str,
+    user: Option<&str>,
+) -> anyhow::Result<Option<VoteData>> {
+    let tree = match repo.find_reference("refs/josh/changes") {
+        Ok(r) => r.peel_to_tree()?,
         Err(_) => return Ok(None),
     };
 
-    let path = std::path::Path::new("votes").join(encode_change_id_path(change_id));
+    let user = match user {
+        Some(name) => name.to_string(),
+        None => repo.signature()?.email().unwrap_or("unknown").to_string(),
+    };
 
-    let mut revwalk = repo.revwalk()?;
-    revwalk.push_ref("refs/josh/changes")?;
+    let path = std::path::Path::new("votes")
+        .join(encode_change_id_path(change_id))
+        .join(&user);
 
-    for oid in revwalk {
-        let commit = repo.find_commit(oid?)?;
-        let tree = commit.tree()?;
-
-        let current_votes = match get_tree(repo, &tree, &path) {
-            Some(t) => t,
-            None => continue,
-        };
-
-        let entries: Vec<String> = current_votes
-            .iter()
-            .filter_map(|e| e.name().map(String::from))
-            .collect();
-
-        if entries.is_empty() {
-            continue;
-        }
-
-        let new_entries: Vec<String> = if let Ok(parent) = commit.parent(0) {
-            let parent_tree = parent.tree()?;
-            let parent_entries: std::collections::HashSet<String> =
-                get_tree(repo, &parent_tree, &path)
-                    .map(|t| {
-                        t.iter()
-                            .filter_map(|e| e.name().map(String::from))
-                            .collect()
-                    })
-                    .unwrap_or_default();
-            entries
-                .into_iter()
-                .filter(|e| !parent_entries.contains(e))
-                .collect()
-        } else {
-            entries
-        };
-
-        if let Some(name) = new_entries.first() {
-            let entry = current_votes
-                .get_name(name)
-                .ok_or_else(|| anyhow!("vote blob not found in tree"))?;
-            let blob = entry.to_object(repo)?.peel_to_blob()?;
+    let subtree = match get_tree(repo, &tree, &path) {
+        Some(t) => t,
+        None => return Ok(None),
+    };
+    for entry in subtree.iter() {
+        if let Ok(blob) = entry.to_object(repo).and_then(|o| o.peel_to_blob()) {
             let data: VoteData = serde_json::from_slice(blob.content())?;
             return Ok(Some(data));
         }
     }
-
     Ok(None)
+}
+
+pub fn list_votes(
+    repo: &git2::Repository,
+    change_id: &str,
+) -> anyhow::Result<Vec<(String, VoteData)>> {
+    let tree = match repo.find_reference("refs/josh/changes") {
+        Ok(r) => r.peel_to_tree()?,
+        Err(_) => return Ok(Default::default()),
+    };
+    let path = std::path::Path::new("votes").join(encode_change_id_path(change_id));
+    let subtree = match get_tree(repo, &tree, &path) {
+        Some(t) => t,
+        None => return Ok(Default::default()),
+    };
+    let mut votes = Vec::new();
+    for entry in subtree.iter() {
+        let user = match entry.name() {
+            Some(name) => name.to_string(),
+            None => continue,
+        };
+        let user_tree = match entry.to_object(repo).and_then(|o| o.peel_to_tree()) {
+            Ok(t) => t,
+            Err(_) => continue,
+        };
+        for child in user_tree.iter() {
+            if let Ok(blob) = child.to_object(repo).and_then(|o| o.peel_to_blob()) {
+                if let Ok(data) = serde_json::from_slice::<VoteData>(blob.content()) {
+                    votes.push((user.clone(), data));
+                }
+            }
+        }
+    }
+    Ok(votes)
 }
 
 #[cfg(test)]
