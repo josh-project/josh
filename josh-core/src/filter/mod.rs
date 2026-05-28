@@ -224,6 +224,8 @@ fn lazy_refs2(op: &Op) -> Vec<String> {
             }));
             lr
         }
+        Op::Downstack(LazyRef::Lazy(s)) => vec![s.to_owned()],
+        Op::Downstack(_) => vec![],
         _ => vec![],
     };
     lr.sort();
@@ -279,6 +281,13 @@ fn resolve_refs2(refs: &std::collections::HashMap<String, git2::Oid>, op: &Op) -
                 })
                 .collect();
             Op::Squash(Some(lr))
+        }
+        Op::Downstack(LazyRef::Lazy(s)) => {
+            if let Some(res) = refs.get(s) {
+                Op::Downstack(LazyRef::Resolved(*res))
+            } else {
+                op.clone()
+            }
         }
         _ => op.clone(),
     }
@@ -611,6 +620,17 @@ pub fn apply_to_commit2(
                 history::GpgsigMode::Remove,
             ))
             .transpose();
+        }
+        Op::Downstack(LazyRef::Resolved(base)) => {
+            if let Some(oid) = transaction.get(filter, commit.id()) {
+                return Ok(Some(oid));
+            }
+            let new_oid = downstack(repo, commit.id(), *base)?;
+            transaction.insert(filter, commit.id(), new_oid, false);
+            return Ok(Some(new_oid));
+        }
+        Op::Downstack(LazyRef::Lazy(_)) => {
+            return Err(anyhow!("`:_=...` with unresolved base ref"));
         }
         _ => {
             if let Some(oid) = transaction.get(filter, commit.id()) {
@@ -1544,6 +1564,7 @@ pub fn apply<'a>(
             }
         }
         Op::Pin(_) => Ok(x),
+        Op::Downstack(_) => Err(anyhow!("not applicable to tree: downstack")),
         Op::Meta(_, _) => unreachable!(),
     }
 }
@@ -2029,6 +2050,131 @@ fn per_rev_filter(
         commit_filter.into_meta(),
     ))
     .transpose();
+}
+
+/// Rebuild the stack from `base_oid` to `change_oid`, dropping intermediate commits
+/// whose changed paths are disjoint from the tip's changes, then reapply the tip
+/// onto the minimised base via a 3-way merge. Returns the new tip OID.
+pub fn downstack(
+    repo: &git2::Repository,
+    change_oid: git2::Oid,
+    base_oid: git2::Oid,
+) -> anyhow::Result<git2::Oid> {
+    if !repo.graph_descendant_of(change_oid, base_oid)? {
+        return Err(anyhow!(
+            "change {} is not a descendant of base {}",
+            change_oid,
+            base_oid
+        ));
+    }
+
+    // Collect commits from base to change (exclusive of base, inclusive of change)
+    let mut walk = repo.revwalk()?;
+    walk.simplify_first_parent()?;
+    walk.set_sorting(git2::Sort::REVERSE | git2::Sort::TOPOLOGICAL)?;
+    walk.push(change_oid)?;
+    walk.hide(base_oid)?;
+
+    let oids: Vec<git2::Oid> = walk.collect::<Result<Vec<_>, _>>()?;
+
+    if oids.is_empty() {
+        return Ok(change_oid);
+    }
+
+    let mut commits: Vec<git2::Commit> = oids
+        .into_iter()
+        .map(|oid| repo.find_commit(oid))
+        .collect::<Result<Vec<_>, _>>()?;
+
+    // The last commit is `change`; split it off from the intermediates
+    let change_commit = commits.pop().unwrap();
+
+    // Seed the affected path set with the change's own modified paths, then
+    // walk intermediates backwards, keeping any commit whose paths intersect.
+    let (_, change_series) =
+        crate::trailers::parse_change_meta(change_commit.message().unwrap_or(""));
+    let mut affected_paths = downstack_changed_paths(repo, &change_commit)?;
+    for s in &change_series {
+        affected_paths.insert(format!("\x00series:{}", s));
+    }
+    let mut needed: Vec<bool> = vec![false; commits.len()];
+    for (i, intermediate) in commits.iter().enumerate().rev() {
+        let (_, series) = crate::trailers::parse_change_meta(intermediate.message().unwrap_or(""));
+        let mut paths = downstack_changed_paths(repo, intermediate)?;
+        for s in &series {
+            paths.insert(format!("\x00series:{}", s));
+        }
+        if !paths.is_disjoint(&affected_paths) {
+            needed[i] = true;
+            affected_paths.extend(paths);
+        }
+    }
+
+    // Rebase needed intermediates forward onto current_base.
+    let mut current_base = repo.find_commit(base_oid)?;
+    for (intermediate, is_needed) in commits.iter().zip(needed.iter()) {
+        if !is_needed {
+            continue;
+        }
+        let inter_parent = intermediate.parent(0)?;
+        let mut index = repo.merge_trees(
+            &inter_parent.tree()?,
+            &current_base.tree()?,
+            &intermediate.tree()?,
+            None,
+        )?;
+        let new_tree = repo.find_tree(index.write_tree_to(repo)?)?;
+        let new_oid = history::rewrite_commit(
+            repo,
+            intermediate,
+            &[&current_base],
+            Rewrite::from_tree(new_tree),
+            history::GpgsigMode::Preserve,
+        )?;
+        current_base = repo.find_commit(new_oid)?;
+    }
+
+    // Apply the change on top of the minimal base via 3-way merge.
+    let change_parent = change_commit.parent(0)?;
+    let mut index = repo.merge_trees(
+        &change_parent.tree()?,
+        &current_base.tree()?,
+        &change_commit.tree()?,
+        None,
+    )?;
+    let new_tree = repo.find_tree(index.write_tree_to(repo)?)?;
+
+    let new_oid = history::rewrite_commit(
+        repo,
+        &change_commit,
+        &[&current_base],
+        Rewrite::from_tree(new_tree),
+        history::GpgsigMode::Preserve,
+    )?;
+
+    Ok(new_oid)
+}
+
+fn downstack_changed_paths(
+    repo: &git2::Repository,
+    commit: &git2::Commit,
+) -> anyhow::Result<std::collections::HashSet<String>> {
+    let parent_tree = if commit.parent_count() > 0 {
+        Some(commit.parent(0)?.tree()?)
+    } else {
+        None
+    };
+    let diff = repo.diff_tree_to_tree(parent_tree.as_ref(), Some(&commit.tree()?), None)?;
+    let mut paths = std::collections::HashSet::new();
+    for delta in diff.deltas() {
+        if let Some(p) = delta.old_file().path().and_then(|p| p.to_str()) {
+            paths.insert(p.to_string());
+        }
+        if let Some(p) = delta.new_file().path().and_then(|p| p.to_str()) {
+            paths.insert(p.to_string());
+        }
+    }
+    Ok(paths)
 }
 
 #[cfg(test)]

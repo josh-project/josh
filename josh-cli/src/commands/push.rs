@@ -166,6 +166,7 @@ fn prepare_push(
 
     let to_push = build_to_push(
         repo,
+        transaction,
         &push_mode,
         remote_ref,
         remote_ref,

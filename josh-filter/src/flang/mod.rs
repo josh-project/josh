@@ -305,6 +305,7 @@ pub(crate) fn spec2(op: &Op) -> String {
         Op::Hook(hook) => {
             format!(":hook={}", parse::quote(hook))
         }
+        Op::Downstack(r) => format!(":_={}", r),
         Op::Meta(meta, filter) => {
             let mut meta_parts = meta
                 .iter()

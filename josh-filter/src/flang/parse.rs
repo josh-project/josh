@@ -95,6 +95,21 @@ fn make_filter(args: &[&str]) -> anyhow::Result<Filter> {
         ["INVERT"] => Ok(to_filter(Op::Invert)),
         ["FOLD"] => Ok(to_filter(Op::Fold)),
         ["hook", arg] => Ok(f.hook(arg)),
+        ["_", sha] => {
+            check_experimental_features_enabled("downstack filter")?;
+            Ok(to_filter(Op::Downstack(LazyRef::parse(sha)?)))
+        }
+        ["_"] => Err(anyhow!(indoc!(
+            r#"
+            Filter ":_" requires a base SHA argument.
+
+            Note: use "=" to provide the argument value:
+
+              :_=<sha>
+
+            Where `<sha>` is the base commit to rebase against.
+            "#
+        ))),
         _ => Err(anyhow!(formatdoc!(
             r#"
             Invalid filter: ":{0}"

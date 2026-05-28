@@ -1,4 +1,5 @@
 use anyhow::anyhow;
+pub use josh_core::trailers::{commit_change_meta, parse_change_meta};
 
 #[derive(Debug, Clone)]
 pub struct Change {
@@ -63,57 +64,6 @@ impl Change {
         }
         Ok(oids)
     }
-}
-
-fn is_trailer_line(line: &str) -> bool {
-    let key_len = line
-        .bytes()
-        .take_while(|&b| b.is_ascii_alphanumeric() || b == b'-')
-        .count();
-    key_len > 0 && line[key_len..].starts_with(": ")
-}
-
-/// Extract change-id metadata from a commit, preferring jj/gitbutler's custom
-/// `change-id` commit-object header over any `Change:` / `Change-Id:` trailer
-/// in the message body. The series list comes from message trailers regardless.
-pub fn commit_change_meta(commit: &git2::Commit) -> (Option<String>, Vec<String>) {
-    let (mut id, series) = parse_change_meta(commit.message().unwrap_or(""));
-    if let Ok(buf) = commit.header_field_bytes("change-id") {
-        if let Ok(s) = std::str::from_utf8(&buf) {
-            let s = s.trim();
-            if !s.is_empty() {
-                id = Some(s.to_string());
-            }
-        }
-    }
-    (id, series)
-}
-
-pub fn parse_change_meta(message: &str) -> (Option<String>, Vec<String>) {
-    let lines: Vec<&str> = message.lines().collect();
-    let mut footer_start = lines.len();
-    for (i, line) in lines.iter().enumerate().rev() {
-        if line.is_empty() || is_trailer_line(line) {
-            footer_start = i;
-        } else {
-            break;
-        }
-    }
-
-    let mut id: Option<String> = None;
-    let mut series: Vec<String> = Vec::new();
-    for line in &lines[footer_start..] {
-        if let Some(v) = line.strip_prefix("Change: ") {
-            id = Some(v.to_string());
-        }
-        if let Some(v) = line.strip_prefix("Change-Id: ") {
-            id = Some(v.to_string());
-        }
-        if let Some(v) = line.strip_prefix("Change-Series: ") {
-            series.push(v.to_string());
-        }
-    }
-    (id, series)
 }
 
 pub fn encode_change_id_path(id: &str) -> String {
@@ -193,133 +143,24 @@ pub fn baseref_and_options(
 
 fn split_changes(
     repo: &git2::Repository,
+    transaction: &josh_core::cache::Transaction,
     changes: std::collections::HashMap<git2::Oid, Change>,
 ) -> anyhow::Result<Vec<Change>> {
     if changes.values().next().map(|c| c.base) == Some(git2::Oid::zero()) {
         return Ok(changes.into_values().collect());
     }
 
-    changes.iter().map(|(_, c)| downstack(repo, c)).collect()
-}
-
-fn changed_paths(
-    repo: &git2::Repository,
-    commit: &git2::Commit,
-) -> anyhow::Result<std::collections::HashSet<String>> {
-    let parent_tree = if commit.parent_count() > 0 {
-        Some(commit.parent(0)?.tree()?)
-    } else {
-        None
-    };
-    let diff = repo.diff_tree_to_tree(parent_tree.as_ref(), Some(&commit.tree()?), None)?;
-    let mut paths = std::collections::HashSet::new();
-    for delta in diff.deltas() {
-        if let Some(p) = delta.old_file().path().and_then(|p| p.to_str()) {
-            paths.insert(p.to_string());
-        }
-        if let Some(p) = delta.new_file().path().and_then(|p| p.to_str()) {
-            paths.insert(p.to_string());
-        }
-    }
-    Ok(paths)
-}
-
-fn downstack(repo: &git2::Repository, change: &Change) -> anyhow::Result<Change> {
-    let change_oid = change.commit;
-    if !repo.graph_descendant_of(change_oid, change.base)? {
-        return Err(anyhow!(
-            "change {} is not a descendant of base {}",
-            change_oid,
-            change.base
-        ));
-    }
-
-    // Collect commits from base to change (exclusive of base, inclusive of change)
-    let mut walk = repo.revwalk()?;
-    walk.simplify_first_parent()?;
-    walk.set_sorting(git2::Sort::REVERSE | git2::Sort::TOPOLOGICAL)?;
-    walk.push(change_oid)?;
-    walk.hide(change.base)?;
-
-    let oids: Vec<git2::Oid> = walk.collect::<Result<Vec<_>, _>>()?;
-
-    if oids.is_empty() {
-        return Ok(change.clone());
-    }
-
-    let mut commits: Vec<git2::Commit> = oids
-        .into_iter()
-        .map(|oid| repo.find_commit(oid))
-        .collect::<Result<Vec<_>, _>>()?;
-
-    // The last commit is `change`; split it off from the intermediates
-    let change_commit = commits.pop().unwrap();
-    let change_parent = change_commit.parent(0)?;
-
-    // Seed the affected path set with the change's own modified paths, then
-    // walk intermediates backwards, keeping any commit whose paths intersect.
-    let change_meta = Change::new(repo, &change_commit);
-    let mut affected_paths = changed_paths(repo, &change_commit)?;
-    for s in &change_meta.series {
-        affected_paths.insert(format!("\x00series:{}", s));
-    }
-    let mut needed: Vec<bool> = vec![false; commits.len()];
-    for (i, intermediate) in commits.iter().enumerate().rev() {
-        let meta = Change::new(repo, intermediate);
-        let mut paths = changed_paths(repo, intermediate)?;
-        for s in &meta.series {
-            paths.insert(format!("\x00series:{}", s));
-        }
-        if !paths.is_disjoint(&affected_paths) {
-            needed[i] = true;
-            affected_paths.extend(paths);
-        }
-    }
-
-    // Rebase needed intermediates forward onto current_base.
-    let mut current_base = repo.find_commit(change.base)?;
-    for (intermediate, is_needed) in commits.iter().zip(needed.iter()) {
-        if !is_needed {
-            continue;
-        }
-        let inter_parent = intermediate.parent(0)?;
-        let mut index = repo.merge_trees(
-            &inter_parent.tree()?,
-            &current_base.tree()?,
-            &intermediate.tree()?,
-            None,
-        )?;
-        let new_tree = repo.find_tree(index.write_tree_to(repo)?)?;
-        let new_oid = josh_core::history::rewrite_commit(
-            repo,
-            intermediate,
-            &[&current_base],
-            josh_core::filter::Rewrite::from_tree(new_tree),
-            josh_core::history::GpgsigMode::Preserve,
-        )?;
-        current_base = repo.find_commit(new_oid)?;
-    }
-
-    // Apply the change on top of the minimal base via 3-way merge.
-    let mut index = repo.merge_trees(
-        &change_parent.tree()?,
-        &current_base.tree()?,
-        &change_commit.tree()?,
-        None,
-    )?;
-    let new_tree = repo.find_tree(index.write_tree_to(repo)?)?;
-
-    let new_oid = josh_core::history::rewrite_commit(
-        repo,
-        &change_commit,
-        &[&current_base],
-        josh_core::filter::Rewrite::from_tree(new_tree),
-        josh_core::history::GpgsigMode::Preserve,
-    )?;
-
-    let mut result = change.clone();
-    result.commit = new_oid;
-    Ok(result)
+    changes
+        .into_values()
+        .map(|c| {
+            let filter = josh_core::filter::Filter::new().downstack(c.base);
+            let commit = repo.find_commit(c.commit)?;
+            let new_oid = josh_core::filter::apply_to_commit(filter, &commit, transaction)?;
+            let mut result = c;
+            result.commit = new_oid;
+            Ok(result)
+        })
+        .collect()
 }
 
 fn changes_to_refs(
@@ -411,6 +252,7 @@ fn get_changes(
 
 pub fn build_to_push(
     repo: &git2::Repository,
+    transaction: &josh_core::cache::Transaction,
     push_mode: &PushMode,
     baseref: &str,
     ref_with_options: &str,
@@ -420,7 +262,7 @@ pub fn build_to_push(
     match push_mode {
         PushMode::Publish(author) => {
             let changes = get_changes(repo, oid_to_push, base_oid)?;
-            let changes = split_changes(repo, changes)?;
+            let changes = split_changes(repo, transaction, changes)?;
 
             let mut push_refs = changes_to_refs(repo, baseref, author, changes)?;
 
@@ -451,11 +293,12 @@ pub fn build_to_push(
 
 pub fn sync_changes(
     repo: &git2::Repository,
+    transaction: &josh_core::cache::Transaction,
     tip: git2::Oid,
     base: git2::Oid,
 ) -> anyhow::Result<Vec<Change>> {
     let changes = get_changes(repo, tip, base)?;
-    let changes = split_changes(repo, changes)?;
+    let changes = split_changes(repo, transaction, changes)?;
     for c in &changes {
         let _ = store_diff_data(repo, c);
     }
@@ -1486,69 +1329,4 @@ pub fn list_votes(
         }
     }
     Ok(votes)
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn footer_in_body_is_ignored() {
-        let (id, series) =
-            parse_change_meta("Subject\n\nbody mentions Change: not-a-trailer\nmore body\n");
-        assert_eq!(id, None);
-        assert!(series.is_empty());
-    }
-
-    #[test]
-    fn real_trailing_footer_is_parsed() {
-        let (id, _) = parse_change_meta("Subject\n\nBody.\n\nChange: real-id\n");
-        assert_eq!(id.as_deref(), Some("real-id"));
-    }
-
-    #[test]
-    fn single_line_message_is_its_own_footer() {
-        let (id, _) = parse_change_meta("Change: only-line");
-        assert_eq!(id.as_deref(), Some("only-line"));
-    }
-
-    #[test]
-    fn footer_followed_by_body_is_ignored() {
-        let (id, _) = parse_change_meta("Subject\n\nChange: middle\n\nBody after.\n");
-        assert_eq!(id, None);
-    }
-
-    #[test]
-    fn other_trailers_in_block_do_not_break_change() {
-        let msg = "Subject\n\nBody.\n\nSigned-off-by: x <x@y>\nChange: real\n\
-                   Reviewed-by: z <z@w>\n";
-        let (id, _) = parse_change_meta(msg);
-        assert_eq!(id.as_deref(), Some("real"));
-    }
-
-    #[test]
-    fn series_in_footer_block_is_collected() {
-        let msg = "Subject\n\nBody.\n\nChange-Series: s1\nChange-Series: s2\nChange: c\n";
-        let (id, series) = parse_change_meta(msg);
-        assert_eq!(id.as_deref(), Some("c"));
-        assert_eq!(series, vec!["s1".to_string(), "s2".to_string()]);
-    }
-
-    #[test]
-    fn series_in_body_is_ignored() {
-        let msg = "Subject\n\nWe discussed Change-Series: bogus here.\nmore body\n";
-        let (_id, series) = parse_change_meta(msg);
-        assert!(series.is_empty());
-    }
-
-    #[test]
-    fn is_trailer_line_basics() {
-        assert!(is_trailer_line("Change: foo"));
-        assert!(is_trailer_line("Change-Id: foo"));
-        assert!(is_trailer_line("Signed-off-by: a <a@b>"));
-        assert!(!is_trailer_line("not a trailer"));
-        assert!(!is_trailer_line("Change:no-space"));
-        assert!(!is_trailer_line(": leading colon"));
-        assert!(!is_trailer_line(""));
-    }
 }
