@@ -96,9 +96,7 @@ impl GitDebugApp {
 }
 
 pub fn show_repo_viewer(mode: AppMode, repo_source: RepoSource) -> anyhow::Result<()> {
-    let app = GitDebugApp {
-        ..GitDebugApp::new(mode, repo_source)?
-    };
+    let app = GitDebugApp::new(mode, repo_source)?;
 
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
