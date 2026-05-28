@@ -47,17 +47,21 @@ pub struct Trace {
     pub label: String,
 }
 
-pub struct GitDebugApp {
-    repo: git2::Repository,
+pub struct UiState {
     history_start: Option<git2::Oid>,
     selected_commit: Option<git2::Oid>,
     selected_file: Option<(String, git2::Oid)>,
     file_content: Option<String>,
-    error: Option<String>,
-    traces: Vec<Trace>,
     selected_session: Option<String>,
+    error: Option<String>,
+}
+
+pub struct GitDebugApp {
     mode: AppMode,
+    repo: git2::Repository,
+    traces: Vec<Trace>,
     rx: Option<std::sync::mpsc::Receiver<Trace>>,
+    ui_state: UiState,
 }
 
 impl GitDebugApp {
@@ -76,15 +80,17 @@ impl GitDebugApp {
 
         Ok(Self {
             repo,
-            history_start: resolved_commit,
-            selected_commit: resolved_commit,
-            selected_file: None,
-            file_content: None,
-            error: None,
-            traces: Vec::new(),
-            selected_session: None,
             mode,
+            traces: Vec::new(),
             rx: None,
+            ui_state: UiState {
+                history_start: resolved_commit,
+                selected_commit: resolved_commit,
+                selected_file: None,
+                file_content: None,
+                selected_session: None,
+                error: None,
+            },
         })
     }
 }
