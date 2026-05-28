@@ -213,9 +213,6 @@ pub fn DetailView(sha: String, mut page: Signal<Page>) -> Element {
                                     span { class: "vote-state vote-{vote.state}",
                                         "{vote_state_display(&vote.state)}"
                                     }
-                                    if !vote.body.is_empty() {
-                                        pre { class: "vote-body", "{vote.body}" }
-                                    }
                                 }
                             }
                             textarea {
@@ -403,11 +400,14 @@ pub fn load_detail(sha: &str) -> anyhow::Result<DetailData> {
         }
     }
 
-    let comments = josh_changes::read_comments(&repo, &change).unwrap_or_default();
+    let comments = change_id
+        .as_deref()
+        .map(|cid| josh_changes::read_comments(&repo, cid).unwrap_or_default())
+        .unwrap_or_default();
     let revisions = josh_changes::read_revisions(&repo, &change).unwrap_or_default();
     let local_vote = change_id
         .as_ref()
-        .and_then(|cid| josh_changes::read_vote(&repo, cid).ok())
+        .and_then(|cid| josh_changes::read_vote(&repo, cid, None).ok())
         .flatten();
 
     Ok(DetailData {
@@ -459,5 +459,17 @@ pub fn save_vote(sha: &str, state: &str, body: &str) -> anyhow::Result<String> {
     let oid = git2::Oid::from_str(sha)?;
     let commit = repo.find_commit(oid)?;
     let change = josh_changes::Change::new(&repo, &commit);
-    josh_changes::write_vote(&repo, &change, state, body, None, None)
+
+    if !body.trim().is_empty() {
+        let meta = josh_changes::CommentMeta {
+            message: body.to_string(),
+            file: None,
+            location: None,
+            reply_to: None,
+            update_of: None,
+        };
+        josh_changes::write_comment(&repo, &change, &meta, None, None)?;
+    }
+
+    josh_changes::write_vote(&repo, &change, state, None, None)
 }

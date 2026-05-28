@@ -1,0 +1,17 @@
+mutation AddPullRequestReview(
+  $pullRequestId: ID!,
+  $event: PullRequestReviewEvent!,
+  $body: String,
+  $commitOID: GitObjectID
+) {
+  addPullRequestReview(input: {
+    pullRequestId: $pullRequestId,
+    event: $event,
+    body: $body,
+    commitOID: $commitOID
+  }) {
+    pullRequestReview {
+      id
+    }
+  }
+}

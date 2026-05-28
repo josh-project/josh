@@ -42,4 +42,6 @@ fragments = ["collaborator_edge_info"]
 
 [queries.add_pull_request_review_thread_reply]
 
+[queries.add_pull_request_review]
+
 [queries.list_open_prs]

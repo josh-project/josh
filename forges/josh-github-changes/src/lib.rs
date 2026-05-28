@@ -312,15 +312,10 @@ pub async fn sync_change_comments_by_pr_number(
 pub async fn post_local_comments(
     connection: &GithubApiConnection,
     repo: &git2::Repository,
-    change: &josh_changes::Change,
+    change_id: &str,
     pr_node_id: &str,
 ) -> anyhow::Result<usize> {
-    let change_id = match change.id() {
-        Some(id) => id,
-        None => return Ok(0),
-    };
-
-    let comments = josh_changes::read_comments(repo, change)?;
+    let comments = josh_changes::read_comments(repo, change_id)?;
     if comments.is_empty() {
         return Ok(0);
     }
@@ -415,4 +410,41 @@ pub async fn post_local_comments(
     }
 
     Ok(posted_count)
+}
+
+/// Post local votes (those not yet pushed to GitHub) as pull request reviews.
+pub async fn post_local_votes(
+    connection: &GithubApiConnection,
+    repo: &git2::Repository,
+    change_id: &str,
+    pr_node_id: &str,
+    commit_oid: &str,
+) -> anyhow::Result<usize> {
+    let votes = josh_changes::list_votes(repo, change_id)?;
+    if votes.is_empty() {
+        return Ok(0);
+    }
+
+    let tracked = josh_changes::read_github_vote_ids(repo, change_id)?;
+
+    let mut posted = 0usize;
+    for (user, vote_data) in &votes {
+        if let Some(tracked_data) = tracked.get(user) {
+            if tracked_data.state == vote_data.state && tracked_data.sha == vote_data.sha {
+                continue;
+            }
+        }
+
+        let event = josh_changes::vote_state_to_github_review(&vote_data.state);
+        let body = format!("josh vote: {}", vote_data.state);
+
+        let _review_id = connection
+            .add_pull_request_review(pr_node_id, event, Some(&body), Some(commit_oid))
+            .await?;
+
+        josh_changes::store_github_vote_id(repo, change_id, user, vote_data)?;
+        posted += 1;
+    }
+
+    Ok(posted)
 }
