@@ -1,10 +1,10 @@
 use crate::constants::{PANEL_DEFAULT_WIDTH, SHA_SHORT_LEN};
-use crate::git;
 use crate::ui::commit_list::{show_commit_bubble, show_commits};
 use crate::ui::file_preview::show_file_preview;
 use crate::ui::tree_view::show_tree_item;
 use crate::GitDebugApp;
 use crate::Trace;
+use crate::{git, AppMode};
 
 fn show_top_panel(ui: &mut egui::Ui, error: &Option<String>) {
     ui.heading("Git Tree Viewer");
@@ -31,7 +31,12 @@ fn show_commits_section(ui: &mut egui::Ui, app: &mut GitDebugApp) {
 }
 
 fn show_sessions_section(ui: &mut egui::Ui, app: &mut GitDebugApp) {
-    let mut sessions: Vec<&String> = app.traces.iter().map(|t| &t.session).collect();
+    let traces = match &app.mode {
+        AppMode::Trace { traces, .. } => traces,
+        _ => return,
+    };
+
+    let mut sessions: Vec<&String> = traces.iter().map(|t| &t.session).collect();
     sessions.sort();
     sessions.dedup();
 
@@ -54,8 +59,7 @@ fn show_sessions_section(ui: &mut egui::Ui, app: &mut GitDebugApp) {
             }
         });
 
-    let filtered: Vec<&Trace> = app
-        .traces
+    let filtered: Vec<&Trace> = traces
         .iter()
         .filter(|t| {
             app.ui_state
@@ -87,7 +91,7 @@ fn show_sessions_section(ui: &mut egui::Ui, app: &mut GitDebugApp) {
 
 fn show_left_panel(ui: &mut egui::Ui, app: &mut GitDebugApp) {
     match app.mode {
-        crate::AppMode::Trace => {
+        AppMode::Trace { .. } => {
             ui.heading("Sessions");
             show_sessions_section(ui, app);
 
@@ -98,7 +102,7 @@ fn show_left_panel(ui: &mut egui::Ui, app: &mut GitDebugApp) {
                     show_commits_section(ui, app);
                 });
         }
-        crate::AppMode::Browse { .. } => {
+        AppMode::Browse { .. } => {
             show_commits_section(ui, app);
         }
     }

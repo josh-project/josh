@@ -3,11 +3,9 @@ use crate::{AppMode, GitDebugApp};
 
 impl eframe::App for GitDebugApp {
     fn ui(&mut self, ui: &mut egui::Ui, _: &mut eframe::Frame) {
-        if self.mode == AppMode::Trace {
-            if let Some(rx) = &self.rx {
-                while let Ok(trace) = rx.try_recv() {
-                    self.traces.push(trace);
-                }
+        if let AppMode::Trace { rx, traces } = &mut self.mode {
+            while let Ok(trace) = rx.try_recv() {
+                traces.push(trace);
             }
         }
 

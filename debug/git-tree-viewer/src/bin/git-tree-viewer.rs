@@ -1,4 +1,4 @@
-use git_tree_viewer::{show_repo_viewer, AppMode, RepoSource};
+use git_tree_viewer::{show_repo_viewer, AppMode, RepoSource, Trace};
 
 use clap::Parser;
 use std::env;
@@ -84,10 +84,20 @@ fn main() {
             },
             RepoSource::Path(current_dir),
         ),
-        Some(AppModeArg::Trace) => (
-            { AppMode::Trace },
-            RepoSource::new_temp().expect("Failed to create temp repo"),
-        ),
+        Some(AppModeArg::Trace) => {
+            let repo_source = RepoSource::new_temp().expect("Failed to create temp repo");
+            let (tx, rx) = std::sync::mpsc::channel::<Trace>();
+
+            git_tree_viewer::server::start(tx, repo_source.as_ref());
+
+            (
+                AppMode::Trace {
+                    traces: Default::default(),
+                    rx,
+                },
+                repo_source,
+            )
+        }
         None => {
             eprintln!("No mode selected, exiting");
             return;

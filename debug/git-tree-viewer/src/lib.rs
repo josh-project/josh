@@ -1,17 +1,21 @@
 mod app;
 pub mod constants;
 pub mod git;
-mod server;
+pub mod server;
 pub mod ui;
 
 use std::path::{Path, PathBuf};
 
 pub use ui::commit_list::show_commit_bubble;
 
-#[derive(Clone, PartialEq)]
 pub enum AppMode {
-    Browse { rev_spec: Option<String> },
-    Trace,
+    Browse {
+        rev_spec: Option<String>,
+    },
+    Trace {
+        traces: Vec<Trace>,
+        rx: std::sync::mpsc::Receiver<Trace>,
+    },
 }
 
 pub enum RepoSource {
@@ -59,8 +63,6 @@ pub struct UiState {
 pub struct GitDebugApp {
     mode: AppMode,
     repo: git2::Repository,
-    traces: Vec<Trace>,
-    rx: Option<std::sync::mpsc::Receiver<Trace>>,
     ui_state: UiState,
 }
 
@@ -75,14 +77,12 @@ impl GitDebugApp {
                 let oid = git::resolve_commit(&repo, commit_spec.as_deref())?;
                 Some(oid)
             }
-            AppMode::Trace => None,
+            AppMode::Trace { .. } => None,
         };
 
         Ok(Self {
             repo,
             mode,
-            traces: Vec::new(),
-            rx: None,
             ui_state: UiState {
                 history_start: resolved_commit,
                 selected_commit: resolved_commit,
@@ -96,14 +96,7 @@ impl GitDebugApp {
 }
 
 pub fn show_repo_viewer(mode: AppMode, repo_source: RepoSource) -> anyhow::Result<()> {
-    let (tx, rx) = std::sync::mpsc::channel::<Trace>();
-
-    if matches!(mode, AppMode::Trace) {
-        server::start(tx, repo_source.as_ref());
-    }
-
     let app = GitDebugApp {
-        rx: Some(rx),
         ..GitDebugApp::new(mode, repo_source)?
     };
 
