@@ -153,7 +153,7 @@ pub fn handle_sync(
 
             for pr in &prs {
                 let (existing_change_id, _) =
-                    josh_changes::parse_change_meta(&pr.head_commit_message);
+                    josh_core::trailers::parse_change_meta(&pr.head_commit_message);
 
                 let head_oid = match git2::Oid::from_str(&pr.head_oid) {
                     Ok(o) => o,
@@ -279,7 +279,8 @@ pub fn handle_sync(
             let open_change_ids: std::collections::HashSet<String> = prs
                 .iter()
                 .map(|pr| {
-                    let (existing_id, _) = josh_changes::parse_change_meta(&pr.head_commit_message);
+                    let (existing_id, _) =
+                        josh_core::trailers::parse_change_meta(&pr.head_commit_message);
                     existing_id
                         .unwrap_or_else(|| format!("{}/{}/pull/{}", owner, repo_name, pr.number))
                 })
@@ -402,7 +403,8 @@ pub fn handle_sync(
                 let mut total_posted = 0usize;
                 let mut total_votes_posted = 0usize;
                 for pr in &prs {
-                    let (existing_id, _) = josh_changes::parse_change_meta(&pr.head_commit_message);
+                    let (existing_id, _) =
+                        josh_core::trailers::parse_change_meta(&pr.head_commit_message);
                     let change_id = existing_id
                         .unwrap_or_else(|| format!("{}/{}/pull/{}", owner, repo_name, pr.number));
 
@@ -476,7 +478,7 @@ pub fn handle_sync(
             Ok::<_, anyhow::Error>(())
         })?;
     } else {
-        let changes = josh_changes::sync_changes(repo, head.id(), base_oid)?;
+        let changes = josh_changes::sync_changes(repo, transaction, head.id(), base_oid)?;
         if changes.is_empty() {
             println!("No local changes found.");
             return Ok(());

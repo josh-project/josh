@@ -128,4 +128,6 @@ pub enum Op {
     Subtract(Filter, Filter),
     Exclude(Filter),
     Pin(Filter),
+
+    Downstack(LazyRef),
 }

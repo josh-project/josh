@@ -208,6 +208,12 @@ impl Filter {
         })
     }
 
+    /// Chain a downstack filter that rebuilds the stack from `base` to the input commit,
+    /// dropping intermediate commits whose paths are disjoint from the tip's changes.
+    pub fn downstack(self, base: git2::Oid) -> Filter {
+        self.chain(to_filter(Op::Downstack(LazyRef::Resolved(base))))
+    }
+
     /// Chain a message filter that transforms commit messages
     pub fn message(self, m: &str) -> Filter {
         self.chain(to_filter(Op::Message(

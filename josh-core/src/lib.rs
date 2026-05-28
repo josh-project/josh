@@ -24,6 +24,7 @@ pub mod history;
 pub mod housekeeping;
 pub mod link;
 pub mod submodules;
+pub mod trailers;
 
 #[derive(
     Clone, Hash, PartialEq, Eq, Copy, PartialOrd, Ord, Debug, serde::Serialize, serde::Deserialize,

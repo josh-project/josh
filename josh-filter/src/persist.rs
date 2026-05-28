@@ -477,6 +477,10 @@ impl InMemoryBuilder {
                 let params_tree = self.build_str_params(&[hook.as_ref()]);
                 push_tree_entries(&mut entries, [("hook", params_tree)]);
             }
+            Op::Downstack(lazy_ref) => {
+                let params_tree = self.build_str_params(&[lazy_ref.to_string().as_str()]);
+                push_tree_entries(&mut entries, [("downstack", params_tree)]);
+            }
             Op::Meta(meta, filter) => {
                 let mut meta_entries = Vec::new();
                 for (key, value) in meta.iter() {
@@ -1001,6 +1005,17 @@ fn from_tree2(repo: &git2::Repository, tree_oid: git2::Oid) -> anyhow::Result<Op
                 replacements.push((regex, replacement));
             }
             Ok(Op::RegexReplace(replacements))
+        }
+        "downstack" => {
+            let inner = repo.find_tree(entry.id())?;
+            let key_blob = repo.find_blob(
+                inner
+                    .get_name("0")
+                    .context("downstack: missing base ref")?
+                    .id(),
+            )?;
+            let key = std::str::from_utf8(key_blob.content())?;
+            Ok(Op::Downstack(LazyRef::parse(key)?))
         }
         "meta" => {
             let meta_tree = repo.find_tree(entry.id())?;
