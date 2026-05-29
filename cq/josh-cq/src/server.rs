@@ -89,17 +89,25 @@ fn open_transaction(repo_path: &Path, cache: &Arc<CacheStack>) -> Option<Transac
     }
 }
 
-/// Process a single actor event, returning the completion signal (if the event
-/// carried one) so the caller can fire it after the queue cycle runs. The signal
-/// is returned rather than fired here so it is always delivered, regardless of
-/// which path the event took.
+/// Outcome of processing a single actor event.
+struct EventOutcome {
+    /// Whether the queue cycle (evaluate→step) should run after this event.
+    /// Track adds a remote inline and needs no merge; Tick and Webhook do.
+    run_queue_cycle: bool,
+    /// Completion signal the event carried, fired after the queue cycle runs so
+    /// it is always delivered regardless of which path the event took.
+    done: Option<oneshot::Sender<()>>,
+}
+
+/// Process a single actor event, mutating `state` and reporting whether a queue
+/// cycle is warranted plus any completion signal to fire afterwards.
 async fn process_event(
     event: CqEvent,
     repo_path: &Path,
     cache: &Arc<CacheStack>,
     api: Option<&GithubApiConnection>,
     state: &mut CqActorState,
-) -> Option<oneshot::Sender<()>> {
+) -> EventOutcome {
     match event {
         CqEvent::Tick { done } => {
             tracing::info!("tick: running fetch");
@@ -108,7 +116,10 @@ async fn process_event(
             {
                 tracing::error!(error = ?e, "fetch failed");
             }
-            done
+            EventOutcome {
+                run_queue_cycle: true,
+                done,
+            }
         }
         CqEvent::Webhook(payload) => {
             if let Some(transaction) = open_transaction(repo_path, cache)
@@ -116,7 +127,10 @@ async fn process_event(
             {
                 tracing::error!(error = ?e, "webhook handling error");
             }
-            None
+            EventOutcome {
+                run_queue_cycle: true,
+                done: None,
+            }
         }
         CqEvent::Track { request, done } => {
             if let Some(transaction) = open_transaction(repo_path, cache) {
@@ -130,7 +144,10 @@ async fn process_event(
                     Err(e) => tracing::error!(error = ?e, "track task panicked"),
                 }
             }
-            Some(done)
+            EventOutcome {
+                run_queue_cycle: false,
+                done: Some(done),
+            }
         }
     }
 }
@@ -176,17 +193,14 @@ pub fn spawn_serve_task(
         };
 
         while let Some(event) = event_rx.recv().await {
-            // Track adds a remote inline and does not need a merge cycle;
-            // Tick and Webhook both fall through to run_queue_cycle.
-            let is_track = matches!(event, CqEvent::Track { .. });
+            let outcome =
+                process_event(event, &repo_path, &cache, api.as_deref(), &mut state).await;
 
-            let done = process_event(event, &repo_path, &cache, api.as_deref(), &mut state).await;
-
-            if !is_track {
+            if outcome.run_queue_cycle {
                 run_queue_cycle(&mut state, &repo_path, &cache, api.as_deref()).await;
             }
 
-            if let Some(tx) = done {
+            if let Some(tx) = outcome.done {
                 let _ = tx.send(());
             }
         }

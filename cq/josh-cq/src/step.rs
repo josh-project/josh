@@ -99,8 +99,6 @@ async fn close_pr_on_github(
     api: Option<&GithubApiConnection>,
     node_id: &str,
     merge_commit: &str,
-    _number: i64,
-    _title: &str,
 ) -> anyhow::Result<()> {
     let Some(api) = api else {
         return Ok(());
@@ -120,28 +118,19 @@ async fn handle_step(
     api: Option<&GithubApiConnection>,
     state: &mut CqActorState,
 ) -> anyhow::Result<()> {
-    let (repo_url, head_sha, base_branch, number, title) = {
-        let candidate = state
-            .get_candidate(node_id)
-            .context("candidate not found in state")?;
-        (
-            candidate.repo_url.clone(),
-            candidate.head_sha.clone(),
-            candidate.base_branch.clone(),
-            candidate.number,
-            candidate.title.clone(),
-        )
-    };
+    let candidate = state
+        .get_candidate(node_id)
+        .context("candidate not found in state")?
+        .clone();
 
     let node_id_owned = node_id.to_string();
-    let title_for_close = title.clone();
 
     let merge_commit: Option<String> = tokio::task::spawn_blocking(move || {
         let repo = transaction.repo();
         let (head_commit, _) = crate::layout::head_commit_and_tree(repo)?;
 
         // Find which tracked remote this PR belongs to.
-        let name = crate::layout::find_remote_by_url(repo, &repo_url)
+        let name = crate::layout::find_remote_by_url(repo, &candidate.repo_url)
             .context("Failed to list tracked remotes")?
             .map(|(name, _)| name)
             .context("No tracked remote found for PR")?;
@@ -154,13 +143,17 @@ async fn handle_step(
         let main_sha = main_oid.to_string();
         trace_commit(repo, main_oid, "remote main");
 
-        let pr_oid = git2::Oid::from_str(&head_sha)?;
+        let pr_oid = git2::Oid::from_str(&candidate.head_sha)?;
         if repo.find_commit(pr_oid).is_err() {
-            spawn_git_command(repo.path(), &["fetch", &repo_url, &head_sha], &[])?;
+            spawn_git_command(
+                repo.path(),
+                &["fetch", &candidate.repo_url, &candidate.head_sha],
+                &[],
+            )?;
         }
         trace_commit(repo, pr_oid, "PR head");
 
-        let merged_tree = match compute_merge_tree(repo, &main_sha, &head_sha) {
+        let merged_tree = match compute_merge_tree(repo, &main_sha, &candidate.head_sha) {
             Ok(tree) => tree,
             Err(_) => {
                 tracing::warn!(
@@ -171,15 +164,21 @@ async fn handle_step(
             }
         };
 
-        let message = format!("Merge PR #{}: {}", number, title);
-        let merge_commit = create_merge_commit(repo, &main_sha, &head_sha, &merged_tree, &message)?;
+        let message = format!("Merge PR #{}: {}", candidate.number, candidate.title);
+        let merge_commit =
+            create_merge_commit(repo, &main_sha, &candidate.head_sha, &merged_tree, &message)?;
         let merge_oid = merge_commit
             .parse::<git2::Oid>()
             .context("Failed to parse merge commit OID")?;
         trace_commit(repo, merge_oid, "merge");
 
         // Push the merge to the remote's main branch.
-        push_to_remote(repo, &repo_url, &merge_commit, &base_branch)?;
+        push_to_remote(
+            repo,
+            &candidate.repo_url,
+            &merge_commit,
+            &candidate.base_branch,
+        )?;
 
         // Map the merge back onto the metarepo and advance HEAD, so the metarepo
         // stays a faithful pre-image of every tracked remote.
@@ -210,7 +209,7 @@ async fn handle_step(
         }
     };
 
-    close_pr_on_github(api, node_id, &merge_commit, number, &title_for_close).await?;
+    close_pr_on_github(api, node_id, &merge_commit).await?;
 
     state.remove_candidate(node_id);
 

@@ -36,11 +36,12 @@ cq/
 │   │   ├── bin/josh-cq.rs   # CLI entry point
 │   │   ├── lib.rs           # module declarations
 │   │   ├── types.rs         # CqEvent, TrackRequest, UserAction
-│   │   ├── models.rs        # CandidatePr, CqActorState (+ methods)
+│   │   ├── models.rs        # CandidatePr, CqActorState (pure data + sync accessors)
 │   │   ├── server.rs        # HTTP router, spawn_serve_task (actor loop)
-│   │   ├── fetch.rs         # handle_fetch, API helpers
+│   │   ├── api.rs           # GitHub API wrappers (maintainers, checks, PRs by SHA)
+│   │   ├── fetch.rs         # handle_fetch
 │   │   ├── step.rs          # handle_step, select_candidate, run_queue_cycle
-│   │   ├── admission.rs     # process_pr_review, process_check_run
+│   │   ├── admission.rs     # admission-state construction + sync_required_checks
 │   │   ├── webhook.rs       # handle_webhook
 │   │   ├── track.rs         # handle_track
 │   │   ├── init.rs          # handle_init
@@ -64,9 +65,11 @@ The CQ binary (`josh-cq`) supports:
 
 The `serve` event loop uses an **actor model**. All input — webhook events, track
 requests, and periodic polling ticks — is sent through a single `mpsc` channel.
-A single `spawn_blocking` task processes events serially, mutating
-`CqActorState` without locks. No `state.clone()` — handler functions take
-`&mut CqActorState`.
+A single async actor task (`tokio::spawn`) processes events serially with
+`event_rx.recv().await`, mutating `CqActorState` without locks. No `state.clone()`
+— handler functions take `&mut CqActorState`. GraphQL calls are `.await`ed
+directly; blocking git2/`git` work inside a handler is offloaded to
+`spawn_blocking`.
 
 The queue cycle: **Fetch** → **Evaluate** → **Step** (merge) → repeat while
 admissible PRs remain.
@@ -102,25 +105,21 @@ Timer (10 min) → CqEvent::Tick            ─┘
 ### Actor loop (server.rs)
 
 ```rust
-tokio::task::spawn_blocking(move || {
+tokio::spawn(async move {
     let mut state = CqActorState { url_owner_map, ..Default::default() };
-    while let Some(event) = event_rx.blocking_recv() {
-        let transaction = /* open */;
-        match event {
-            CqEvent::Tick => {
-                // Fetch open PRs, then fall through to evaluate→step
-                if let Err(e) = handle_fetch(&transaction, api.as_deref(), &mut state) { ... }
-            }
-            CqEvent::Track(req) => {
-                // Add remote to metarepo; no merge needed
-                handle_track(...);
-            }
-            CqEvent::Webhook(payload) => {
-                // Update admission state, then fall through to evaluate→step
-                if let Err(e) = handle_webhook(&payload, &transaction, api.as_deref(), &mut state) { ... }
-            }
+    while let Some(event) = event_rx.recv().await {
+        // process_event matches on the event, opens a transaction, and runs the
+        // relevant handler (handle_fetch / handle_webhook / handle_track). It
+        // returns an EventOutcome: whether a queue cycle is warranted (true for
+        // Tick/Webhook, false for Track) plus any completion signal to fire.
+        let outcome = process_event(event, &repo_path, &cache, api.as_deref(), &mut state).await;
+
+        if outcome.run_queue_cycle {
+            run_queue_cycle(&mut state, &repo_path, &cache, api.as_deref()).await;
         }
-        run_queue_cycle(&mut state, &transaction, api.as_deref());
+        if let Some(tx) = outcome.done {
+            let _ = tx.send(()); // unblock the HTTP handler waiting on this event
+        }
     }
 });
 ```
@@ -134,11 +133,16 @@ tokio::task::spawn_blocking(move || {
 - `url_owner_map`: `HashMap<String, (String, String)>` — non-GitHub URL → (owner, name)
 - `closed_prs`: `HashSet<String>` — PRs closed via webhook, excluded from re-discovery
 
-Methods on `CqActorState`:
+Methods on `CqActorState` (pure, sync; in `models.rs`):
 - `resolve_owner_repo(&self, url) -> Option<(String, String)>` — try `parse_owner_repo`, fall back to `url_owner_map`
-- `get_or_fetch_admission(&mut self, url, api)` — lazy-populate required checks
-- `get_or_init_pr_admission(&mut self, node_id, url, api)` — init `AdmissionState` for a PR
+- `resolve_owner_repo_logged(&self, url)` — same, but logs a warning on failure
 - `upsert_candidate`, `remove_candidate`, `get_candidate`
+
+Admission-state construction lives in `admission.rs` as free functions taking
+`&mut CqActorState` (they call the GitHub API, which `models.rs` no longer does):
+- `get_or_fetch_admission(state, url, api)` — lazy-populate required checks
+- `get_or_init_pr_admission(state, node_id, url, api)` — init `AdmissionState` for a PR
+- `sync_required_checks(admission, required)` — reconcile checks, preserving results
 
 `AdmissionState` (in `josh-github-changes`):
 - `required_checks`: `BTreeMap<RequiredStatusCheck, bool>` — check name → passed
@@ -146,12 +150,15 @@ Methods on `CqActorState`:
 - `maintainers`: `HashSet<String>` — users with write access
 - `admissible()`: ≥1 maintainer approved, no changes requested, all required checks passed
 
-### API calls from sync context
+### API calls and blocking work
 
-The actor runs in `spawn_blocking` (sync context). All GraphQL calls go through:
+The actor loop is async, so GraphQL calls are simply `.await`ed:
 ```rust
-tokio::runtime::Handle::current().block_on(api.some_method(...))
+api.some_method(...).await
 ```
+Blocking git2/`git` work is offloaded with `tokio::task::spawn_blocking`. git2's
+`Repository` is `!Send`, so it is opened *inside* the closure via
+`transaction.repo()` rather than captured.
 
 `GithubApiConnection::from_environment()` resolves credentials from `GH_TOKEN` env var
 or the stored device-flow token. `GithubApiConnection::for_test(url)` creates an

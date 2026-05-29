@@ -11,9 +11,6 @@ pub(crate) struct CandidatePr {
     pub number: i64,
     pub repo_url: String,
     pub head_sha: String,
-    /// Kept for future use (e.g., logging / status display).
-    #[allow(dead_code)]
-    pub head_branch: String,
     pub base_sha: String,
     pub base_branch: String,
     pub title: String,
@@ -27,7 +24,6 @@ impl CandidatePr {
             number: pr.number,
             repo_url: repo_url.to_string(),
             head_sha: pr.head_sha.clone(),
-            head_branch: pr.head_branch.clone(),
             base_sha: pr.base_sha.clone(),
             base_branch: pr.base_branch.clone(),
             title: pr.title.clone(),
@@ -41,7 +37,6 @@ impl CandidatePr {
             number: pr.number,
             repo_url: repo_url.to_string(),
             head_sha: pr.head.sha(),
-            head_branch: pr.head.reference(),
             base_sha: pr.base.sha(),
             base_branch: pr.base.reference(),
             title: pr.title.clone(),
