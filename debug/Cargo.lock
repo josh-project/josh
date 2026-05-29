@@ -1069,7 +1069,6 @@ dependencies = [
  "git2 0.20.4",
  "reqwest",
  "serde",
- "tracing",
 ]
 
 [[package]]

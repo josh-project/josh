@@ -18,6 +18,8 @@ axum.workspace = true
 tracing.workspace = true
 tracing-subscriber = { workspace = true, features = ["env-filter"] }
 
+git-tree-trace = { path = "../../debug/git-tree-trace" }
+
 josh-core.workspace = true
 josh-github-webhooks.workspace = true
 josh-link.workspace = true

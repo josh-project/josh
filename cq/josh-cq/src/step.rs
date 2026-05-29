@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 
 use anyhow::Context;
-
+use git_tree_trace::trace_commit;
 use josh_core::git::{spawn_git_command, spawn_git_command_stdout};
 use josh_github_graphql::connection::GithubApiConnection;
 use josh_link::make_signature;
@@ -188,9 +188,13 @@ async fn handle_step(
         let main_sha = main_sha.context("No link file found for remote")?;
         let link_path = link_path.context("No link file found for remote")?;
 
+        let oid = git2::Oid::from_str(&head_sha)?;
+
         if repo.find_commit(git2::Oid::from_str(&head_sha)?).is_err() {
             spawn_git_command(repo.path(), &["fetch", &repo_url, &head_sha], &[])?;
         }
+
+        trace_commit(repo, oid, "PR head");
 
         let merged_tree = match compute_merge_tree(repo, &main_sha, &head_sha) {
             Ok(tree) => tree,
@@ -211,6 +215,9 @@ async fn handle_step(
         let merge_oid = merge_commit
             .parse::<git2::Oid>()
             .context("Failed to parse merge commit OID")?;
+
+        trace_commit(repo, oid, "Merge OID");
+
         let signature = make_signature(repo)?;
         update_metarepo_links(
             repo,
