@@ -156,7 +156,7 @@ pub fn spawn_serve_task(
                             }
                         };
                     match tokio::task::spawn_blocking(move || {
-                        handle_track(&request.url, &request.id, &request.mode, &transaction)
+                        handle_track(&request.url, &request.id, &transaction)
                     })
                     .await
                     {

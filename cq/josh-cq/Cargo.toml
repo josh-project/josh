@@ -22,7 +22,6 @@ git-tree-trace = { path = "../../debug/git-tree-trace" }
 
 josh-core.workspace = true
 josh-github-webhooks.workspace = true
-josh-link.workspace = true
 josh-test-webhook-client.workspace = true
 josh-github-graphql.workspace = true
 josh-github-changes.workspace = true

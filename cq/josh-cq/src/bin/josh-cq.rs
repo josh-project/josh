@@ -30,9 +30,6 @@ struct TrackArgs {
     url: String,
     /// ID for this remote
     id: String,
-    /// Link mode: embedded, snapshot, or pointer (defaults to snapshot)
-    #[arg(long = "mode", default_value = "snapshot")]
-    mode: String,
 }
 
 #[derive(clap::Parser)]
@@ -137,8 +134,7 @@ async fn main() -> anyhow::Result<()> {
         Commands::Serve(args) => run_serve(args, cli.data_dir.as_deref()).await?,
         Commands::Track(ref args) => {
             let (_repo_path, _cache, transaction) = open_repo(cli.data_dir.as_deref())?;
-            let action =
-                josh_cq::track::handle_track(&args.url, &args.id, &args.mode, &transaction)?;
+            let action = josh_cq::track::handle_track(&args.url, &args.id, &transaction)?;
             match action {
                 josh_cq::types::UserAction::Message(m) => println!("{m}"),
             }

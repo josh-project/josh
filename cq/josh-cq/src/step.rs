@@ -1,10 +1,7 @@
-use std::path::PathBuf;
-
 use anyhow::Context;
 use git_tree_trace::trace_commit;
 use josh_core::git::{spawn_git_command, spawn_git_command_stdout};
 use josh_github_graphql::connection::GithubApiConnection;
-use josh_link::make_signature;
 
 use crate::models::CqActorState;
 
@@ -15,16 +12,16 @@ use crate::models::CqActorState;
 /// `admissible()`. Returns just the id rather than cloning the full struct.
 fn select_candidate(state: &CqActorState) -> Option<String> {
     for (node_id, candidate) in &state.candidates {
-        if let Some(admission) = state.pr_admissions.get(node_id) {
-            if admission.admissible() {
-                tracing::info!(
-                    pr = %node_id,
-                    number = candidate.number,
-                    repo = %candidate.repo_url,
-                    "selected admissible PR"
-                );
-                return Some(node_id.clone());
-            }
+        if let Some(admission) = state.pr_admissions.get(node_id)
+            && admission.admissible()
+        {
+            tracing::info!(
+                pr = %node_id,
+                number = candidate.number,
+                repo = %candidate.repo_url,
+                "selected admissible PR"
+            );
+            return Some(node_id.clone());
         }
     }
     None
@@ -80,7 +77,10 @@ fn create_merge_commit(
     Ok(output.trim().to_string())
 }
 
-/// Push the merge commit to the remote's base branch.
+/// Force-push the merge commit to the remote's base branch.
+///
+/// The push is forced because the metarepo is the source of truth: anything
+/// pushed to the remote outside the queue is overwritten.
 fn push_to_remote(
     repo: &git2::Repository,
     remote_url: &str,
@@ -88,36 +88,8 @@ fn push_to_remote(
     base_branch: &str,
 ) -> anyhow::Result<()> {
     let target_ref = format!("refs/heads/{}", base_branch);
-    let refspec = format!("{}:{}", merge_commit, target_ref);
+    let refspec = format!("+{}:{}", merge_commit, target_ref);
     spawn_git_command(repo.path(), &["push", remote_url, &refspec], &[])?;
-    Ok(())
-}
-
-/// Update `.link.josh` in the metarepo and set HEAD to the resulting commit.
-fn update_metarepo_links(
-    repo: &git2::Repository,
-    transaction: &josh_core::cache::Transaction,
-    head_commit: &git2::Commit,
-    link_path: PathBuf,
-    merge_oid: git2::Oid,
-    signature: &git2::Signature,
-) -> anyhow::Result<()> {
-    match josh_link::update_links(
-        repo,
-        transaction,
-        head_commit,
-        vec![(link_path, merge_oid)],
-        signature,
-    )? {
-        Some(result) => {
-            repo.head()?
-                .set_target(result.commit_with_updates, "josh-cq merge")
-                .context("Failed to update HEAD")?;
-        }
-        None => {
-            tracing::debug!("link file already up to date");
-        }
-    }
     Ok(())
 }
 
@@ -140,7 +112,8 @@ async fn close_pr_on_github(
 }
 
 /// Merge an admissible PR: compute merge locally, push to remote main,
-/// update `.link.josh`, close the PR, and remove from the candidate pool.
+/// unapply the merge back onto the metarepo, close the PR, and remove from the
+/// candidate pool.
 async fn handle_step(
     node_id: &str,
     transaction: josh_core::cache::Transaction,
@@ -172,29 +145,27 @@ async fn handle_step(
             .context("Failed to peel HEAD to commit")?;
         let head_tree = head_commit.tree().context("Failed to get HEAD tree")?;
 
-        let link_files = josh_core::link::find_link_files(repo, &head_tree)
-            .context("Failed to find link files")?;
+        // Find which tracked remote this PR belongs to.
+        let name = crate::layout::list_tracked_remotes(repo, &head_tree)
+            .context("Failed to list tracked remotes")?
+            .into_iter()
+            .find(|(_, meta)| meta.url == repo_url)
+            .map(|(name, _)| name)
+            .context("No tracked remote found for PR")?;
 
-        let mut main_sha = None;
-        let mut link_path = None;
-        for (path, filter) in &link_files {
-            if filter.get_meta("remote").as_deref() == Some(repo_url.as_str()) {
-                main_sha = filter.get_meta("commit");
-                link_path = Some(path.clone());
-                break;
-            }
-        }
+        // The remote's current main is the metarepo filtered through its workspace.
+        let filter = josh_core::filter::parse(&crate::layout::workspace_filter_spec(&name))
+            .context("Failed to parse workspace filter")?;
+        let main_oid = josh_core::filter::apply_to_commit(filter, &head_commit, &transaction)
+            .context("Failed to derive remote main")?;
+        let main_sha = main_oid.to_string();
+        trace_commit(repo, main_oid, "remote main");
 
-        let main_sha = main_sha.context("No link file found for remote")?;
-        let link_path = link_path.context("No link file found for remote")?;
-
-        let oid = git2::Oid::from_str(&head_sha)?;
-
-        if repo.find_commit(git2::Oid::from_str(&head_sha)?).is_err() {
+        let pr_oid = git2::Oid::from_str(&head_sha)?;
+        if repo.find_commit(pr_oid).is_err() {
             spawn_git_command(repo.path(), &["fetch", &repo_url, &head_sha], &[])?;
         }
-
-        trace_commit(repo, oid, "PR head");
+        trace_commit(repo, pr_oid, "PR head");
 
         let merged_tree = match compute_merge_tree(repo, &main_sha, &head_sha) {
             Ok(tree) => tree,
@@ -209,24 +180,30 @@ async fn handle_step(
 
         let message = format!("Merge PR #{}: {}", number, title);
         let merge_commit = create_merge_commit(repo, &main_sha, &head_sha, &merged_tree, &message)?;
-
-        push_to_remote(repo, &repo_url, &merge_commit, &base_branch)?;
-
         let merge_oid = merge_commit
             .parse::<git2::Oid>()
             .context("Failed to parse merge commit OID")?;
+        trace_commit(repo, merge_oid, "merge");
 
-        trace_commit(repo, oid, "Merge OID");
+        // Push the merge to the remote's main branch.
+        push_to_remote(repo, &repo_url, &merge_commit, &base_branch)?;
 
-        let signature = make_signature(repo)?;
-        update_metarepo_links(
-            repo,
+        // Map the merge back onto the metarepo and advance HEAD, so the metarepo
+        // stays a faithful pre-image of every tracked remote.
+        let new_metarepo = josh_core::history::unapply_filter(
             &transaction,
-            &head_commit,
-            link_path,
+            filter,
+            head_commit.id(),
+            main_oid,
             merge_oid,
-            &signature,
-        )?;
+            josh_core::history::OrphansMode::Keep,
+            None,
+        )
+        .context("Failed to unapply merge onto metarepo")?;
+        repo.head()?
+            .set_target(new_metarepo, "josh-cq merge")
+            .context("Failed to update HEAD")?;
+        trace_commit(repo, new_metarepo, "metarepo after merge");
 
         Ok::<_, anyhow::Error>(Some(merge_commit))
     })

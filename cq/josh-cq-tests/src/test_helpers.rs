@@ -38,7 +38,6 @@ impl TestHarness {
         let body = serde_json::json!({
             "url": url,
             "id": "test-remote",
-            "mode": "snapshot",
         });
         let client = reqwest::Client::new();
         let resp = client

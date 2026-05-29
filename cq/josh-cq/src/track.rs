@@ -1,18 +1,20 @@
+use std::path::Path;
+
 use anyhow::Context;
+use git_tree_trace::trace_commit;
 
 use josh_core::git::spawn_git_command;
-use josh_link::make_signature;
 
+use crate::layout::{self, RemoteMeta};
 use crate::types::UserAction;
+use crate::util::make_signature;
 
-pub fn default_mode() -> String {
-    "snapshot".to_string()
-}
+/// File mode for a regular (non-executable) blob.
+const BLOB_MODE: i32 = 0o100644;
 
 pub fn handle_track(
     url: &str,
     id: &str,
-    mode: &str,
     transaction: &josh_core::cache::Transaction,
 ) -> anyhow::Result<UserAction> {
     let repo = transaction.repo();
@@ -24,8 +26,7 @@ pub fn handle_track(
         .context("Failed to find FETCH_HEAD")?;
     let fetched_commit = fetch_head_ref
         .peel_to_commit()
-        .context("Failed to peel FETCH_HEAD to commit")?
-        .id();
+        .context("Failed to peel FETCH_HEAD to commit")?;
 
     let head_ref = repo.head().context("Failed to get HEAD")?;
     let head_commit = head_ref
@@ -35,36 +36,71 @@ pub fn handle_track(
 
     let signature = make_signature(repo)?;
 
-    let link_mode = josh_core::filter::LinkMode::parse(mode)
-        .with_context(|| format!("Invalid link mode: '{}'", mode))?;
+    // 1) Filter the fetched remote history under `remotes/<id>/contents`,
+    //    preserving its commit history (kept reachable as a merge parent below).
+    let prefix_filter = josh_core::filter::parse(&layout::contents_prefix_filter_spec(id))
+        .context("Failed to parse prefix filter")?;
+    let prefixed_oid =
+        josh_core::filter::apply_to_commit(prefix_filter, &fetched_commit, transaction)
+            .context("Failed to prefix remote contents")?;
+    let prefixed_commit = repo
+        .find_commit(prefixed_oid)
+        .context("Failed to find prefixed commit")?;
+    let prefixed_tree = prefixed_commit
+        .tree()
+        .context("Failed to get prefixed tree")?;
+    trace_commit(repo, prefixed_oid, "contents import");
 
-    let link_path = std::path::Path::new("remotes").join(id).join("link");
-    let tree_oid = josh_link::prepare_link_add(
-        transaction,
-        &link_path,
-        url,
-        None,
-        "HEAD",
-        fetched_commit,
-        &head_tree,
-        link_mode,
-    )?
-    .into_tree_oid();
+    // 2) Overlay the prefixed contents onto the current metarepo tree, then add
+    //    the workspace.josh and remote.json metadata files.
+    let overlaid_oid =
+        josh_core::filter::tree::overlay(transaction, head_tree.id(), prefixed_tree.id())
+            .context("Failed to overlay contents")?;
+    let overlaid_tree = repo
+        .find_tree(overlaid_oid)
+        .context("Failed to find overlaid tree")?;
 
-    let tree = repo
-        .find_tree(tree_oid)
-        .context("Failed to find tree with link")?;
+    let workspace_blob = repo
+        .blob(layout::workspace_josh_content(id).as_bytes())
+        .context("Failed to write workspace.josh blob")?;
+    let with_ws = josh_core::filter::tree::insert(
+        repo,
+        &overlaid_tree,
+        Path::new(&layout::workspace_josh_path(id)),
+        workspace_blob,
+        BLOB_MODE,
+    )
+    .context("Failed to insert workspace.josh")?;
 
+    let meta = RemoteMeta {
+        url: url.to_string(),
+        ref_: "HEAD".to_string(),
+    };
+    let meta_blob = repo
+        .blob(serde_json::to_vec_pretty(&meta)?.as_slice())
+        .context("Failed to write remote.json blob")?;
+    let final_tree = josh_core::filter::tree::insert(
+        repo,
+        &with_ws,
+        Path::new(&layout::remote_meta_path(id)),
+        meta_blob,
+        BLOB_MODE,
+    )
+    .context("Failed to insert remote.json")?;
+
+    // 3) Commit as a merge of the current metarepo HEAD and the imported
+    //    remote history, so the remote's commits stay reachable.
     let commit = repo
         .commit(
             None,
             &signature,
             &signature,
             &format!("Track remote: {}", id),
-            &tree,
-            &[&head_commit],
+            &final_tree,
+            &[&head_commit, &prefixed_commit],
         )
-        .context("Failed to create final commit")?;
+        .context("Failed to create track commit")?;
+    trace_commit(repo, commit, "track merge");
 
     repo.head()?
         .set_target(commit, "josh-cq track")

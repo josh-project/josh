@@ -1,6 +1,6 @@
 use anyhow::Context;
 
-use josh_link::make_signature;
+use crate::util::make_signature;
 
 pub fn handle_init(transaction: &josh_core::cache::Transaction) -> anyhow::Result<String> {
     let repo = transaction.repo();

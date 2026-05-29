@@ -1,5 +1,4 @@
 use std::collections::BTreeSet;
-use std::path::PathBuf;
 
 use anyhow::Context;
 
@@ -84,75 +83,39 @@ pub(crate) async fn handle_fetch(
     api: Option<&GithubApiConnection>,
     state: &mut CqActorState,
 ) -> anyhow::Result<()> {
-    let remotes: Vec<(PathBuf, String, String)> = tokio::task::spawn_blocking(move || {
+    // Enumerate tracked remotes from the metarepo and fetch their objects so
+    // PR head commits are available locally. The remote's main is derived from
+    // the metarepo (see step.rs), so nothing is written back here.
+    let remotes: Vec<String> = tokio::task::spawn_blocking(move || {
         let repo = transaction.repo();
-        let head_commit = repo
+        let head_tree = repo
             .head()
             .context("Failed to get HEAD")?
             .peel_to_commit()
-            .context("Failed to peel HEAD to commit")?;
-        let head_tree = head_commit.tree().context("Failed to get HEAD tree")?;
+            .context("Failed to peel HEAD to commit")?
+            .tree()
+            .context("Failed to get HEAD tree")?;
 
-        let link_files = josh_core::link::find_link_files(repo, &head_tree)
-            .context("Failed to find link files")?;
+        let tracked = crate::layout::list_tracked_remotes(repo, &head_tree)
+            .context("Failed to list tracked remotes")?;
 
-        let mut remotes: Vec<(PathBuf, String, String)> = Vec::new();
-        for (path, filter) in &link_files {
-            if let (Some(remote), Some(commit)) =
-                (filter.get_meta("remote"), filter.get_meta("commit"))
-            {
-                remotes.push((path.clone(), remote, commit));
-            }
-        }
-
-        if remotes.is_empty() {
+        if tracked.is_empty() {
             tracing::info!("no tracked remotes found");
-            return Ok::<_, anyhow::Error>(remotes);
+            return Ok::<_, anyhow::Error>(Vec::new());
         }
 
-        let signature = josh_link::make_signature(repo)?;
-        let mut links_to_update: Vec<(PathBuf, git2::Oid)> = Vec::new();
-
-        for (path, url, current_commit) in &remotes {
-            spawn_git_command(repo.path(), &["fetch", url.as_str()], &[])
-                .with_context(|| format!("Failed to fetch from {}", url))?;
-
-            let refs = crate::remote::list_refs(url)
-                .with_context(|| format!("Failed to list refs for {}", url))?;
-
-            if let Some(head_oid) = refs.get("HEAD") {
-                if head_oid.to_string() != *current_commit {
-                    links_to_update.push((path.clone(), *head_oid));
-                }
-            }
+        let mut urls = Vec::with_capacity(tracked.len());
+        for (_, meta) in &tracked {
+            spawn_git_command(repo.path(), &["fetch", meta.url.as_str()], &[])
+                .with_context(|| format!("Failed to fetch from {}", meta.url))?;
+            urls.push(meta.url.clone());
         }
 
-        if !links_to_update.is_empty() {
-            let count = links_to_update.len();
-            match josh_link::update_links(
-                repo,
-                &transaction,
-                &head_commit,
-                links_to_update,
-                &signature,
-            )? {
-                Some(result) => {
-                    repo.head()?
-                        .set_target(result.commit_with_updates, "josh-cq fetch")
-                        .context("Failed to update HEAD")?;
-                }
-                None => {
-                    tracing::debug!("link files already up to date");
-                }
-            }
-            tracing::info!(count, "updated link file(s)");
-        }
-
-        Ok::<_, anyhow::Error>(remotes)
+        Ok::<_, anyhow::Error>(urls)
     })
     .await??;
 
-    for (_, url, _) in &remotes {
+    for url in &remotes {
         let (owner, repo_name) = match state.resolve_owner_repo(url) {
             Some(parts) => parts,
             None => {
@@ -174,6 +137,20 @@ pub(crate) async fn handle_fetch(
             }
         };
 
+        // Reconcile required checks against the current rulesets. A PR's
+        // admission (and its required-check set) may have been initialized from
+        // a webhook before a ruleset existed; tick is the reconciliation point.
+        let required = match fetch_required_checks(api, &owner, &repo_name).await {
+            Ok(checks) => {
+                state.admission.insert(url.clone(), checks.clone());
+                Some(checks)
+            }
+            Err(e) => {
+                tracing::warn!(url = %url, error = ?e, "failed to refresh required checks");
+                None
+            }
+        };
+
         for pr in &prs {
             if state.closed_prs.contains(&pr.node_id) {
                 continue;
@@ -192,6 +169,22 @@ pub(crate) async fn handle_fetch(
             state
                 .get_or_init_pr_admission(&pr.node_id, url, Some(api))
                 .await;
+
+            // Bring the PR's required checks in line with the current rulesets,
+            // preserving already-known pass/fail results.
+            if let Some(required) = &required
+                && let Some(admission) = state.pr_admissions.get_mut(&pr.node_id)
+            {
+                admission
+                    .required_checks
+                    .retain(|c, _| required.contains(c));
+                for check in required {
+                    admission
+                        .required_checks
+                        .entry(check.clone())
+                        .or_insert(false);
+                }
+            }
 
             match api.get_pr_reviews(&owner, &repo_name, pr.number).await {
                 Ok(reviews) => {

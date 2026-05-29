@@ -39,12 +39,14 @@ pub(crate) async fn handle_webhook(
             .tree()
             .context("Failed to get HEAD tree")?;
 
-        let link_files = josh_core::link::find_link_files(repo, &head_tree)
-            .context("Failed to find link files")?;
+        let remotes = crate::layout::list_tracked_remotes(repo, &head_tree)
+            .context("Failed to list tracked remotes")?;
 
-        Ok::<_, anyhow::Error>(link_files.iter().any(|(_, filter)| {
-            filter.get_meta("remote").as_deref() == Some(clone_url_for_closure.as_str())
-        }))
+        Ok::<_, anyhow::Error>(
+            remotes
+                .iter()
+                .any(|(_, meta)| meta.url == clone_url_for_closure),
+        )
     })
     .await??;
 

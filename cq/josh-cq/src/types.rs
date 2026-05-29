@@ -9,8 +9,6 @@ pub(crate) const GH_TOKEN_ENV: &str = "GH_TOKEN";
 pub struct TrackRequest {
     pub url: String,
     pub id: String,
-    #[serde(default = "crate::track::default_mode")]
-    pub mode: String,
 }
 
 pub enum CqEvent {
