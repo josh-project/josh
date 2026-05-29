@@ -1,14 +1,14 @@
 use std::collections::HashMap;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use axum::extract::State;
 use axum::http::StatusCode;
 use axum::response::IntoResponse;
 use axum::routing::post;
-use tokio::sync::mpsc;
+use tokio::sync::{mpsc, oneshot};
 
-use josh_core::cache::{CacheStack, TransactionContext};
+use josh_core::cache::{CacheStack, Transaction, TransactionContext};
 use josh_github_graphql::connection::GithubApiConnection;
 
 use crate::fetch::handle_fetch;
@@ -86,6 +86,63 @@ fn handle_action(action: UserAction) {
     }
 }
 
+/// Open a transaction on the metarepo, logging and returning `None` on failure.
+fn open_transaction(repo_path: &Path, cache: &Arc<CacheStack>) -> Option<Transaction> {
+    match TransactionContext::new(repo_path, cache.clone()).open(None) {
+        Ok(t) => Some(t),
+        Err(e) => {
+            tracing::error!(error = ?e, "failed to open transaction");
+            None
+        }
+    }
+}
+
+/// Process a single actor event, returning the completion signal (if the event
+/// carried one) so the caller can fire it after the queue cycle runs. The signal
+/// is returned rather than fired here so it is always delivered, regardless of
+/// which path the event took.
+async fn process_event(
+    event: CqEvent,
+    repo_path: &Path,
+    cache: &Arc<CacheStack>,
+    api: Option<&GithubApiConnection>,
+    state: &mut CqActorState,
+) -> Option<oneshot::Sender<()>> {
+    match event {
+        CqEvent::Tick { done } => {
+            tracing::info!("tick: running fetch");
+            if let Some(transaction) = open_transaction(repo_path, cache)
+                && let Err(e) = handle_fetch(transaction, api, state).await
+            {
+                tracing::error!(error = ?e, "fetch failed");
+            }
+            done
+        }
+        CqEvent::Webhook(payload) => {
+            if let Some(transaction) = open_transaction(repo_path, cache)
+                && let Err(e) = handle_webhook(&payload, transaction, api, state).await
+            {
+                tracing::error!(error = ?e, "webhook handling error");
+            }
+            None
+        }
+        CqEvent::Track { request, done } => {
+            if let Some(transaction) = open_transaction(repo_path, cache) {
+                match tokio::task::spawn_blocking(move || {
+                    handle_track(&request.url, &request.id, &transaction)
+                })
+                .await
+                {
+                    Ok(Ok(action)) => handle_action(action),
+                    Ok(Err(e)) => tracing::error!(error = ?e, "track failed"),
+                    Err(e) => tracing::error!(error = ?e, "track task panicked"),
+                }
+            }
+            Some(done)
+        }
+    }
+}
+
 pub fn spawn_serve_task(
     repo_path: PathBuf,
     cache: Arc<CacheStack>,
@@ -127,67 +184,17 @@ pub fn spawn_serve_task(
         };
 
         while let Some(event) = event_rx.recv().await {
-            let mut tick_done = None;
-            match event {
-                CqEvent::Tick { done } => {
-                    tick_done = done;
-                    tracing::info!("tick: running fetch");
-                    let transaction =
-                        match TransactionContext::new(&repo_path, cache.clone()).open(None) {
-                            Ok(t) => t,
-                            Err(e) => {
-                                tracing::error!(error = ?e, "failed to open transaction");
-                                continue;
-                            }
-                        };
-                    if let Err(e) = handle_fetch(transaction, api.as_deref(), &mut state).await {
-                        tracing::error!(error = ?e, "fetch failed");
-                        continue;
-                    }
-                }
-                CqEvent::Track { request, done } => {
-                    let transaction =
-                        match TransactionContext::new(&repo_path, cache.clone()).open(None) {
-                            Ok(t) => t,
-                            Err(e) => {
-                                tracing::error!(error = ?e, "failed to open transaction");
-                                let _ = done.send(());
-                                continue;
-                            }
-                        };
-                    match tokio::task::spawn_blocking(move || {
-                        handle_track(&request.url, &request.id, &transaction)
-                    })
-                    .await
-                    {
-                        Ok(Ok(action)) => handle_action(action),
-                        Ok(Err(e)) => tracing::error!(error = ?e, "track failed"),
-                        Err(e) => tracing::error!(error = ?e, "track task panicked"),
-                    }
-                    let _ = done.send(());
-                }
-                CqEvent::Webhook(payload) => {
-                    let transaction =
-                        match TransactionContext::new(&repo_path, cache.clone()).open(None) {
-                            Ok(t) => t,
-                            Err(e) => {
-                                tracing::error!(error = ?e, "failed to open transaction");
-                                continue;
-                            }
-                        };
-                    if let Err(e) =
-                        handle_webhook(&payload, transaction, api.as_deref(), &mut state).await
-                    {
-                        tracing::error!(error = ?e, "webhook handling error");
-                        continue;
-                    }
-                }
+            // Track adds a remote inline and does not need a merge cycle;
+            // Tick and Webhook both fall through to run_queue_cycle.
+            let is_track = matches!(event, CqEvent::Track { .. });
+
+            let done = process_event(event, &repo_path, &cache, api.as_deref(), &mut state).await;
+
+            if !is_track {
+                run_queue_cycle(&mut state, &repo_path, &cache, api.as_deref()).await;
             }
 
-            // Tick and Webhook both fall through here; Track does not.
-            run_queue_cycle(&mut state, &repo_path, &cache, api.as_deref()).await;
-
-            if let Some(tx) = tick_done {
+            if let Some(tx) = done {
                 let _ = tx.send(());
             }
         }
