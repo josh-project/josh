@@ -4,8 +4,8 @@ use josh_github_graphql::connection::GithubApiConnection;
 use josh_github_webhooks::webhook_server::WebhookPayload;
 use josh_github_webhooks::webhook_types;
 
-use crate::admission::{process_check_run, process_pr_review};
-use crate::fetch::lookup_open_prs_by_sha;
+use crate::admission::get_or_init_pr_admission;
+use crate::api::lookup_open_prs_by_sha;
 use crate::models::{CandidatePr, CqActorState};
 
 fn webhook_repository(payload: &WebhookPayload) -> &webhook_types::Repository {
@@ -63,19 +63,8 @@ pub(crate) async fn handle_webhook(
             match &e.details {
                 webhook_types::PullRequestEventDetails::Opened
                 | webhook_types::PullRequestEventDetails::Synchronize { .. } => {
-                    state.upsert_candidate(CandidatePr {
-                        node_id: pr.node_id.clone(),
-                        number: pr.number,
-                        repo_url: clone_url.clone(),
-                        head_sha: pr.head.sha(),
-                        head_branch: pr.head.reference(),
-                        base_sha: pr.base.sha(),
-                        base_branch: pr.base.reference(),
-                        title: pr.title.clone(),
-                    });
-                    state
-                        .get_or_init_pr_admission(&pr.node_id, &clone_url, api)
-                        .await;
+                    state.upsert_candidate(CandidatePr::from_webhook_pr(&clone_url, pr));
+                    get_or_init_pr_admission(state, &pr.node_id, &clone_url, api).await;
                 }
                 webhook_types::PullRequestEventDetails::Closed => {
                     state.remove_candidate(&pr.node_id);
@@ -95,14 +84,22 @@ pub(crate) async fn handle_webhook(
         }
 
         WebhookPayload::PullRequestReview(e) => {
-            process_pr_review(state, &e.pull_request.node_id, e, &clone_url, api).await;
+            if let Some(admission) =
+                get_or_init_pr_admission(state, &e.pull_request.node_id, &clone_url, api).await
+            {
+                admission.process_pr_review_events(std::slice::from_ref(e));
+            }
         }
 
         WebhookPayload::CheckRun(e) => {
             let pr_ids =
                 lookup_open_prs_by_sha(api, &clone_url, &e.check_run.head_sha, state).await;
             for pr_id in pr_ids {
-                process_check_run(state, &pr_id, e, &clone_url, api).await;
+                if let Some(admission) =
+                    get_or_init_pr_admission(state, &pr_id, &clone_url, api).await
+                {
+                    admission.process_check_run_events(std::slice::from_ref(e));
+                }
             }
         }
 

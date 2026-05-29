@@ -1,11 +1,9 @@
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
 use josh_github_changes::admission::AdmissionState;
-use josh_github_graphql::connection::GithubApiConnection;
+use josh_github_graphql::operations::pull_request::OpenPr;
 use josh_github_graphql::operations::repo::RequiredStatusCheck;
-
-use crate::fetch::{fetch_maintainers, fetch_required_checks};
-use crate::types::GH_TOKEN_ENV;
+use josh_github_webhooks::webhook_types;
 
 #[derive(Debug, Clone)]
 pub(crate) struct CandidatePr {
@@ -19,6 +17,36 @@ pub(crate) struct CandidatePr {
     pub base_sha: String,
     pub base_branch: String,
     pub title: String,
+}
+
+impl CandidatePr {
+    /// Build a candidate from a GraphQL open-PR discovered during fetch.
+    pub(crate) fn from_open_pr(repo_url: &str, pr: &OpenPr) -> Self {
+        CandidatePr {
+            node_id: pr.node_id.clone(),
+            number: pr.number,
+            repo_url: repo_url.to_string(),
+            head_sha: pr.head_sha.clone(),
+            head_branch: pr.head_branch.clone(),
+            base_sha: pr.base_sha.clone(),
+            base_branch: pr.base_branch.clone(),
+            title: pr.title.clone(),
+        }
+    }
+
+    /// Build a candidate from a webhook pull-request payload.
+    pub(crate) fn from_webhook_pr(repo_url: &str, pr: &webhook_types::PullRequest) -> Self {
+        CandidatePr {
+            node_id: pr.node_id.clone(),
+            number: pr.number,
+            repo_url: repo_url.to_string(),
+            head_sha: pr.head.sha(),
+            head_branch: pr.head.reference(),
+            base_sha: pr.base.sha(),
+            base_branch: pr.base.reference(),
+            title: pr.title.clone(),
+        }
+    }
 }
 
 #[derive(Default)]
@@ -39,77 +67,6 @@ impl CqActorState {
             Ok(pair) => Some(pair),
             Err(_) => self.url_owner_map.get(url).cloned(),
         }
-    }
-
-    pub async fn get_or_fetch_admission(
-        &mut self,
-        clone_url: &str,
-        api: Option<&GithubApiConnection>,
-    ) -> Option<BTreeSet<RequiredStatusCheck>> {
-        if let Some(checks) = self.admission.get(clone_url) {
-            return Some(checks.clone());
-        }
-
-        let Some(api) = api else {
-            tracing::warn!(
-                url = %clone_url,
-                "skipping admission populate: {} not set",
-                GH_TOKEN_ENV
-            );
-            return None;
-        };
-
-        let (owner, name) = match self.resolve_owner_repo(clone_url) {
-            Some(parts) => parts,
-            None => {
-                tracing::warn!(url = %clone_url, "could not resolve owner/repo");
-                return None;
-            }
-        };
-
-        match fetch_required_checks(api, &owner, &name).await {
-            Ok(checks) => {
-                tracing::info!(
-                    url = %clone_url,
-                    count = checks.len(),
-                    "populated admission entry"
-                );
-                self.admission.insert(clone_url.to_string(), checks.clone());
-                Some(checks)
-            }
-            Err(e) => {
-                tracing::error!(
-                    url = %clone_url,
-                    error = ?e,
-                    "failed to fetch required checks; will retry on next webhook"
-                );
-                None
-            }
-        }
-    }
-
-    pub async fn get_or_init_pr_admission(
-        &mut self,
-        pr_node_id: &str,
-        clone_url: &str,
-        api: Option<&GithubApiConnection>,
-    ) -> Option<&mut AdmissionState> {
-        if !self.pr_admissions.contains_key(pr_node_id) {
-            let required = self.get_or_fetch_admission(clone_url, api).await?;
-            let maintainers = fetch_maintainers(clone_url, api, self).await;
-            let state = AdmissionState {
-                required_checks: required.into_iter().map(|c| (c, false)).collect(),
-                maintainer_reviews: BTreeMap::new(),
-                maintainers: maintainers.into_iter().collect(),
-            };
-            tracing::info!(
-                pr = %pr_node_id,
-                url = %clone_url,
-                "initialized pr_admission entry"
-            );
-            self.pr_admissions.insert(pr_node_id.to_string(), state);
-        }
-        self.pr_admissions.get_mut(pr_node_id)
     }
 
     pub fn upsert_candidate(&mut self, pr: CandidatePr) {

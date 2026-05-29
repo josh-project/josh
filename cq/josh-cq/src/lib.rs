@@ -1,4 +1,5 @@
 pub(crate) mod admission;
+pub(crate) mod api;
 pub(crate) mod fetch;
 pub(crate) mod layout;
 pub(crate) mod models;
