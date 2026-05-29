@@ -64,6 +64,7 @@ pub struct GitDebugApp {
     mode: AppMode,
     repo: git2::Repository,
     ui_state: UiState,
+    _repo_source: RepoSource,
 }
 
 impl GitDebugApp {
@@ -91,6 +92,7 @@ impl GitDebugApp {
                 selected_session: None,
                 error: None,
             },
+            _repo_source: repo_source,
         })
     }
 }
