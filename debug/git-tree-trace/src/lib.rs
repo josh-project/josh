@@ -102,7 +102,7 @@ pub fn trace_commit(repo: &git2::Repository, oid: Oid, name: &str) {
         };
 
         if let Err(e) = client()
-            .post("http://127.0.0.1:8765/v1/trace")
+            .post("http://127.0.0.1:8765/v1/traces")
             .json(&request)
             .send()
         {

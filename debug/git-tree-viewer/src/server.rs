@@ -1,4 +1,4 @@
-use std::sync::{mpsc::Sender, Arc};
+use std::sync::{mpsc::Sender, Arc, Mutex};
 
 use axum::body::Body;
 use axum::extract::State;
@@ -6,34 +6,40 @@ use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
 use axum::{Json, Router};
-use serde::Deserialize;
+use serde::Serialize;
 
 use crate::Trace;
-
-#[derive(Deserialize)]
-struct TraceRequest {
-    session: String,
-    commit: String,
-    label: String,
-}
 
 #[derive(Clone)]
 struct ServerState {
     tx: Arc<Sender<Trace>>,
+    traces: Arc<Mutex<Vec<Trace>>>,
     repo_path: Arc<std::path::Path>,
 }
 
-async fn handle_trace(
+async fn post_trace(
     State(state): State<ServerState>,
-    Json(req): Json<TraceRequest>,
+    Json(trace): Json<Trace>,
 ) -> impl IntoResponse {
-    let trace = Trace {
-        session: req.session,
-        commit: req.commit,
-        label: req.label,
-    };
+    state.traces.lock().unwrap().push(trace.clone());
     let _ = state.tx.send(trace);
     StatusCode::ACCEPTED
+}
+
+async fn get_traces(State(state): State<ServerState>) -> impl IntoResponse {
+    let traces = state.traces.lock().unwrap().clone();
+    Json(traces)
+}
+
+#[derive(Serialize)]
+struct RepoResponse {
+    path: String,
+}
+
+async fn get_repo(State(state): State<ServerState>) -> impl IntoResponse {
+    Json(RepoResponse {
+        path: state.repo_path.to_string_lossy().into_owned(),
+    })
 }
 
 async fn handle_git(
@@ -48,6 +54,7 @@ const DEFAULT_PORT: u16 = 8765;
 pub fn start(tx: Sender<Trace>, repo_path: &std::path::Path) {
     let state = ServerState {
         tx: Arc::new(tx),
+        traces: Arc::new(Mutex::new(Vec::new())),
         repo_path: Arc::from(repo_path),
     };
 
@@ -56,7 +63,8 @@ pub fn start(tx: Sender<Trace>, repo_path: &std::path::Path) {
 
         rt.block_on(async {
             let app = Router::new()
-                .route("/v1/trace", post(handle_trace))
+                .route("/v1/traces", post(post_trace).get(get_traces))
+                .route("/v1/repo", get(get_repo))
                 .fallback(get(handle_git).post(handle_git))
                 .with_state(state);
 

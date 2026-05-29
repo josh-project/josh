@@ -45,6 +45,7 @@ impl AsRef<Path> for RepoSource {
     }
 }
 
+#[derive(Clone, serde::Serialize, serde::Deserialize)]
 pub struct Trace {
     pub session: String,
     pub commit: String,
