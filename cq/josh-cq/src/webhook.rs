@@ -31,21 +31,10 @@ pub(crate) async fn handle_webhook(
 
     let tracked = tokio::task::spawn_blocking(move || {
         let repo = transaction.repo();
-        let head_tree = repo
-            .head()
-            .context("Failed to get HEAD")?
-            .peel_to_commit()
-            .context("Failed to peel HEAD to commit")?
-            .tree()
-            .context("Failed to get HEAD tree")?;
-
-        let remotes = crate::layout::list_tracked_remotes(repo, &head_tree)
-            .context("Failed to list tracked remotes")?;
-
         Ok::<_, anyhow::Error>(
-            remotes
-                .iter()
-                .any(|(_, meta)| meta.url == clone_url_for_closure),
+            crate::layout::find_remote_by_url(repo, &clone_url_for_closure)
+                .context("Failed to list tracked remotes")?
+                .is_some(),
         )
     })
     .await??;

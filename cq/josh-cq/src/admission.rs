@@ -26,13 +26,7 @@ pub(crate) async fn get_or_fetch_admission(
         return None;
     };
 
-    let (owner, name) = match state.resolve_owner_repo(clone_url) {
-        Some(parts) => parts,
-        None => {
-            tracing::warn!(url = %clone_url, "could not resolve owner/repo");
-            return None;
-        }
-    };
+    let (owner, name) = state.resolve_owner_repo_logged(clone_url)?;
 
     match fetch_required_checks(api, &owner, &name).await {
         Ok(checks) => {

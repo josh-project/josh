@@ -69,6 +69,15 @@ impl CqActorState {
         }
     }
 
+    /// Like `resolve_owner_repo`, but logs a warning when resolution fails.
+    pub(crate) fn resolve_owner_repo_logged(&self, url: &str) -> Option<(String, String)> {
+        let resolved = self.resolve_owner_repo(url);
+        if resolved.is_none() {
+            tracing::warn!(url = %url, "could not resolve owner/repo");
+        }
+        resolved
+    }
+
     pub fn upsert_candidate(&mut self, pr: CandidatePr) {
         self.candidates.insert(pr.node_id.clone(), pr);
     }

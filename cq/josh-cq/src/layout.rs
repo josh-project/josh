@@ -82,6 +82,37 @@ pub fn workspace_filter_spec(name: &str) -> String {
     )
 }
 
+/// Read HEAD, peeling to its commit and tree in one call.
+pub fn head_commit_and_tree(
+    repo: &git2::Repository,
+) -> anyhow::Result<(git2::Commit<'_>, git2::Tree<'_>)> {
+    let commit = repo
+        .head()
+        .context("Failed to get HEAD")?
+        .peel_to_commit()
+        .context("Failed to peel HEAD to commit")?;
+    let tree = commit.tree().context("Failed to get HEAD tree")?;
+    Ok((commit, tree))
+}
+
+/// Read HEAD's tree and list tracked remotes in one call.
+pub fn list_tracked_remotes_for_head(
+    repo: &git2::Repository,
+) -> anyhow::Result<Vec<(String, RemoteMeta)>> {
+    let (_, tree) = head_commit_and_tree(repo)?;
+    list_tracked_remotes(repo, &tree)
+}
+
+/// Find the tracked remote whose meta URL matches `url`.
+pub fn find_remote_by_url(
+    repo: &git2::Repository,
+    url: &str,
+) -> anyhow::Result<Option<(String, RemoteMeta)>> {
+    Ok(list_tracked_remotes_for_head(repo)?
+        .into_iter()
+        .find(|(_, meta)| meta.url == url))
+}
+
 /// Discover all tracked remotes by reading `remotes/*/meta/remote.json` from a
 /// metarepo tree. Returns `(name, meta)` pairs. Entries that lack a readable
 /// `remote.json` are skipped.

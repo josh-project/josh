@@ -138,18 +138,11 @@ async fn handle_step(
 
     let merge_commit: Option<String> = tokio::task::spawn_blocking(move || {
         let repo = transaction.repo();
-        let head_commit = repo
-            .head()
-            .context("Failed to get HEAD")?
-            .peel_to_commit()
-            .context("Failed to peel HEAD to commit")?;
-        let head_tree = head_commit.tree().context("Failed to get HEAD tree")?;
+        let (head_commit, _) = crate::layout::head_commit_and_tree(repo)?;
 
         // Find which tracked remote this PR belongs to.
-        let name = crate::layout::list_tracked_remotes(repo, &head_tree)
+        let name = crate::layout::find_remote_by_url(repo, &repo_url)
             .context("Failed to list tracked remotes")?
-            .into_iter()
-            .find(|(_, meta)| meta.url == repo_url)
             .map(|(name, _)| name)
             .context("No tracked remote found for PR")?;
 

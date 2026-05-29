@@ -27,11 +27,7 @@ pub fn handle_track(
         .peel_to_commit()
         .context("Failed to peel FETCH_HEAD to commit")?;
 
-    let head_ref = repo.head().context("Failed to get HEAD")?;
-    let head_commit = head_ref
-        .peel_to_commit()
-        .context("Failed to peel HEAD to commit")?;
-    let head_tree = head_commit.tree().context("Failed to get HEAD tree")?;
+    let (head_commit, head_tree) = layout::head_commit_and_tree(repo)?;
 
     let signature = make_signature(repo)?;
 

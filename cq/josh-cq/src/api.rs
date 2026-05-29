@@ -13,9 +13,8 @@ pub(crate) async fn fetch_maintainers(
     let Some(api) = api else {
         return Vec::new();
     };
-    let (owner, name) = match state.resolve_owner_repo(clone_url) {
-        Some(parts) => parts,
-        None => return Vec::new(),
+    let Some((owner, name)) = state.resolve_owner_repo_logged(clone_url) else {
+        return Vec::new();
     };
     match api.get_maintainers(&owner, &name).await {
         Ok(m) => m,
@@ -59,12 +58,8 @@ pub(crate) async fn lookup_open_prs_by_sha(
     let Some(api) = api else {
         return Vec::new();
     };
-    let (owner, name) = match state.resolve_owner_repo(clone_url) {
-        Some(parts) => parts,
-        None => {
-            tracing::warn!(url = %clone_url, "could not resolve owner/repo");
-            return Vec::new();
-        }
+    let Some((owner, name)) = state.resolve_owner_repo_logged(clone_url) else {
+        return Vec::new();
     };
     match api.find_open_prs_by_head_sha(&owner, &name, sha).await {
         Ok(prs) => prs.into_iter().map(|(id, _)| id).collect(),

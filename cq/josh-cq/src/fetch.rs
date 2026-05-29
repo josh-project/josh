@@ -16,15 +16,7 @@ pub(crate) async fn handle_fetch(
     // the metarepo (see step.rs), so nothing is written back here.
     let remotes: Vec<String> = tokio::task::spawn_blocking(move || {
         let repo = transaction.repo();
-        let head_tree = repo
-            .head()
-            .context("Failed to get HEAD")?
-            .peel_to_commit()
-            .context("Failed to peel HEAD to commit")?
-            .tree()
-            .context("Failed to get HEAD tree")?;
-
-        let tracked = crate::layout::list_tracked_remotes(repo, &head_tree)
+        let tracked = crate::layout::list_tracked_remotes_for_head(repo)
             .context("Failed to list tracked remotes")?;
 
         if tracked.is_empty() {
@@ -44,12 +36,8 @@ pub(crate) async fn handle_fetch(
     .await??;
 
     for url in &remotes {
-        let (owner, repo_name) = match state.resolve_owner_repo(url) {
-            Some(parts) => parts,
-            None => {
-                tracing::warn!(url = %url, "could not resolve owner/repo");
-                continue;
-            }
+        let Some((owner, repo_name)) = state.resolve_owner_repo_logged(url) else {
+            continue;
         };
 
         let Some(api) = api else {
