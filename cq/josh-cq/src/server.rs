@@ -15,7 +15,7 @@ use crate::fetch::handle_fetch;
 use crate::models::CqActorState;
 use crate::step::run_queue_cycle;
 use crate::track::handle_track;
-use crate::types::{CqEvent, GH_TOKEN_ENV, TrackRequest, UserAction};
+use crate::types::{CqEvent, GH_TOKEN_ENV, TrackRequest};
 use crate::webhook::handle_webhook;
 
 async fn track_handler(
@@ -78,14 +78,6 @@ pub async fn bind_router(
     Ok((handle, cq_url))
 }
 
-fn handle_action(action: UserAction) {
-    match action {
-        UserAction::Message(message) => {
-            eprintln!("{}", message)
-        }
-    }
-}
-
 /// Open a transaction on the metarepo, logging and returning `None` on failure.
 fn open_transaction(repo_path: &Path, cache: &Arc<CacheStack>) -> Option<Transaction> {
     match TransactionContext::new(repo_path, cache.clone()).open(None) {
@@ -133,7 +125,7 @@ async fn process_event(
                 })
                 .await
                 {
-                    Ok(Ok(action)) => handle_action(action),
+                    Ok(Ok(())) => {}
                     Ok(Err(e)) => tracing::error!(error = ?e, "track failed"),
                     Err(e) => tracing::error!(error = ?e, "track task panicked"),
                 }

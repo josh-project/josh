@@ -6,7 +6,6 @@ use git_tree_trace::trace_commit;
 use josh_core::git::spawn_git_command;
 
 use crate::layout::{self, RemoteMeta};
-use crate::types::UserAction;
 use crate::util::make_signature;
 
 /// File mode for a regular (non-executable) blob.
@@ -16,7 +15,7 @@ pub fn handle_track(
     url: &str,
     id: &str,
     transaction: &josh_core::cache::Transaction,
-) -> anyhow::Result<UserAction> {
+) -> anyhow::Result<()> {
     let repo = transaction.repo();
 
     spawn_git_command(repo.path(), &["fetch", url, "HEAD"], &[])?;
@@ -106,7 +105,7 @@ pub fn handle_track(
         .set_target(commit, "josh-cq track")
         .context("Failed to update HEAD")?;
 
-    let action = UserAction::Message(format!("Tracked remote '{}' at {}", id, url));
+    tracing::info!("Tracked remote '{}' at {}", id, url);
 
-    Ok(action)
+    Ok(())
 }

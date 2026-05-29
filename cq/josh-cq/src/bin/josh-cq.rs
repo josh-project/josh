@@ -20,16 +20,6 @@ enum Commands {
     Init,
     /// Start HTTP server
     Serve(ServeArgs),
-    /// Track a remote repository
-    Track(TrackArgs),
-}
-
-#[derive(clap::Parser)]
-struct TrackArgs {
-    /// URL of the remote to track
-    url: String,
-    /// ID for this remote
-    id: String,
 }
 
 #[derive(clap::Parser)]
@@ -132,13 +122,6 @@ async fn main() -> anyhow::Result<()> {
             println!("{}", msg);
         }
         Commands::Serve(args) => run_serve(args, cli.data_dir.as_deref()).await?,
-        Commands::Track(ref args) => {
-            let (_repo_path, _cache, transaction) = open_repo(cli.data_dir.as_deref())?;
-            let action = josh_cq::track::handle_track(&args.url, &args.id, &transaction)?;
-            match action {
-                josh_cq::types::UserAction::Message(m) => println!("{m}"),
-            }
-        }
     }
 
     Ok(())

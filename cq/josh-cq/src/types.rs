@@ -23,7 +23,3 @@ pub enum CqEvent {
         done: Option<oneshot::Sender<()>>,
     },
 }
-
-pub enum UserAction {
-    Message(String),
-}
