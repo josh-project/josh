@@ -15,12 +15,18 @@
 !josh-templates
 !josh-graphql
 !josh-link
-!josh-cq
+!cq/josh-cq
+!cq/josh-cq-tests
+!cq/josh-cq-test-components
 !forges/josh-github-changes
 !forges/josh-github-auth
 !forges/josh-github-codegen-graphql
 !forges/josh-github-graphql
 !forges/josh-github-webhooks
+!forges/josh-github-keyring
+!forges/josh-github-sim
+# path dependency of cq/josh-cq
+!debug/git-tree-trace
 !josh-ui/*.json
 !josh-ui/*.rs
 !josh-ui/*.toml
