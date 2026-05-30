@@ -2970,6 +2970,7 @@ dependencies = [
  "anyhow",
  "axum",
  "clap",
+ "dirs",
  "git-tree-trace",
  "git2",
  "josh-core",

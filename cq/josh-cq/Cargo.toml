@@ -25,3 +25,4 @@ josh-github-webhooks.workspace = true
 josh-test-webhook-client.workspace = true
 josh-github-graphql.workspace = true
 josh-github-changes.workspace = true
+dirs.workspace = true

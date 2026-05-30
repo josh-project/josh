@@ -1,3 +1,5 @@
+use std::io::Read;
+
 use anyhow::Context;
 use clap::Parser;
 
@@ -80,7 +82,9 @@ async fn run_serve(args: ServeArgs, data_dir: Option<&std::path::Path>) -> anyho
     let addr = std::net::SocketAddr::from(([0, 0, 0, 0], args.port));
     println!("Listening on {}", addr);
 
-    let _webhook_client = match (args.webhook_relay, args.webhook_relay_token) {
+    let relay_token = args.webhook_relay_token.or_else(load_webhook_relay_token);
+
+    let _webhook_client = match (args.webhook_relay, relay_token) {
         (Some(ws_url), Some(auth_token)) => {
             let config = josh_test_webhook_client::WebhookClientConfig {
                 ws_url,
@@ -102,6 +106,21 @@ async fn run_serve(args: ServeArgs, data_dir: Option<&std::path::Path>) -> anyho
     axum::serve(listener, app).await?;
 
     Ok(())
+}
+
+/// Try to load the webhook relay token from
+/// `~/.config/josh-cli/webhook-relay-token`.
+fn load_webhook_relay_token() -> Option<String> {
+    let path = dirs::config_dir()?
+        .join("josh-cli")
+        .join("webhook-relay-token");
+
+    let mut file = std::fs::File::open(&path).ok()?;
+    let mut token = String::new();
+    file.read_to_string(&mut token).ok()?;
+    let token = token.trim().to_string();
+
+    if token.is_empty() { None } else { Some(token) }
 }
 
 #[tokio::main]
