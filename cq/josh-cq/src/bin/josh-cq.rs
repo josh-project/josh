@@ -53,7 +53,7 @@ fn open_repo(
     };
     let repo_path = normalize_repo_path(repo.path());
 
-    josh_core::cache::sled_load(&repo_path.join(".git")).context("Failed to load sled cache")?;
+    josh_core::cache::sled_load(repo.path()).context("Failed to load sled cache")?;
 
     let cache = std::sync::Arc::new(
         josh_core::cache::CacheStack::new()

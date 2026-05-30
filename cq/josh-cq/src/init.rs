@@ -5,7 +5,12 @@ use crate::util::make_signature;
 pub fn handle_init(transaction: &josh_core::cache::Transaction) -> anyhow::Result<String> {
     let repo = transaction.repo();
 
-    if repo.head().is_ok() {
+    if repo
+        .head()
+        .ok()
+        .and_then(|h| h.peel_to_commit().ok())
+        .is_some()
+    {
         return Ok("Already initialized".to_string());
     }
 

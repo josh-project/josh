@@ -67,7 +67,7 @@ pub async fn start_test_harness(
     let metarepo_temp = tempfile::Builder::new().prefix("josh-cq-test-").tempdir()?;
     let metarepo_path = metarepo_temp.path();
 
-    let repo = git2::Repository::init(metarepo_path)?;
+    let repo = git2::Repository::init_bare(metarepo_path)?;
     {
         let sig = git2::Signature::new("test", "test@test.com", &git2::Time::new(0, 0))?;
         let tree_oid = repo.treebuilder(None)?.write()?;
@@ -81,12 +81,11 @@ pub async fn start_test_harness(
             &[],
         )?;
     }
-    let git_dir = repo.path().to_path_buf();
-    let repo_path = josh_core::git::normalize_repo_path(&git_dir);
+    let repo_path = repo.path().to_path_buf();
     drop(repo);
 
     // 2. Initialize cache
-    josh_core::cache::sled_load(&repo_path.join(".git"))?;
+    josh_core::cache::sled_load(&repo_path)?;
     let cache: Arc<josh_core::cache::CacheStack> =
         Arc::new(josh_core::cache::CacheStack::default());
     let ctx = josh_core::cache::TransactionContext::new(&repo_path, cache.clone());
