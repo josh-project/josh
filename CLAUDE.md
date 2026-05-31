@@ -35,21 +35,25 @@ cq/
 │   ├── src/
 │   │   ├── bin/josh-cq.rs   # CLI entry point
 │   │   ├── lib.rs           # module declarations
-│   │   ├── types.rs         # CqEvent, TrackRequest, UserAction
+│   │   ├── types.rs         # CqEvent, TrackRequest
 │   │   ├── models.rs        # CandidatePr, CqActorState (pure data + sync accessors)
-│   │   ├── server.rs        # HTTP router, spawn_serve_task (actor loop)
+│   │   ├── server.rs        # HTTP router, make_router, bind_router, spawn_serve_task
 │   │   ├── api.rs           # GitHub API wrappers (maintainers, checks, PRs by SHA)
-│   │   ├── fetch.rs         # handle_fetch
+│   │   ├── git.rs           # GitActor, GitActorMessage, spawn_git_actor
+│   │   ├── layout.rs        # Metarepo layout helpers (remote discovery, filter specs)
 │   │   ├── step.rs          # handle_step, select_candidate, run_queue_cycle
 │   │   ├── admission.rs     # admission-state construction + sync_required_checks
+│   │   ├── refresh_remotes.rs  # refresh_remotes (fetch + discover open PRs + reconcile)
 │   │   ├── webhook.rs       # handle_webhook
 │   │   ├── track.rs         # handle_track
 │   │   ├── init.rs          # handle_init
-│   │   └── remote.rs        # list_refs (git ls-remote)
+│   │   ├── remote.rs        # list_refs (git ls-remote)
+│   │   └── util.rs          # make_signature
 │   └── Cargo.toml
 │
 └── josh-cq-tests/   # integration tests
     ├── src/lib.rs
+    ├── src/test_helpers.rs
     ├── tests/merge_queue_tests.rs
     └── Cargo.toml
 ```
@@ -58,8 +62,7 @@ cq/
 
 The CQ binary (`josh-cq`) supports:
 - **`init`** — creates an empty metarepo commit on HEAD
-- **`serve`** — starts HTTP server receiving webhooks and track requests
-- **`track`** — adds a remote as a tracked repo (git ls-remote + `.link.josh` + `refs.json`)
+- **`serve`** — starts HTTP server receiving webhooks (`/v1/webhook`) and track requests (`/v1/track`); tracking is done via the HTTP API, not a separate subcommand
 
 ### Architecture
 
@@ -67,11 +70,17 @@ The `serve` event loop uses an **actor model**. All input — webhook events, tr
 requests, and periodic polling ticks — is sent through a single `mpsc` channel.
 A single async actor task (`tokio::spawn`) processes events serially with
 `event_rx.recv().await`, mutating `CqActorState` without locks. No `state.clone()`
-— handler functions take `&mut CqActorState`. GraphQL calls are `.await`ed
-directly; blocking git2/`git` work inside a handler is offloaded to
-`spawn_blocking`.
+— handler functions take `&mut CqActorState`.
 
-The queue cycle: **Fetch** → **Evaluate** → **Step** (merge) → repeat while
+All git work (both git2 and `git` subprocesses) goes through a separate **git
+actor** (`GitActor`) that owns the metarepo path and cache. The git actor
+serializes git2 operations and `git` subprocess calls on a single blocking
+thread, ensuring on-disk object writes are always visible to subsequent git2
+reads with no cross-task races. Git subprocesses (`fetch`, `push`, `merge-tree`,
+`commit-tree`) are run through a `CommandStack` that attaches the GitHub auth
+token.
+
+The queue cycle: **Refresh remotes** → **Evaluate** → **Step** (merge) → repeat while
 admissible PRs remain.
 
 ```
@@ -85,40 +94,64 @@ Timer (10 min) → CqEvent::Tick            ─┘
                               Update state
                                     │
                                     ▼
-                              Fetch (on Tick only)
+                        refresh_remotes (on Tick only)
+                          Fetch all tracked remotes
+                          Discover open PRs via GraphQL
+                          Reconcile required checks
                                     │
                                     ▼
                         run_queue_cycle (Tick + Webhook)
                          Evaluate → Step → loop
 ```
 
-- **Tick** (every 10 min) triggers `handle_fetch` (discovers open PRs from GitHub
-  GraphQL) then `run_queue_cycle`. Catches PRs missed by webhook delivery failures.
+- **Tick** (every 10 min) triggers `refresh_remotes` (fetches all tracked remotes,
+  discovers open PRs from GitHub GraphQL, reconciles required checks against
+  rulesets) then `run_queue_cycle`. Catches PRs missed by webhook delivery failures.
 - **Webhooks** update admission state and candidate list immediately, then fall
   through to `run_queue_cycle`. No fetch on webhook — only admission updates.
-- **Track** adds a new remote to the metarepo and is handled inline. Does not trigger
+- **Track** sends `git fetch` + `GitActorMessage::Track` to import the remote's
+  FETCH_HEAD into the metarepo under `remotes/<id>/contents`. Does not trigger
   the queue cycle.
-- **Merge** happens in the metarepo via `git merge-tree --write-tree` +
-  `git commit-tree`, then pushes to the remote's main branch and closes the PR on
-  GitHub with a "Merged by Josh merge queue" comment.
+- **Merge** happens via `git merge-tree --write-tree` + `git commit-tree`, then
+  force-pushes to the remote's base branch, unapplies the merge back onto the
+  metarepo (keeping it a faithful pre-image of every tracked remote), and closes
+  the PR on GitHub with a "Merged by Josh merge queue" comment.
 
 ### Actor loop (server.rs)
 
 ```rust
+// spawn_serve_task creates the event channel, spawns the tick timer, and
+// spawns the main actor loop. Returns the event sender for HTTP handlers.
+pub fn spawn_serve_task(
+    tick_interval_secs: u64,
+    git: Arc<GitActor>,
+    middleware: Arc<GithubAuthMiddleware>,
+    api_url: Option<Url>,
+    url_owner_map: HashMap<String, (String, String)>,
+) -> mpsc::Sender<CqEvent>;
+
+// process_event is a free function that matches on the event and runs the
+// relevant handler. It returns an EventOutcome: whether a queue cycle is
+// warranted (true for Tick/Webhook, false for Track) plus any completion
+// signal to fire after the cycle.
+async fn process_event(
+    event: CqEvent,
+    git: &GitActor,
+    api: &GithubApiConnection,
+    state: &mut CqActorState,
+) -> EventOutcome;
+
+// Actor loop (inside spawn_serve_task):
 tokio::spawn(async move {
     let mut state = CqActorState { url_owner_map, ..Default::default() };
     while let Some(event) = event_rx.recv().await {
-        // process_event matches on the event, opens a transaction, and runs the
-        // relevant handler (handle_fetch / handle_webhook / handle_track). It
-        // returns an EventOutcome: whether a queue cycle is warranted (true for
-        // Tick/Webhook, false for Track) plus any completion signal to fire.
-        let outcome = process_event(event, &repo_path, &cache, api.as_deref(), &mut state).await;
+        let outcome = process_event(event, &git, &api, &mut state).await;
 
         if outcome.run_queue_cycle {
-            run_queue_cycle(&mut state, &repo_path, &cache, api.as_deref()).await;
+            run_queue_cycle(&mut state, &git, &api).await;
         }
         if let Some(tx) = outcome.done {
-            let _ = tx.send(()); // unblock the HTTP handler waiting on this event
+            let _ = tx.send(());
         }
     }
 });
@@ -133,16 +166,26 @@ tokio::spawn(async move {
 - `url_owner_map`: `HashMap<String, (String, String)>` — non-GitHub URL → (owner, name)
 - `closed_prs`: `HashSet<String>` — PRs closed via webhook, excluded from re-discovery
 
+`CandidatePr` (in `models.rs`):
+- `node_id`, `number`, `repo_url`, `head_sha`, `base_sha`, `base_branch`, `title`
+- `from_open_pr(repo_url, pr)` — build from a GraphQL `OpenPr` discovered during refresh
+- `from_webhook_pr(repo_url, pr)` — build from a webhook `PullRequest` payload
+
 Methods on `CqActorState` (pure, sync; in `models.rs`):
-- `resolve_owner_repo(&self, url) -> Option<(String, String)>` — try `parse_owner_repo`, fall back to `url_owner_map`
-- `resolve_owner_repo_logged(&self, url)` — same, but logs a warning on failure
+- `resolve_owner_repo(&self, url) -> Option<(String, String)>` — try `url_owner_map` first, then `parse_owner_repo`, logging on failure
 - `upsert_candidate`, `remove_candidate`, `get_candidate`
+- `remove_candidate` also removes the PR from `pr_admissions` and `closed_prs`
 
 Admission-state construction lives in `admission.rs` as free functions taking
 `&mut CqActorState` (they call the GitHub API, which `models.rs` no longer does):
-- `get_or_fetch_admission(state, url, api)` — lazy-populate required checks
-- `get_or_init_pr_admission(state, node_id, url, api)` — init `AdmissionState` for a PR
-- `sync_required_checks(admission, required)` — reconcile checks, preserving results
+- `get_or_fetch_admission(state, clone_url, api) -> Option<BTreeSet<RequiredStatusCheck>>` — lazy-populate required checks
+- `get_or_init_pr_admission(state, pr_node_id, clone_url, api) -> Option<&mut AdmissionState>` — init `AdmissionState` for a PR
+- `sync_required_checks(admission, required)` — reconcile checks with current rulesets, preserving known results
+
+Helper in `api.rs`:
+- `fetch_maintainers(clone_url, api, state) -> Vec<String>` — resolve maintainers for a repo
+- `fetch_required_checks(api, owner, name) -> Result<BTreeSet<RequiredStatusCheck>>` — aggregate required checks from active rulesets
+- `lookup_open_prs_by_sha(api, clone_url, sha, state) -> Vec<String>` — find open PRs by head SHA (used for check-run webhooks)
 
 `AdmissionState` (in `josh-github-changes`):
 - `required_checks`: `BTreeMap<RequiredStatusCheck, bool>` — check name → passed
@@ -150,19 +193,31 @@ Admission-state construction lives in `admission.rs` as free functions taking
 - `maintainers`: `HashSet<String>` — users with write access
 - `admissible()`: ≥1 maintainer approved, no changes requested, all required checks passed
 
-### API calls and blocking work
+### Git actor and blocking work
 
-The actor loop is async, so GraphQL calls are simply `.await`ed:
+All git work goes through `GitActor` (`git.rs`), which owns the metarepo path,
+cache, and `CommandStack`. Callers send `GitActorMessage` variants through
+`git.request(|reply| ...)`, which wires up a oneshot reply channel, sends the
+message, and awaits the result.
+
 ```rust
-api.some_method(...).await
-```
-Blocking git2/`git` work is offloaded with `tokio::task::spawn_blocking`. git2's
-`Repository` is `!Send`, so it is opened *inside* the closure via
-`transaction.repo()` rather than captured.
+// Async git subprocess (fetch, push, merge-tree, commit-tree) — runs through
+// the CommandStack so the GitHub auth token is attached:
+git.request(|reply| GitActorMessage::RunGitCommand { args: vec!["fetch", url], reply }).await?;
 
-`GithubApiConnection::from_environment()` resolves credentials from `GH_TOKEN` env var
-or the stored device-flow token. `GithubApiConnection::for_test(url)` creates an
-unauthenticated client pointing at a mock GraphQL server.
+// Blocking git2 work — serialized on the actor's dedicated thread:
+git.request(|reply| GitActorMessage::PrepareMerge { repo_url, head_sha, reply }).await?;
+git.request(|reply| GitActorMessage::UnapplyMerge { remote_name, head_commit_id, main_oid, merge_oid, reply }).await?;
+```
+
+`RunGitCommand` is handled async (it awaits the `CommandStack`); all other
+variants (`Track`, `ListTrackedRemotes`, `FindRemoteByUrl`, `PrepareMerge`,
+`UnapplyMerge`) are git2 work offloaded to `spawn_blocking`. A fresh
+`Transaction` is opened per blocking message.
+
+`GithubApiConnection::from_middleware(middleware, api_url)` creates the API client
+from a `GithubAuthMiddleware`; `api_url` overrides the GraphQL endpoint (tests pass
+the mock's `/graphql` URL).
 
 ### Integration tests
 
@@ -177,14 +232,20 @@ webhook path:
 | `pr_not_admissible_with_failing_check` | PR with failing required check → not merged |
 | `pr_removed_on_close_webhook` | PR closed via webhook → not merged |
 
-Tests return `anyhow::Result<()>` and use `?` for error propagation. The test harness:
-1. Creates a temporary bare repo as the metarepo
-2. Initializes the CQ actor with a long tick interval (ticks driven manually)
-3. Starts the CQ HTTP server (`bind_router`) so webhooks go through the real HTTP path
-4. Wires `GithubSim`'s webhook URL to the CQ server, so sim mutations POST webhooks
-5. Drives operations through `SimRepo` (obtained via `github_sim.repo_by_name(owner, name)`)
-6. Sends `CqEvent::Tick` through the event channel for manual polling
-7. Polls with `poll_until` to wait for expected side effects
+Tests return `anyhow::Result<()>` and use `?` for error propagation. The test harness
+(`test_helpers.rs`):
+1. Creates a temporary bare metarepo with an initial commit on `refs/heads/main`
+2. Loads the sled cache and calls `handle_init` to initialize the metarepo
+3. Builds a URL → (owner, name) mapping so non-GitHub sim URLs can be resolved
+4. Creates a `GithubAuthMiddleware` with a dummy token, a `CommandStack`, and spawns
+   the git actor via `spawn_git_actor`
+5. Calls `spawn_serve_task` with a long tick interval (ticks driven manually)
+   and the sim's GraphQL URL
+6. Starts the CQ HTTP server (`bind_router`) so webhooks go through the real HTTP path
+7. Wires `GithubSim`'s webhook URL to the CQ server, so sim mutations POST webhooks
+8. Drives operations through `SimRepo` (obtained via `github_sim.repo_by_name(owner, name)`)
+9. Sends ticks via `harness.tick()` — sends `CqEvent::Tick { done: Some(tx) }` and
+   awaits the oneshot, ensuring the full queue cycle completes before the test proceeds
 
 ```rust
 let repo = harness.github_sim.repo_by_name(owner, name);
@@ -193,8 +254,8 @@ let (pr_node_id, number) = repo
     .await?;
 repo.add_review(number, "maintainer1", ReviewState::Approved).await?;
 repo.add_maintainer("maintainer1").await?;
-harness.event_tx.send(CqEvent::Tick).await?;
-// Assert: repo.pr_by_node_id(&pr_node_id) == Some(PrStatus::Closed)
+harness.tick().await?;
+assert_eq!(repo.pr_by_node_id(&pr_node_id), Some(PrStatus::Closed));
 ```
 
 Run with:
@@ -268,6 +329,7 @@ cq/josh-cq-test-components/
 ```rust
 pub struct TreeEntry { pub path: String, pub content: String }
 pub enum TreeMode { Overlay(Vec<TreeEntry>), Replace(Vec<TreeEntry>) }
+pub struct TestRepoResources { /* TempDir guard + actor/server join handles */ }
 
 impl TestRepo {
     pub async fn new() -> anyhow::Result<Self>  // creates bare repo, starts actor + axum
@@ -276,6 +338,9 @@ impl TestRepo {
     pub async fn commit(&self, mode, message, branch_ref) -> Result<Oid>
     pub async fn create_branch(&self, name, from_ref) -> Result<Oid>
     pub async fn get_head(&self, branch_ref) -> Result<Oid>
+    pub fn into_parts(self) -> (PathBuf, Arc<Mutex<TestRepoResources>>)
+        // Consumes TestRepo, returns the on-disk path + lifetime guard.
+        // Used by GithubSim to take over the repo after construction.
 }
 ```
 
@@ -447,6 +512,7 @@ forges/josh-github-sim/
 ├── Cargo.toml
 ├── src/
 │   ├── lib.rs          # pub use sim::{GithubSim, RepoConfig, SimRepo, PrStatus}
+│   │                   # pub use graphql::{GraphQLState, MockPr, MockRuleset, ReviewState, RuleEnforcement}
 │   ├── sim.rs          # GithubSim, SimRepo, RepoConfig, PrStatus, axum server
 │   ├── actor.rs        # ActorMsg enum, run_actor loop
 │   └── graphql/
@@ -496,6 +562,9 @@ impl SimRepo {
 
 pub enum PrStatus { Open, Closed }
 pub enum ReviewState { Approved, ChangesRequested, Commented, Dismissed }
+pub enum RuleEnforcement { Active, Disabled, Evaluate }
+pub struct MockRuleset { pub id, name, enforcement, include_refs, exclude_refs, required_checks }
+pub struct MockPr { pub node_id, number, title, head_sha, base_sha, base_branch }
 ```
 
 - `pr_open` auto-generates node_id and PR number, resolves ref names to OIDs via git2.
