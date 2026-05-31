@@ -14,9 +14,11 @@ impl GithubApiConnection {
     /// at the real GitHub GraphQL API. The same `Arc` can be reused elsewhere
     /// (e.g. to attach tokens to spawned git commands).
     pub fn from_middleware(middleware: Arc<GithubAuthMiddleware>, api_url: Option<Url>) -> Self {
-        let api_url = api_url.unwrap_or(crate::request::GITHUB_GRAPHQL_API_URL
-            .parse()
-            .expect("GITHUB_GRAPHQL_API_URL is valid"));
+        let api_url = api_url.unwrap_or(
+            crate::request::GITHUB_GRAPHQL_API_URL
+                .parse()
+                .expect("GITHUB_GRAPHQL_API_URL is valid"),
+        );
 
         let client = reqwest_middleware::ClientBuilder::new(reqwest::Client::new())
             .with_arc(middleware)

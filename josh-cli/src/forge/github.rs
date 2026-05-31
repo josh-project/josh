@@ -60,7 +60,10 @@ pub async fn make_api_connection() -> Option<GithubApiConnection> {
     let middleware =
         josh_github_auth::middleware::GithubAuthMiddleware::from_environment(stored_token)?;
 
-    Some(GithubApiConnection::from_middleware(Arc::new(middleware), None))
+    Some(GithubApiConnection::from_middleware(
+        Arc::new(middleware),
+        None,
+    ))
 }
 
 pub fn api_connection_hint() -> String {
