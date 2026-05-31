@@ -9,8 +9,15 @@ use josh_github_sim::GithubSim;
 static INIT_ENV: Once = Once::new();
 
 pub fn init_tracing() {
+    let directives = [
+        "info",
+        "josh_core::history=warn",
+        "josh_core::filter=warn",
+        "josh_core::cache::history_graph=warn",
+    ];
+
     let _ = tracing_subscriber::fmt()
-        .with_env_filter(tracing_subscriber::EnvFilter::new("info"))
+        .with_env_filter(tracing_subscriber::EnvFilter::new(directives.join(",")))
         .try_init();
 }
 
