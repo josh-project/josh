@@ -3061,6 +3061,7 @@ version = "26.5.8"
 dependencies = [
  "anyhow",
  "async-trait",
+ "base64",
  "chrono",
  "form_urlencoded",
  "http",

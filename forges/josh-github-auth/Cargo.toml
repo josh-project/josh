@@ -11,6 +11,7 @@ keywords = ["git", "github", "monorepo", "workflow"]
 [dependencies]
 anyhow.workspace = true
 async-trait.workspace = true
+base64.workspace = true
 http.workspace = true
 reqwest.workspace = true
 reqwest-middleware.workspace = true

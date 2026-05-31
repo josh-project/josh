@@ -288,15 +288,12 @@ async fn test_track_private_repo() -> anyhow::Result<()> {
     let owner = "test-owner";
     let name = "test-repo-private";
 
-    // Create a TestRepo that requires a bearer token for git HTTP access.
+    // Create a TestRepo that requires a token for git HTTP access.
     // The CQ's GithubAuthMiddleware is configured with the same token
     // ("test-token" in start_test_harness), so git fetch/push operations
-    // from the CQ will include an Authorization: Bearer header that
-    // satisfies the sim's auth check.
-    let test_repo = TestRepo::builder()
-        .with_bearer("test-token")
-        .build()
-        .await?;
+    // from the CQ will include an Authorization: Basic header (token as the
+    // password) that satisfies the sim's auth check.
+    let test_repo = TestRepo::builder().with_token("test-token").build().await?;
 
     test_repo
         .commit(
@@ -324,9 +321,9 @@ async fn test_track_private_repo() -> anyhow::Result<()> {
         )
         .await?;
 
-    // Build GithubSim with bearer auth so git HTTP requires the token.
+    // Build GithubSim with auth so git HTTP requires the token.
     let github_sim = GithubSim::builder()
-        .with_bearer("test-token")
+        .with_token("test-token")
         .repo(RepoConfig {
             owner: owner.to_string(),
             name: name.to_string(),

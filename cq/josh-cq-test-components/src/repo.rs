@@ -48,36 +48,39 @@ pub struct TestRepo {
 }
 
 pub struct TestRepoBuilder {
-    bearer_token: Option<String>,
+    auth_token: Option<String>,
 }
 
 #[derive(Clone)]
 struct AppState {
     tx: mpsc::UnboundedSender<ActorMsg>,
-    bearer_token: Option<String>,
+    auth_token: Option<String>,
 }
 
 impl TestRepoBuilder {
-    pub fn with_bearer(mut self, token: impl AsRef<str>) -> Self {
-        self.bearer_token = Some(token.as_ref().to_string());
+    /// Require git HTTP requests to authenticate with this token via HTTP Basic
+    /// auth (token supplied as the password), matching how GitHub authenticates
+    /// git-over-HTTPS.
+    pub fn with_token(mut self, token: impl AsRef<str>) -> Self {
+        self.auth_token = Some(token.as_ref().to_string());
         self
     }
 
     pub async fn build(self) -> anyhow::Result<TestRepo> {
-        TestRepo::from_builder(self.bearer_token).await
+        TestRepo::from_builder(self.auth_token).await
     }
 }
 
 impl TestRepo {
     pub fn builder() -> TestRepoBuilder {
-        TestRepoBuilder { bearer_token: None }
+        TestRepoBuilder { auth_token: None }
     }
 
     pub async fn new() -> anyhow::Result<Self> {
         Self::from_builder(None).await
     }
 
-    async fn from_builder(bearer_token: Option<String>) -> anyhow::Result<Self> {
+    async fn from_builder(auth_token: Option<String>) -> anyhow::Result<Self> {
         let dir = tempfile::Builder::new().prefix(TEMP_DIR_PREFIX).tempdir()?;
 
         let repo = git2::Repository::init_bare(dir.path())?;
@@ -96,7 +99,7 @@ impl TestRepo {
 
         let app_state = AppState {
             tx: tx.clone(),
-            bearer_token: bearer_token.clone(),
+            auth_token: auth_token.clone(),
         };
 
         let app = axum::Router::new()
@@ -183,11 +186,13 @@ impl TestRepo {
 }
 
 async fn handle_git(State(state): State<AppState>, req: axum::extract::Request) -> Response<Body> {
-    if let Some(expected_token) = &state.bearer_token {
+    if let Some(expected_token) = &state.auth_token {
+        // git authenticates over HTTPS with HTTP Basic auth, supplying the token
+        // as the password.
         let authorized = req
             .headers()
-            .typed_get::<Authorization<headers::authorization::Bearer>>()
-            .is_some_and(|auth| auth.token() == expected_token.as_str());
+            .typed_get::<Authorization<headers::authorization::Basic>>()
+            .is_some_and(|auth| auth.password() == expected_token.as_str());
 
         if !authorized {
             return StatusCode::UNAUTHORIZED.into_response();

@@ -28,7 +28,7 @@ pub struct RepoConfig {
 #[derive(Clone)]
 struct SimAppState {
     tx: mpsc::UnboundedSender<ActorMsg>,
-    bearer_token: Option<String>,
+    auth_token: Option<String>,
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -214,19 +214,22 @@ impl Drop for AbortOnDrop {
 
 pub struct GithubSimBuilder {
     repos: Vec<RepoConfig>,
-    bearer_token: Option<String>,
+    auth_token: Option<String>,
 }
 
 impl GithubSimBuilder {
     pub fn new() -> Self {
         Self {
             repos: Vec::new(),
-            bearer_token: None,
+            auth_token: None,
         }
     }
 
-    pub fn with_bearer(mut self, token: impl AsRef<str>) -> Self {
-        self.bearer_token = Some(token.as_ref().to_string());
+    /// Require git HTTP requests to authenticate with this token via HTTP Basic
+    /// auth (token supplied as the password), matching how GitHub authenticates
+    /// git-over-HTTPS.
+    pub fn with_token(mut self, token: impl AsRef<str>) -> Self {
+        self.auth_token = Some(token.as_ref().to_string());
         self
     }
 
@@ -236,7 +239,7 @@ impl GithubSimBuilder {
     }
 
     pub async fn build(self) -> anyhow::Result<GithubSim> {
-        GithubSim::from_builder(self.repos, self.bearer_token).await
+        GithubSim::from_builder(self.repos, self.auth_token).await
     }
 }
 
@@ -259,7 +262,7 @@ impl GithubSim {
 
     async fn from_builder(
         repos: Vec<RepoConfig>,
-        bearer_token: Option<String>,
+        auth_token: Option<String>,
     ) -> anyhow::Result<Self> {
         let mut repo_map: HashMap<(String, String), PathBuf> = HashMap::new();
         let mut repos_state: HashMap<(String, String), RepoState> = HashMap::new();
@@ -299,7 +302,7 @@ impl GithubSim {
 
         let sim_state = SimAppState {
             tx: tx.clone(),
-            bearer_token: bearer_token.clone(),
+            auth_token: auth_token.clone(),
         };
 
         let app = axum::Router::new()
@@ -363,11 +366,13 @@ async fn handle_git(
     State(state): State<SimAppState>,
     req: axum::extract::Request,
 ) -> Response<Body> {
-    if let Some(expected_token) = &state.bearer_token {
+    if let Some(expected_token) = &state.auth_token {
+        // git authenticates over HTTPS with HTTP Basic auth, supplying the token
+        // as the password.
         let authorized = req
             .headers()
-            .typed_get::<Authorization<headers::authorization::Bearer>>()
-            .is_some_and(|auth| auth.token() == expected_token.as_str());
+            .typed_get::<Authorization<headers::authorization::Basic>>()
+            .is_some_and(|auth| auth.password() == expected_token.as_str());
 
         if !authorized {
             return StatusCode::UNAUTHORIZED.into_response();

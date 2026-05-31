@@ -1,3 +1,5 @@
+use base64::engine::Engine as _;
+use base64::engine::general_purpose::STANDARD as BASE64;
 use reqwest::header;
 use secret_vault_value::SecretValue;
 use tokio::sync::{mpsc, oneshot};
@@ -182,7 +184,12 @@ impl josh_command_middleware::CommandMiddleware for GithubAuthMiddleware {
             ));
         }
 
-        let header = format!("http.extraHeader=Authorization: Bearer {}", token);
+        // Git-over-HTTPS to GitHub authenticates via HTTP Basic auth, with the
+        // token supplied as the password (the username is ignored by GitHub, but
+        // `x-access-token` is the conventional value for app/installation tokens).
+        // The REST/GraphQL API uses `Bearer`, but git does not accept it.
+        let credentials = BASE64.encode(format!("x-access-token:{}", token));
+        let header = format!("http.extraHeader=Authorization: Basic {}", credentials);
 
         let args = cmd.args_mut();
         args.insert(0, header);
