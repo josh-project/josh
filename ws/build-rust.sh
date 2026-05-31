@@ -1,7 +1,6 @@
 set -e
 
 export RUSTFLAGS="-D warnings -Ctarget-feature=-crt-static"
-mkdir .git
 cargo build --workspace $CARGO_BUILD_FEATURES --offline --locked
 
 mkdir /out/debug
