@@ -6,27 +6,17 @@ use josh_github_graphql::operations::repo::RequiredStatusCheck;
 
 use crate::api::{fetch_maintainers, fetch_required_checks};
 use crate::models::CqActorState;
-use crate::types::GH_TOKEN_ENV;
 
 pub(crate) async fn get_or_fetch_admission(
     state: &mut CqActorState,
     clone_url: &str,
-    api: Option<&GithubApiConnection>,
+    api: &GithubApiConnection,
 ) -> Option<BTreeSet<RequiredStatusCheck>> {
     if let Some(checks) = state.admission.get(clone_url) {
         return Some(checks.clone());
     }
 
-    let Some(api) = api else {
-        tracing::warn!(
-            url = %clone_url,
-            "skipping admission populate: {} not set",
-            GH_TOKEN_ENV
-        );
-        return None;
-    };
-
-    let (owner, name) = state.resolve_owner_repo_logged(clone_url)?;
+    let (owner, name) = state.resolve_owner_repo(clone_url)?;
 
     match fetch_required_checks(api, &owner, &name).await {
         Ok(checks) => {
@@ -55,7 +45,7 @@ pub(crate) async fn get_or_init_pr_admission<'a>(
     state: &'a mut CqActorState,
     pr_node_id: &str,
     clone_url: &str,
-    api: Option<&GithubApiConnection>,
+    api: &GithubApiConnection,
 ) -> Option<&'a mut AdmissionState> {
     if !state.pr_admissions.contains_key(pr_node_id) {
         let required = get_or_fetch_admission(state, clone_url, api).await?;

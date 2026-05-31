@@ -3,22 +3,22 @@ use std::path::Path;
 use anyhow::Context;
 use git_tree_trace::trace_commit;
 
-use josh_core::git::spawn_git_command;
-
 use crate::layout::{self, RemoteMeta};
 use crate::util::make_signature;
 
 /// File mode for a regular (non-executable) blob.
 const BLOB_MODE: i32 = 0o100644;
 
+/// Import a remote's `FETCH_HEAD` into the metarepo.
+///
+/// The caller must have already fetched the remote (via the CQ command stack,
+/// so auth is attached) so that `FETCH_HEAD` resolves.
 pub fn handle_track(
     url: &str,
     id: &str,
     transaction: &josh_core::cache::Transaction,
 ) -> anyhow::Result<()> {
     let repo = transaction.repo();
-
-    spawn_git_command(repo.path(), &["fetch", url, "HEAD"], &[])?;
 
     let fetch_head_ref = repo
         .find_reference("FETCH_HEAD")

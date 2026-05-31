@@ -1,9 +1,11 @@
-use std::io::Read;
-
 use anyhow::Context;
 use clap::Parser;
+use std::io::Read;
+use std::sync::Arc;
 
+use josh_command_middleware::CommandStack;
 use josh_core::git::normalize_repo_path;
+use josh_github_auth::middleware::GithubAuthMiddleware;
 
 #[derive(Parser)]
 #[command(about = "Josh Commit Queue")]
@@ -69,14 +71,22 @@ fn open_repo(
 
 async fn run_serve(args: ServeArgs, data_dir: Option<&std::path::Path>) -> anyhow::Result<()> {
     let (repo_path, cache, _transaction) = open_repo(data_dir)?;
+    let middleware = Arc::new(
+        GithubAuthMiddleware::from_environment(josh_github_keyring::load_stored_token())
+            .context("Failed to obtain github auth from any of the known sources")?,
+    );
+
+    let command_env = CommandStack::new().layer(middleware.clone());
+    let git = josh_cq::git::spawn_git_actor(repo_path, cache, command_env);
 
     let event_tx = josh_cq::server::spawn_serve_task(
-        repo_path,
-        cache,
         args.tick_interval,
+        git,
+        middleware,
         None,
         std::collections::HashMap::new(),
     );
+
     let app = josh_cq::server::make_router(event_tx);
 
     let addr = std::net::SocketAddr::from(([0, 0, 0, 0], args.port));

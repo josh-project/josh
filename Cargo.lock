@@ -2924,6 +2924,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "josh-command-middleware"
+version = "26.5.8"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "thiserror 2.0.18",
+ "tokio",
+]
+
+[[package]]
 name = "josh-core"
 version = "26.5.8"
 dependencies = [
@@ -2973,9 +2983,12 @@ dependencies = [
  "dirs",
  "git-tree-trace",
  "git2",
+ "josh-command-middleware",
  "josh-core",
+ "josh-github-auth",
  "josh-github-changes",
  "josh-github-graphql",
+ "josh-github-keyring",
  "josh-github-webhooks",
  "josh-test-webhook-client",
  "serde",
@@ -2983,6 +2996,7 @@ dependencies = [
  "tokio",
  "tracing",
  "tracing-subscriber",
+ "url",
 ]
 
 [[package]]
@@ -3007,9 +3021,11 @@ dependencies = [
  "anyhow",
  "axum",
  "git2",
+ "josh-command-middleware",
  "josh-core",
  "josh-cq",
  "josh-cq-test-components",
+ "josh-github-auth",
  "josh-github-graphql",
  "josh-github-sim",
  "josh-github-webhooks",
@@ -3048,6 +3064,7 @@ dependencies = [
  "chrono",
  "form_urlencoded",
  "http",
+ "josh-command-middleware",
  "jsonwebtoken",
  "mime",
  "reqwest 0.13.2",

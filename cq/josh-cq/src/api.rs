@@ -7,15 +7,13 @@ use crate::models::CqActorState;
 
 pub(crate) async fn fetch_maintainers(
     clone_url: &str,
-    api: Option<&GithubApiConnection>,
+    api: &GithubApiConnection,
     state: &CqActorState,
 ) -> Vec<String> {
-    let Some(api) = api else {
+    let Some((owner, name)) = state.resolve_owner_repo(clone_url) else {
         return Vec::new();
     };
-    let Some((owner, name)) = state.resolve_owner_repo_logged(clone_url) else {
-        return Vec::new();
-    };
+
     match api.get_maintainers(&owner, &name).await {
         Ok(m) => m,
         Err(e) => {
@@ -50,17 +48,15 @@ pub(crate) async fn fetch_required_checks(
 }
 
 pub(crate) async fn lookup_open_prs_by_sha(
-    api: Option<&GithubApiConnection>,
+    api: &GithubApiConnection,
     clone_url: &str,
     sha: &str,
     state: &CqActorState,
 ) -> Vec<String> {
-    let Some(api) = api else {
+    let Some((owner, name)) = state.resolve_owner_repo(clone_url) else {
         return Vec::new();
     };
-    let Some((owner, name)) = state.resolve_owner_repo_logged(clone_url) else {
-        return Vec::new();
-    };
+
     match api.find_open_prs_by_head_sha(&owner, &name, sha).await {
         Ok(prs) => prs.into_iter().map(|(id, _)| id).collect(),
         Err(e) => {

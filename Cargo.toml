@@ -26,9 +26,9 @@ members = [
     "forges/josh-github-auth",
     "forges/josh-github-keyring",
 
-
     "deployment/josh-test-webhook-client",
     "deployment/josh-test-webhook-service",
+    "deployment/josh-command-middleware",
 ]
 
 [profile.release]
@@ -108,6 +108,7 @@ josh-github-sim = { path = "forges/josh-github-sim", version = "26.5.8" }
 # Deployment
 josh-test-webhook-service = { path = "deployment/josh-test-webhook-service", version = "26.5.8" }
 josh-test-webhook-client = { path = "deployment/josh-test-webhook-client", version = "26.5.8" }
+josh-command-middleware = { path = "deployment/josh-command-middleware", version = "26.5.8" }
 
 [workspace.dependencies.git2]
 default-features = false

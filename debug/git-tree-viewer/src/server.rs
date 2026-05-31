@@ -42,6 +42,13 @@ async fn get_repo(State(state): State<ServerState>) -> impl IntoResponse {
     })
 }
 
+/// Readiness probe. `git-tree-trace` queries this on first use to decide
+/// whether a viewer is actually listening; if it can't reach this endpoint it
+/// disables tracing (so it never pushes to a dead port).
+async fn get_ready() -> impl IntoResponse {
+    StatusCode::OK
+}
+
 async fn handle_git(
     State(state): State<ServerState>,
     req: axum::extract::Request,
@@ -65,6 +72,7 @@ pub fn start(tx: Sender<Trace>, repo_path: &std::path::Path) {
             let app = Router::new()
                 .route("/v1/traces", post(post_trace).get(get_traces))
                 .route("/v1/repo", get(get_repo))
+                .route("/v1/ready", get(get_ready))
                 .fallback(get(handle_git).post(handle_git))
                 .with_state(state);
 

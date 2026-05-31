@@ -1,8 +1,11 @@
 use std::sync::OnceLock;
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use git2::Oid;
 use serde::Serialize;
+
+/// Base URL of the `git-tree-viewer` HTTP server.
+const VIEWER_URL: &str = "http://127.0.0.1:8765";
 
 #[derive(Serialize)]
 struct TraceRequest {
@@ -19,7 +22,10 @@ enum TraceState {
 fn state() -> &'static TraceState {
     static STATE: OnceLock<TraceState> = OnceLock::new();
     STATE.get_or_init(|| {
-        if detect_test_env() {
+        // Trace only when a viewer is actually listening. This is probed once;
+        // if no viewer answers, tracing stays disabled for the whole process —
+        // notably so test runs don't push to a dead port 8765.
+        if viewer_ready() {
             TraceState::Started {
                 session_name: generate_session_name(),
             }
@@ -29,20 +35,16 @@ fn state() -> &'static TraceState {
     })
 }
 
-fn detect_test_env() -> bool {
-    if std::env::var("NEXTEST").is_ok() {
-        return true;
-    }
-
-    if let Ok(exe) = std::env::current_exe() {
-        if let Some(parent) = exe.parent() {
-            if parent.file_name().is_some_and(|n| n == "deps") {
-                return true;
-            }
-        }
-    }
-
-    false
+/// Probe the viewer's readiness endpoint. Returns `true` only if it answers
+/// with success; any connection error (the usual case — no viewer running)
+/// yields `false`.
+fn viewer_ready() -> bool {
+    client()
+        .get(format!("{VIEWER_URL}/v1/ready"))
+        .timeout(Duration::from_millis(500))
+        .send()
+        .map(|resp| resp.status().is_success())
+        .unwrap_or(false)
 }
 
 fn generate_session_name() -> String {
@@ -60,7 +62,10 @@ fn client() -> &'static reqwest::blocking::Client {
 }
 
 pub fn trace_commit(repo: &git2::Repository, oid: Oid, name: &str) {
-    let s = state();
+    // No viewer listening → nothing to push or report.
+    let TraceState::Started { session_name } = state() else {
+        return;
+    };
 
     let refspec = format!("{}:refs/heads/_{}", oid, oid);
     let workdir = repo.workdir().unwrap_or_else(|| repo.path());
@@ -69,7 +74,7 @@ pub fn trace_commit(repo: &git2::Repository, oid: Oid, name: &str) {
     command.arg("-C");
     command.arg(workdir);
     command.arg("push");
-    command.arg("http://127.0.0.1:8765");
+    command.arg(VIEWER_URL);
     command.arg(&refspec);
 
     let child = match command.spawn() {
@@ -94,19 +99,17 @@ pub fn trace_commit(repo: &git2::Repository, oid: Oid, name: &str) {
         return;
     }
 
-    if let TraceState::Started { session_name } = s {
-        let request = TraceRequest {
-            session: session_name.clone(),
-            commit: oid.to_string(),
-            label: name.to_string(),
-        };
+    let request = TraceRequest {
+        session: session_name.clone(),
+        commit: oid.to_string(),
+        label: name.to_string(),
+    };
 
-        if let Err(e) = client()
-            .post("http://127.0.0.1:8765/v1/traces")
-            .json(&request)
-            .send()
-        {
-            eprintln!("git-tree-trace: failed to send trace: {}", e);
-        }
+    if let Err(e) = client()
+        .post(format!("{VIEWER_URL}/v1/traces"))
+        .json(&request)
+        .send()
+    {
+        eprintln!("git-tree-trace: failed to send trace: {}", e);
     }
 }

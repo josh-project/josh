@@ -1,5 +1,4 @@
 use std::collections::HashMap;
-use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use axum::extract::State;
@@ -8,14 +7,16 @@ use axum::response::IntoResponse;
 use axum::routing::post;
 use tokio::sync::{mpsc, oneshot};
 
-use josh_core::cache::{CacheStack, Transaction, TransactionContext};
+use url::Url;
+
+use josh_github_auth::middleware::GithubAuthMiddleware;
 use josh_github_graphql::connection::GithubApiConnection;
 
-use crate::fetch::handle_fetch;
+use crate::git::{GitActor, GitActorMessage};
 use crate::models::CqActorState;
+use crate::refresh_remotes::refresh_remotes;
 use crate::step::run_queue_cycle;
-use crate::track::handle_track;
-use crate::types::{CqEvent, GH_TOKEN_ENV, TrackRequest};
+use crate::types::{CqEvent, TrackRequest};
 use crate::webhook::handle_webhook;
 
 async fn track_handler(
@@ -78,17 +79,6 @@ pub async fn bind_router(
     Ok((handle, cq_url))
 }
 
-/// Open a transaction on the metarepo, logging and returning `None` on failure.
-fn open_transaction(repo_path: &Path, cache: &Arc<CacheStack>) -> Option<Transaction> {
-    match TransactionContext::new(repo_path, cache.clone()).open(None) {
-        Ok(t) => Some(t),
-        Err(e) => {
-            tracing::error!(error = ?e, "failed to open transaction");
-            None
-        }
-    }
-}
-
 /// Outcome of processing a single actor event.
 struct EventOutcome {
     /// Whether the queue cycle (evaluate→step) should run after this event.
@@ -100,50 +90,68 @@ struct EventOutcome {
 }
 
 /// Process a single actor event, mutating `state` and reporting whether a queue
-/// cycle is warranted plus any completion signal to fire afterwards.
+/// cycle is warranted plus any completion signal to fire afterwards. All git
+/// work goes through the `git` actor.
 async fn process_event(
     event: CqEvent,
-    repo_path: &Path,
-    cache: &Arc<CacheStack>,
-    api: Option<&GithubApiConnection>,
+    git: &GitActor,
+    api: &GithubApiConnection,
     state: &mut CqActorState,
 ) -> EventOutcome {
     match event {
         CqEvent::Tick { done } => {
-            tracing::info!("tick: running fetch");
-            if let Some(transaction) = open_transaction(repo_path, cache)
-                && let Err(e) = handle_fetch(transaction, api, state).await
-            {
-                tracing::error!(error = ?e, "fetch failed");
+            tracing::info!("tick: refreshing remotes");
+
+            if let Err(e) = refresh_remotes(git, api, state).await {
+                tracing::error!(error = ?e, "remote refresh failed");
             }
+
             EventOutcome {
                 run_queue_cycle: true,
                 done,
             }
         }
         CqEvent::Webhook(payload) => {
-            if let Some(transaction) = open_transaction(repo_path, cache)
-                && let Err(e) = handle_webhook(&payload, transaction, api, state).await
-            {
+            if let Err(e) = handle_webhook(&payload, git, api, state).await {
                 tracing::error!(error = ?e, "webhook handling error");
             }
+
             EventOutcome {
                 run_queue_cycle: true,
                 done: None,
             }
         }
         CqEvent::Track { request, done } => {
-            if let Some(transaction) = open_transaction(repo_path, cache) {
-                match tokio::task::spawn_blocking(move || {
-                    handle_track(&request.url, &request.id, &transaction)
+            // Fetch the remote so its FETCH_HEAD resolves, then import it.
+            if let Err(e) = git
+                .request(|reply| GitActorMessage::RunGitCommand {
+                    args: vec!["fetch".to_string(), request.url.clone(), "HEAD".to_string()],
+                    reply,
                 })
                 .await
-                {
-                    Ok(Ok(())) => {}
-                    Ok(Err(e)) => tracing::error!(error = ?e, "track failed"),
-                    Err(e) => tracing::error!(error = ?e, "track task panicked"),
-                }
+            {
+                tracing::error!(error = ?e, "track fetch failed");
+                return EventOutcome {
+                    run_queue_cycle: false,
+                    done: Some(done),
+                };
+            };
+
+            if let Err(e) = git
+                .request(|reply| GitActorMessage::Track {
+                    url: request.url,
+                    id: request.id,
+                    reply,
+                })
+                .await
+            {
+                tracing::error!(error = ?e, "track failed");
+                return EventOutcome {
+                    run_queue_cycle: false,
+                    done: Some(done),
+                };
             }
+
             EventOutcome {
                 run_queue_cycle: false,
                 done: Some(done),
@@ -153,20 +161,21 @@ async fn process_event(
 }
 
 pub fn spawn_serve_task(
-    repo_path: PathBuf,
-    cache: Arc<CacheStack>,
     tick_interval_secs: u64,
-    api: Option<Arc<GithubApiConnection>>,
+    // Shared git actor handle (created by the caller, which also derives the
+    // command stack from the same middleware).
+    git: Arc<GitActor>,
+    // Auth middleware for the GraphQL connection.
+    middleware: Arc<GithubAuthMiddleware>,
+    // GraphQL endpoint override; `None` uses the real GitHub API,
+    // tests pass the mock's URL.
+    api_url: Option<Url>,
     // Maps arbitrary clone URLs (e.g. 127.0.0.1 for tests) to (owner, name) pairs.
     url_owner_map: HashMap<String, (String, String)>,
 ) -> mpsc::Sender<CqEvent> {
     let (event_tx, mut event_rx) = mpsc::channel::<CqEvent>(100);
 
-    let api = api.or_else(|| GithubApiConnection::from_environment().map(Arc::new));
-
-    if api.is_none() {
-        tracing::warn!("{} not set and no stored credentials found", GH_TOKEN_ENV);
-    }
+    let api = GithubApiConnection::from_middleware(middleware, api_url);
 
     // Spawn the periodic tick timer
     let tick_tx = event_tx.clone();
@@ -193,11 +202,10 @@ pub fn spawn_serve_task(
         };
 
         while let Some(event) = event_rx.recv().await {
-            let outcome =
-                process_event(event, &repo_path, &cache, api.as_deref(), &mut state).await;
+            let outcome = process_event(event, &git, &api, &mut state).await;
 
             if outcome.run_queue_cycle {
-                run_queue_cycle(&mut state, &repo_path, &cache, api.as_deref()).await;
+                run_queue_cycle(&mut state, &git, &api).await;
             }
 
             if let Some(tx) = outcome.done {

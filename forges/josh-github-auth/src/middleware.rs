@@ -1,6 +1,4 @@
-use anyhow::Result;
 use reqwest::header;
-use reqwest_middleware::{Middleware, Next};
 use secret_vault_value::SecretValue;
 use tokio::sync::{mpsc, oneshot};
 use tokio::time::Instant;
@@ -18,7 +16,7 @@ struct TokenState {
 }
 
 enum Command {
-    GetToken(oneshot::Sender<Result<String>>),
+    GetToken(oneshot::Sender<anyhow::Result<String>>),
 }
 
 const EXPIRY_BUFFER: Duration = Duration::from_secs(30);
@@ -34,7 +32,7 @@ async fn device_flow_actor_loop(mut state: TokenState, mut rx: mpsc::UnboundedRe
     }
 }
 
-async fn maybe_refresh_and_get_token(state: &mut TokenState) -> Result<String> {
+async fn maybe_refresh_and_get_token(state: &mut TokenState) -> anyhow::Result<String> {
     let needs_refresh = match (state.expires_at, &state.refresh_token) {
         (Some(expires_at), Some(_)) => Instant::now() + EXPIRY_BUFFER >= expires_at,
         _ => false,
@@ -64,6 +62,28 @@ pub struct GithubAuthMiddleware {
 }
 
 impl GithubAuthMiddleware {
+    /// Resolve auth credentials from the environment.
+    ///
+    /// Prefers the `GH_TOKEN` env var; otherwise falls back to the supplied
+    /// stored device-flow token (read by the caller to prevent circular deps).
+    /// Returns `None` if neither is available.
+    pub fn from_environment(stored_token: Option<AccessTokenResponse>) -> Option<Self> {
+        if let Ok(token) = std::env::var("GH_TOKEN")
+            && !token.is_empty()
+        {
+            tracing::info!("using GH_TOKEN for GitHub authentication");
+            return Some(Self::from_token(token));
+        }
+
+        let stored = stored_token?;
+        tracing::info!("using stored device-flow token for GitHub authentication");
+
+        Some(Self::from_app_flow(
+            stored,
+            crate::APP_CLIENT_ID.to_string(),
+        ))
+    }
+
     pub fn from_app_flow(token: AccessTokenResponse, client_id: String) -> Self {
         let (sender, receiver) = mpsc::unbounded_channel();
 
@@ -87,7 +107,7 @@ impl GithubAuthMiddleware {
         app_id: String,
         installation_id: String,
         key: SecretValue,
-    ) -> Result<Self> {
+    ) -> anyhow::Result<Self> {
         let auth = GithubAppAuth::authenticate(app_id, installation_id, key).await?;
         let (sender, receiver) = mpsc::unbounded_channel();
 
@@ -109,7 +129,7 @@ impl GithubAuthMiddleware {
         Self { sender }
     }
 
-    async fn get_token(&self) -> Result<String> {
+    async fn get_token(&self) -> anyhow::Result<String> {
         let (tx, rx) = oneshot::channel();
 
         self.sender
@@ -122,12 +142,12 @@ impl GithubAuthMiddleware {
 }
 
 #[async_trait::async_trait]
-impl Middleware for GithubAuthMiddleware {
+impl reqwest_middleware::Middleware for GithubAuthMiddleware {
     async fn handle(
         &self,
         mut req: reqwest::Request,
         extensions: &mut http::Extensions,
-        next: Next<'_>,
+        next: reqwest_middleware::Next<'_>,
     ) -> reqwest_middleware::Result<reqwest::Response> {
         let token = self.get_token().await.map_err(|e| {
             reqwest_middleware::Error::Middleware(anyhow::anyhow!(
@@ -143,5 +163,31 @@ impl Middleware for GithubAuthMiddleware {
         );
 
         next.run(req, extensions).await
+    }
+}
+
+#[async_trait::async_trait]
+impl josh_command_middleware::CommandMiddleware for GithubAuthMiddleware {
+    async fn apply(&self, cmd: &mut josh_command_middleware::Command) -> anyhow::Result<()> {
+        let token = self.get_token().await.map_err(|e| {
+            josh_command_middleware::Error::Middleware(anyhow::anyhow!(
+                "failed to get auth token: {}",
+                e
+            ))
+        })?;
+
+        if cmd.program_mut().as_str() != "git" {
+            return Err(anyhow::anyhow!(
+                "Can't attach auth to anything other than git"
+            ));
+        }
+
+        let header = format!("http.extraHeader=Authorization: Bearer {}", token);
+
+        let args = cmd.args_mut();
+        args.insert(0, header);
+        args.insert(0, "-c".to_string());
+
+        Ok(())
     }
 }

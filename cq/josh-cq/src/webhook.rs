@@ -1,11 +1,10 @@
-use anyhow::Context;
-
 use josh_github_graphql::connection::GithubApiConnection;
 use josh_github_webhooks::webhook_server::WebhookPayload;
 use josh_github_webhooks::webhook_types;
 
 use crate::admission::get_or_init_pr_admission;
 use crate::api::lookup_open_prs_by_sha;
+use crate::git::{GitActor, GitActorMessage};
 use crate::models::{CandidatePr, CqActorState};
 
 fn webhook_repository(payload: &WebhookPayload) -> &webhook_types::Repository {
@@ -22,22 +21,19 @@ fn webhook_repository(payload: &WebhookPayload) -> &webhook_types::Repository {
 
 pub(crate) async fn handle_webhook(
     payload: &WebhookPayload,
-    transaction: josh_core::cache::Transaction,
-    api: Option<&GithubApiConnection>,
+    git: &GitActor,
+    api: &GithubApiConnection,
     state: &mut CqActorState,
 ) -> anyhow::Result<()> {
     let clone_url = webhook_repository(payload).clone_url.clone();
-    let clone_url_for_closure = clone_url.clone();
 
-    let tracked = tokio::task::spawn_blocking(move || {
-        let repo = transaction.repo();
-        Ok::<_, anyhow::Error>(
-            crate::layout::find_remote_by_url(repo, &clone_url_for_closure)
-                .context("Failed to list tracked remotes")?
-                .is_some(),
-        )
-    })
-    .await??;
+    let tracked = git
+        .request(|reply| GitActorMessage::FindRemoteByUrl {
+            url: clone_url.clone(),
+            reply,
+        })
+        .await?
+        .is_some();
 
     if !tracked {
         tracing::info!(url = %clone_url, "ignoring webhook from untracked repo");

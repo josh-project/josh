@@ -56,21 +56,16 @@ pub(crate) struct CqActorState {
 }
 
 impl CqActorState {
-    /// Try `josh_github_changes::repo::parse_owner_repo`, fall back to an explicit map.
     pub(crate) fn resolve_owner_repo(&self, url: &str) -> Option<(String, String)> {
-        match josh_github_changes::repo::parse_owner_repo(url) {
-            Ok(pair) => Some(pair),
-            Err(_) => self.url_owner_map.get(url).cloned(),
+        if let Some(mapping) = self.url_owner_map.get(url).cloned() {
+            return Some(mapping);
         }
-    }
 
-    /// Like `resolve_owner_repo`, but logs a warning when resolution fails.
-    pub(crate) fn resolve_owner_repo_logged(&self, url: &str) -> Option<(String, String)> {
-        let resolved = self.resolve_owner_repo(url);
-        if resolved.is_none() {
-            tracing::warn!(url = %url, "could not resolve owner/repo");
-        }
-        resolved
+        josh_github_changes::repo::parse_owner_repo(url)
+            .inspect_err(|_| {
+                tracing::warn!(url = %url, "could not resolve owner/repo");
+            })
+            .ok()
     }
 
     pub fn upsert_candidate(&mut self, pr: CandidatePr) {

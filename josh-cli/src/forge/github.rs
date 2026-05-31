@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use anyhow::Context;
 
 use josh_github_auth::APP_CLIENT_ID;
@@ -54,7 +56,11 @@ pub fn logout() -> anyhow::Result<()> {
 pub const GITHUB_USER_TOKEN_ENV: &str = "GH_TOKEN";
 
 pub async fn make_api_connection() -> Option<GithubApiConnection> {
-    GithubApiConnection::from_environment()
+    let stored_token = josh_github_keyring::load_stored_token();
+    let middleware =
+        josh_github_auth::middleware::GithubAuthMiddleware::from_environment(stored_token)?;
+
+    Some(GithubApiConnection::from_middleware(Arc::new(middleware), None))
 }
 
 pub fn api_connection_hint() -> String {

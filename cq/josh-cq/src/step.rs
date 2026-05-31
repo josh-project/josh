@@ -1,8 +1,7 @@
 use anyhow::Context;
-use git_tree_trace::trace_commit;
-use josh_core::git::{spawn_git_command, spawn_git_command_stdout};
 use josh_github_graphql::connection::GithubApiConnection;
 
+use crate::git::{GitActor, GitActorMessage};
 use crate::models::CqActorState;
 
 /// Select the first admissible PR from the candidate pool.
@@ -31,15 +30,22 @@ fn select_candidate(state: &CqActorState) -> Option<String> {
 ///
 /// Returns an error if the output is not a valid 40-char hex string,
 /// which indicates a merge conflict or unexpected output.
-fn compute_merge_tree(
-    repo: &git2::Repository,
+async fn compute_merge_tree(
+    git: &GitActor,
     main_sha: &str,
     head_sha: &str,
 ) -> anyhow::Result<String> {
-    let output = spawn_git_command_stdout(
-        repo.path(),
-        &["merge-tree", "--write-tree", main_sha, head_sha],
-    )?;
+    let output = git
+        .request(|reply| GitActorMessage::RunGitCommand {
+            args: vec![
+                "merge-tree".to_string(),
+                "--write-tree".to_string(),
+                main_sha.to_string(),
+                head_sha.to_string(),
+            ],
+            reply,
+        })
+        .await?;
     // Take the first line — in git >= 2.38 the tree SHA is on line 1
     let merged_tree = output.lines().next().unwrap_or("").trim().to_string();
 
@@ -54,26 +60,28 @@ fn compute_merge_tree(
 }
 
 /// Create a merge commit via `git commit-tree`.
-fn create_merge_commit(
-    repo: &git2::Repository,
+async fn create_merge_commit(
+    git: &GitActor,
     main_sha: &str,
     head_sha: &str,
     merged_tree: &str,
     message: &str,
 ) -> anyhow::Result<String> {
-    let output = spawn_git_command_stdout(
-        repo.path(),
-        &[
-            "commit-tree",
-            "-p",
-            main_sha,
-            "-p",
-            head_sha,
-            "-m",
-            message,
-            merged_tree,
-        ],
-    )?;
+    let output = git
+        .request(|reply| GitActorMessage::RunGitCommand {
+            args: vec![
+                "commit-tree".to_string(),
+                "-p".to_string(),
+                main_sha.to_string(),
+                "-p".to_string(),
+                head_sha.to_string(),
+                "-m".to_string(),
+                message.to_string(),
+                merged_tree.to_string(),
+            ],
+            reply,
+        })
+        .await?;
     Ok(output.trim().to_string())
 }
 
@@ -81,28 +89,29 @@ fn create_merge_commit(
 ///
 /// The push is forced because the metarepo is the source of truth: anything
 /// pushed to the remote outside the queue is overwritten.
-fn push_to_remote(
-    repo: &git2::Repository,
+async fn push_to_remote(
+    git: &GitActor,
     remote_url: &str,
     merge_commit: &str,
     base_branch: &str,
 ) -> anyhow::Result<()> {
     let target_ref = format!("refs/heads/{}", base_branch);
     let refspec = format!("+{}:{}", merge_commit, target_ref);
-    spawn_git_command(repo.path(), &["push", remote_url, &refspec], &[])?;
+    git.request(|reply| GitActorMessage::RunGitCommand {
+        args: vec!["push".to_string(), remote_url.to_string(), refspec],
+        reply,
+    })
+    .await?;
     Ok(())
 }
 
 /// Post a merge comment and close the PR on GitHub.
 /// No-ops silently when `api` is `None` (e.g. in test environments).
 async fn close_pr_on_github(
-    api: Option<&GithubApiConnection>,
+    api: &GithubApiConnection,
     node_id: &str,
     merge_commit: &str,
 ) -> anyhow::Result<()> {
-    let Some(api) = api else {
-        return Ok(());
-    };
     let comment = format!("Merged by Josh merge queue as `{}`.", merge_commit);
     api.add_pr_comment(node_id, &comment).await?;
     api.close_pull_request(node_id).await?;
@@ -112,10 +121,14 @@ async fn close_pr_on_github(
 /// Merge an admissible PR: compute merge locally, push to remote main,
 /// unapply the merge back onto the metarepo, close the PR, and remove from the
 /// candidate pool.
+///
+/// All git work — the git2 phases (`PrepareMerge`/`UnapplyMerge`) and the git
+/// subprocess steps (fetch/merge-tree/commit-tree/push) — goes through the git
+/// actor, which serializes them and attaches the auth token.
 async fn handle_step(
     node_id: &str,
-    transaction: josh_core::cache::Transaction,
-    api: Option<&GithubApiConnection>,
+    git: &GitActor,
+    api: &GithubApiConnection,
     state: &mut CqActorState,
 ) -> anyhow::Result<()> {
     let candidate = state
@@ -123,91 +136,64 @@ async fn handle_step(
         .context("candidate not found in state")?
         .clone();
 
-    let node_id_owned = node_id.to_string();
+    // Resolve the tracked remote and derive its current main from the metarepo.
+    let prep = git
+        .request(|reply| GitActorMessage::PrepareMerge {
+            repo_url: candidate.repo_url.clone(),
+            head_sha: candidate.head_sha.clone(),
+            reply,
+        })
+        .await?;
 
-    let merge_commit: Option<String> = tokio::task::spawn_blocking(move || {
-        let repo = transaction.repo();
-        let (head_commit, _) = crate::layout::head_commit_and_tree(repo)?;
+    // Fetch the PR head if it isn't present locally.
+    if prep.need_fetch {
+        git.request(|reply| GitActorMessage::RunGitCommand {
+            args: vec![
+                "fetch".to_string(),
+                candidate.repo_url.clone(),
+                candidate.head_sha.clone(),
+            ],
+            reply,
+        })
+        .await?;
+    }
 
-        // Find which tracked remote this PR belongs to.
-        let name = crate::layout::find_remote_by_url(repo, &candidate.repo_url)
-            .context("Failed to list tracked remotes")?
-            .map(|(name, _)| name)
-            .context("No tracked remote found for PR")?;
-
-        // The remote's current main is the metarepo filtered through its workspace.
-        let filter = josh_core::filter::parse(&crate::layout::workspace_filter_spec(&name))
-            .context("Failed to parse workspace filter")?;
-        let main_oid = josh_core::filter::apply_to_commit(filter, &head_commit, &transaction)
-            .context("Failed to derive remote main")?;
-        let main_sha = main_oid.to_string();
-        trace_commit(repo, main_oid, "remote main");
-
-        let pr_oid = git2::Oid::from_str(&candidate.head_sha)?;
-        if repo.find_commit(pr_oid).is_err() {
-            spawn_git_command(
-                repo.path(),
-                &["fetch", &candidate.repo_url, &candidate.head_sha],
-                &[],
-            )?;
-        }
-        trace_commit(repo, pr_oid, "PR head");
-
-        let merged_tree = match compute_merge_tree(repo, &main_sha, &candidate.head_sha) {
-            Ok(tree) => tree,
-            Err(_) => {
-                tracing::warn!(
-                    pr = %node_id_owned,
-                    "merge conflict detected; skipping PR"
-                );
-                return Ok::<_, anyhow::Error>(None);
-            }
-        };
-
-        let message = format!("Merge PR #{}: {}", candidate.number, candidate.title);
-        let merge_commit =
-            create_merge_commit(repo, &main_sha, &candidate.head_sha, &merged_tree, &message)?;
-        let merge_oid = merge_commit
-            .parse::<git2::Oid>()
-            .context("Failed to parse merge commit OID")?;
-        trace_commit(repo, merge_oid, "merge");
-
-        // Push the merge to the remote's main branch.
-        push_to_remote(
-            repo,
-            &candidate.repo_url,
-            &merge_commit,
-            &candidate.base_branch,
-        )?;
-
-        // Map the merge back onto the metarepo and advance HEAD, so the metarepo
-        // stays a faithful pre-image of every tracked remote.
-        let new_metarepo = josh_core::history::unapply_filter(
-            &transaction,
-            filter,
-            head_commit.id(),
-            main_oid,
-            merge_oid,
-            josh_core::history::OrphansMode::Keep,
-            None,
-        )
-        .context("Failed to unapply merge onto metarepo")?;
-        repo.head()?
-            .set_target(new_metarepo, "josh-cq merge")
-            .context("Failed to update HEAD")?;
-        trace_commit(repo, new_metarepo, "metarepo after merge");
-
-        Ok::<_, anyhow::Error>(Some(merge_commit))
-    })
-    .await??;
-
-    let merge_commit = match merge_commit {
-        Some(mc) => mc,
-        None => {
+    let main_sha = prep.main_oid.to_string();
+    let merged_tree = match compute_merge_tree(git, &main_sha, &candidate.head_sha).await {
+        Ok(tree) => tree,
+        Err(_) => {
+            tracing::warn!(pr = %node_id, "merge conflict detected; skipping PR");
             state.remove_candidate(node_id);
             return Ok(());
         }
     };
+
+    let message = format!("Merge PR #{}: {}", candidate.number, candidate.title);
+    let merge_commit =
+        create_merge_commit(git, &main_sha, &candidate.head_sha, &merged_tree, &message).await?;
+    let merge_oid = merge_commit
+        .parse::<git2::Oid>()
+        .context("Failed to parse merge commit OID")?;
+
+    // Push the merge to the remote's main branch.
+    push_to_remote(
+        git,
+        &candidate.repo_url,
+        &merge_commit,
+        &candidate.base_branch,
+    )
+    .await?;
+
+    // Map the merge back onto the metarepo and advance HEAD, so the metarepo
+    // stays a faithful pre-image of every tracked remote.
+    git.request(|reply| GitActorMessage::UnapplyMerge {
+        remote_name: prep.remote_name,
+        head_commit_id: prep.head_commit_id,
+        main_oid: prep.main_oid,
+        merge_oid,
+        reply,
+    })
+    .await?;
 
     close_pr_on_github(api, node_id, &merge_commit).await?;
 
@@ -220,12 +206,9 @@ async fn handle_step(
 /// Called after every event (webhook or tick) to try to make progress.
 pub(crate) async fn run_queue_cycle(
     state: &mut CqActorState,
-    repo_path: &std::path::Path,
-    cache: &std::sync::Arc<josh_core::cache::CacheStack>,
-    api: Option<&GithubApiConnection>,
+    git: &GitActor,
+    api: &GithubApiConnection,
 ) {
-    use josh_core::cache::TransactionContext;
-
     loop {
         let node_id = match select_candidate(state) {
             Some(id) => id,
@@ -244,18 +227,7 @@ pub(crate) async fn run_queue_cycle(
             (c.number, c.repo_url.clone())
         };
 
-        let transaction = match TransactionContext::new(repo_path, cache.clone()).open(None) {
-            Ok(t) => t,
-            Err(e) => {
-                tracing::error!(
-                    error = ?e,
-                    "failed to open transaction for merge"
-                );
-                break;
-            }
-        };
-
-        match handle_step(&node_id, transaction, api, state).await {
+        match handle_step(&node_id, git, api, state).await {
             Ok(()) => {
                 tracing::info!(
                     pr = %node_id,

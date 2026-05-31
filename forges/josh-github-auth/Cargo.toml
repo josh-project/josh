@@ -26,6 +26,8 @@ secret-vault-value.workspace = true
 jsonwebtoken.workspace = true
 chrono.workspace = true
 
+josh-command-middleware.workspace = true
+
 [dev-dependencies]
 tokio.workspace = true
 tracing-subscriber.workspace = true

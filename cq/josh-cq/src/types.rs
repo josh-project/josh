@@ -3,8 +3,6 @@ use tokio::sync::oneshot;
 
 use josh_github_webhooks::webhook_server::WebhookPayload;
 
-pub(crate) const GH_TOKEN_ENV: &str = "GH_TOKEN";
-
 #[derive(Deserialize)]
 pub struct TrackRequest {
     pub url: String,

@@ -1,8 +1,9 @@
 use std::sync::Arc;
 use std::sync::Once;
 
+use josh_command_middleware::CommandStack;
 use josh_cq::types::CqEvent;
-use josh_github_graphql::connection::GithubApiConnection;
+use josh_github_auth::middleware::GithubAuthMiddleware;
 use josh_github_sim::GithubSim;
 
 static INIT_ENV: Once = Once::new();
@@ -94,20 +95,25 @@ pub async fn start_test_harness(
     // 3. handle_init
     josh_cq::init::handle_init(&transaction)?;
 
-    // 4. GraphQL URL — GithubSim serves GraphQL at /graphql
-    let api = Arc::new(GithubApiConnection::for_test(
-        github_sim.graphql_url().clone(),
-    ));
-
-    // 5. Build URL → owner/name mapping so the CQ actor can resolve
+    // 4. Build URL → owner/name mapping so the CQ actor can resolve
     //    non-GitHub URLs from the GithubSim's git URL.
     let git_url = format!("{}{}/{}", github_sim.url(), owner, name);
     let mut url_owner_map = std::collections::HashMap::new();
     url_owner_map.insert(git_url, (owner.to_string(), name.to_string()));
 
-    // 6. Start the CQ actor (long tick interval so we drive ticks manually)
-    let event_tx =
-        josh_cq::server::spawn_serve_task(repo_path, cache.clone(), 3600, Some(api), url_owner_map);
+    // 5. Start the CQ actor (long tick interval so we drive ticks manually).
+    //    The sim ignores auth, so a dummy-token middleware suffices; the
+    //    GraphQL connection is pointed at GithubSim's /graphql endpoint.
+    let middleware = Arc::new(GithubAuthMiddleware::from_token("test-token"));
+    let command_env = CommandStack::new().layer(middleware.clone());
+    let git = josh_cq::git::spawn_git_actor(repo_path, cache.clone(), command_env);
+    let event_tx = josh_cq::server::spawn_serve_task(
+        3600,
+        git,
+        middleware,
+        Some(github_sim.graphql_url().clone()),
+        url_owner_map,
+    );
 
     // 7. Start the CQ HTTP server so webhooks go through the real HTTP path
     let (cq_server, cq_webhook_url) = josh_cq::server::bind_router(event_tx.clone()).await?;

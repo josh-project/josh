@@ -1,47 +1,45 @@
-use anyhow::Context;
-
-use josh_core::git::spawn_git_command;
 use josh_github_graphql::connection::GithubApiConnection;
 
 use crate::api::fetch_required_checks;
+use crate::git::{GitActor, GitActorMessage};
 use crate::models::{CandidatePr, CqActorState};
 
-pub(crate) async fn handle_fetch(
-    transaction: josh_core::cache::Transaction,
-    api: Option<&GithubApiConnection>,
+pub(crate) async fn refresh_remotes(
+    git: &GitActor,
+    api: &GithubApiConnection,
     state: &mut CqActorState,
 ) -> anyhow::Result<()> {
-    // Enumerate tracked remotes from the metarepo and fetch their objects so
-    // PR head commits are available locally. The remote's main is derived from
-    // the metarepo (see step.rs), so nothing is written back here.
-    let remotes: Vec<String> = tokio::task::spawn_blocking(move || {
-        let repo = transaction.repo();
-        let tracked = crate::layout::list_tracked_remotes_for_head(repo)
-            .context("Failed to list tracked remotes")?;
+    // Enumerate tracked remotes from the metarepo via the git actor.
+    let remotes: Vec<String> = git
+        .request(|reply| GitActorMessage::ListTrackedRemotes { reply })
+        .await?
+        .into_iter()
+        .map(|(_, meta)| meta.url)
+        .collect();
 
-        if tracked.is_empty() {
-            tracing::info!("no tracked remotes found");
-            return Ok::<_, anyhow::Error>(Vec::new());
+    if remotes.is_empty() {
+        tracing::info!("no tracked remotes found");
+        return Ok(());
+    }
+
+    // Fetch each remote's objects through the git actor (auth attached) so PR
+    // head commits are available locally. The remote's main is derived from the
+    // metarepo (see step.rs), so nothing is written back here.
+    for url in &remotes {
+        let fetch = git
+            .request(|reply| GitActorMessage::RunGitCommand {
+                args: vec!["fetch".to_string(), url.clone()],
+                reply,
+            })
+            .await;
+
+        if let Err(e) = fetch {
+            tracing::warn!(url = %url, error = ?e, "failed to fetch remote");
         }
-
-        let mut urls = Vec::with_capacity(tracked.len());
-        for (_, meta) in &tracked {
-            spawn_git_command(repo.path(), &["fetch", meta.url.as_str()], &[])
-                .with_context(|| format!("Failed to fetch from {}", meta.url))?;
-            urls.push(meta.url.clone());
-        }
-
-        Ok::<_, anyhow::Error>(urls)
-    })
-    .await??;
+    }
 
     for url in &remotes {
-        let Some((owner, repo_name)) = state.resolve_owner_repo_logged(url) else {
-            continue;
-        };
-
-        let Some(api) = api else {
-            tracing::warn!(url = %url, "skipping PR discovery: no API connection");
+        let Some((owner, repo_name)) = state.resolve_owner_repo(url) else {
             continue;
         };
 
@@ -73,7 +71,7 @@ pub(crate) async fn handle_fetch(
             }
             state.upsert_candidate(CandidatePr::from_open_pr(url, pr));
 
-            crate::admission::get_or_init_pr_admission(state, &pr.node_id, url, Some(api)).await;
+            crate::admission::get_or_init_pr_admission(state, &pr.node_id, url, api).await;
 
             // Bring the PR's required checks in line with the current rulesets,
             // preserving already-known pass/fail results.
