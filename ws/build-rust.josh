@@ -12,7 +12,7 @@ env = :[
 
 worktree = :[
     ::run.sh=ws/build-rust.sh
-    ::Cargo.toml
+    :+ws/patched-cargo
     ::Cargo.lock
     ::rust-toolchain.toml
     ::rustfmt.toml

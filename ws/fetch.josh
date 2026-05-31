@@ -6,6 +6,7 @@
 :$cmd="cargo fetch --locked"
 
 worktree = :[
+    :+ws/patched-cargo
     ::**/Cargo.toml
     ::**/Cargo.lock
     ::**/rust-toolchain.toml
