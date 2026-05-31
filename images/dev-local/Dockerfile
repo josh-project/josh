@@ -5,14 +5,14 @@ FROM ${BASE_IMAGE}
 
 RUN <<EOF
 set -eux
-mkdir -p /opt/cache /opt/target
-chmod 777 /opt/cache /opt/target
+mkdir -p /opt/cache /opt/target /opt/build
+chmod 777 /opt/cache /opt/target /opt/build
 EOF
 
 VOLUME /opt/cache
 
 ENV CARGO_TARGET_DIR=/opt/target/cargo-target
-ENV CARGO_BUILD_BUILD_DIR=/opt/cache/cargo-build
+ENV CARGO_BUILD_BUILD_DIR=/opt/build/cargo-build
 ENV CARGO_HOME=/opt/cache/cargo-cache
 ENV RUSTC_WRAPPER=sccache
 ENV SCCACHE_DIR=/opt/cache/sccache
