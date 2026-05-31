@@ -113,7 +113,14 @@ pub fn handle_comment(
         reply_to: args.reply_to.clone(),
         update_of: args.update_of.clone(),
     };
-    josh_changes::write_comment(repo, &change, &meta, None, None)?;
+    josh_changes::write_comment(
+        repo,
+        &change,
+        &meta,
+        None,
+        None,
+        &josh_changes::ChangesRef::Local,
+    )?;
 
     println!("Comment saved.");
     Ok(())
