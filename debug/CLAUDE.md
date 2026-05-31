@@ -36,7 +36,9 @@ CLI flags:
 - `--rev-spec <spec>` (optional) — commit to view (SHA, branch, tag, `HEAD~3`). Only used in Browse mode.
 - `--mode <browse|trace>` (optional) — app mode. If omitted, shows a small GUI dialog with two buttons to select.
 
-When mode is omitted, `select_mode()` opens a small `eframe` window (320×150) with "Browse" and "Trace" buttons. The chosen mode is sent through a `mpsc::channel` back to `main()`.
+When mode is omitted, `select_mode()` (from `ui::mode_dialog`) opens a small `eframe` window (320×150) with "Browse" and "Trace" buttons. The chosen mode is sent through a `mpsc::channel` back to `main()`.
+
+The `Mode` enum (`ui::mode_dialog`) implements `FromStr` so `clap` can parse `--mode browse|trace` directly.
 
 ### Modes
 
@@ -63,7 +65,8 @@ git-tree-viewer/src/
 │   ├── panels.rs       # Top-level panel layout assembly
 │   ├── commit_list.rs  # show_commit_bubble + show_commits
 │   ├── tree_view.rs    # tree_entry_label + show_tree_item (recursive)
-│   └── file_preview.rs # File content display
+│   ├── file_preview.rs # File content display
+│   └── mode_dialog.rs  # Mode enum + select_mode (startup dialog)
 └── bin/
     └── git-tree-viewer.rs
 ```
@@ -88,24 +91,25 @@ pub struct Trace {
 }
 
 pub struct UiState {
-    pub history_start: Option<git2::Oid>,
-    pub selected_commit: Option<git2::Oid>,
-    pub selected_file: Option<(String, git2::Oid)>,
-    pub file_content: Option<String>,
-    pub selected_session: Option<String>,
-    pub error: Option<String>,
+    history_start: Option<git2::Oid>,
+    selected_commit: Option<git2::Oid>,
+    selected_file: Option<(String, git2::Oid)>,
+    file_content: Option<String>,
+    selected_session: Option<String>,
+    error: Option<String>,
 }
 
 pub struct GitDebugApp {
     mode: AppMode,
     repo: git2::Repository,
     ui_state: UiState,
+    _repo_source: RepoSource,
 }
 ```
 
-- `RepoSource::new_temp()` creates a bare git repo in a temp directory with `http.receivepack=true` set.
+- `RepoSource::new_temp()` creates a bare git repo in a temp directory with `http.receivepack=true` set. Returns `anyhow::Result<Self>`.
 - `RepoSource` implements `AsRef<Path>`.
-- `GitDebugApp::new(mode, repo_source)` opens the repo via `git::open_repo()`. In Browse mode, resolves the `rev_spec` commit and sets both `history_start` and `selected_commit` to it. In Trace mode, both start as `None`.
+- `GitDebugApp::new(mode, repo_source)` opens the repo via `git::open_repo()`. In Browse mode, resolves the `rev_spec` commit and sets both `history_start` and `selected_commit` to it. In Trace mode, both start as `None`. Stores `repo_source` as `_repo_source` to keep the `TempDir` alive.
 
 ### Layers
 
@@ -116,7 +120,7 @@ pub struct GitDebugApp {
 - `build_tree(repo, tree_oid, path_prefix)` — recursively traverses a `git2::Tree`. The `path_prefix` parameter accumulates the path during recursion (empty string for the root call).
 - `load_blob_content(repo, oid)` — returns UTF-8 text or `"<Binary file>"` for non-UTF-8 blobs.
 
-**`ui/`** — rendering functions. Each panel/sub-panel is a standalone function that takes only the state it needs. `show_commit_bubble` is re-exported from both `ui::commit_list` and `lib.rs`. `show_commits` takes `history_start: Option<Oid>` and mutable references to `selected_commit`, `selected_file`, and `file_content`.
+**`ui/`** — rendering functions. Each panel/sub-panel is a standalone function that takes only the state it needs. `show_commit_bubble` is re-exported from both `ui::commit_list` and `lib.rs`; it renders a single commit bubble and returns an `egui::Response` for click handling. `show_commits` takes `ui`, `repo`, `history_start: Option<Oid>`, and mutable references to `selected_commit`, `selected_file`, and `file_content`.
 
 **`app.rs`** — thin `eframe::App` impl. On each frame, drains any pending traces from the `mpsc` channel (only in Trace mode), then delegates to `ui::panels::show_panels`.
 
@@ -126,6 +130,7 @@ pub struct GitDebugApp {
 - `POST /v1/traces` — accepts JSON `{session, commit, label}`, appends to the server's trace store and sends a `Trace` through the `mpsc::Sender`.
 - `GET /v1/traces` — returns the full list of received traces as a JSON array of `{session, commit, label}`.
 - `GET /v1/repo` — returns the temp repo location as `{ "path": "/tmp/..." }`.
+- `GET /v1/ready` — readiness probe. Returns `200 OK`. `git-tree-trace` queries this on first use to decide whether a viewer is listening; if unreachable, tracing disables itself.
 - Everything else (fallback) — serves git HTTP via `josh_cq_test_components::git_http::serve()`, enabling `git push` to the temp repo.
 
 The `start()` function takes both a `Sender<Trace>` and a `repo_path: &Path`.
@@ -168,12 +173,23 @@ pub enum TreeItem {
 
 ### git-tree-trace crate
 
-Library crate that provides `trace_commit(repo: &git2::Repository, oid: Oid, name: &str)`. This is now an `async` function. It does two things:
+Library crate that provides `trace_commit(repo: &git2::Repository, oid: Oid, name: &str)`. This is a **synchronous** function. On first call it checks two conditions — both must be satisfied for tracing to be enabled:
 
-1. Runs `git push http://127.0.0.1:8765 {oid}:refs/heads/_{oid}` via `tokio::process::Command` to push the commit to the viewer's temp repo.
-2. When running in a test environment (detected via `NEXTEST` env var or `deps/` in the executable path), sends an HTTP POST to `http://127.0.0.1:8765/v1/traces` with `{session, commit, label}`. The session name is `trace-{unix_timestamp}`. Outside test environments, the HTTP trace is skipped (but the git push still happens).
+1. **Test environment** — detects `NEXTEST` env var or `deps/` in the executable path (cargo test / cargo nextest).
+2. **Viewer listening** — probes the viewer's `/v1/ready` endpoint.
 
-Uses `OnceLock` for global state (`TraceState` enum, `reqwest::Client`).
+If either condition is false, tracing stays disabled for the whole process (so interactive use doesn't push to port 8765, and test runs without a viewer don't send traces).
+
+When both conditions are met, it does two things:
+
+1. Runs `git push http://127.0.0.1:8765 {oid}:refs/heads/_{oid}` via `std::process::Command` to push the commit to the viewer's temp repo.
+2. Sends a blocking HTTP POST to `http://127.0.0.1:8765/v1/traces` with `{session, commit, label}` via `reqwest::blocking::Client`. The session name is `trace-{unix_timestamp}`.
+
+Global state is managed via `OnceLock`:
+- `TraceState` enum: `Started { session_name }` or `NotNeeded` (test environment not detected or viewer unreachable).
+- `reqwest::blocking::Client` — lazily initialized, reused across calls.
+- `is_test_environment()` — checks `NEXTEST` env var and `deps/` in the executable path.
+- `viewer_ready()` — probes `GET /v1/ready` with a 500ms timeout; returns `false` on any error.
 
 ### Key dependencies
 
@@ -185,9 +201,8 @@ Uses `OnceLock` for global state (`TraceState` enum, `reqwest::Client`).
 | `clap` (4.6.1) | CLI argument parsing (derive mode) |
 | `anyhow` (1) | Error handling in public API (features: `backtrace`) |
 | `axum` (0.8) | HTTP server (minimal: http1, json, tokio only) |
-| `tokio` (1) | Async runtime. git-tree-viewer: `rt-multi-thread`, `net`. git-tree-trace: `process` |
-| `reqwest` (0.12) | git-tree-trace: blocking HTTP client (rustls-tls) |
-| `tracing` (0.1) | git-tree-trace: error logging for failed trace sends |
+| `tokio` (1) | Async runtime. git-tree-viewer only: `rt-multi-thread`, `net` |
+| `reqwest` (0.12) | git-tree-trace: blocking HTTP client (rustls-tls, json, blocking) |
 | `serde`/`serde_json` (1) | JSON serialization for `/v1/traces` requests and trace sending |
 | `josh-cq-test-components` | git-tree-viewer: `git_http::serve()` for the fallback git HTTP handler |
 | `tempfile` (3) | git-tree-viewer: temp directory for bare repo in Trace mode |
