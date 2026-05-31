@@ -22,10 +22,11 @@ enum TraceState {
 fn state() -> &'static TraceState {
     static STATE: OnceLock<TraceState> = OnceLock::new();
     STATE.get_or_init(|| {
-        // Trace only when a viewer is actually listening. This is probed once;
-        // if no viewer answers, tracing stays disabled for the whole process —
-        // notably so test runs don't push to a dead port 8765.
-        if viewer_ready() {
+        // Only trace when running inside a test harness AND a viewer is
+        // listening. Both conditions must be satisfied; this prevents
+        // interactive use from pushing to port 8765 and test runs from
+        // sending traces when no viewer is attached.
+        if is_test_environment() && viewer_ready() {
             TraceState::Started {
                 session_name: generate_session_name(),
             }
@@ -33,6 +34,24 @@ fn state() -> &'static TraceState {
             TraceState::NotNeeded
         }
     })
+}
+
+/// Returns `true` when running inside a test runner (cargo test / cargo
+/// nextest). Detects via the `NEXTEST` environment variable or by
+/// checking whether the current executable path contains `deps/` (cargo
+/// test places test binaries in a `deps/` directory).
+fn is_test_environment() -> bool {
+    if std::env::var("NEXTEST").is_ok() {
+        return true;
+    }
+
+    std::env::current_exe()
+        .ok()
+        .and_then(|p| {
+            p.to_str()
+                .map(|s| s.contains("/deps/") || s.contains("\\deps\\"))
+        })
+        .unwrap_or(false)
 }
 
 /// Probe the viewer's readiness endpoint. Returns `true` only if it answers
