@@ -280,3 +280,70 @@ async fn pr_removed_on_close_webhook() -> anyhow::Result<()> {
 
     Ok(())
 }
+
+#[tokio::test]
+async fn test_track_private_repo() -> anyhow::Result<()> {
+    init_tracing();
+
+    let owner = "test-owner";
+    let name = "test-repo-private";
+
+    // Create a TestRepo that requires a bearer token for git HTTP access.
+    // The CQ's GithubAuthMiddleware is configured with the same token
+    // ("test-token" in start_test_harness), so git fetch/push operations
+    // from the CQ will include an Authorization: Bearer header that
+    // satisfies the sim's auth check.
+    let test_repo = TestRepo::builder()
+        .with_bearer("test-token")
+        .build()
+        .await?;
+
+    test_repo
+        .commit(
+            TreeMode::Replace(vec![TreeEntry {
+                path: "README.md".into(),
+                content: "# private repo".into(),
+            }]),
+            "initial",
+            "refs/heads/main",
+        )
+        .await?;
+
+    test_repo
+        .create_branch("feature", "refs/heads/main")
+        .await?;
+
+    test_repo
+        .commit(
+            TreeMode::Replace(vec![TreeEntry {
+                path: "feature.txt".into(),
+                content: "feature content".into(),
+            }]),
+            "feature wip",
+            "refs/heads/feature",
+        )
+        .await?;
+
+    // Build GithubSim with bearer auth so git HTTP requires the token.
+    let github_sim = GithubSim::builder()
+        .with_bearer("test-token")
+        .repo(RepoConfig {
+            owner: owner.to_string(),
+            name: name.to_string(),
+            repo: test_repo,
+        })
+        .build()
+        .await?;
+
+    let harness = start_test_harness(owner, name, github_sim).await?;
+    harness
+        .github_sim
+        .set_webhook_url(url::Url::parse(&harness.cq_webhook_url)?);
+
+    // Track the private repo — the CQ's git fetch must authenticate with
+    // the bearer token to succeed.
+    harness.track(owner, name).await?;
+    harness.tick().await?;
+
+    Ok(())
+}

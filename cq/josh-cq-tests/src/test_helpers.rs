@@ -37,7 +37,7 @@ impl TestHarness {
     pub async fn tick(&self) -> anyhow::Result<()> {
         let (tx, rx) = tokio::sync::oneshot::channel();
         self.event_tx.send(CqEvent::Tick { done: Some(tx) }).await?;
-        rx.await?;
+        rx.await??;
         Ok(())
     }
 

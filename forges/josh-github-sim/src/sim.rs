@@ -6,8 +6,9 @@ use std::sync::{Arc, Mutex};
 use axum::body::Body;
 use axum::extract::State;
 use axum::http::StatusCode;
-use axum::response::Response;
+use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
+use headers::{Authorization, HeaderMapExt};
 use tokio::sync::{mpsc, oneshot};
 use url::Url;
 
@@ -22,6 +23,12 @@ pub struct RepoConfig {
     pub owner: String,
     pub name: String,
     pub repo: TestRepo,
+}
+
+#[derive(Clone)]
+struct SimAppState {
+    tx: mpsc::UnboundedSender<ActorMsg>,
+    bearer_token: Option<String>,
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -205,6 +212,34 @@ impl Drop for AbortOnDrop {
     }
 }
 
+pub struct GithubSimBuilder {
+    repos: Vec<RepoConfig>,
+    bearer_token: Option<String>,
+}
+
+impl GithubSimBuilder {
+    pub fn new() -> Self {
+        Self {
+            repos: Vec::new(),
+            bearer_token: None,
+        }
+    }
+
+    pub fn with_bearer(mut self, token: impl AsRef<str>) -> Self {
+        self.bearer_token = Some(token.as_ref().to_string());
+        self
+    }
+
+    pub fn repo(mut self, config: RepoConfig) -> Self {
+        self.repos.push(config);
+        self
+    }
+
+    pub async fn build(self) -> anyhow::Result<GithubSim> {
+        GithubSim::from_builder(self.repos, self.bearer_token).await
+    }
+}
+
 pub struct GithubSim {
     tx: mpsc::UnboundedSender<ActorMsg>,
     _guard: Arc<Mutex<GithubSimResources>>,
@@ -214,7 +249,18 @@ pub struct GithubSim {
 }
 
 impl GithubSim {
+    pub fn builder() -> GithubSimBuilder {
+        GithubSimBuilder::new()
+    }
+
     pub async fn new(repos: Vec<RepoConfig>) -> anyhow::Result<Self> {
+        Self::from_builder(repos, None).await
+    }
+
+    async fn from_builder(
+        repos: Vec<RepoConfig>,
+        bearer_token: Option<String>,
+    ) -> anyhow::Result<Self> {
         let mut repo_map: HashMap<(String, String), PathBuf> = HashMap::new();
         let mut repos_state: HashMap<(String, String), RepoState> = HashMap::new();
         let mut guards: Vec<Arc<Mutex<TestRepoResources>>> = Vec::new();
@@ -251,10 +297,15 @@ impl GithubSim {
             sim_url: Some(sim_url),
         }));
 
+        let sim_state = SimAppState {
+            tx: tx.clone(),
+            bearer_token: bearer_token.clone(),
+        };
+
         let app = axum::Router::new()
             .route("/graphql", post(handle_graphql))
             .route("/{*path}", get(handle_git).post(handle_git))
-            .with_state(tx.clone());
+            .with_state(sim_state);
 
         let server_handle = tokio::spawn(async move {
             axum::serve(listener, app)
@@ -309,17 +360,29 @@ impl GithubSim {
 }
 
 async fn handle_git(
-    State(tx): State<mpsc::UnboundedSender<ActorMsg>>,
+    State(state): State<SimAppState>,
     req: axum::extract::Request,
 ) -> Response<Body> {
+    if let Some(expected_token) = &state.bearer_token {
+        let authorized = req
+            .headers()
+            .typed_get::<Authorization<headers::authorization::Bearer>>()
+            .is_some_and(|auth| auth.token() == expected_token.as_str());
+
+        if !authorized {
+            return StatusCode::UNAUTHORIZED.into_response();
+        }
+    }
+
     let path = req.uri().path().trim_start_matches('/');
     let segments: Vec<&str> = path.split('/').collect();
 
     if segments.len() < 2 {
-        return Response::builder()
-            .status(StatusCode::NOT_FOUND)
-            .body(Body::from("repository path must be /owner/name/..."))
-            .expect("building error response");
+        return (
+            StatusCode::NOT_FOUND,
+            "repository path must be /owner/name/...",
+        )
+            .into_response();
     }
 
     let owner = segments[0].to_string();
@@ -343,7 +406,9 @@ async fn handle_git(
     let modified_req = axum::extract::Request::from_parts(parts, body);
 
     let (resp_tx, resp_rx) = oneshot::channel();
-    if tx
+
+    if state
+        .tx
         .send(ActorMsg::ServeGitHttp {
             owner,
             name,
@@ -352,40 +417,32 @@ async fn handle_git(
         })
         .is_err()
     {
-        return Response::builder()
-            .status(StatusCode::INTERNAL_SERVER_ERROR)
-            .body(Body::from("actor closed"))
-            .expect("building error response");
+        return (StatusCode::INTERNAL_SERVER_ERROR, "actor closed").into_response();
     }
-    resp_rx.await.unwrap_or_else(|_| {
-        Response::builder()
-            .status(StatusCode::INTERNAL_SERVER_ERROR)
-            .body(Body::from("actor closed"))
-            .expect("building error response")
-    })
+
+    resp_rx
+        .await
+        .unwrap_or_else(|_| (StatusCode::INTERNAL_SERVER_ERROR, "actor closed").into_response())
 }
 
 async fn handle_graphql(
-    State(tx): State<mpsc::UnboundedSender<ActorMsg>>,
+    State(state): State<SimAppState>,
     req: axum::extract::Request,
 ) -> Response<Body> {
     let (resp_tx, resp_rx) = oneshot::channel();
-    if tx
+
+    if state
+        .tx
         .send(ActorMsg::GraphQLRequest {
             request: req,
             response: resp_tx,
         })
         .is_err()
     {
-        return Response::builder()
-            .status(StatusCode::INTERNAL_SERVER_ERROR)
-            .body(Body::from("actor closed"))
-            .expect("building error response");
+        return (StatusCode::INTERNAL_SERVER_ERROR, "actor closed").into_response();
     }
-    resp_rx.await.unwrap_or_else(|_| {
-        Response::builder()
-            .status(StatusCode::INTERNAL_SERVER_ERROR)
-            .body(Body::from("actor closed"))
-            .expect("building error response")
-    })
+
+    resp_rx
+        .await
+        .unwrap_or_else(|_| (StatusCode::INTERNAL_SERVER_ERROR, "actor closed").into_response())
 }

@@ -32,11 +32,15 @@ async fn track_handler(
         .await
         .is_err()
     {
-        return (StatusCode::SERVICE_UNAVAILABLE, "event queue closed");
+        return (
+            StatusCode::SERVICE_UNAVAILABLE,
+            "event queue closed".to_string(),
+        );
     }
     match rx.await {
-        Ok(()) => (StatusCode::OK, "tracked"),
-        Err(_) => (StatusCode::SERVICE_UNAVAILABLE, "actor dropped"),
+        Ok(Ok(())) => (StatusCode::OK, "tracked".to_string()),
+        Ok(Err(e)) => (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()),
+        Err(_) => (StatusCode::SERVICE_UNAVAILABLE, "actor dropped".to_string()),
     }
 }
 
@@ -86,7 +90,7 @@ struct EventOutcome {
     run_queue_cycle: bool,
     /// Completion signal the event carried, fired after the queue cycle runs so
     /// it is always delivered regardless of which path the event took.
-    done: Option<oneshot::Sender<()>>,
+    done: Option<oneshot::Sender<anyhow::Result<()>>>,
 }
 
 /// Process a single actor event, mutating `state` and reporting whether a queue
@@ -131,9 +135,11 @@ async fn process_event(
                 .await
             {
                 tracing::error!(error = ?e, "track fetch failed");
+                let _ = done.send(Err(anyhow::anyhow!("track fetch failed")));
+
                 return EventOutcome {
                     run_queue_cycle: false,
-                    done: Some(done),
+                    done: None,
                 };
             };
 
@@ -146,9 +152,11 @@ async fn process_event(
                 .await
             {
                 tracing::error!(error = ?e, "track failed");
+                let _ = done.send(Err(anyhow::anyhow!("track failed")));
+
                 return EventOutcome {
                     run_queue_cycle: false,
-                    done: Some(done),
+                    done: None,
                 };
             }
 
@@ -209,7 +217,7 @@ pub fn spawn_serve_task(
             }
 
             if let Some(tx) = outcome.done {
-                let _ = tx.send(());
+                let _ = tx.send(Ok(()));
             }
         }
     });

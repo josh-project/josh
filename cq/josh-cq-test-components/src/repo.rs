@@ -5,8 +5,9 @@ use std::sync::{Arc, Mutex};
 use axum::body::Body;
 use axum::extract::State;
 use axum::http::StatusCode;
-use axum::response::Response;
+use axum::response::{IntoResponse, Response};
 use axum::routing::get;
+use headers::{Authorization, HeaderMapExt};
 use tokio::sync::{mpsc, oneshot};
 use url::Url;
 
@@ -46,8 +47,37 @@ pub struct TestRepo {
     url: Url,
 }
 
+pub struct TestRepoBuilder {
+    bearer_token: Option<String>,
+}
+
+#[derive(Clone)]
+struct AppState {
+    tx: mpsc::UnboundedSender<ActorMsg>,
+    bearer_token: Option<String>,
+}
+
+impl TestRepoBuilder {
+    pub fn with_bearer(mut self, token: impl AsRef<str>) -> Self {
+        self.bearer_token = Some(token.as_ref().to_string());
+        self
+    }
+
+    pub async fn build(self) -> anyhow::Result<TestRepo> {
+        TestRepo::from_builder(self.bearer_token).await
+    }
+}
+
 impl TestRepo {
+    pub fn builder() -> TestRepoBuilder {
+        TestRepoBuilder { bearer_token: None }
+    }
+
     pub async fn new() -> anyhow::Result<Self> {
+        Self::from_builder(None).await
+    }
+
+    async fn from_builder(bearer_token: Option<String>) -> anyhow::Result<Self> {
         let dir = tempfile::Builder::new().prefix(TEMP_DIR_PREFIX).tempdir()?;
 
         let repo = git2::Repository::init_bare(dir.path())?;
@@ -64,9 +94,14 @@ impl TestRepo {
         let port = listener.local_addr()?.port();
         let url = Url::parse(&format!("http://{}:{port}/", Ipv4Addr::LOCALHOST))?;
 
+        let app_state = AppState {
+            tx: tx.clone(),
+            bearer_token: bearer_token.clone(),
+        };
+
         let app = axum::Router::new()
             .route("/{*path}", get(handle_git).post(handle_git))
-            .with_state(tx.clone());
+            .with_state(app_state);
 
         let server_handle = tokio::spawn(async move {
             axum::serve(listener, app)
@@ -147,27 +182,32 @@ impl TestRepo {
     }
 }
 
-async fn handle_git(
-    State(tx): State<mpsc::UnboundedSender<ActorMsg>>,
-    req: axum::extract::Request,
-) -> Response<Body> {
+async fn handle_git(State(state): State<AppState>, req: axum::extract::Request) -> Response<Body> {
+    if let Some(expected_token) = &state.bearer_token {
+        let authorized = req
+            .headers()
+            .typed_get::<Authorization<headers::authorization::Bearer>>()
+            .is_some_and(|auth| auth.token() == expected_token.as_str());
+
+        if !authorized {
+            return StatusCode::UNAUTHORIZED.into_response();
+        }
+    }
+
     let (resp_tx, resp_rx) = oneshot::channel();
-    if tx
+
+    if state
+        .tx
         .send(ActorMsg::ServeGitHttp {
             request: req,
             response: resp_tx,
         })
         .is_err()
     {
-        return Response::builder()
-            .status(StatusCode::INTERNAL_SERVER_ERROR)
-            .body(Body::from("actor closed"))
-            .expect("building error response");
+        return (StatusCode::INTERNAL_SERVER_ERROR, "actor closed").into_response();
     }
-    resp_rx.await.unwrap_or_else(|_| {
-        Response::builder()
-            .status(StatusCode::INTERNAL_SERVER_ERROR)
-            .body(Body::from("actor closed"))
-            .expect("building error response")
-    })
+
+    resp_rx
+        .await
+        .unwrap_or_else(|_| (StatusCode::INTERNAL_SERVER_ERROR, "actor closed").into_response())
 }
