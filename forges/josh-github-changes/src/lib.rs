@@ -193,11 +193,12 @@ pub async fn create_or_update_prs(
     Ok(())
 }
 
-/// Write PR comments into refs/josh/changes. Shared by both sync paths.
+/// Write PR comments into the given changes ref. Shared by both sync paths.
 fn write_pr_comments(
     repo: &git2::Repository,
     change: &josh_changes::Change,
     pr_data: &josh_github_graphql::operations::pull_request::PrData,
+    scope: &josh_changes::ChangesRef,
 ) -> anyhow::Result<usize> {
     let mut id_map: HashMap<String, String> = HashMap::new();
     for comment in &pr_data.comments {
@@ -234,10 +235,11 @@ fn write_pr_comments(
             Some(&comment.author),
             Some(&comment.timestamp),
             blob_commit.as_deref(),
+            scope,
         )?;
         // Record the GitHub node ID so this comment is tracked as "already posted".
         if let Some(change_id) = change.id() {
-            josh_changes::store_github_id(repo, change_id, &hash, &comment.id)?;
+            josh_changes::store_github_id(repo, change_id, &hash, &comment.id, scope)?;
         }
         id_map.insert(comment.id.clone(), hash);
     }
@@ -245,7 +247,7 @@ fn write_pr_comments(
     Ok(pr_data.comments.len())
 }
 
-/// Sync GitHub PR comments for a single change into refs/josh/changes.
+/// Sync GitHub PR comments for a single change into the given remote changes ref.
 /// Returns the number of comments synced.
 pub async fn sync_change_comments(
     connection: &GithubApiConnection,
@@ -254,6 +256,7 @@ pub async fn sync_change_comments(
     repo: &git2::Repository,
     change: &josh_changes::Change,
     head_ref: &str,
+    scope: &josh_changes::ChangesRef,
 ) -> anyhow::Result<usize> {
     let change_id = match change.id() {
         Some(id) => id,
@@ -279,9 +282,9 @@ pub async fn sync_change_comments(
 
     let pr_data = connection.get_pr_comments(owner, repo_name, pr).await?;
     let json = serde_json::to_string(&pr_data)?;
-    josh_changes::store_pr_data(repo, change_id, &json)?;
+    josh_changes::store_pr_data(repo, change_id, &json, scope)?;
 
-    write_pr_comments(repo, change, &pr_data)
+    write_pr_comments(repo, change, &pr_data, scope)
 }
 
 /// Sync GitHub PR comments for a change identified directly by PR number.
@@ -292,6 +295,7 @@ pub async fn sync_change_comments_by_pr_number(
     repo: &git2::Repository,
     change: &josh_changes::Change,
     pr_number: i64,
+    scope: &josh_changes::ChangesRef,
 ) -> anyhow::Result<usize> {
     let change_id = match change.id() {
         Some(id) => id,
@@ -302,25 +306,29 @@ pub async fn sync_change_comments_by_pr_number(
         .get_pr_comments(owner, repo_name, pr_number)
         .await?;
     let json = serde_json::to_string(&pr_data)?;
-    josh_changes::store_pr_data(repo, change_id, &json)?;
+    josh_changes::store_pr_data(repo, change_id, &json, scope)?;
 
-    write_pr_comments(repo, change, &pr_data)
+    write_pr_comments(repo, change, &pr_data, scope)
 }
 
 /// Post local comments (those without a `github_id`) to a GitHub PR.
+/// Reads drafts from `local_scope`, dedupes against the union of `gh_ids` maps
+/// across all refs, and writes new mappings into `remote_scope`.
 /// Returns the number of comments successfully posted.
 pub async fn post_local_comments(
     connection: &GithubApiConnection,
     repo: &git2::Repository,
     change_id: &str,
     pr_node_id: &str,
+    local_scope: &josh_changes::ChangesRef,
+    remote_scope: &josh_changes::ChangesRef,
 ) -> anyhow::Result<usize> {
-    let comments = josh_changes::read_comments(repo, change_id)?;
+    let comments = josh_changes::read_comments(repo, change_id, local_scope)?;
     if comments.is_empty() {
         return Ok(0);
     }
 
-    let github_ids = josh_changes::read_github_ids(repo, change_id)?;
+    let github_ids = josh_changes::read_github_ids_union(repo, change_id)?;
 
     // Collect unposted comments (no github_id mapping yet).
     let mut unposted: Vec<&josh_changes::Comment> = comments
@@ -374,7 +382,7 @@ pub async fn post_local_comments(
                 connection.add_comment(pr_node_id, &comment.message).await?
             };
 
-            josh_changes::store_github_id(repo, change_id, &comment.id, &github_id)?;
+            josh_changes::store_github_id(repo, change_id, &comment.id, &github_id, remote_scope)?;
             new_ids.insert(comment.id.clone(), github_id);
             posted_count += 1;
             progressed = true;
@@ -399,7 +407,13 @@ pub async fn post_local_comments(
                 } else {
                     connection.add_comment(pr_node_id, &comment.message).await?
                 };
-                josh_changes::store_github_id(repo, change_id, &comment.id, &github_id)?;
+                josh_changes::store_github_id(
+                    repo,
+                    change_id,
+                    &comment.id,
+                    &github_id,
+                    remote_scope,
+                )?;
                 new_ids.insert(comment.id.clone(), github_id);
                 posted_count += 1;
             }
@@ -413,19 +427,23 @@ pub async fn post_local_comments(
 }
 
 /// Post local votes (those not yet pushed to GitHub) as pull request reviews.
+/// Reads from `local_scope`, dedupes against the remote's `gh_vote_ids`, and
+/// writes the tracking entry into `remote_scope`.
 pub async fn post_local_votes(
     connection: &GithubApiConnection,
     repo: &git2::Repository,
     change_id: &str,
     pr_node_id: &str,
     commit_oid: &str,
+    local_scope: &josh_changes::ChangesRef,
+    remote_scope: &josh_changes::ChangesRef,
 ) -> anyhow::Result<usize> {
-    let votes = josh_changes::list_votes(repo, change_id)?;
+    let votes = josh_changes::list_votes(repo, change_id, local_scope)?;
     if votes.is_empty() {
         return Ok(0);
     }
 
-    let tracked = josh_changes::read_github_vote_ids(repo, change_id)?;
+    let tracked = josh_changes::read_github_vote_ids(repo, change_id, remote_scope)?;
 
     let mut posted = 0usize;
     for (user, vote_data) in &votes {
@@ -442,7 +460,7 @@ pub async fn post_local_votes(
             .add_pull_request_review(pr_node_id, event, Some(&body), Some(commit_oid))
             .await?;
 
-        josh_changes::store_github_vote_id(repo, change_id, user, vote_data)?;
+        josh_changes::store_github_vote_id(repo, change_id, user, vote_data, remote_scope)?;
         posted += 1;
     }
 

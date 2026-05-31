@@ -1,6 +1,51 @@
 use anyhow::anyhow;
 pub use josh_core::trailers::{commit_change_meta, parse_change_meta};
 
+/// Which `refs/josh/...` ref holds a piece of change metadata.
+///
+/// `Local` is data the user authored or discovered from their working tree
+/// (drafts, diff data for HEAD-reachable Change-Ids).
+/// `Remote(name)` is data fetched from / posted to a specific remote.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub enum ChangesRef {
+    Local,
+    Remote(String),
+}
+
+impl ChangesRef {
+    pub fn ref_name(&self) -> String {
+        match self {
+            ChangesRef::Local => "refs/josh/changes".to_string(),
+            ChangesRef::Remote(r) => format!("refs/josh/remotes/{}/changes", r),
+        }
+    }
+}
+
+/// Return `[Local, Remote(r1), Remote(r2), ...]` for every changes ref that
+/// currently exists. Remote names are sorted for deterministic iteration.
+pub fn all_changes_refs(repo: &git2::Repository) -> anyhow::Result<Vec<ChangesRef>> {
+    let mut remotes: Vec<String> = Vec::new();
+    for r in repo.references_glob("refs/josh/remotes/*/changes")? {
+        let r = r?;
+        if let Some(name) = r.name() {
+            if let Some(rest) = name.strip_prefix("refs/josh/remotes/") {
+                if let Some(remote) = rest.strip_suffix("/changes") {
+                    if !remote.is_empty() && !remote.contains('/') {
+                        remotes.push(remote.to_string());
+                    }
+                }
+            }
+        }
+    }
+    remotes.sort();
+    let mut out = Vec::with_capacity(remotes.len() + 1);
+    out.push(ChangesRef::Local);
+    for r in remotes {
+        out.push(ChangesRef::Remote(r));
+    }
+    Ok(out)
+}
+
 #[derive(Debug, Clone)]
 pub struct Change {
     author: String,
@@ -300,13 +345,13 @@ pub fn sync_changes(
     let changes = get_changes(repo, tip, base)?;
     let changes = split_changes(repo, transaction, changes)?;
     for c in &changes {
-        let _ = store_diff_data(repo, c);
+        let _ = store_diff_data(repo, c, &ChangesRef::Local);
     }
     Ok(changes)
 }
 
-pub fn list_changes(repo: &git2::Repository) -> anyhow::Result<Vec<Change>> {
-    let tree = match repo.find_reference("refs/josh/changes") {
+pub fn list_changes(repo: &git2::Repository, scope: &ChangesRef) -> anyhow::Result<Vec<Change>> {
+    let tree = match repo.find_reference(&scope.ref_name()) {
         Ok(r) => r.peel_to_tree()?,
         Err(_) => return Ok(Vec::new()),
     };
@@ -431,8 +476,9 @@ pub fn write_comment(
     meta: &CommentMeta,
     author: Option<&str>,
     timestamp: Option<&str>,
+    scope: &ChangesRef,
 ) -> anyhow::Result<String> {
-    write_comment_with_commit(repo, change, meta, author, timestamp, None)
+    write_comment_with_commit(repo, change, meta, author, timestamp, None, scope)
 }
 
 pub fn write_comment_with_commit(
@@ -442,6 +488,7 @@ pub fn write_comment_with_commit(
     author: Option<&str>,
     timestamp: Option<&str>,
     blob_commit_override: Option<&str>,
+    scope: &ChangesRef,
 ) -> anyhow::Result<String> {
     if meta.message.trim().is_empty() {
         return Err(anyhow::anyhow!("comment message must not be empty"));
@@ -479,7 +526,7 @@ pub fn write_comment_with_commit(
             .join(encode_change_id_path(&change_id))
             .join(&content_hash)
     };
-    write_changes_tree(repo, &path, blob_oid, author, timestamp)?;
+    write_changes_tree(repo, &path, blob_oid, author, timestamp, scope)?;
 
     Ok(content_hash)
 }
@@ -501,15 +548,17 @@ pub fn comment_author(
     change: &Change,
     comment_id: &str,
     file: Option<&str>,
+    scope: &ChangesRef,
 ) -> anyhow::Result<(String, String)> {
     let change_id = match change.id() {
         Some(id) => id,
         None => return Err(anyhow!("change has no Change-Id")),
     };
 
-    let head = match repo.find_reference("refs/josh/changes") {
+    let ref_name = scope.ref_name();
+    let head = match repo.find_reference(&ref_name) {
         Ok(r) => r.peel_to_commit()?,
-        Err(_) => return Err(anyhow!("refs/josh/changes not found")),
+        Err(_) => return Err(anyhow!("{} not found", ref_name)),
     };
 
     let path = if let Some(f) = file {
@@ -533,10 +582,7 @@ pub fn comment_author(
         match found {
             Some(p) => p,
             None => {
-                return Err(anyhow!(
-                    "comment {} not found in refs/josh/changes",
-                    comment_id
-                ));
+                return Err(anyhow!("comment {} not found in {}", comment_id, ref_name));
             }
         }
     } else {
@@ -572,10 +618,7 @@ pub fn comment_author(
         }
     }
 
-    Err(anyhow!(
-        "comment {} not found in refs/josh/changes",
-        comment_id
-    ))
+    Err(anyhow!("comment {} not found in {}", comment_id, ref_name))
 }
 
 fn get_tree<'a>(
@@ -637,8 +680,13 @@ fn collect_comments_under(
     Ok(comments)
 }
 
-pub fn read_comments(repo: &git2::Repository, change_id: &str) -> anyhow::Result<Vec<Comment>> {
-    let tree = match repo.find_reference("refs/josh/changes") {
+pub fn read_comments(
+    repo: &git2::Repository,
+    change_id: &str,
+    scope: &ChangesRef,
+) -> anyhow::Result<Vec<Comment>> {
+    let ref_name = scope.ref_name();
+    let tree = match repo.find_reference(&ref_name) {
         Ok(r) => r.peel_to_tree()?,
         Err(_) => return Ok(Vec::new()),
     };
@@ -682,7 +730,7 @@ pub fn read_comments(repo: &git2::Repository, change_id: &str) -> anyhow::Result
     }
 
     // Walk history once to resolve author/timestamp for all comments.
-    if let Ok(head) = repo.find_reference("refs/josh/changes") {
+    if let Ok(head) = repo.find_reference(&ref_name) {
         if let Ok(head_commit) = head.peel_to_commit() {
             let mut walk = repo.revwalk().unwrap_or_else(|_| repo.revwalk().unwrap());
             let _ = walk.simplify_first_parent();
@@ -760,13 +808,17 @@ pub struct Revision {
     pub timestamp: String,
 }
 
-pub fn read_revisions(repo: &git2::Repository, change: &Change) -> anyhow::Result<Vec<Revision>> {
+pub fn read_revisions(
+    repo: &git2::Repository,
+    change: &Change,
+    scope: &ChangesRef,
+) -> anyhow::Result<Vec<Revision>> {
     let change_id = match change.id() {
         Some(id) => id,
         None => return Ok(Vec::new()),
     };
 
-    let head = match repo.find_reference("refs/josh/changes") {
+    let head = match repo.find_reference(&scope.ref_name()) {
         Ok(r) => r.peel_to_commit()?,
         Err(_) => return Ok(Vec::new()),
     };
@@ -849,7 +901,11 @@ pub fn read_revisions(repo: &git2::Repository, change: &Change) -> anyhow::Resul
     Ok(revs)
 }
 
-pub fn store_diff_data(repo: &git2::Repository, change: &Change) -> anyhow::Result<()> {
+pub fn store_diff_data(
+    repo: &git2::Repository,
+    change: &Change,
+    scope: &ChangesRef,
+) -> anyhow::Result<()> {
     let change_id = change
         .id()
         .ok_or_else(|| anyhow::anyhow!("commit {} has no Change-Id", change.commit()))?;
@@ -864,8 +920,9 @@ pub fn store_diff_data(repo: &git2::Repository, change: &Change) -> anyhow::Resu
     tb.insert(&entry_name, blob_oid, git2::FileMode::Blob.into())?;
     let tree_oid = tb.write()?;
 
+    let ref_name = scope.ref_name();
     let base_tree = repo
-        .find_reference("refs/josh/changes")
+        .find_reference(&ref_name)
         .ok()
         .and_then(|r| r.peel_to_tree().ok())
         .unwrap_or_else(|| repo.find_tree(josh_core::filter::tree::empty_id()).unwrap());
@@ -886,7 +943,7 @@ pub fn store_diff_data(repo: &git2::Repository, change: &Change) -> anyhow::Resu
 
     let sig = repo.signature()?;
     let prev_tip = repo
-        .find_reference("refs/josh/changes")
+        .find_reference(&ref_name)
         .ok()
         .and_then(|r| r.peel_to_commit().ok());
 
@@ -909,10 +966,10 @@ pub fn store_diff_data(repo: &git2::Repository, change: &Change) -> anyhow::Resu
     }
     parents.push(&anchor_commit);
     repo.commit(
-        Some("refs/josh/changes"),
+        Some(&ref_name),
         &sig,
         &sig,
-        "update refs/josh/changes\n",
+        &format!("update {}\n", ref_name),
         &tree,
         &parents,
     )?;
@@ -920,15 +977,21 @@ pub fn store_diff_data(repo: &git2::Repository, change: &Change) -> anyhow::Resu
     Ok(())
 }
 
-pub fn store_pr_data(repo: &git2::Repository, change_id: &str, json: &str) -> anyhow::Result<()> {
+pub fn store_pr_data(
+    repo: &git2::Repository,
+    change_id: &str,
+    json: &str,
+    scope: &ChangesRef,
+) -> anyhow::Result<()> {
     let blob_oid = repo.blob(json.as_bytes())?;
 
     let mut tb = repo.treebuilder(None)?;
     tb.insert(&blob_oid.to_string(), blob_oid, git2::FileMode::Blob.into())?;
     let tree_oid = tb.write()?;
 
+    let ref_name = scope.ref_name();
     let base_tree = repo
-        .find_reference("refs/josh/changes")
+        .find_reference(&ref_name)
         .ok()
         .and_then(|r| r.peel_to_tree().ok())
         .unwrap_or_else(|| repo.find_tree(josh_core::filter::tree::empty_id()).unwrap());
@@ -949,15 +1012,15 @@ pub fn store_pr_data(repo: &git2::Repository, change_id: &str, json: &str) -> an
 
     let sig = repo.signature()?;
     let prev_tip = repo
-        .find_reference("refs/josh/changes")
+        .find_reference(&ref_name)
         .ok()
         .and_then(|r| r.peel_to_commit().ok());
     let parents: Vec<&git2::Commit> = prev_tip.iter().collect();
     repo.commit(
-        Some("refs/josh/changes"),
+        Some(&ref_name),
         &sig,
         &sig,
-        "update refs/josh/changes\n",
+        &format!("update {}\n", ref_name),
         &tree,
         &parents,
     )?;
@@ -966,8 +1029,12 @@ pub fn store_pr_data(repo: &git2::Repository, change_id: &str, json: &str) -> an
 }
 
 /// Read stored GitHub PR data JSON for a change, if it exists.
-pub fn read_pr_data(repo: &git2::Repository, change_id: &str) -> anyhow::Result<Option<String>> {
-    let tree = match repo.find_reference("refs/josh/changes") {
+pub fn read_pr_data(
+    repo: &git2::Repository,
+    change_id: &str,
+    scope: &ChangesRef,
+) -> anyhow::Result<Option<String>> {
+    let tree = match repo.find_reference(&scope.ref_name()) {
         Ok(r) => r.peel_to_tree()?,
         Err(_) => return Ok(None),
     };
@@ -984,12 +1051,17 @@ pub fn read_pr_data(repo: &git2::Repository, change_id: &str) -> anyhow::Result<
     Ok(None)
 }
 
-/// Delete all stored data for a change from refs/josh/changes.
+/// Delete all stored data for a change from the given changes ref.
 /// Removes entries from diffs/, comments/C/, comments/F/, gh/, and gh_ids/ subtrees.
-pub fn delete_change(repo: &git2::Repository, change_id: &str) -> anyhow::Result<()> {
+pub fn delete_change(
+    repo: &git2::Repository,
+    change_id: &str,
+    scope: &ChangesRef,
+) -> anyhow::Result<()> {
     let encoded = encode_change_id_path(change_id);
 
-    let base_tree = match repo.find_reference("refs/josh/changes") {
+    let ref_name = scope.ref_name();
+    let base_tree = match repo.find_reference(&ref_name) {
         Ok(r) => r.peel_to_tree()?,
         Err(_) => return Ok(()),
     };
@@ -1012,15 +1084,15 @@ pub fn delete_change(repo: &git2::Repository, change_id: &str) -> anyhow::Result
 
     let sig = repo.signature()?;
     let parent_commit = repo
-        .find_reference("refs/josh/changes")
+        .find_reference(&ref_name)
         .ok()
         .and_then(|r| r.peel_to_commit().ok());
     let parents: Vec<&git2::Commit> = parent_commit.iter().collect();
     repo.commit(
-        Some("refs/josh/changes"),
+        Some(&ref_name),
         &sig,
         &sig,
-        "update refs/josh/changes\n",
+        &format!("update {}\n", ref_name),
         &tree,
         &parents,
     )?;
@@ -1034,12 +1106,13 @@ pub fn store_github_id(
     change_id: &str,
     local_hash: &str,
     github_id: &str,
+    scope: &ChangesRef,
 ) -> anyhow::Result<()> {
     let blob_oid = repo.blob(github_id.as_bytes())?;
     let path = std::path::Path::new("gh_ids")
         .join(encode_change_id_path(change_id))
         .join(local_hash);
-    write_changes_tree(repo, &path, blob_oid, None, None)?;
+    write_changes_tree(repo, &path, blob_oid, None, None, scope)?;
     Ok(())
 }
 
@@ -1048,8 +1121,9 @@ pub fn store_github_id(
 pub fn read_github_ids(
     repo: &git2::Repository,
     change_id: &str,
+    scope: &ChangesRef,
 ) -> anyhow::Result<std::collections::HashMap<String, String>> {
-    let tree = match repo.find_reference("refs/josh/changes") {
+    let tree = match repo.find_reference(&scope.ref_name()) {
         Ok(r) => r.peel_to_tree()?,
         Err(_) => return Ok(Default::default()),
     };
@@ -1075,21 +1149,23 @@ pub fn store_github_vote_id(
     change_id: &str,
     user: &str,
     vote_data: &VoteData,
+    scope: &ChangesRef,
 ) -> anyhow::Result<()> {
     let json = serde_json::to_string(vote_data)?;
     let blob_oid = repo.blob(json.as_bytes())?;
     let path = std::path::Path::new("gh_vote_ids")
         .join(encode_change_id_path(change_id))
         .join(user);
-    write_changes_tree(repo, &path, blob_oid, None, None)?;
+    write_changes_tree(repo, &path, blob_oid, None, None, scope)?;
     Ok(())
 }
 
 pub fn read_github_vote_ids(
     repo: &git2::Repository,
     change_id: &str,
+    scope: &ChangesRef,
 ) -> anyhow::Result<std::collections::HashMap<String, VoteData>> {
-    let tree = match repo.find_reference("refs/josh/changes") {
+    let tree = match repo.find_reference(&scope.ref_name()) {
         Ok(r) => r.peel_to_tree()?,
         Err(_) => return Ok(Default::default()),
     };
@@ -1127,9 +1203,11 @@ fn write_changes_tree(
     blob_oid: git2::Oid,
     author: Option<&str>,
     timestamp: Option<&str>,
+    scope: &ChangesRef,
 ) -> anyhow::Result<()> {
+    let ref_name = scope.ref_name();
     let base_tree = repo
-        .find_reference("refs/josh/changes")
+        .find_reference(&ref_name)
         .ok()
         .and_then(|r| r.peel_to_tree().ok())
         .unwrap_or_else(|| repo.find_tree(josh_core::filter::tree::empty_id()).unwrap());
@@ -1162,15 +1240,15 @@ fn write_changes_tree(
         None => josh_core::git::user_signature(repo)?,
     };
     let parent_commit = repo
-        .find_reference("refs/josh/changes")
+        .find_reference(&ref_name)
         .ok()
         .and_then(|r| r.peel_to_commit().ok());
     let parents: Vec<&git2::Commit> = parent_commit.iter().collect();
     repo.commit(
-        Some("refs/josh/changes"),
+        Some(&ref_name),
         &sig,
         &sig,
-        "update refs/josh/changes\n",
+        &format!("update {}\n", ref_name),
         &tree,
         &parents,
     )?;
@@ -1198,6 +1276,7 @@ pub fn write_vote(
     state: &str,
     author: Option<&str>,
     timestamp: Option<&str>,
+    scope: &ChangesRef,
 ) -> anyhow::Result<String> {
     let change_id = change
         .id()
@@ -1222,8 +1301,9 @@ pub fn write_vote(
         .join(encode_change_id_path(&change_id))
         .join(&user);
 
+    let ref_name = scope.ref_name();
     let base_tree = repo
-        .find_reference("refs/josh/changes")
+        .find_reference(&ref_name)
         .ok()
         .and_then(|r| r.peel_to_tree().ok())
         .unwrap_or_else(|| repo.find_tree(josh_core::filter::tree::empty_id()).unwrap());
@@ -1249,15 +1329,15 @@ pub fn write_vote(
         None => repo.signature()?,
     };
     let parent_commit = repo
-        .find_reference("refs/josh/changes")
+        .find_reference(&ref_name)
         .ok()
         .and_then(|r| r.peel_to_commit().ok());
     let parents: Vec<&git2::Commit> = parent_commit.iter().collect();
     repo.commit(
-        Some("refs/josh/changes"),
+        Some(&ref_name),
         &sig,
         &sig,
-        "update refs/josh/changes\n",
+        &format!("update {}\n", ref_name),
         &tree,
         &parents,
     )?;
@@ -1269,8 +1349,9 @@ pub fn read_vote(
     repo: &git2::Repository,
     change_id: &str,
     user: Option<&str>,
+    scope: &ChangesRef,
 ) -> anyhow::Result<Option<VoteData>> {
-    let tree = match repo.find_reference("refs/josh/changes") {
+    let tree = match repo.find_reference(&scope.ref_name()) {
         Ok(r) => r.peel_to_tree()?,
         Err(_) => return Ok(None),
     };
@@ -1300,8 +1381,9 @@ pub fn read_vote(
 pub fn list_votes(
     repo: &git2::Repository,
     change_id: &str,
+    scope: &ChangesRef,
 ) -> anyhow::Result<Vec<(String, VoteData)>> {
-    let tree = match repo.find_reference("refs/josh/changes") {
+    let tree = match repo.find_reference(&scope.ref_name()) {
         Ok(r) => r.peel_to_tree()?,
         Err(_) => return Ok(Default::default()),
     };
@@ -1329,4 +1411,140 @@ pub fn list_votes(
         }
     }
     Ok(votes)
+}
+
+// =========================================================================
+// Union helpers: read across `refs/josh/changes` + every
+// `refs/josh/remotes/*/changes` and merge results.
+// =========================================================================
+
+/// List changes across the local ref and every per-remote ref. Deduped by
+/// change-id; if a change-id appears in multiple refs, the Local entry's
+/// `tip`/`base` wins (it reflects the user's working tree).
+pub fn list_all_changes(repo: &git2::Repository) -> anyhow::Result<Vec<Change>> {
+    use std::collections::HashSet;
+    let mut seen: HashSet<String> = HashSet::new();
+    let mut out: Vec<Change> = Vec::new();
+    for scope in all_changes_refs(repo)? {
+        for c in list_changes(repo, &scope)? {
+            let id = match c.id() {
+                Some(id) => id.to_string(),
+                None => continue,
+            };
+            if seen.insert(id) {
+                out.push(c);
+            }
+        }
+    }
+    Ok(out)
+}
+
+/// First `Some(_)` PR data found among the per-remote refs (Local is not
+/// expected to hold PR data; if present, it is ignored).
+pub fn read_pr_data_union(
+    repo: &git2::Repository,
+    change_id: &str,
+) -> anyhow::Result<Option<String>> {
+    for scope in all_changes_refs(repo)? {
+        if matches!(scope, ChangesRef::Local) {
+            continue;
+        }
+        if let Some(json) = read_pr_data(repo, change_id, &scope)? {
+            return Ok(Some(json));
+        }
+    }
+    Ok(None)
+}
+
+/// Concatenate comments from every ref. Dedupe by `Comment.id` (content hash);
+/// on collision the Remote entry wins (it carries authoritative `gh_ids`).
+pub fn read_comments_union(
+    repo: &git2::Repository,
+    change_id: &str,
+) -> anyhow::Result<Vec<Comment>> {
+    use std::collections::HashMap;
+    // Insert Local first, then Remotes — Remotes overwrite on key collision.
+    let mut by_id: HashMap<String, Comment> = HashMap::new();
+    let mut order: Vec<String> = Vec::new();
+    for scope in all_changes_refs(repo)? {
+        for c in read_comments(repo, change_id, &scope)? {
+            if !by_id.contains_key(&c.id) {
+                order.push(c.id.clone());
+            }
+            by_id.insert(c.id.clone(), c);
+        }
+    }
+    Ok(order
+        .into_iter()
+        .filter_map(|id| by_id.remove(&id))
+        .collect())
+}
+
+/// Prefer the Local vote for `user`; fall back to the first Remote that has one.
+pub fn read_vote_union(
+    repo: &git2::Repository,
+    change_id: &str,
+    user: Option<&str>,
+) -> anyhow::Result<Option<VoteData>> {
+    for scope in all_changes_refs(repo)? {
+        if let Some(v) = read_vote(repo, change_id, user, &scope)? {
+            return Ok(Some(v));
+        }
+    }
+    Ok(None)
+}
+
+/// Concatenate votes across every ref. Dedupe `(user, sha, state)` triples;
+/// Local entries are inserted first and therefore win on collision.
+pub fn list_votes_union(
+    repo: &git2::Repository,
+    change_id: &str,
+) -> anyhow::Result<Vec<(String, VoteData)>> {
+    use std::collections::HashSet;
+    let mut seen: HashSet<(String, String, String)> = HashSet::new();
+    let mut out: Vec<(String, VoteData)> = Vec::new();
+    for scope in all_changes_refs(repo)? {
+        for (user, data) in list_votes(repo, change_id, &scope)? {
+            let key = (user.clone(), data.sha.clone(), data.state.clone());
+            if seen.insert(key) {
+                out.push((user, data));
+            }
+        }
+    }
+    Ok(out)
+}
+
+/// Concatenate revisions from every ref, dedupe by `commit_oid`, sort by
+/// timestamp ascending.
+pub fn read_revisions_union(
+    repo: &git2::Repository,
+    change: &Change,
+) -> anyhow::Result<Vec<Revision>> {
+    use std::collections::HashSet;
+    let mut seen: HashSet<String> = HashSet::new();
+    let mut out: Vec<Revision> = Vec::new();
+    for scope in all_changes_refs(repo)? {
+        for r in read_revisions(repo, change, &scope)? {
+            if seen.insert(r.commit_oid.clone()) {
+                out.push(r);
+            }
+        }
+    }
+    out.sort_by(|a, b| a.timestamp.cmp(&b.timestamp));
+    Ok(out)
+}
+
+/// Union of `gh_ids` maps across every per-remote ref. Collisions keep the
+/// first entry encountered (in `all_changes_refs` order).
+pub fn read_github_ids_union(
+    repo: &git2::Repository,
+    change_id: &str,
+) -> anyhow::Result<std::collections::HashMap<String, String>> {
+    let mut out: std::collections::HashMap<String, String> = std::collections::HashMap::new();
+    for scope in all_changes_refs(repo)? {
+        for (k, v) in read_github_ids(repo, change_id, &scope)? {
+            out.entry(k).or_insert(v);
+        }
+    }
+    Ok(out)
 }

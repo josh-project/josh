@@ -9,7 +9,7 @@ pub fn handle_list(
 ) -> anyhow::Result<()> {
     let repo = transaction.repo();
 
-    let changes = josh_changes::list_changes(repo)?;
+    let changes = josh_changes::list_all_changes(repo)?;
 
     if changes.is_empty() {
         println!("No local changes found.");
@@ -40,7 +40,7 @@ pub fn handle_list(
 
         let comments = change
             .id()
-            .map(|cid| josh_changes::read_comments(repo, cid).unwrap_or_default())
+            .map(|cid| josh_changes::read_comments_union(repo, cid).unwrap_or_default())
             .unwrap_or_default();
         if !comments.is_empty() {
             println!();

@@ -331,56 +331,24 @@ pub fn load_detail(sha: &str) -> anyhow::Result<DetailData> {
     let mut stack: Vec<StackCommit> = Vec::new();
     let mut pr_info: Option<PrInfo> = None;
     if let Some(ref cid) = change_id {
-        if let Ok(tree) = repo
-            .find_reference("refs/josh/changes")
-            .and_then(|r| r.peel_to_tree())
-        {
-            let pr_path = std::path::Path::new("gh").join(josh_changes::encode_change_id_path(cid));
-            pr_info = tree
-                .get_path(&pr_path)
-                .ok()
-                .and_then(|e| e.to_object(&repo).ok())
-                .and_then(|o| o.peel_to_tree().ok())
-                .and_then(|t| {
-                    t.iter()
-                        .next()
-                        .and_then(|e| e.to_object(&repo).ok())
-                        .and_then(|o| o.peel_to_blob().ok())
-                })
-                .and_then(|b| {
-                    let content = String::from_utf8_lossy(b.content());
-                    serde_json::from_str::<serde_json::Value>(&content)
-                        .ok()
-                        .map(|v| PrInfo {
-                            url: v["url"].as_str().unwrap_or("").to_string(),
-                            title: v["title"].as_str().unwrap_or("").to_string(),
-                            state: v["state"].as_str().unwrap_or("").to_string(),
-                            review_decision: v["review_decision"]
-                                .as_str()
-                                .unwrap_or("")
-                                .to_string(),
-                        })
-                });
+        pr_info = josh_changes::read_pr_data_union(&repo, cid)
+            .ok()
+            .flatten()
+            .and_then(|json| serde_json::from_str::<serde_json::Value>(&json).ok())
+            .map(|v| PrInfo {
+                url: v["url"].as_str().unwrap_or("").to_string(),
+                title: v["title"].as_str().unwrap_or("").to_string(),
+                state: v["state"].as_str().unwrap_or("").to_string(),
+                review_decision: v["review_decision"].as_str().unwrap_or("").to_string(),
+            });
 
-            let path = std::path::Path::new("diffs").join(josh_changes::encode_change_id_path(cid));
-            if let Some(entry) = tree
-                .get_path(&path)
-                .ok()
-                .and_then(|e| e.to_object(&repo).ok())
-                .and_then(|o| o.peel_to_tree().ok())
-            {
-                if let Some(blob_entry) = entry
-                    .iter()
-                    .next()
-                    .and_then(|e| e.to_object(&repo).ok())
-                    .and_then(|o| o.peel_to_blob().ok())
-                {
-                    let content = String::from_utf8_lossy(blob_entry.content());
-                    if let Some((_, base_str)) = content.split_once('\n') {
-                        if let Ok(base_oid) = git2::Oid::from_str(base_str) {
-                            change.set_base(base_oid);
-                        }
-                    }
+        // Pick the base oid from whichever ref has diff data for this change-id,
+        // with Local winning per `list_all_changes` precedence.
+        if let Ok(all) = josh_changes::list_all_changes(&repo) {
+            if let Some(c) = all.iter().find(|c| c.id() == Some(cid.as_str())) {
+                let base = c.base();
+                if base != git2::Oid::zero() {
+                    change.set_base(base);
                 }
             }
         }
@@ -402,12 +370,12 @@ pub fn load_detail(sha: &str) -> anyhow::Result<DetailData> {
 
     let comments = change_id
         .as_deref()
-        .map(|cid| josh_changes::read_comments(&repo, cid).unwrap_or_default())
+        .map(|cid| josh_changes::read_comments_union(&repo, cid).unwrap_or_default())
         .unwrap_or_default();
-    let revisions = josh_changes::read_revisions(&repo, &change).unwrap_or_default();
+    let revisions = josh_changes::read_revisions_union(&repo, &change).unwrap_or_default();
     let local_vote = change_id
         .as_ref()
-        .and_then(|cid| josh_changes::read_vote(&repo, cid, None).ok())
+        .and_then(|cid| josh_changes::read_vote_union(&repo, cid, None).ok())
         .flatten();
 
     Ok(DetailData {
@@ -451,7 +419,14 @@ pub fn save_comment(
         update_of: None,
     };
 
-    josh_changes::write_comment(&repo, &change, &meta, None, None)
+    josh_changes::write_comment(
+        &repo,
+        &change,
+        &meta,
+        None,
+        None,
+        &josh_changes::ChangesRef::Local,
+    )
 }
 
 pub fn save_vote(sha: &str, state: &str, body: &str) -> anyhow::Result<String> {
@@ -468,8 +443,22 @@ pub fn save_vote(sha: &str, state: &str, body: &str) -> anyhow::Result<String> {
             reply_to: None,
             update_of: None,
         };
-        josh_changes::write_comment(&repo, &change, &meta, None, None)?;
+        josh_changes::write_comment(
+            &repo,
+            &change,
+            &meta,
+            None,
+            None,
+            &josh_changes::ChangesRef::Local,
+        )?;
     }
 
-    josh_changes::write_vote(&repo, &change, state, None, None)
+    josh_changes::write_vote(
+        &repo,
+        &change,
+        state,
+        None,
+        None,
+        &josh_changes::ChangesRef::Local,
+    )
 }

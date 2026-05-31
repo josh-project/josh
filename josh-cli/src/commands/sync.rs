@@ -46,8 +46,17 @@ pub fn handle_sync(
         })
         .unwrap_or(git2::Oid::zero());
 
+    let remote_name = args.remote.as_deref().unwrap_or("origin").to_string();
+    let remote_scope = josh_changes::ChangesRef::Remote(remote_name.clone());
+    let local_scope = josh_changes::ChangesRef::Local;
+
     if args.clean {
-        if let Ok(mut r) = repo.find_reference("refs/josh/changes") {
+        let target = if args.local {
+            local_scope.ref_name()
+        } else {
+            remote_scope.ref_name()
+        };
+        if let Ok(mut r) = repo.find_reference(&target) {
             r.delete()?;
         }
     }
@@ -241,14 +250,20 @@ pub fn handle_sync(
                         change
                     };
 
-                    josh_changes::store_diff_data(repo, &change)?;
+                    josh_changes::store_diff_data(repo, &change, &remote_scope)?;
                     Ok((change, pr.number))
                 })();
 
                 match result {
                     Ok((change, pr_number)) => {
                         match josh_github_changes::sync_change_comments_by_pr_number(
-                            &api, &owner, &repo_name, repo, &change, pr_number,
+                            &api,
+                            &owner,
+                            &repo_name,
+                            repo,
+                            &change,
+                            pr_number,
+                            &remote_scope,
                         )
                         .await
                         {
@@ -286,7 +301,7 @@ pub fn handle_sync(
                 })
                 .collect();
 
-            let all_changes = josh_changes::list_changes(repo)?;
+            let all_changes = josh_changes::list_changes(repo, &remote_scope)?;
             let mut cleaned = 0usize;
 
             for change in &all_changes {
@@ -305,7 +320,7 @@ pub fn handle_sync(
                         Some(n) => n,
                         None => {
                             // Custom Change-Id; try reading stored PR data.
-                            match josh_changes::read_pr_data(repo, change_id) {
+                            match josh_changes::read_pr_data(repo, change_id, &remote_scope) {
                                 Ok(Some(json)) => {
                                     match serde_json::from_str::<serde_json::Value>(&json) {
                                         Ok(v) => match v.get("number").and_then(|n| n.as_i64()) {
@@ -360,7 +375,7 @@ pub fn handle_sync(
                 if pr_data.state == "OPEN" {
                     // Record the current state even if unexpectedly open.
                     let json = serde_json::to_string(&pr_data)?;
-                    josh_changes::store_pr_data(repo, change_id, &json)?;
+                    josh_changes::store_pr_data(repo, change_id, &json, &remote_scope)?;
                     eprintln!(
                         "  Change '{}' (PR #{}): unexpectedly still OPEN on GitHub \
                          -- skipping deletion",
@@ -371,7 +386,7 @@ pub fn handle_sync(
 
                 // Commit 1: store the updated PR data (final CLOSED/MERGED state).
                 let json = serde_json::to_string(&pr_data)?;
-                if let Err(e) = josh_changes::store_pr_data(repo, change_id, &json) {
+                if let Err(e) = josh_changes::store_pr_data(repo, change_id, &json, &remote_scope) {
                     eprintln!(
                         "  Change '{}' (PR #{}): failed to store updated PR data: {} \
                          -- skipping deletion",
@@ -380,8 +395,8 @@ pub fn handle_sync(
                     continue;
                 }
 
-                // Commit 2: delete the change from refs/josh/changes.
-                if let Err(e) = josh_changes::delete_change(repo, change_id) {
+                // Commit 2: delete the change from the remote changes ref.
+                if let Err(e) = josh_changes::delete_change(repo, change_id, &remote_scope) {
                     eprintln!(
                         "  Change '{}' (PR #{}): failed to delete: {}",
                         change_id, pr_number, e
@@ -418,6 +433,8 @@ pub fn handle_sync(
                                 repo,
                                 &change_id,
                                 &pr_node_id,
+                                &local_scope,
+                                &remote_scope,
                             )
                             .await
                             {
@@ -444,6 +461,8 @@ pub fn handle_sync(
                                 &change_id,
                                 &pr_node_id,
                                 &pr.head_oid,
+                                &local_scope,
+                                &remote_scope,
                             )
                             .await
                             {
