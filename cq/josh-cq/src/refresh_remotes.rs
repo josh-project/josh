@@ -95,6 +95,25 @@ pub(crate) async fn refresh_remotes(
                     );
                 }
             }
+
+            match api
+                .get_commit_check_runs(&owner, &repo_name, &pr.head_sha)
+                .await
+            {
+                Ok(results) => {
+                    if let Some(admission) = state.pr_admissions.get_mut(&pr.node_id) {
+                        admission.apply_check_results(&results);
+                    }
+                }
+                Err(e) => {
+                    tracing::warn!(
+                        pr = %pr.node_id,
+                        sha = %pr.head_sha,
+                        error = ?e,
+                        "failed to fetch check run results"
+                    );
+                }
+            }
         }
 
         tracing::info!(

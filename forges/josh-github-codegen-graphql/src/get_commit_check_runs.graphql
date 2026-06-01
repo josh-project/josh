@@ -1,0 +1,19 @@
+query GetCommitCheckRuns($owner: String!, $name: String!, $sha: GitObjectID!) {
+  repository(owner: $owner, name: $name) {
+    object(oid: $sha) {
+      __typename
+      ... on Commit {
+        checkSuites(first: 100) {
+          nodes {
+            checkRuns(first: 100) {
+              nodes {
+                name
+                conclusion
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

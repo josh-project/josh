@@ -1,9 +1,9 @@
 [queries.create_check_run]
 
-[queries.check_runs_discover]
+[queries.get_check_suites]
 fragments = ["check_suite_info"]
 
-[queries.check_runs_get_simple]
+[queries.get_check_suite_runs]
 fragments = ["check_run_info"]
 
 [queries.check_runs_get_with_pages]
@@ -39,5 +39,7 @@ fragments = ["collaborator_edge_info"]
 [queries.get_open_prs]
 
 [queries.add_pr_comment]
+
+[queries.get_commit_check_runs]
 
 [queries.get_pr_reviews]

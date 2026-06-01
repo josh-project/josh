@@ -1,4 +1,4 @@
-query CheckRunsDiscover($nodeIds: [ID!]!) {
+query GetCheckSuites($nodeIds: [ID!]!) {
   rateLimit {
     cost
     limit

@@ -1,5 +1,6 @@
 use juniper::{Scalar, ScalarValue, WrongInputScalarTypeError, graphql_object};
 
+use super::check_suites::CheckSuitesConnection;
 use super::context::Context;
 use super::pull_request::{PullRequest, PullRequestState};
 
@@ -41,6 +42,10 @@ impl GitObject {
         AssociatedPullRequestConnection {
             nodes: self.associated_prs_nodes.clone(),
         }
+    }
+
+    fn check_suites(&self) -> CheckSuitesConnection {
+        CheckSuitesConnection { nodes: vec![] }
     }
 }
 

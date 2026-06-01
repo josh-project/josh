@@ -12,6 +12,8 @@ use juniper::{DefaultScalarValue, EmptySubscription, InputValue, Variables};
 use serde::Deserialize;
 use url::Url;
 
+mod check_runs;
+mod check_suites;
 mod collaborator;
 mod context;
 mod git_object;

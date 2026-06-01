@@ -1,10 +1,10 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use axum::extract::State;
+use axum::extract::{Query, State};
 use axum::http::StatusCode;
 use axum::response::IntoResponse;
-use axum::routing::post;
+use axum::routing::{get, post};
 use tokio::sync::{mpsc, oneshot};
 
 use url::Url;
@@ -12,11 +12,12 @@ use url::Url;
 use josh_github_auth::middleware::GithubAuthMiddleware;
 use josh_github_graphql::connection::GithubApiConnection;
 
+use crate::debug::handle_debug;
 use crate::git::{GitActor, GitActorMessage};
 use crate::models::CqActorState;
 use crate::refresh_remotes::refresh_remotes;
 use crate::step::run_queue_cycle;
-use crate::types::{CqEvent, TrackRequest};
+use crate::types::{CqEvent, DebugRequest, TrackRequest};
 use crate::webhook::handle_webhook;
 
 async fn track_handler(
@@ -51,6 +52,43 @@ async fn webhook_handler(
     enqueue(&event_tx, CqEvent::Webhook(payload)).await
 }
 
+#[derive(serde::Deserialize)]
+struct DebugQuery {
+    action: crate::types::DebugAction,
+    remote: Option<String>,
+}
+
+/// `GET /v1/debug?action=...&remote=...` — read-only introspection of the live
+/// actor state. The request is handled inline by the actor (no queue cycle) so
+/// it reflects exactly what the queue sees. Returns plaintext.
+async fn debug_handler(
+    State(event_tx): State<mpsc::Sender<CqEvent>>,
+    Query(query): Query<DebugQuery>,
+) -> impl IntoResponse {
+    let (reply, rx) = oneshot::channel();
+    if event_tx
+        .send(CqEvent::Debug(DebugRequest {
+            action: query.action,
+            remote: query.remote,
+            reply,
+        }))
+        .await
+        .is_err()
+    {
+        return (
+            StatusCode::SERVICE_UNAVAILABLE,
+            "event queue closed\n".to_string(),
+        );
+    }
+    match rx.await {
+        Ok(body) => (StatusCode::OK, body),
+        Err(_) => (
+            StatusCode::SERVICE_UNAVAILABLE,
+            "actor dropped\n".to_string(),
+        ),
+    }
+}
+
 async fn enqueue(event_tx: &mpsc::Sender<CqEvent>, event: CqEvent) -> (StatusCode, &'static str) {
     match event_tx.send(event).await {
         Ok(()) => (StatusCode::ACCEPTED, "accepted"),
@@ -65,6 +103,7 @@ pub fn make_router(event_tx: mpsc::Sender<CqEvent>) -> axum::Router {
     axum::Router::new()
         .route("/v1/track", post(track_handler))
         .route("/v1/webhook", post(webhook_handler))
+        .route("/v1/debug", get(debug_handler))
         .with_state(event_tx)
 }
 
@@ -122,6 +161,15 @@ async fn process_event(
 
             EventOutcome {
                 run_queue_cycle: true,
+                done: None,
+            }
+        }
+        CqEvent::Debug(req) => {
+            let body = handle_debug(&req, git, api, state).await;
+            let _ = req.reply.send(body);
+
+            EventOutcome {
+                run_queue_cycle: false,
                 done: None,
             }
         }

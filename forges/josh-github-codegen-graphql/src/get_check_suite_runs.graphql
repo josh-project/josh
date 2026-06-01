@@ -1,4 +1,4 @@
-query CheckRunsGetSimple($nodeIds: [ID!]!, $limit: Int!) {
+query GetCheckSuiteRuns($nodeIds: [ID!]!, $limit: Int!) {
   rateLimit {
     cost
     limit
