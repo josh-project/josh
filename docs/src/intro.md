@@ -1,4 +1,4 @@
-![Just One Single History](https://raw.githubusercontent.com/josh-project/josh/master/splash.png)
+![Just One Single History](https://raw.githubusercontent.com/josh-project/josh/master/splash.jpg)
 
 Josh combines the advantages of monorepos with those of multirepos by leveraging a blazingly-fast,
 incremental, and reversible implementation of git history filtering.
@@ -48,29 +48,3 @@ express more complex filters as a combination of simpler ones. Apart from guaran
 reversibility, the use of a DSL also enables pre-optimization of filter expressions to minimize both
 the amount of work to be done to execute the filter as well as the on-disk size of the persistent
 cache.
-
-
-
->*_From Linus Torvalds 2007 talk at Google about git:_*
->
->**Audience:**
->
->Can you have just a part of files pulled out of a repository, not the entire repository?
->
->**Linus:**
->
->You can export things as tarballs, you can export things as individual files, you can rewrite the
->whole history to say "I want a new version of that repository that only contains that part", you
->can do that, it is a fairly expensive operation it's something you would do for example when you
->import an old repository into a one huge git repository and then you can split it later on to be
->multiple smaller ones, you can do it, what I am trying to say is that you should generally try to
->avoid it. It's not that git cannot handle huge projects, git would not perform as well as it would
->otherwise. And you will have issues that you wish you didn't not have.
->
->So I am skipping this issue and going back to the performance issue. One of the things I want to
->say about performance is that a lot of people seem to think that performance is about doing the
->same thing, just doing it faster, and that is not true.
->
->That is not what performance is all about. If you can do something really fast, really well, people
->will start using it differently.
-> 

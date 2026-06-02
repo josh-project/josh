@@ -1,134 +1,108 @@
-![Just One Single History](/splash.png)
+![Just One Single History](/splash.jpg)
 
-Combine the advantages of a monorepo with those of multirepo setups by leveraging a
-fast, incremental, and reversible implementation of git history filtering.
+Josh – “Just One Single History” – is a collection of tools and services together composing
+a platform for scaling out distributed development and collaboration with Git.
 
-`josh-proxy` can be integrated with any git host:
-
-```
-$ docker run \
-    -p 8000:8000 \
-    -e JOSH_REMOTE=https://github.com \
-    -v josh-vol:/data/git \
-    joshproject/josh-proxy:latest
-```
-
-See [Container options](https://josh-project.github.io/josh/reference/container.html) for full list of environment variables.
+Our goal is to address challenges that arise when the number of people working on software
+within any given organization or even across multiple organizations grows. The experience we
+aim for is: work in a codebase of any size, with any number of contributors, without slowing
+down the change velocity.
 
 ## Use cases
 
-### Partial cloning <a href="https://josh-project.dev/~/ui/browse?repo=josh.git&path=&filter=%3A%2Fdocs&rev=HEAD"><img src="https://img.shields.io/badge/try_it-josh--project.dev-black"/></a>
+### Repo filtering
 
-Reduce scope and size of clones by treating subdirectories of the monorepo
-as individual repositories.
+One of the most common pain points software organizations encounter is the need to
+split their repositories into multiple per-project repos in order to address scalability,
+access control, and scope issues.
 
-```
-$ git clone https://josh-project.dev/josh.git:/docs.git
-```
+We believe that having multiple repositories is not inherently advantageous by itself,
+but rather is a stopgap solution driven by inefficiencies of the currently available tooling.
+Over the years, Git platforms like GitHub have created assumptions in the collective consciousness
+about what is and is not possible in Git, and to this day, this influences decisions
+organizations make about the way they develop software.
 
-The partial repo will act as a normal git repository but only contain the files
-found in the subdirectory and only commits affecting those files.
-The partial repo supports both fetch as well as push operation.
+Josh implements the core component that challenges these assumptions: fast, reversible
+Git history transformation enables us to not think about Git repository boundaries anymore:
+they disappear as soon as we can present any part of a Git repository independently,
+preserving history and ability to contribute. This enabled unprecedented flexibility:
+instead of static boundaries – which often reflect organizational boundaries and
+create silos – the boundaries can be decided in the moment, for any given context,
+thousands of times per second.
 
-This helps not just to improve performance on the client due to having fewer files in
-the tree,
-it also enables collaboration on parts of the monorepo with other parties
-utilizing git's normal distributed development features.
-For example, this makes it easy to mirror just selected parts of your
-repo to public github repositories or specific customers.
+For example, Josh enables you to represent a subfolder of your monorepo as an independent
+repository, limiting visibility, scope, CI rebuilds, etc.
 
-### Project composition / Workspaces
-
-Simplify code sharing and dependency management. Beyond just subdirectories,
-Josh supports filtering, re-mapping and composition of arbitrary virtual repositories
-from the content found in the monorepo.
-
-The mapping itself is also stored in the repository and therefore versioned alongside
-the code.
-
-<table>
-    <thead>
-        <tr>
-            <th>Central monorepo</th>
-            <th>Project workspaces</th>
-            <th>workspace.josh file</th>
-        </tr>
-    </thead>
-    <tbody>
-        <tr>
-            <td rowspan=2><img src="docs/src/img/central.svg?sanitize=true" alt="Folders and files in central.git" /></td>
-            <td><img src="docs/src/img/project1.svg?sanitize=true" alt="Folders and files in project1.git" /></td>
-            <td>
-<pre>
-dependencies = :/modules:[
-    ::tools/
-    ::library1/
-]
-</pre>
-        </tr>
-        <tr>
-            <td><img src="docs/src/img/project2.svg?sanitize=true" alt="Folders and files in project2.git" /></td>
-            <td>
-<pre>libs/library1 = :/modules/library1</pre></td>
-        </tr>
-    </tbody>
-</table>
-
-Workspaces act as normal git repos:
+You can try this out quickly with this repo and the `docs` folder:
 
 ```
-$ git clone http://josh/central.git:workspace=workspaces/project1.git
+git clone https://josh-project.dev/josh.git:/docs.git
 ```
 
-### Simplified CI/CD
+### Build / CI
 
-With everything stored in one repo, CI/CD systems only need to look into one source for each particular
-deliverable.
-However, in traditional monorepo environments, dependency management is handled by the build system.
-Build systems are usually tailored to specific languages and need their input already checked
-out on the filesystem.
-So the question:
+Another common use case for Josh is integration with CI and build systems.
+Josh offers a GraphQL API that allows you to check the state of the repository –
+and any partial projections within it – without actually checking out the repo.
+This provides a way to quickly answer the question:
 
-> "What deliverables are affected by a given commit and need to be rebuilt?"
+>_Has this code already been successfully built before?_
 
-cannot be answered without cloning the entire repository and understanding how the languages
-used handle dependencies.
+for any subproject within the repo.
 
-In particular, when using C family languages, hidden dependencies on header files are easy to miss.
-For this reason, limiting the visibility of files to the compiler by sandboxing is pretty much a requirement
-for reproducible builds.
+## Getting started
 
-With Josh, each deliverable gets its own virtual git repository with dependencies declared in the `workspace.josh`
-file. This means answering the above question becomes as simple as comparing commit ids.
-Furthermore, due to the tree filtering, each build is guaranteed to be perfectly sandboxed
-and only sees those parts of the monorepo that have actually been mapped.
+Today, the Josh project ships two major components:
 
-This also means the deliverables to be re-built can be determined without cloning any repos like
-typically necessary with normal build tools.
+* _josh CLI_: local tool that enables working with partial projections of Git repos. See
+  <a href="https://josh-project.github.io/josh/guide/gettingstarted.html">CLI getting started guide</a>.
+* _josh-proxy_: Git HTTP and SSH proxy that provides on-the-fly transformation of history
+  for multiple users with shared cache, as well as GraphQL APIs. See
+  <a href="https://josh-project.github.io/josh/reference/proxy.html">proxy documentation</a>.
 
-### GraphQL API
+Apart from the links above, there are a couple of core concepts that Josh relies on:
 
-It is often desireable to access content stored in git without requiring a clone of the repository.
-This is useful for CI/CD systems or web frontends, such as dashboards.
-
-Josh exposes a GraphQL API for that purpose. For example, it can be used to find all workspaces currently
-present in the tree:
-
-```
-query {
-  rev(at:"refs/heads/master", filter:"::**/workspace.josh") {
-    files { path }
-  }
-}
-```
-
-
-### Caching proxy
-
-Even without using the more advanced features like partial cloning or workspaces,
-`josh-proxy` can act as a cache to reduce traffic between locations or keep your CI from
-performing many requests to the main git host.
+* **Filters**: a way of describing the desired repository transformation: https://josh-project.github.io/josh/reference/filters.html
+* **Workspaces**: persisted, versioned filters https://josh-project.github.io/josh/guide/workspaces.html
 
 ## FAQ
 
-See the [FAQ](https://josh-project.github.io/josh/faq.html)
+See the [FAQ](https://josh-project.github.io/josh/faq.html).
+
+## Upcoming features
+
+We are working on a number of features that aren’t yet fully mature, but will eventually be
+available in stable releases. Those include:
+
+* Merge queue with support for filtering and PR stacks
+* Code review UI for stacked changes
+* Filters written in Starlark syntax
+* `josh compose` – containerized build orchestrator built on top of the concept of filters
+
+<hr/>
+
+<hr/>
+
+>*_From Linus Torvalds 2007 talk at Google about git:_*
+>
+>**Audience:**
+>
+>Can you have just a part of files pulled out of a repository, not the entire repository?
+>
+>**Linus:**
+>
+>You can export things as tarballs, you can export things as individual files, you can rewrite the
+>whole history to say "I want a new version of that repository that only contains that part", you
+>can do that, it is a fairly expensive operation it's something you would do for example when you
+>import an old repository into a one huge git repository and then you can split it later on to be
+>multiple smaller ones, you can do it, what I am trying to say is that you should generally try to
+>avoid it. It's not that git cannot handle huge projects, git would not perform as well as it would
+>otherwise. And you will have issues that you wish you didn't have.
+>
+>So I am skipping this issue and going back to the performance issue. One of the things I want to
+>say about performance is that a lot of people seem to think that performance is about doing the
+>same thing, just doing it faster, and that is not true.
+>
+>That is not what performance is all about. If you can do something really fast, really well, people
+>will start using it differently.
+>
