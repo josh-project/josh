@@ -2,14 +2,14 @@ use crate::connection::GithubApiConnection;
 use josh_github_codegen_graphql::{get_commit_check_runs, GetCommitCheckRuns};
 
 impl GithubApiConnection {
-    /// Fetch check run conclusions for a commit, returning `(name, passed)` for
-    /// each check run found.
+    /// Fetch check run conclusions for a commit, returning `(name, integration_id, passed)`
+    /// for each check run found.
     pub async fn get_commit_check_runs(
         &self,
         owner: &str,
         name: &str,
         sha: &str,
-    ) -> anyhow::Result<Vec<(String, bool)>> {
+    ) -> anyhow::Result<Vec<(String, Option<i64>, bool)>> {
         let variables = get_commit_check_runs::Variables {
             owner: owner.to_string(),
             name: name.to_string(),
@@ -42,6 +42,11 @@ impl GithubApiConnection {
         };
 
         for suite_node in suite_nodes.into_iter().flatten() {
+            let integration_id = suite_node
+                .app
+                .and_then(|app| app.database_id)
+                .map(|id| id as i64);
+
             let Some(check_runs_conn) = suite_node.check_runs else {
                 continue;
             };
@@ -53,7 +58,7 @@ impl GithubApiConnection {
                     run_node.conclusion,
                     Some(get_commit_check_runs::CheckConclusionState::Success)
                 );
-                results.push((run_node.name, passed));
+                results.push((run_node.name, integration_id, passed));
             }
         }
 

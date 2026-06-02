@@ -5,10 +5,10 @@ use josh_github_graphql::operations::repo::RequiredStatusCheck;
 
 use crate::models::CqActorState;
 
-pub(crate) async fn fetch_maintainers(
+pub(crate) async fn get_or_fetch_maintainers(
+    state: &CqActorState,
     clone_url: &str,
     api: &GithubApiConnection,
-    state: &CqActorState,
 ) -> Vec<String> {
     let Some((owner, name)) = state.resolve_owner_repo(clone_url) else {
         return Vec::new();

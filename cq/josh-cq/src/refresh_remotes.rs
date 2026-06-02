@@ -56,7 +56,7 @@ pub(crate) async fn refresh_remotes(
         // a webhook before a ruleset existed; tick is the reconciliation point.
         let required = match fetch_required_checks(api, &owner, &repo_name).await {
             Ok(checks) => {
-                state.admission.insert(url.clone(), checks.clone());
+                state.required_checks.insert(url.clone(), checks.clone());
                 Some(checks)
             }
             Err(e) => {
@@ -66,26 +66,26 @@ pub(crate) async fn refresh_remotes(
         };
 
         for pr in &prs {
+            dbg!(&pr);
+
             if state.closed_prs.contains(&pr.node_id) {
                 continue;
             }
+
             state.upsert_candidate(CandidatePr::from_open_pr(url, pr));
 
-            crate::admission::get_or_init_pr_admission(state, &pr.node_id, url, api).await;
+            let admission =
+                crate::admission::get_or_init_pr_admission(state, &pr.node_id, url, api).await;
 
             // Bring the PR's required checks in line with the current rulesets,
             // preserving already-known pass/fail results.
-            if let Some(required) = &required
-                && let Some(admission) = state.pr_admissions.get_mut(&pr.node_id)
-            {
+            if let Some(required) = &required {
                 crate::admission::sync_required_checks(admission, required);
             }
 
             match api.get_pr_reviews(&owner, &repo_name, pr.number).await {
                 Ok(reviews) => {
-                    if let Some(admission) = state.pr_admissions.get_mut(&pr.node_id) {
-                        admission.apply_review_states(&reviews);
-                    }
+                    admission.apply_review_states(&reviews);
                 }
                 Err(e) => {
                     tracing::warn!(
@@ -101,9 +101,10 @@ pub(crate) async fn refresh_remotes(
                 .await
             {
                 Ok(results) => {
-                    if let Some(admission) = state.pr_admissions.get_mut(&pr.node_id) {
-                        admission.apply_check_results(&results);
-                    }
+                    dbg!(&results);
+                    dbg!(&admission);
+
+                    admission.apply_check_results(&results);
                 }
                 Err(e) => {
                     tracing::warn!(

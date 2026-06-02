@@ -11,7 +11,7 @@ use crate::models::CqActorState;
 /// `admissible()`. Returns just the id rather than cloning the full struct.
 fn select_candidate(state: &CqActorState) -> Option<String> {
     for (node_id, candidate) in &state.candidates {
-        if let Some(admission) = state.pr_admissions.get(node_id)
+        if let Some(admission) = state.admissions.get(node_id)
             && admission.admissible()
         {
             tracing::info!(

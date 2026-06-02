@@ -44,10 +44,13 @@ impl CandidatePr {
     }
 }
 
+pub type RequiredChecksMap = BTreeMap<String, BTreeSet<RequiredStatusCheck>>;
+pub type AdmissionsMap = BTreeMap<String, AdmissionState>;
+
 #[derive(Default)]
 pub(crate) struct CqActorState {
-    pub admission: BTreeMap<String, BTreeSet<RequiredStatusCheck>>,
-    pub pr_admissions: BTreeMap<String, AdmissionState>,
+    pub required_checks: RequiredChecksMap,
+    pub admissions: AdmissionsMap,
     pub candidates: BTreeMap<String, CandidatePr>,
     /// Maps arbitrary clone URLs (e.g. 127.0.0.1 for tests) to (owner, name) pairs.
     pub url_owner_map: HashMap<String, (String, String)>,
@@ -74,7 +77,7 @@ impl CqActorState {
 
     pub fn remove_candidate(&mut self, pr_node_id: &str) {
         self.candidates.remove(pr_node_id);
-        self.pr_admissions.remove(pr_node_id);
+        self.admissions.remove(pr_node_id);
         self.closed_prs.remove(pr_node_id);
     }
 

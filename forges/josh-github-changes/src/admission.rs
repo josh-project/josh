@@ -66,11 +66,11 @@ impl AdmissionState {
     }
 
     /// Directly set check run results (non-webhook path).
-    pub fn apply_check_results(&mut self, results: &[(String, bool)]) {
-        for (context, passed) in results {
+    pub fn apply_check_results(&mut self, results: &[(String, Option<i64>, bool)]) {
+        for (context, integration_id, passed) in results {
             if let Some(entry) = self.required_checks.get_mut(&RequiredStatusCheck {
                 context: context.clone(),
-                integration_id: None,
+                integration_id: *integration_id,
             }) {
                 *entry = *passed;
             }

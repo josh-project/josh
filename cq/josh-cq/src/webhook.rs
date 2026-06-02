@@ -69,22 +69,19 @@ pub(crate) async fn handle_webhook(
         }
 
         WebhookPayload::PullRequestReview(e) => {
-            if let Some(admission) =
-                get_or_init_pr_admission(state, &e.pull_request.node_id, &clone_url, api).await
-            {
-                admission.process_pr_review_events(std::slice::from_ref(e));
-            }
+            let admission =
+                get_or_init_pr_admission(state, &e.pull_request.node_id, &clone_url, api).await;
+
+            admission.process_pr_review_events(std::slice::from_ref(e));
         }
 
         WebhookPayload::CheckRun(e) => {
             let pr_ids =
                 lookup_open_prs_by_sha(api, &clone_url, &e.check_run.head_sha, state).await;
+
             for pr_id in pr_ids {
-                if let Some(admission) =
-                    get_or_init_pr_admission(state, &pr_id, &clone_url, api).await
-                {
-                    admission.process_check_run_events(std::slice::from_ref(e));
-                }
+                let admission = get_or_init_pr_admission(state, &pr_id, &clone_url, api).await;
+                admission.process_check_run_events(std::slice::from_ref(e));
             }
         }
 

@@ -11,7 +11,7 @@ use std::fmt::Write;
 use josh_github_changes::admission::AdmissionState;
 use josh_github_graphql::connection::GithubApiConnection;
 
-use crate::api::fetch_maintainers;
+use crate::api::get_or_fetch_maintainers;
 use crate::git::{GitActor, GitActorMessage};
 use crate::models::CqActorState;
 use crate::types::{DebugAction, DebugRequest};
@@ -73,7 +73,6 @@ async fn get_admission(
         let known: Vec<&str> = remotes.iter().map(|(n, _)| n.as_str()).collect();
         return format!(
             "error: no tracked remote named '{remote}'\nknown remotes: {}\n",
-
             if known.is_empty() {
                 "(none)".to_string()
             } else {
@@ -99,7 +98,7 @@ async fn get_admission(
 
     out.push('\n');
     let _ = writeln!(out, "required checks (from active rulesets):");
-    match state.admission.get(url) {
+    match state.required_checks.get(url) {
         Some(checks) if !checks.is_empty() => {
             for check in checks {
                 let _ = writeln!(out, "  - {}", check.context);
@@ -118,7 +117,7 @@ async fn get_admission(
     // admission state, so it shows who can approve even when no PR is open yet.
     out.push('\n');
     let _ = writeln!(out, "maintainers (write access, from GitHub API):");
-    let mut maintainers = fetch_maintainers(url, api, state).await;
+    let mut maintainers = get_or_fetch_maintainers(state, url, api).await;
     maintainers.sort();
     if maintainers.is_empty() {
         let _ = writeln!(out, "  (none — or failed to fetch; check server logs)");
@@ -144,7 +143,7 @@ async fn get_admission(
         let _ = writeln!(out, "  base_branch: {}", candidate.base_branch);
         let _ = writeln!(out, "  base_sha:    {}", candidate.base_sha);
 
-        match state.pr_admissions.get(&candidate.node_id) {
+        match state.admissions.get(&candidate.node_id) {
             Some(admission) => write_admission(&mut out, admission),
             None => {
                 let _ = writeln!(out, "  admission:   <not initialized>");
