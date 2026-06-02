@@ -1477,7 +1477,7 @@ pub fn list_votes(
 // =========================================================================
 
 /// Like `all_changes_refs`, but filtered to refs targeting `branch`.
-fn refs_on_branch(repo: &git2::Repository, branch: &str) -> anyhow::Result<Vec<ChangesRef>> {
+pub fn refs_on_branch(repo: &git2::Repository, branch: &str) -> anyhow::Result<Vec<ChangesRef>> {
     Ok(all_changes_refs(repo)?
         .into_iter()
         .filter(|r| r.branch() == branch)
@@ -1624,11 +1624,20 @@ pub fn list_changes_on_branch(
     repo: &git2::Repository,
     branch: &str,
 ) -> anyhow::Result<Vec<Change>> {
+    list_changes_in_scopes(repo, &refs_on_branch(repo, branch)?)
+}
+
+/// Like `list_changes_on_branch`, but reuses a precomputed scope list to avoid
+/// re-scanning every repository reference on each call.
+pub fn list_changes_in_scopes(
+    repo: &git2::Repository,
+    scopes: &[ChangesRef],
+) -> anyhow::Result<Vec<Change>> {
     use std::collections::HashSet;
     let mut seen: HashSet<String> = HashSet::new();
     let mut out: Vec<Change> = Vec::new();
-    for scope in refs_on_branch(repo, branch)? {
-        for c in list_changes(repo, &scope)? {
+    for scope in scopes {
+        for c in list_changes(repo, scope)? {
             let id = match c.id() {
                 Some(id) => id.to_string(),
                 None => continue,
@@ -1646,11 +1655,20 @@ pub fn read_pr_data_on_branch(
     change_id: &str,
     branch: &str,
 ) -> anyhow::Result<Option<String>> {
-    for scope in refs_on_branch(repo, branch)? {
+    read_pr_data_in_scopes(repo, change_id, &refs_on_branch(repo, branch)?)
+}
+
+/// Like `read_pr_data_on_branch`, but takes a precomputed scope list.
+pub fn read_pr_data_in_scopes(
+    repo: &git2::Repository,
+    change_id: &str,
+    scopes: &[ChangesRef],
+) -> anyhow::Result<Option<String>> {
+    for scope in scopes {
         if matches!(scope, ChangesRef::Local { .. }) {
             continue;
         }
-        if let Some(json) = read_pr_data(repo, change_id, &scope)? {
+        if let Some(json) = read_pr_data(repo, change_id, scope)? {
             return Ok(Some(json));
         }
     }
@@ -1662,11 +1680,20 @@ pub fn read_comments_on_branch(
     change_id: &str,
     branch: &str,
 ) -> anyhow::Result<Vec<Comment>> {
+    read_comments_in_scopes(repo, change_id, &refs_on_branch(repo, branch)?)
+}
+
+/// Like `read_comments_on_branch`, but takes a precomputed scope list.
+pub fn read_comments_in_scopes(
+    repo: &git2::Repository,
+    change_id: &str,
+    scopes: &[ChangesRef],
+) -> anyhow::Result<Vec<Comment>> {
     use std::collections::HashMap;
     let mut by_id: HashMap<String, Comment> = HashMap::new();
     let mut order: Vec<String> = Vec::new();
-    for scope in refs_on_branch(repo, branch)? {
-        for c in read_comments(repo, change_id, &scope)? {
+    for scope in scopes {
+        for c in read_comments(repo, change_id, scope)? {
             if !by_id.contains_key(&c.id) {
                 order.push(c.id.clone());
             }
@@ -1685,8 +1712,18 @@ pub fn read_vote_on_branch(
     user: Option<&str>,
     branch: &str,
 ) -> anyhow::Result<Option<VoteData>> {
-    for scope in refs_on_branch(repo, branch)? {
-        if let Some(v) = read_vote(repo, change_id, user, &scope)? {
+    read_vote_in_scopes(repo, change_id, user, &refs_on_branch(repo, branch)?)
+}
+
+/// Like `read_vote_on_branch`, but takes a precomputed scope list.
+pub fn read_vote_in_scopes(
+    repo: &git2::Repository,
+    change_id: &str,
+    user: Option<&str>,
+    scopes: &[ChangesRef],
+) -> anyhow::Result<Option<VoteData>> {
+    for scope in scopes {
+        if let Some(v) = read_vote(repo, change_id, user, scope)? {
             return Ok(Some(v));
         }
     }
