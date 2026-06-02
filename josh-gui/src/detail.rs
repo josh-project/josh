@@ -43,8 +43,8 @@ pub struct PrInfo {
 }
 
 #[component]
-pub fn DetailView(sha: String, mut page: Signal<Page>) -> Element {
-    let data = load_detail(&sha);
+pub fn DetailView(sha: String, branch: String, mut page: Signal<Page>) -> Element {
+    let data = load_detail(&sha, &branch);
     let mut vote_body = use_signal(String::new);
 
     match &data {
@@ -224,13 +224,14 @@ pub fn DetailView(sha: String, mut page: Signal<Page>) -> Element {
                             div { class: "vote-actions",
                                 {
                                     let sha = sha.clone();
+                                    let branch = branch.clone();
                                     rsx! {
                                         button {
                                             class: "vote-btn approve",
                                             onclick: move |_| {
                                                 let body = vote_body.read().clone();
                                                 let _ = save_vote(
-                                                    &sha, "approve", &body,
+                                                    &sha, "approve", &body, &branch,
                                                 );
                                                 vote_body.set(String::new());
                                                 page.set(Page::Detail {
@@ -243,13 +244,14 @@ pub fn DetailView(sha: String, mut page: Signal<Page>) -> Element {
                                 }
                                 {
                                     let sha = sha.clone();
+                                    let branch = branch.clone();
                                     rsx! {
                                         button {
                                             class: "vote-btn discuss",
                                             onclick: move |_| {
                                                 let body = vote_body.read().clone();
                                                 let _ = save_vote(
-                                                    &sha, "discuss", &body,
+                                                    &sha, "discuss", &body, &branch,
                                                 );
                                                 vote_body.set(String::new());
                                                 page.set(Page::Detail {
@@ -262,13 +264,14 @@ pub fn DetailView(sha: String, mut page: Signal<Page>) -> Element {
                                 }
                                 {
                                     let sha = sha.clone();
+                                    let branch = branch.clone();
                                     rsx! {
                                         button {
                                             class: "vote-btn revise",
                                             onclick: move |_| {
                                                 let body = vote_body.read().clone();
                                                 let _ = save_vote(
-                                                    &sha, "revise", &body,
+                                                    &sha, "revise", &body, &branch,
                                                 );
                                                 vote_body.set(String::new());
                                                 page.set(Page::Detail {
@@ -288,7 +291,7 @@ pub fn DetailView(sha: String, mut page: Signal<Page>) -> Element {
     }
 }
 
-pub fn load_detail(sha: &str) -> anyhow::Result<DetailData> {
+pub fn load_detail(sha: &str, branch: &str) -> anyhow::Result<DetailData> {
     let repo = git2::Repository::discover(".")?;
     let oid = git2::Oid::from_str(sha)?;
     let commit = repo.find_commit(oid)?;
@@ -331,7 +334,7 @@ pub fn load_detail(sha: &str) -> anyhow::Result<DetailData> {
     let mut stack: Vec<StackCommit> = Vec::new();
     let mut pr_info: Option<PrInfo> = None;
     if let Some(ref cid) = change_id {
-        pr_info = josh_changes::read_pr_data_union(&repo, cid)
+        pr_info = josh_changes::read_pr_data_on_branch(&repo, cid, branch)
             .ok()
             .flatten()
             .and_then(|json| serde_json::from_str::<serde_json::Value>(&json).ok())
@@ -342,9 +345,9 @@ pub fn load_detail(sha: &str) -> anyhow::Result<DetailData> {
                 review_decision: v["review_decision"].as_str().unwrap_or("").to_string(),
             });
 
-        // Pick the base oid from whichever ref has diff data for this change-id,
-        // with Local winning per `list_all_changes` precedence.
-        if let Ok(all) = josh_changes::list_all_changes(&repo) {
+        // Pick the base oid from whichever ref on this branch has diff data
+        // for the change-id (Local wins per `list_changes_on_branch` precedence).
+        if let Ok(all) = josh_changes::list_changes_on_branch(&repo, branch) {
             if let Some(c) = all.iter().find(|c| c.id() == Some(cid.as_str())) {
                 let base = c.base();
                 if base != git2::Oid::zero() {
@@ -370,12 +373,12 @@ pub fn load_detail(sha: &str) -> anyhow::Result<DetailData> {
 
     let comments = change_id
         .as_deref()
-        .map(|cid| josh_changes::read_comments_union(&repo, cid).unwrap_or_default())
+        .map(|cid| josh_changes::read_comments_on_branch(&repo, cid, branch).unwrap_or_default())
         .unwrap_or_default();
     let revisions = josh_changes::read_revisions_union(&repo, &change).unwrap_or_default();
     let local_vote = change_id
         .as_ref()
-        .and_then(|cid| josh_changes::read_vote_union(&repo, cid, None).ok())
+        .and_then(|cid| josh_changes::read_vote_on_branch(&repo, cid, None, branch).ok())
         .flatten();
 
     Ok(DetailData {
@@ -400,6 +403,7 @@ pub fn save_comment(
     file_path: &str,
     line_num: u32,
     message: &str,
+    branch: &str,
 ) -> anyhow::Result<String> {
     let repo = git2::Repository::discover(".")?;
     let oid = git2::Oid::from_str(sha)?;
@@ -425,15 +429,20 @@ pub fn save_comment(
         &meta,
         None,
         None,
-        &josh_changes::ChangesRef::Local,
+        &josh_changes::ChangesRef::Local {
+            branch: branch.to_string(),
+        },
     )
 }
 
-pub fn save_vote(sha: &str, state: &str, body: &str) -> anyhow::Result<String> {
+pub fn save_vote(sha: &str, state: &str, body: &str, branch: &str) -> anyhow::Result<String> {
     let repo = git2::Repository::discover(".")?;
     let oid = git2::Oid::from_str(sha)?;
     let commit = repo.find_commit(oid)?;
     let change = josh_changes::Change::new(&repo, &commit);
+    let scope = josh_changes::ChangesRef::Local {
+        branch: branch.to_string(),
+    };
 
     if !body.trim().is_empty() {
         let meta = josh_changes::CommentMeta {
@@ -443,22 +452,8 @@ pub fn save_vote(sha: &str, state: &str, body: &str) -> anyhow::Result<String> {
             reply_to: None,
             update_of: None,
         };
-        josh_changes::write_comment(
-            &repo,
-            &change,
-            &meta,
-            None,
-            None,
-            &josh_changes::ChangesRef::Local,
-        )?;
+        josh_changes::write_comment(&repo, &change, &meta, None, None, &scope)?;
     }
 
-    josh_changes::write_vote(
-        &repo,
-        &change,
-        state,
-        None,
-        None,
-        &josh_changes::ChangesRef::Local,
-    )
+    josh_changes::write_vote(&repo, &change, state, None, None, &scope)
 }

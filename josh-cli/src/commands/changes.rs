@@ -1,20 +1,31 @@
 /// Arguments for `josh changes list`.
 #[derive(Debug, clap::Parser)]
-pub struct ListArgs {}
+pub struct ListArgs {
+    /// Target branch to list changes for (defaults to HEAD's branch).
+    #[arg(short = 'b', long = "branch")]
+    pub branch: Option<String>,
+}
 
-/// Print changes read from refs/josh/changes (populated by `josh changes sync`).
+/// Print changes read from refs/josh/changes/<branch> + refs/josh/remotes/*/changes/<branch>
+/// (populated by `josh changes sync`).
 pub fn handle_list(
-    _args: &ListArgs,
+    args: &ListArgs,
     transaction: &josh_core::cache::Transaction,
 ) -> anyhow::Result<()> {
     let repo = transaction.repo();
+    let branch = match &args.branch {
+        Some(b) => b.clone(),
+        None => josh_changes::head_branch(repo)?,
+    };
 
-    let changes = josh_changes::list_all_changes(repo)?;
+    let changes = josh_changes::list_changes_on_branch(repo, &branch)?;
 
     if changes.is_empty() {
-        println!("No local changes found.");
+        println!("No local changes found for branch '{}'.", branch);
         return Ok(());
     }
+
+    println!("Changes targeting '{}':\n", branch);
 
     for change in &changes {
         let commit = repo.find_commit(change.commit())?;
@@ -40,7 +51,9 @@ pub fn handle_list(
 
         let comments = change
             .id()
-            .map(|cid| josh_changes::read_comments_union(repo, cid).unwrap_or_default())
+            .map(|cid| {
+                josh_changes::read_comments_on_branch(repo, cid, &branch).unwrap_or_default()
+            })
             .unwrap_or_default();
         if !comments.is_empty() {
             println!();
