@@ -1616,19 +1616,12 @@ pub fn read_github_ids_union(
 }
 
 // =========================================================================
-// `_on_branch` helpers: same merge semantics as the corresponding `_union`
-// variants, but only over refs whose target branch matches.
+// `_in_scopes` helpers: same merge semantics as the corresponding `_union`
+// variants, but restricted to a caller-supplied scope list (typically the
+// output of `refs_on_branch`). Callers that touch metadata for many changes
+// should resolve scopes once and reuse them.
 // =========================================================================
 
-pub fn list_changes_on_branch(
-    repo: &git2::Repository,
-    branch: &str,
-) -> anyhow::Result<Vec<Change>> {
-    list_changes_in_scopes(repo, &refs_on_branch(repo, branch)?)
-}
-
-/// Like `list_changes_on_branch`, but reuses a precomputed scope list to avoid
-/// re-scanning every repository reference on each call.
 pub fn list_changes_in_scopes(
     repo: &git2::Repository,
     scopes: &[ChangesRef],
@@ -1650,15 +1643,6 @@ pub fn list_changes_in_scopes(
     Ok(out)
 }
 
-pub fn read_pr_data_on_branch(
-    repo: &git2::Repository,
-    change_id: &str,
-    branch: &str,
-) -> anyhow::Result<Option<String>> {
-    read_pr_data_in_scopes(repo, change_id, &refs_on_branch(repo, branch)?)
-}
-
-/// Like `read_pr_data_on_branch`, but takes a precomputed scope list.
 pub fn read_pr_data_in_scopes(
     repo: &git2::Repository,
     change_id: &str,
@@ -1675,15 +1659,6 @@ pub fn read_pr_data_in_scopes(
     Ok(None)
 }
 
-pub fn read_comments_on_branch(
-    repo: &git2::Repository,
-    change_id: &str,
-    branch: &str,
-) -> anyhow::Result<Vec<Comment>> {
-    read_comments_in_scopes(repo, change_id, &refs_on_branch(repo, branch)?)
-}
-
-/// Like `read_comments_on_branch`, but takes a precomputed scope list.
 pub fn read_comments_in_scopes(
     repo: &git2::Repository,
     change_id: &str,
@@ -1706,16 +1681,6 @@ pub fn read_comments_in_scopes(
         .collect())
 }
 
-pub fn read_vote_on_branch(
-    repo: &git2::Repository,
-    change_id: &str,
-    user: Option<&str>,
-    branch: &str,
-) -> anyhow::Result<Option<VoteData>> {
-    read_vote_in_scopes(repo, change_id, user, &refs_on_branch(repo, branch)?)
-}
-
-/// Like `read_vote_on_branch`, but takes a precomputed scope list.
 pub fn read_vote_in_scopes(
     repo: &git2::Repository,
     change_id: &str,
@@ -1728,23 +1693,4 @@ pub fn read_vote_in_scopes(
         }
     }
     Ok(None)
-}
-
-pub fn list_votes_on_branch(
-    repo: &git2::Repository,
-    change_id: &str,
-    branch: &str,
-) -> anyhow::Result<Vec<(String, VoteData)>> {
-    use std::collections::HashSet;
-    let mut seen: HashSet<(String, String, String)> = HashSet::new();
-    let mut out: Vec<(String, VoteData)> = Vec::new();
-    for scope in refs_on_branch(repo, branch)? {
-        for (user, data) in list_votes(repo, change_id, &scope)? {
-            let key = (user.clone(), data.sha.clone(), data.state.clone());
-            if seen.insert(key) {
-                out.push((user, data));
-            }
-        }
-    }
-    Ok(out)
 }
