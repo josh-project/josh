@@ -1,4 +1,4 @@
-![仅保留单一历史](/splash.png)
+![仅保留单一历史](/splash.jpg)
 
 借助对 Git 历史进行快速、增量且可逆的过滤，将 monorepo 的优点与 multirepo 的优势结合起来。
 
