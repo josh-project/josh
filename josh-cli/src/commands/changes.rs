@@ -18,7 +18,8 @@ pub fn handle_list(
         None => josh_changes::head_branch(repo)?,
     };
 
-    let changes = josh_changes::list_changes_on_branch(repo, &branch)?;
+    let scopes = josh_changes::refs_on_branch(repo, &branch)?;
+    let changes = josh_changes::list_changes_in_scopes(repo, &scopes)?;
 
     if changes.is_empty() {
         println!("No local changes found for branch '{}'.", branch);
@@ -52,7 +53,7 @@ pub fn handle_list(
         let comments = change
             .id()
             .map(|cid| {
-                josh_changes::read_comments_on_branch(repo, cid, &branch).unwrap_or_default()
+                josh_changes::read_comments_in_scopes(repo, cid, &scopes).unwrap_or_default()
             })
             .unwrap_or_default();
         if !comments.is_empty() {

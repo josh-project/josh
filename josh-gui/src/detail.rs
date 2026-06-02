@@ -293,6 +293,7 @@ pub fn DetailView(sha: String, branch: String, mut page: Signal<Page>) -> Elemen
 
 pub fn load_detail(sha: &str, branch: &str) -> anyhow::Result<DetailData> {
     let repo = git2::Repository::discover(".")?;
+    let scopes = josh_changes::refs_on_branch(&repo, branch)?;
     let oid = git2::Oid::from_str(sha)?;
     let commit = repo.find_commit(oid)?;
 
@@ -334,7 +335,7 @@ pub fn load_detail(sha: &str, branch: &str) -> anyhow::Result<DetailData> {
     let mut stack: Vec<StackCommit> = Vec::new();
     let mut pr_info: Option<PrInfo> = None;
     if let Some(ref cid) = change_id {
-        pr_info = josh_changes::read_pr_data_on_branch(&repo, cid, branch)
+        pr_info = josh_changes::read_pr_data_in_scopes(&repo, cid, &scopes)
             .ok()
             .flatten()
             .and_then(|json| serde_json::from_str::<serde_json::Value>(&json).ok())
@@ -346,8 +347,8 @@ pub fn load_detail(sha: &str, branch: &str) -> anyhow::Result<DetailData> {
             });
 
         // Pick the base oid from whichever ref on this branch has diff data
-        // for the change-id (Local wins per `list_changes_on_branch` precedence).
-        if let Ok(all) = josh_changes::list_changes_on_branch(&repo, branch) {
+        // for the change-id (Local wins per `list_changes_in_scopes` precedence).
+        if let Ok(all) = josh_changes::list_changes_in_scopes(&repo, &scopes) {
             if let Some(c) = all.iter().find(|c| c.id() == Some(cid.as_str())) {
                 let base = c.base();
                 if base != git2::Oid::zero() {
@@ -373,12 +374,12 @@ pub fn load_detail(sha: &str, branch: &str) -> anyhow::Result<DetailData> {
 
     let comments = change_id
         .as_deref()
-        .map(|cid| josh_changes::read_comments_on_branch(&repo, cid, branch).unwrap_or_default())
+        .map(|cid| josh_changes::read_comments_in_scopes(&repo, cid, &scopes).unwrap_or_default())
         .unwrap_or_default();
     let revisions = josh_changes::read_revisions_union(&repo, &change).unwrap_or_default();
     let local_vote = change_id
         .as_ref()
-        .and_then(|cid| josh_changes::read_vote_on_branch(&repo, cid, None, branch).ok())
+        .and_then(|cid| josh_changes::read_vote_in_scopes(&repo, cid, None, &scopes).ok())
         .flatten();
 
     Ok(DetailData {
