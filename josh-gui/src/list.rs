@@ -147,7 +147,8 @@ pub fn ListView(
 pub fn load_rows(branch: &str) -> anyhow::Result<ListData> {
     let repo = git2::Repository::discover(".")?;
 
-    let changes = josh_changes::list_changes_on_branch(&repo, branch)?;
+    let scopes = josh_changes::refs_on_branch(&repo, branch)?;
+    let changes = josh_changes::list_changes_in_scopes(&repo, &scopes)?;
 
     let mut oid_to_change_id: HashMap<String, String> = HashMap::new();
     for change in &changes {
@@ -174,7 +175,7 @@ pub fn load_rows(branch: &str) -> anyhow::Result<ListData> {
         let change_id = change.id().unwrap_or("").to_string();
 
         let (review_decision, check_status) =
-            josh_changes::read_pr_data_on_branch(&repo, &change_id, branch)
+            josh_changes::read_pr_data_in_scopes(&repo, &change_id, &scopes)
                 .ok()
                 .flatten()
                 .and_then(|json| {
@@ -194,7 +195,7 @@ pub fn load_rows(branch: &str) -> anyhow::Result<ListData> {
                 })
                 .unwrap_or_default();
 
-        let local_vote = josh_changes::read_vote_on_branch(&repo, &change_id, None, branch)
+        let local_vote = josh_changes::read_vote_in_scopes(&repo, &change_id, None, &scopes)
             .ok()
             .flatten()
             .map(|v| v.state);
