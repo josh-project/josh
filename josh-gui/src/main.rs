@@ -26,10 +26,41 @@ pub enum Page {
     FileDiff { sha: String, path: String },
 }
 
+fn initial_branch() -> String {
+    git2::Repository::discover(".")
+        .ok()
+        .and_then(|r| josh_changes::head_branch(&r).ok())
+        .unwrap_or_default()
+}
+
+fn available_branches() -> Vec<String> {
+    use std::collections::BTreeSet;
+    let mut set: BTreeSet<String> = BTreeSet::new();
+    if let Ok(repo) = git2::Repository::discover(".") {
+        if let Ok(refs) = josh_changes::all_changes_refs(&repo) {
+            for r in refs {
+                set.insert(r.branch().to_string());
+            }
+        }
+        if let Ok(b) = josh_changes::head_branch(&repo) {
+            set.insert(b);
+        }
+    }
+    set.into_iter().collect()
+}
+
 fn app() -> Element {
-    let list_data = use_signal(load_rows);
+    let current_branch = use_signal(initial_branch);
+    let mut list_data: Signal<anyhow::Result<list::ListData>> =
+        use_signal(|| load_rows(&current_branch.read()));
     let page = use_signal(|| Page::List);
     let mut selected_change = use_signal(|| None::<String>);
+
+    use_effect(move || {
+        let b = current_branch.read().clone();
+        list_data.set(load_rows(&b));
+        selected_change.set(None);
+    });
 
     use_effect(move || {
         if let Ok(data) = &*list_data.read() {
@@ -97,6 +128,10 @@ fn app() -> Element {
         }
     };
 
+    let mut branch_signal = current_branch;
+    let branches = available_branches();
+    let branch_now = current_branch.read().clone();
+
     rsx! {
         style { {include_str!("style.css")} }
         div { class: "app", tabindex: "0", onkeydown: on_keydown,
@@ -115,11 +150,32 @@ fn app() -> Element {
                     }
                 }
                 {breadcrumb(&page.read(), page, list_data)}
+                select {
+                    class: "branch-selector",
+                    value: "{branch_now}",
+                    onchange: move |evt| branch_signal.set(evt.value()),
+                    for b in branches.iter() {
+                        option { value: "{b}", selected: *b == branch_now, "{b}" }
+                    }
+                }
             }
             match &*page.read() {
                 Page::List => rsx! { ListView { list_data, page, selected_change } },
-                Page::Detail { sha } => rsx! { DetailView { sha: sha.clone(), page } },
-                Page::FileDiff { sha, path } => rsx! { FileDiffView { sha: sha.clone(), path: path.clone(), page } },
+                Page::Detail { sha } => rsx! {
+                    DetailView {
+                        sha: sha.clone(),
+                        branch: current_branch.read().clone(),
+                        page,
+                    }
+                },
+                Page::FileDiff { sha, path } => rsx! {
+                    FileDiffView {
+                        sha: sha.clone(),
+                        path: path.clone(),
+                        branch: current_branch.read().clone(),
+                        page,
+                    }
+                },
             }
         }
     }

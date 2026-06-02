@@ -195,11 +195,11 @@ fn build_diff_with_comments(
 }
 
 #[component]
-pub fn FileDiffView(sha: String, path: String, mut page: Signal<Page>) -> Element {
-    let mut detail = use_signal(|| detail::load_detail(&sha));
+pub fn FileDiffView(sha: String, path: String, branch: String, mut page: Signal<Page>) -> Element {
+    let mut detail = use_signal(|| detail::load_detail(&sha, &branch));
     let mut prev_sha = use_signal(|| sha.clone());
     if *prev_sha.read() != sha {
-        detail.set(detail::load_detail(&sha));
+        detail.set(detail::load_detail(&sha, &branch));
         prev_sha.set(sha.clone());
     }
     let (prev_file, next_file) = detail
@@ -510,6 +510,7 @@ pub fn FileDiffView(sha: String, path: String, mut page: Signal<Page>) -> Elemen
                             let ln = selected_file_line(&items, *selected_line.read());
                             let sha_for_save = sha.clone();
                             let path_for_save = path.clone();
+                            let branch_for_save = branch.clone();
                             rsx! {
                                 div { class: "comment-form",
                                     div { class: "comment-form-header",
@@ -540,6 +541,7 @@ pub fn FileDiffView(sha: String, path: String, mut page: Signal<Page>) -> Elemen
                                                 let mut detail_sig = detail;
                                                 let sha_save = sha_for_save.clone();
                                                 let path_save = path_for_save.clone();
+                                                let branch_save = branch_for_save.clone();
                                                 move |_| {
                                                     let msg = comment_text.read().trim().to_string();
                                                     if msg.is_empty() {
@@ -554,11 +556,14 @@ pub fn FileDiffView(sha: String, path: String, mut page: Signal<Page>) -> Elemen
                                                             &path_save,
                                                             line_num,
                                                             &msg,
+                                                            &branch_save,
                                                         )
                                                         .is_ok()
                                                         {
-                                                            detail_sig
-                                                                .set(detail::load_detail(&sha_save));
+                                                            detail_sig.set(detail::load_detail(
+                                                                &sha_save,
+                                                                &branch_save,
+                                                            ));
                                                             commenting.set(false);
                                                             comment_text.set("".to_string());
                                                         }

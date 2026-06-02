@@ -3,45 +3,97 @@ pub use josh_core::trailers::{commit_change_meta, parse_change_meta};
 
 /// Which `refs/josh/...` ref holds a piece of change metadata.
 ///
-/// `Local` is data the user authored or discovered from their working tree
-/// (drafts, diff data for HEAD-reachable Change-Ids).
-/// `Remote(name)` is data fetched from / posted to a specific remote.
+/// Scoped by the target branch of the change, so a single repo can host
+/// changes against multiple branches without collisions.
+///
+/// `Local { branch }` is data the user authored or discovered from their
+/// working tree, targeting `branch`.
+/// `Remote { remote, branch }` is data fetched from / posted to `remote`
+/// for changes targeting `branch`.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum ChangesRef {
-    Local,
-    Remote(String),
+    Local { branch: String },
+    Remote { remote: String, branch: String },
 }
 
 impl ChangesRef {
     pub fn ref_name(&self) -> String {
         match self {
-            ChangesRef::Local => "refs/josh/changes".to_string(),
-            ChangesRef::Remote(r) => format!("refs/josh/remotes/{}/changes", r),
+            ChangesRef::Local { branch } => format!("refs/josh/changes/{}", branch),
+            ChangesRef::Remote { remote, branch } => {
+                format!("refs/josh/remotes/{}/changes/{}", remote, branch)
+            }
+        }
+    }
+
+    pub fn branch(&self) -> &str {
+        match self {
+            ChangesRef::Local { branch } => branch,
+            ChangesRef::Remote { branch, .. } => branch,
+        }
+    }
+
+    pub fn remote(&self) -> Option<&str> {
+        match self {
+            ChangesRef::Local { .. } => None,
+            ChangesRef::Remote { remote, .. } => Some(remote),
         }
     }
 }
 
-/// Return `[Local, Remote(r1), Remote(r2), ...]` for every changes ref that
-/// currently exists. Remote names are sorted for deterministic iteration.
+/// Read `repo.head()` and return the current branch shorthand. Errors on a
+/// detached HEAD with a message asking the caller to pass an explicit branch.
+pub fn head_branch(repo: &git2::Repository) -> anyhow::Result<String> {
+    let head = repo
+        .head()
+        .map_err(|e| anyhow!("failed to read HEAD: {}", e))?;
+    if !head.is_branch() {
+        return Err(anyhow!(
+            "HEAD is detached -- pass --branch to select a target branch explicitly"
+        ));
+    }
+    head.shorthand()
+        .map(|s| s.to_string())
+        .ok_or_else(|| anyhow!("HEAD has no valid shorthand"))
+}
+
+/// Return every changes ref that currently exists, as `ChangesRef` values.
+/// `(remote, branch)` pairs are sorted for deterministic iteration; Local
+/// entries come first.
 pub fn all_changes_refs(repo: &git2::Repository) -> anyhow::Result<Vec<ChangesRef>> {
-    let mut remotes: Vec<String> = Vec::new();
-    for r in repo.references_glob("refs/josh/remotes/*/changes")? {
+    let mut locals: Vec<String> = Vec::new();
+    let mut remotes: Vec<(String, String)> = Vec::new();
+    for r in repo.references()? {
         let r = r?;
-        if let Some(name) = r.name() {
-            if let Some(rest) = name.strip_prefix("refs/josh/remotes/") {
-                if let Some(remote) = rest.strip_suffix("/changes") {
-                    if !remote.is_empty() && !remote.contains('/') {
-                        remotes.push(remote.to_string());
-                    }
+        let name = match r.name() {
+            Some(n) => n,
+            None => continue,
+        };
+        if let Some(branch) = name.strip_prefix("refs/josh/changes/") {
+            if !branch.is_empty() {
+                locals.push(branch.to_string());
+            }
+        } else if let Some(rest) = name.strip_prefix("refs/josh/remotes/") {
+            // `<remote>/changes/<branch>` -- branch may contain `/`, so split
+            // on the literal `/changes/` separator.
+            if let Some((remote, branch)) = rest.split_once("/changes/") {
+                if !remote.is_empty() && !branch.is_empty() {
+                    remotes.push((remote.to_string(), branch.to_string()));
                 }
             }
         }
     }
+    locals.sort();
+    locals.dedup();
     remotes.sort();
-    let mut out = Vec::with_capacity(remotes.len() + 1);
-    out.push(ChangesRef::Local);
-    for r in remotes {
-        out.push(ChangesRef::Remote(r));
+    remotes.dedup();
+
+    let mut out = Vec::with_capacity(locals.len() + remotes.len());
+    for branch in locals {
+        out.push(ChangesRef::Local { branch });
+    }
+    for (remote, branch) in remotes {
+        out.push(ChangesRef::Remote { remote, branch });
     }
     Ok(out)
 }
@@ -341,11 +393,15 @@ pub fn sync_changes(
     transaction: &josh_core::cache::Transaction,
     tip: git2::Oid,
     base: git2::Oid,
+    branch: &str,
 ) -> anyhow::Result<Vec<Change>> {
     let changes = get_changes(repo, tip, base)?;
     let changes = split_changes(repo, transaction, changes)?;
+    let scope = ChangesRef::Local {
+        branch: branch.to_string(),
+    };
     for c in &changes {
-        let _ = store_diff_data(repo, c, &ChangesRef::Local);
+        let _ = store_diff_data(repo, c, &scope);
     }
     Ok(changes)
 }
@@ -1414,9 +1470,19 @@ pub fn list_votes(
 }
 
 // =========================================================================
-// Union helpers: read across `refs/josh/changes` + every
-// `refs/josh/remotes/*/changes` and merge results.
+// Union helpers: read across `refs/josh/changes/*` + every
+// `refs/josh/remotes/*/changes/*` and merge results. The `_union` variants
+// merge across every discovered (scope, branch) combination; the
+// `_on_branch` variants restrict the merge to a single target branch.
 // =========================================================================
+
+/// Like `all_changes_refs`, but filtered to refs targeting `branch`.
+fn refs_on_branch(repo: &git2::Repository, branch: &str) -> anyhow::Result<Vec<ChangesRef>> {
+    Ok(all_changes_refs(repo)?
+        .into_iter()
+        .filter(|r| r.branch() == branch)
+        .collect())
+}
 
 /// List changes across the local ref and every per-remote ref. Deduped by
 /// change-id; if a change-id appears in multiple refs, the Local entry's
@@ -1446,7 +1512,7 @@ pub fn read_pr_data_union(
     change_id: &str,
 ) -> anyhow::Result<Option<String>> {
     for scope in all_changes_refs(repo)? {
-        if matches!(scope, ChangesRef::Local) {
+        if matches!(scope, ChangesRef::Local { .. }) {
             continue;
         }
         if let Some(json) = read_pr_data(repo, change_id, &scope)? {
@@ -1544,6 +1610,103 @@ pub fn read_github_ids_union(
     for scope in all_changes_refs(repo)? {
         for (k, v) in read_github_ids(repo, change_id, &scope)? {
             out.entry(k).or_insert(v);
+        }
+    }
+    Ok(out)
+}
+
+// =========================================================================
+// `_on_branch` helpers: same merge semantics as the corresponding `_union`
+// variants, but only over refs whose target branch matches.
+// =========================================================================
+
+pub fn list_changes_on_branch(
+    repo: &git2::Repository,
+    branch: &str,
+) -> anyhow::Result<Vec<Change>> {
+    use std::collections::HashSet;
+    let mut seen: HashSet<String> = HashSet::new();
+    let mut out: Vec<Change> = Vec::new();
+    for scope in refs_on_branch(repo, branch)? {
+        for c in list_changes(repo, &scope)? {
+            let id = match c.id() {
+                Some(id) => id.to_string(),
+                None => continue,
+            };
+            if seen.insert(id) {
+                out.push(c);
+            }
+        }
+    }
+    Ok(out)
+}
+
+pub fn read_pr_data_on_branch(
+    repo: &git2::Repository,
+    change_id: &str,
+    branch: &str,
+) -> anyhow::Result<Option<String>> {
+    for scope in refs_on_branch(repo, branch)? {
+        if matches!(scope, ChangesRef::Local { .. }) {
+            continue;
+        }
+        if let Some(json) = read_pr_data(repo, change_id, &scope)? {
+            return Ok(Some(json));
+        }
+    }
+    Ok(None)
+}
+
+pub fn read_comments_on_branch(
+    repo: &git2::Repository,
+    change_id: &str,
+    branch: &str,
+) -> anyhow::Result<Vec<Comment>> {
+    use std::collections::HashMap;
+    let mut by_id: HashMap<String, Comment> = HashMap::new();
+    let mut order: Vec<String> = Vec::new();
+    for scope in refs_on_branch(repo, branch)? {
+        for c in read_comments(repo, change_id, &scope)? {
+            if !by_id.contains_key(&c.id) {
+                order.push(c.id.clone());
+            }
+            by_id.insert(c.id.clone(), c);
+        }
+    }
+    Ok(order
+        .into_iter()
+        .filter_map(|id| by_id.remove(&id))
+        .collect())
+}
+
+pub fn read_vote_on_branch(
+    repo: &git2::Repository,
+    change_id: &str,
+    user: Option<&str>,
+    branch: &str,
+) -> anyhow::Result<Option<VoteData>> {
+    for scope in refs_on_branch(repo, branch)? {
+        if let Some(v) = read_vote(repo, change_id, user, &scope)? {
+            return Ok(Some(v));
+        }
+    }
+    Ok(None)
+}
+
+pub fn list_votes_on_branch(
+    repo: &git2::Repository,
+    change_id: &str,
+    branch: &str,
+) -> anyhow::Result<Vec<(String, VoteData)>> {
+    use std::collections::HashSet;
+    let mut seen: HashSet<(String, String, String)> = HashSet::new();
+    let mut out: Vec<(String, VoteData)> = Vec::new();
+    for scope in refs_on_branch(repo, branch)? {
+        for (user, data) in list_votes(repo, change_id, &scope)? {
+            let key = (user.clone(), data.sha.clone(), data.state.clone());
+            if seen.insert(key) {
+                out.push((user, data));
+            }
         }
     }
     Ok(out)

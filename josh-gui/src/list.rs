@@ -144,10 +144,10 @@ pub fn ListView(
     }
 }
 
-pub fn load_rows() -> anyhow::Result<ListData> {
+pub fn load_rows(branch: &str) -> anyhow::Result<ListData> {
     let repo = git2::Repository::discover(".")?;
 
-    let changes = josh_changes::list_all_changes(&repo)?;
+    let changes = josh_changes::list_changes_on_branch(&repo, branch)?;
 
     let mut oid_to_change_id: HashMap<String, String> = HashMap::new();
     for change in &changes {
@@ -173,27 +173,28 @@ pub fn load_rows() -> anyhow::Result<ListData> {
 
         let change_id = change.id().unwrap_or("").to_string();
 
-        let (review_decision, check_status) = josh_changes::read_pr_data_union(&repo, &change_id)
-            .ok()
-            .flatten()
-            .and_then(|json| {
-                serde_json::from_str::<serde_json::Value>(&json)
-                    .ok()
-                    .map(|v| {
-                        let rd = v["review_decision"]
-                            .as_str()
-                            .map(|s| s.to_string())
-                            .unwrap_or_default();
-                        let cs = v["check_status"]
-                            .as_str()
-                            .map(|s| s.to_string())
-                            .unwrap_or_default();
-                        (rd, cs)
-                    })
-            })
-            .unwrap_or_default();
+        let (review_decision, check_status) =
+            josh_changes::read_pr_data_on_branch(&repo, &change_id, branch)
+                .ok()
+                .flatten()
+                .and_then(|json| {
+                    serde_json::from_str::<serde_json::Value>(&json)
+                        .ok()
+                        .map(|v| {
+                            let rd = v["review_decision"]
+                                .as_str()
+                                .map(|s| s.to_string())
+                                .unwrap_or_default();
+                            let cs = v["check_status"]
+                                .as_str()
+                                .map(|s| s.to_string())
+                                .unwrap_or_default();
+                            (rd, cs)
+                        })
+                })
+                .unwrap_or_default();
 
-        let local_vote = josh_changes::read_vote_union(&repo, &change_id, None)
+        let local_vote = josh_changes::read_vote_on_branch(&repo, &change_id, None, branch)
             .ok()
             .flatten()
             .map(|v| v.state);

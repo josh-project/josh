@@ -44,6 +44,10 @@ pub struct CommentArgs {
     /// Hash of a previous comment to update/replace.
     #[arg(long = "update-of")]
     pub update_of: Option<String>,
+
+    /// Target branch for the comment (defaults to HEAD's branch).
+    #[arg(short = 'b', long = "branch")]
+    pub branch: Option<String>,
 }
 
 pub fn handle_comment(
@@ -113,13 +117,17 @@ pub fn handle_comment(
         reply_to: args.reply_to.clone(),
         update_of: args.update_of.clone(),
     };
+    let branch = match &args.branch {
+        Some(b) => b.clone(),
+        None => josh_changes::head_branch(repo)?,
+    };
     josh_changes::write_comment(
         repo,
         &change,
         &meta,
         None,
         None,
-        &josh_changes::ChangesRef::Local,
+        &josh_changes::ChangesRef::Local { branch },
     )?;
 
     println!("Comment saved.");
