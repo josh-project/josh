@@ -1,4 +1,4 @@
-name: github-pages
+name: docs
 
 on:
   push:
@@ -13,8 +13,6 @@ on:
 jobs:
   docs:
     runs-on: ubuntu-latest
-    permissions:
-      contents: write
     env:
       MDBOOK_MERMAID_VERSION: '0.17.0'
 
@@ -36,10 +34,3 @@ jobs:
           mdbook-mermaid install docs/
 
       - run: mdbook build docs/
-
-      - name: Deploy
-        if: github.ref == 'refs/heads/master'
-        uses: peaceiris/actions-gh-pages@84c30a85c19949d7eee79c4ff27748b70285e453 # v4.1.0
-        with:
-          github_token: ${{ secrets.GITHUB_TOKEN }}
-          publish_dir: ./docs/book
