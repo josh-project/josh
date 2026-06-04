@@ -2089,24 +2089,15 @@ pub fn downstack(
     // The last commit is `change`; split it off from the intermediates
     let change_commit = commits.pop().unwrap();
 
-    // Seed the affected path set with the change's own modified paths, then
-    // walk intermediates backwards, keeping any commit whose paths intersect.
-    let (_, change_series) =
-        crate::trailers::parse_change_meta(change_commit.message().unwrap_or(""));
-    let mut affected_paths = downstack_changed_paths(repo, &change_commit)?;
-    for s in &change_series {
-        affected_paths.insert(format!("\x00series:{}", s));
-    }
+    // Seed the affected dependency set with the change's own deps, then walk
+    // intermediates backwards, keeping any commit whose deps intersect.
+    let mut affected = downstack_commit_deps(repo, &change_commit)?;
     let mut needed: Vec<bool> = vec![false; commits.len()];
     for (i, intermediate) in commits.iter().enumerate().rev() {
-        let (_, series) = crate::trailers::parse_change_meta(intermediate.message().unwrap_or(""));
-        let mut paths = downstack_changed_paths(repo, intermediate)?;
-        for s in &series {
-            paths.insert(format!("\x00series:{}", s));
-        }
-        if !paths.is_disjoint(&affected_paths) {
+        let deps = downstack_commit_deps(repo, intermediate)?;
+        if !deps.is_disjoint(&affected) {
             needed[i] = true;
-            affected_paths.extend(paths);
+            affected.extend(deps);
         }
     }
 
@@ -2155,26 +2146,40 @@ pub fn downstack(
     Ok(new_oid)
 }
 
-fn downstack_changed_paths(
+/// A dependency token used by `downstack` to decide whether two commits
+/// touch the same surface area. `Path` comes from a commit's diff; `Series`
+/// comes from a `Change-Series:` trailer and lets unrelated paths be linked
+/// explicitly.
+#[derive(Clone, Eq, Hash, PartialEq)]
+enum DownstackDep {
+    Path(String),
+    Series(String),
+}
+
+fn downstack_commit_deps(
     repo: &git2::Repository,
     commit: &git2::Commit,
-) -> anyhow::Result<std::collections::HashSet<String>> {
+) -> anyhow::Result<std::collections::HashSet<DownstackDep>> {
     let parent_tree = if commit.parent_count() > 0 {
         Some(commit.parent(0)?.tree()?)
     } else {
         None
     };
     let diff = repo.diff_tree_to_tree(parent_tree.as_ref(), Some(&commit.tree()?), None)?;
-    let mut paths = std::collections::HashSet::new();
+    let mut deps = std::collections::HashSet::new();
     for delta in diff.deltas() {
         if let Some(p) = delta.old_file().path().and_then(|p| p.to_str()) {
-            paths.insert(p.to_string());
+            deps.insert(DownstackDep::Path(p.to_string()));
         }
         if let Some(p) = delta.new_file().path().and_then(|p| p.to_str()) {
-            paths.insert(p.to_string());
+            deps.insert(DownstackDep::Path(p.to_string()));
         }
     }
-    Ok(paths)
+    let (_, series) = crate::trailers::parse_change_meta(commit.message().unwrap_or(""));
+    for s in series {
+        deps.insert(DownstackDep::Series(s));
+    }
+    Ok(deps)
 }
 
 #[cfg(test)]
