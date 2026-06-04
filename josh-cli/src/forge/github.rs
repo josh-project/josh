@@ -1,55 +1,10 @@
 use anyhow::Context;
-use chrono::{DateTime, Duration, Utc};
-use serde::{Deserialize, Serialize};
 
 use josh_github_auth::APP_CLIENT_ID;
-use josh_github_auth::device_flow::{AccessTokenResponse, DeviceAuthFlow};
+use josh_github_auth::device_flow::DeviceAuthFlow;
 use josh_github_auth::middleware::GithubAuthMiddleware;
 use josh_github_graphql::connection::GithubApiConnection;
 use josh_github_graphql::request::GITHUB_GRAPHQL_API_URL;
-
-#[derive(Debug, Serialize, Deserialize)]
-struct StoredToken {
-    access_token: String,
-    token_type: String,
-    scope: String,
-    refresh_token: Option<String>,
-    expires_at: Option<DateTime<Utc>>,
-}
-
-impl From<AccessTokenResponse> for StoredToken {
-    fn from(resp: AccessTokenResponse) -> Self {
-        let expires_at = resp
-            .expires_in
-            .and_then(|secs| Duration::try_seconds(secs as i64))
-            .map(|d| Utc::now() + d);
-
-        Self {
-            access_token: resp.access_token,
-            token_type: resp.token_type,
-            scope: resp.scope,
-            refresh_token: resp.refresh_token,
-            expires_at,
-        }
-    }
-}
-
-impl From<StoredToken> for AccessTokenResponse {
-    fn from(stored: StoredToken) -> Self {
-        let expires_in = stored.expires_at.map(|at| {
-            let remaining = at - Utc::now();
-            remaining.num_seconds().max(0) as u64
-        });
-
-        Self {
-            access_token: stored.access_token,
-            token_type: stored.token_type,
-            scope: stored.scope,
-            refresh_token: stored.refresh_token,
-            expires_in,
-        }
-    }
-}
 
 /// Login to GitHub using device flow and store the token.
 pub async fn login() -> anyhow::Result<()> {
@@ -81,8 +36,8 @@ pub async fn login() -> anyhow::Result<()> {
         .await
         .context("failed to complete device authorization")?;
 
-    let keyring = crate::keyring::default_store()?;
-    let stored = StoredToken::from(token);
+    let keyring = josh_github_keyring::default_store()?;
+    let stored = josh_github_keyring::StoredToken::from(token);
     let json = serde_json::to_string(&stored).context("failed to serialize token")?;
     keyring.set_password(&json)?;
 
@@ -90,15 +45,8 @@ pub async fn login() -> anyhow::Result<()> {
     Ok(())
 }
 
-pub fn load_stored_token() -> Option<AccessTokenResponse> {
-    let keyring = crate::keyring::default_store().ok()?;
-    let json = keyring.get_password().ok()?;
-    let stored: StoredToken = serde_json::from_str(&json).ok()?;
-    Some(AccessTokenResponse::from(stored))
-}
-
 pub fn logout() -> anyhow::Result<()> {
-    let keyring = crate::keyring::default_store()?;
+    let keyring = josh_github_keyring::default_store()?;
     keyring.delete_credential()?;
 
     Ok(())
@@ -111,7 +59,7 @@ pub async fn make_api_connection() -> Option<GithubApiConnection> {
     let middleware = if let Ok(token) = std::env::var(GITHUB_USER_TOKEN_ENV) {
         GithubAuthMiddleware::from_token(token)
     } else {
-        let stored = load_stored_token()?;
+        let stored = josh_github_keyring::load_stored_token()?;
         GithubAuthMiddleware::from_app_flow(stored, APP_CLIENT_ID.to_string())
     };
 
