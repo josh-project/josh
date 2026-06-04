@@ -3011,11 +3011,11 @@ dependencies = [
  "josh-github-auth",
  "josh-github-changes",
  "josh-github-graphql",
+ "josh-github-keyring",
  "josh-graphql",
  "josh-link",
  "josh-templates",
  "juniper",
- "keyring",
  "log",
  "reqwest 0.13.2",
  "reqwest-middleware",
@@ -3182,6 +3182,19 @@ dependencies = [
  "reqwest-middleware",
  "serde_json",
  "url",
+]
+
+[[package]]
+name = "josh-github-keyring"
+version = "26.5.8"
+dependencies = [
+ "anyhow",
+ "chrono",
+ "dirs",
+ "josh-github-auth",
+ "keyring",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]
