@@ -15,7 +15,7 @@ fn parse_remote(s: &str) -> Result<Remote, &'static str> {
 }
 
 #[derive(clap::Parser, Debug)]
-#[command(name = "josh-proxy")]
+#[command(name = "josh-proxy", version = josh_core::VERSION)]
 pub struct Args {
     #[arg(long, required = true, value_parser = parse_remote)]
     pub remote: Vec<Remote>,

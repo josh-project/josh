@@ -16,6 +16,7 @@
         --filter-prefix <FILTER_PREFIX>    Filter to be prefixed to all queries of this instance
         --http-retry <HTTP_RETRY>          Number of retries for HTTP server errors [default: 3]
     -h, --help                             Print help
+    -V, --version                          Print version
 
   $ josh-proxy --port=8002 --local=../../tmp --remote=http://localhost:8001 > proxy.out 2>&1 &
   $ sleep 1
