@@ -1,5 +1,5 @@
 :$label="rust build"
-:#image[:+images/dev-local]
+:#image[:+images/rust-dev-local]
 :$cache="sccache"
 
 :+sidecars

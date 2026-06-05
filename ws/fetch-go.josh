@@ -1,5 +1,5 @@
 :$label="go mod download"
-:#image[:+images/dev-local]
+:#image[:+images/go-dev-local]
 :$network="host"
 
 :$cmd="cd josh-ssh-dev-server && go mod download"

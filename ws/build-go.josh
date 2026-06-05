@@ -1,5 +1,5 @@
 :$label="go build"
-:#image[:+images/dev-local]
+:#image[:+images/go-dev-local]
 :$cache="go-build"
 
 inputs = :[

@@ -35,7 +35,7 @@ def generate_test_nodes():
         metadata = compose([
             filter.blob("label", category),
             filter.blob("output", "workdir"),
-            filter.treeid("image", filter.stored("images/dev-local")),
+            filter.treeid("image", filter.stored("images/prysk-test-local")),
         ])
 
         if is_experimental:

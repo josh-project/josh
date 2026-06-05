@@ -1,0 +1,4 @@
+bases = :[
+    :#BASE_IMAGE[:+images/rust-base]
+]
+context = :/images/rust-dev

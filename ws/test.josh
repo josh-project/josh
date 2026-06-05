@@ -3,7 +3,7 @@
 inputs = :[
     :#cargo-test[
         :$label="cargo test"
-        :#image[:+images/dev-local]
+        :#image[:+images/rust-dev-local]
         :$cache="sccache"
         :$cmd="cargo test --workspace --offline --locked"
 
@@ -33,7 +33,7 @@ inputs = :[
     ]
     :#fmt[
         :$label="cargo fmt"
-        :#image[:+images/dev-local]
+        :#image[:+images/rust-dev-local]
         :$cmd="cargo fmt -- --check"
 
         worktree = :[

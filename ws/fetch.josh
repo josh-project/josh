@@ -1,5 +1,5 @@
 :$label="cargo fetch"
-:#image[:+images/dev-local]
+:#image[:+images/rust-dev-local]
 :$network="host"
 
 :$cmd="cargo fetch --locked"
