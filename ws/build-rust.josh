@@ -9,7 +9,6 @@ inputs = :[
 ]
 
 env = :[
-    ::JOSH_VERSION=VERSION_STRING
     :$CARGO_HOME="/fetch/cargo-cache"
 ]
 

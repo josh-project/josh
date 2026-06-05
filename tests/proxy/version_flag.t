@@ -1,2 +1,2 @@
   $ josh-proxy --version
-  josh-proxy r* (glob)
+  josh-proxy * (glob)

@@ -47,10 +47,8 @@ pub fn run(transaction: &josh_core::cache::Transaction, opts: RunOptions) -> any
     let _mempack = repo.odb()?.add_new_mempack_backend(1000)?;
 
     let source_commit = filter::resolve_input(repo, &opts.input_ref)?;
-    let version = filter::git_version(repo);
 
-    let (ws_tree, _safe_name) =
-        filter::compute_ws_tree(transaction, &filter_spec, source_commit, &version)?;
+    let (ws_tree, _safe_name) = filter::compute_ws_tree(transaction, &filter_spec, source_commit)?;
 
     let mut attempted = std::collections::HashSet::new();
     let extract_to_workdir = opts.input_ref == ".";
@@ -78,10 +76,8 @@ pub fn plan_images(
     let _mempack = repo.odb()?.add_new_mempack_backend(1000)?;
 
     let source_commit = filter::resolve_input(repo, &opts.input_ref)?;
-    let version = filter::git_version(repo);
 
-    let (ws_tree, _safe_name) =
-        filter::compute_ws_tree(transaction, &filter_spec, source_commit, &version)?;
+    let (ws_tree, _safe_name) = filter::compute_ws_tree(transaction, &filter_spec, source_commit)?;
 
     plan::collect_image_oids(repo, ws_tree, ignore_cache)
 }
@@ -105,10 +101,8 @@ pub fn plan_jobs(
     let _mempack = repo.odb()?.add_new_mempack_backend(1000)?;
 
     let source_commit = filter::resolve_input(repo, &opts.input_ref)?;
-    let version = filter::git_version(repo);
 
-    let (ws_tree, _safe_name) =
-        filter::compute_ws_tree(transaction, &filter_spec, source_commit, &version)?;
+    let (ws_tree, _safe_name) = filter::compute_ws_tree(transaction, &filter_spec, source_commit)?;
 
     plan::collect_job_hashes(repo, ws_tree, ignore_cache)
 }

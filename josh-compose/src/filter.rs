@@ -7,48 +7,19 @@ pub fn resolve_input(repo: &git2::Repository, input_ref: &str) -> anyhow::Result
         .with_context(|| format!("failed to resolve input ref: {input_ref:?}"))
 }
 
-/// Get a version string for the repo using `git describe --tags --always`.
-pub fn git_version(repo: &git2::Repository) -> String {
-    let mut opts = git2::DescribeOptions::new();
-    opts.describe_tags();
-    repo.describe(&opts)
-        .and_then(|d| d.format(None))
-        .unwrap_or_else(|_| {
-            repo.head()
-                .ok()
-                .and_then(|h| h.target())
-                .map(|oid| oid.to_string()[..12].to_string())
-                .unwrap_or_else(|| "unknown".to_string())
-        })
-}
-
 /// Compute the workspace tree OID and safe name for the given filter spec.
 ///
-/// Constructs the filter:
-///   :SQUASH:#X[:/,:\$VERSION_STRING="<ver>"]:#/X<user_filter>
+/// Constructs the filter `:SQUASH<user_filter>` and applies it to `source_commit`.
 ///
 /// Returns (ws_tree_oid, safe_name).
 pub fn compute_ws_tree(
     transaction: &josh_core::cache::Transaction,
     filter_spec: &str,
     source_commit: git2::Oid,
-    version_string: &str,
 ) -> anyhow::Result<(git2::Oid, String)> {
     let repo = transaction.repo();
 
-    // Escape the version string for embedding in a filter spec
-    let version_escaped = version_string.replace('\\', "\\\\").replace('"', "\\\"");
-
-    // Build the filter string: :SQUASH:#X[:/,:\$VERSION_STRING="<ver>"]:#/X<filter>
-    // Use push('$') to avoid Rust string escaping ambiguity with the :$ blob operator.
-    let full_filter = {
-        let mut s = ":SQUASH:#X[:/,:".to_string();
-        s.push('$');
-        s.push_str(&format!(
-            "VERSION_STRING=\"{version_escaped}\"]:#/X{filter_spec}"
-        ));
-        s
-    };
+    let full_filter = format!(":SQUASH{filter_spec}");
 
     let filterobj = josh_core::filter::parse(&full_filter)
         .with_context(|| format!("failed to parse filter: {full_filter:?}"))?;
