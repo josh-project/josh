@@ -30,7 +30,7 @@ Test josh filter command - apply filtering without fetching
   Fetched from remote: origin
   Already on 'master'
   
-  Cloned repository to: ${TESTTMP}/filtered-repo
+  Cloned repository to: ${TESTTMP}/filtered-repo/
 
   $ cd filtered-repo
 
@@ -67,7 +67,7 @@ Test josh filter with non-existent remote
   $ josh filter nonexistent 2>&1 | sed "s|Failed to read remote config file: .*|Failed to read remote config file: *|"
   Error: Failed to read remote config for 'nonexistent'
   Failed to read remote config for 'nonexistent'
-  Remote 'nonexistent' not found in new format (.git/josh/remotes/nonexistent.josh) or legacy git config (josh-remote.nonexistent)
+  Remote 'nonexistent' not found in new format (*/josh/remotes/nonexistent.josh) or legacy git config (josh-remote.nonexistent) (glob)
 
   $ cd ..
 
