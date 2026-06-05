@@ -57,8 +57,24 @@ pub fn josh_commit_signature<'a>() -> anyhow::Result<git2::Signature<'a>> {
     })
 }
 
-/// Normalize repo path by stripping .git suffix if present
+/// Resolve a repository path to its working directory.
+///
+/// Callers typically pass a gitdir (e.g. `repo.path()`) and want the working
+/// tree to use as a cwd for git commands. Opening the repository yields the
+/// correct working directory even for linked worktrees, where the gitdir is
+/// `<main>/.git/worktrees/<name>` and naively stripping a trailing `.git`
+/// would not produce the worktree. The function is idempotent on an
+/// already-normalized working directory.
+///
+/// Falls back to stripping a trailing `.git` component when the path cannot be
+/// opened as a repository or the repository is bare (no working tree).
 pub fn normalize_repo_path(repo_path: &std::path::Path) -> PathBuf {
+    if let Ok(repo) = git2::Repository::open(repo_path)
+        && let Some(workdir) = repo.workdir()
+    {
+        return workdir.into();
+    }
+
     let components = repo_path.components().collect::<Vec<_>>();
 
     if let Some((last, components)) = components.split_last()

@@ -210,13 +210,21 @@ fn run_repo(cmd: &RepoCommand) -> anyhow::Result<()> {
         normalize_repo_path(repo.path())
     };
 
-    josh_core::cache::sled_load(&repo_path.join(".git")).context("Failed to load sled cache")?;
+    // The josh cache lives in the repository's common git directory so it is
+    // shared across linked worktrees. Reconstructing `<workdir>/.git` would be
+    // wrong from a worktree, where the gitdir is shared but located elsewhere.
+    let git_common_dir = git2::Repository::open(&repo_path)
+        .context("Failed to open repository")?
+        .commondir()
+        .to_path_buf();
+
+    josh_core::cache::sled_load(&git_common_dir).context("Failed to load sled cache")?;
 
     let cache = std::sync::Arc::new(
         josh_core::cache::CacheStack::new()
             .with_backend(josh_core::cache::SledCacheBackend::default())
             .with_backend(
-                josh_core::cache::DistributedCacheBackend::new(&repo_path)
+                josh_core::cache::DistributedCacheBackend::new(&git_common_dir)
                     .context("Failed to create DistributedCacheBackend")?,
             ),
     );

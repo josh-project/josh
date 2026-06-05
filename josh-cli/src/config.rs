@@ -9,6 +9,19 @@ pub struct RemoteConfig {
     pub forge: Option<Forge>,
 }
 
+/// Resolve the directory holding josh remote config files.
+///
+/// The config lives in the repository's *common* git directory so it is shared
+/// across linked worktrees. Reconstructing `<workdir>/.git` would be wrong when
+/// invoked from a worktree, where the gitdir is `<main>/.git/worktrees/<name>`
+/// but the shared config still lives under `<main>/.git`.
+fn remotes_dir(repo_path: &std::path::Path) -> anyhow::Result<std::path::PathBuf> {
+    let repo = git2::Repository::open(repo_path)
+        .with_context(|| format!("Failed to open repository at {}", repo_path.display()))?;
+
+    Ok(repo.commondir().join("josh").join("remotes"))
+}
+
 pub fn migrate_legacy_config(
     repo_path: &std::path::Path,
     remote_name: &str,
@@ -23,10 +36,12 @@ pub fn migrate_legacy_config(
     let url = match config.get_string(&format!("josh-remote.{}.url", remote_name)) {
         Ok(url) => url,
         Err(_) => {
+            let remote_file = remotes_dir(repo_path)?.join(format!("{}.josh", remote_name));
+
             return Err(anyhow!(
-                "Remote '{}' not found in new format (.git/josh/remotes/{}.josh) or legacy git config (josh-remote.{})",
+                "Remote '{}' not found in new format ({}) or legacy git config (josh-remote.{})",
                 remote_name,
-                remote_name,
+                remote_file.display(),
                 remote_name
             ));
         }
@@ -69,7 +84,7 @@ pub fn read_remote_config(
     repo_path: &std::path::Path,
     remote_name: &str,
 ) -> anyhow::Result<RemoteConfig> {
-    let remotes_dir = repo_path.join(".git").join("josh").join("remotes");
+    let remotes_dir = remotes_dir(repo_path)?;
     let remote_file = remotes_dir.join(format!("{}.josh", remote_name));
 
     // Try to read from the new file format first
@@ -126,7 +141,7 @@ pub fn write_remote_config(
     fetch: &str,
     forge: Option<Forge>,
 ) -> anyhow::Result<()> {
-    let remotes_dir = repo_path.join(".git").join("josh").join("remotes");
+    let remotes_dir = remotes_dir(repo_path)?;
 
     // Create the directory if it doesn't exist
     std::fs::create_dir_all(&remotes_dir).with_context(|| {

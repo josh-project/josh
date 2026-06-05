@@ -50,7 +50,7 @@ Test that josh clone also sets up proper refspecs
   Fetched from remote: origin
   Already on 'master'
   
-  Cloned repository to: ${TESTTMP}/cloned-repo
+  Cloned repository to: ${TESTTMP}/cloned-repo/
 
   $ cd cloned-repo
 

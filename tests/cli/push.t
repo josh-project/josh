@@ -36,7 +36,7 @@ Clone with josh filter
   Fetched from remote: origin
   Already on 'master'
   
-  Cloned repository to: ${TESTTMP}/filtered
+  Cloned repository to: ${TESTTMP}/filtered/
   $ cd filtered
   $ tree
   .
