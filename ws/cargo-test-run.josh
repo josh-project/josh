@@ -1,0 +1,10 @@
+:$label="cargo test run"
+:#image[:+images/rust-test-runner-local]
+
+inputs = :[
+    :#test-build[:+ws/cargo-test-build]
+]
+
+worktree = :[
+    ::run.sh=ws/cargo-test-run.sh
+]
