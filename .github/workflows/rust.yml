@@ -51,7 +51,7 @@ jobs:
       uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
       with:
         path: target/release/josh
-        key: josh-binary-${{ runner.os }}-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml', 'josh-cli/**/*.rs', 'josh-core/**/*.rs', 'josh-filter/**/*.rs', 'josh-run/**/*.rs', 'josh-changes/**/*.rs') }}
+        key: josh-binary-${{ runner.os }}-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml', 'josh-cli/**/*.rs', 'josh-core/**/*.rs', 'josh-filter/**/*.rs', 'josh-run/**/*.rs', 'josh-changes/**/*.rs', 'josh-compose/**/*.rs', 'forges/**/*.rs') }}
     - name: Build josh binary
       if: steps.cache-josh.outputs.cache-hit != 'true'
       run: cargo build --release -p josh-cli
