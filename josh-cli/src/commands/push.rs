@@ -90,7 +90,6 @@ fn prepare_push(
     filter: josh_core::filter::Filter,
     push_mode: PushMode,
     forge: &Option<Forge>,
-    dry_run: bool,
 ) -> anyhow::Result<PreparedPush> {
     let repo = transaction.repo();
 
@@ -178,12 +177,11 @@ fn prepare_push(
 
     log::debug!("to_push: {:?}", to_push);
 
-    let pr_infos =
-        if !dry_run && matches!(push_mode, PushMode::Split(_)) && *forge == Some(Forge::Github) {
-            josh_github_changes::collect_pr_infos(repo, &to_push)
-        } else {
-            vec![]
-        };
+    let pr_infos = if matches!(push_mode, PushMode::Split(_)) && *forge == Some(Forge::Github) {
+        josh_github_changes::collect_pr_infos(repo, &to_push)
+    } else {
+        vec![]
+    };
 
     Ok(PreparedPush {
         remote_name: remote_name.to_string(),
@@ -245,8 +243,13 @@ fn execute_push(
             let api_connection = github::make_api_connection().await;
             let api_connection = api_connection.with_context(|| github::api_connection_hint())?;
 
-            josh_github_changes::create_or_update_prs(&api_connection, url, &prepared.pr_infos)
-                .await
+            josh_github_changes::create_or_update_prs(
+                &api_connection,
+                url,
+                &prepared.pr_infos,
+                dry_run,
+            )
+            .await
         }) {
             eprintln!("Warning: failed to create/update GitHub PRs: {}", e);
         }
@@ -302,7 +305,6 @@ fn run_push(
                 filter,
                 push_mode.clone(),
                 &forge,
-                dry_run,
             )
         })
         .collect::<anyhow::Result<Vec<_>>>()?;

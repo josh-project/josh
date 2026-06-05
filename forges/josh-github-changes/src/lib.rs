@@ -77,6 +77,7 @@ pub async fn create_or_update_prs(
     connection: &GithubApiConnection,
     url: &str,
     pr_infos: &[PrInfo],
+    dry_run: bool,
 ) -> anyhow::Result<()> {
     let (owner, repo_name) = crate::repo::parse_owner_repo(url)?;
 
@@ -94,6 +95,25 @@ pub async fn create_or_update_prs(
             Some((default_name, _)) => effective_base_branch != default_name.as_str(),
             None => effective_base_branch == info.base_branch.as_str(),
         };
+
+        if dry_run {
+            match connection
+                .find_pull_request_by_head(&owner, &repo_name, &info.head_branch)
+                .await
+            {
+                Ok(Some((_, number, is_draft))) => eprintln!(
+                    "Would update PR #{}: {} → {} (draft: {} → {})",
+                    number, info.head_branch, effective_base_branch, is_draft, desired_draft
+                ),
+                Ok(None) => eprintln!(
+                    "Would create PR: {} → {} (draft: {})",
+                    info.head_branch, effective_base_branch, desired_draft
+                ),
+                Err(e) => eprintln!("Failed to look up PR for {}: {}", info.head_branch, e),
+            }
+            continue;
+        }
+
         match connection
             .find_pull_request_by_head(&owner, &repo_name, &info.head_branch)
             .await
