@@ -1,9 +1,12 @@
 :$label="cargo fetch"
 :#image[:+images/dev-local]
-:$cache="rust"
 :$network="host"
 
 :$cmd="cargo fetch --locked"
+
+env = :[
+    :$CARGO_HOME="/out/cargo-cache"
+]
 
 worktree = :[
     :+ws/patched-cargo

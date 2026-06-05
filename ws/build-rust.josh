@@ -1,6 +1,6 @@
 :$label="rust build"
 :#image[:+images/dev-local]
-:$cache="rust"
+:$cache="sccache"
 
 :+sidecars
 
@@ -10,6 +10,7 @@ inputs = :[
 
 env = :[
     ::JOSH_VERSION=VERSION_STRING
+    :$CARGO_HOME="/fetch/cargo-cache"
 ]
 
 worktree = :[

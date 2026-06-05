@@ -4,7 +4,7 @@ inputs = :[
     :#cargo-test[
         :$label="cargo test"
         :#image[:+images/dev-local]
-        :$cache="rust"
+        :$cache="sccache"
         :$cmd="cargo test --workspace --offline --locked"
 
         :+sidecars
@@ -15,6 +15,7 @@ inputs = :[
 
         env = :[
             :$RUSTFLAGS="-D warnings -Ctarget-feature=-crt-static"
+            :$CARGO_HOME="/fetch/cargo-cache"
         ]
 
         worktree = :[

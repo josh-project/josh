@@ -1,9 +1,14 @@
 :$label="go build"
 :#image[:+images/dev-local]
-:$cache="go"
+:$cache="go-build"
 
 inputs = :[
     :#go-fetch[:+ws/fetch-go]
+]
+
+env = :[
+    :$GOMODCACHE="/go-fetch/go-mod-cache"
+    :$GOFLAGS="-buildvcs=false -mod=readonly"
 ]
 
 worktree = :[
