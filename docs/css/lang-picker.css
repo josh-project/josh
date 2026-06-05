@@ -1,0 +1,20 @@
+/* Styles for the language picker and "outdated translation" banner.
+ * See docs/js/lang-picker.js, which injects these elements at runtime. */
+
+.lang-picker {
+  margin-left: 0.5rem;
+  padding: 0.25rem;
+  background: var(--bg);
+  color: var(--fg);
+  border: 1px solid var(--icons);
+  border-radius: 4px;
+}
+
+.lang-warning {
+  padding: 0.75rem 1rem;
+  margin: 1rem 0;
+  border: 1px solid #d4a017;
+  background: rgba(212, 160, 23, 0.1);
+  border-radius: 4px;
+  font-size: 0.95em;
+}
