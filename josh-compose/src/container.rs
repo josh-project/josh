@@ -259,9 +259,9 @@ pub fn run_container(
     let user_str = format!("{uid}:{gid}");
 
     // Assemble all volumes for the run
-    let workdir = format!("/{}", snapshot_vol);
+    let workdir = "/worktree";
     let mut volumes: Vec<(String, String, bool)> = vec![];
-    volumes.push((snapshot_vol.clone(), workdir.clone(), false));
+    volumes.push((snapshot_vol.clone(), workdir.to_string(), false));
 
     if workspace_meta.output != OutputMode::None {
         podman::recreate_volume(&out_vol)?;
@@ -289,7 +289,7 @@ pub fn run_container(
         env_vars,
         user: Some(user_str),
         network,
-        workdir: Some(workdir),
+        workdir: Some(workdir.to_string()),
         rm: true,
     })?;
 
