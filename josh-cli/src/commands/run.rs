@@ -12,6 +12,8 @@ pub enum ComposeCommand {
     Run(RunArgs),
     /// List every image (as `ws_image_<oid>`) a `run` with the same args would need
     ListImages(ListImagesArgs),
+    /// List the job hash of every workspace a `run` with the same args would touch
+    ListJobs(ListJobsArgs),
 }
 
 pub fn handle_compose(
@@ -21,6 +23,7 @@ pub fn handle_compose(
     match &args.command {
         ComposeCommand::Run(run_args) => handle_run(run_args, transaction),
         ComposeCommand::ListImages(list_args) => handle_list_images(list_args, transaction),
+        ComposeCommand::ListJobs(list_args) => handle_list_jobs(list_args, transaction),
     }
 }
 
@@ -96,6 +99,41 @@ pub fn handle_list_images(
 
     for oid in oids {
         println!("ws_image_{oid}");
+    }
+    Ok(())
+}
+
+#[derive(Debug, clap::Parser)]
+pub struct ListJobsArgs {
+    /// Ignore the local job cache and list every job a fresh run would touch
+    #[arg(long = "all")]
+    pub all: bool,
+
+    /// Git revision to use as input: "." (working tree), "+" (index), or any rev (e.g. "HEAD", "HEAD~1", "main")
+    #[arg(default_value = ".")]
+    pub reference: String,
+
+    /// Filter spec to apply, e.g. ":+ws/test" (defaults to ":+compose")
+    #[arg(default_value = ":+compose")]
+    pub filter: String,
+}
+
+pub fn handle_list_jobs(
+    args: &ListJobsArgs,
+    transaction: &josh_core::cache::Transaction,
+) -> anyhow::Result<()> {
+    let oids = josh_compose::plan_jobs(
+        transaction,
+        RunOptions {
+            filter_spec: args.filter.clone(),
+            input_ref: args.reference.clone(),
+            clean: CleanMode::None,
+        },
+        args.all,
+    )?;
+
+    for oid in oids {
+        println!("{oid}");
     }
     Ok(())
 }
