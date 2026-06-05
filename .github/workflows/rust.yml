@@ -55,6 +55,15 @@ jobs:
     - name: Build josh binary
       if: steps.cache-josh.outputs.cache-hit != 'true'
       run: cargo build --release -p josh-cli
+    - name: Pull cached job markers and volumes from R2
+      if: github.event_name != 'pull_request' || !github.event.pull_request.head.repo.fork
+      env:
+        AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+        AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+      run: |
+        export PATH="$(pwd)/target/release:$PATH"
+        export JOSH_EXPERIMENTAL_FEATURES=1
+        .github/workflows/scripts/pull-jobs.sh HEAD ":[::sidecars.josh=ci-sidecars.josh,:/]:+compose"
     - name: Pull cached images from R2
       if: github.event_name != 'pull_request' || !github.event.pull_request.head.repo.fork
       env:
@@ -69,6 +78,15 @@ jobs:
         AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
         AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
       run: target/release/josh compose run HEAD ":[::sidecars.josh=ci-sidecars.josh,:/]:+compose"
+    - name: Push job markers and volumes to R2
+      if: success() && (github.event_name != 'pull_request' || !github.event.pull_request.head.repo.fork)
+      env:
+        AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+        AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+      run: |
+        export PATH="$(pwd)/target/release:$PATH"
+        export JOSH_EXPERIMENTAL_FEATURES=1
+        .github/workflows/scripts/push-jobs.sh HEAD ":[::sidecars.josh=ci-sidecars.josh,:/]:+compose"
     - name: Push built images to R2
       if: success() && (github.event_name != 'pull_request' || !github.event.pull_request.head.repo.fork)
       env:

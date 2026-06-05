@@ -16,7 +16,7 @@ if [[ -z "${AWS_ACCESS_KEY_ID:-}" || -z "${AWS_SECRET_ACCESS_KEY:-}" ]]; then
     exit 0
 fi
 
-mapfile -t images < <(josh compose list-images --all "$@")
+mapfile -t images < <(josh compose list-images "$@")
 
 for image in "${images[@]}"; do
     if podman image exists "$image"; then

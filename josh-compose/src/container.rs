@@ -112,10 +112,16 @@ pub fn run_container(
 ) -> anyhow::Result<()> {
     let workspace_meta = meta::read_meta(repo, ws_tree)?;
 
-    // Cache check: skip only if a previous successful run is recorded.
+    // Cache check: skip only if a previous successful run is recorded AND its
+    // output volume is still present (when one is expected). Mirrors
+    // `plan::workspace_is_skippable` so a stale marker without its volume —
+    // reachable when an R2 volume pull fails after the marker pull succeeded —
+    // self-heals by re-running rather than failing downstream dep-mounts.
     let hash = ws_tree.to_string();
     let out_vol = format!("out_{ws_tree}");
-    if job_cache::is_cached_success(&hash) {
+    if job_cache::is_cached_success(&hash)
+        && (workspace_meta.output == OutputMode::None || podman::volume_exists(&out_vol)?)
+    {
         eprintln!(
             "[{}] Using cached output ({})",
             workspace_meta.label, ws_tree
