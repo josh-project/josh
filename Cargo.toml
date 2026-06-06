@@ -13,7 +13,8 @@ members = [
     "josh-ssh-shell",
     "josh-templates",
     "josh-starlark",
-    "josh-cq",
+    "cq/josh-cq",
+    "cq/josh-cq-test-components",
     "josh-changes",
     "josh-compose",
 
@@ -99,6 +100,8 @@ josh-github-webhooks = { path = "forges/josh-github-webhooks", version = "26.5.8
 josh-github-auth = { path = "forges/josh-github-auth", version = "26.5.8" }
 josh-github-keyring = { path = "forges/josh-github-keyring", version = "26.5.8" }
 
+josh-cq-test-components = { path = "cq/josh-cq-test-components", version = "26.5.8" }
+
 # Deployment
 josh-test-webhook-service = { path = "deployment/josh-test-webhook-service", version = "26.5.8" }
 josh-test-webhook-client = { path = "deployment/josh-test-webhook-client", version = "26.5.8" }
@@ -163,6 +166,9 @@ features = ["serde"]
 [workspace.dependencies.async-trait]
 version = "0.1"
 
+[workspace.dependencies.headers]
+version = "0.4"
+
 # "josh run" builds filtered workspace trees that lack .git directories,
 # causing cargo to resolve josh-* crates from crates.io instead of locally.
 # This section forces cargo to always use the local versions.
@@ -183,5 +189,6 @@ josh-github-codegen-graphql = { path = "forges/josh-github-codegen-graphql" }
 josh-github-webhooks = { path = "forges/josh-github-webhooks" }
 josh-github-auth = { path = "forges/josh-github-auth" }
 josh-github-keyring = { path = "forges/josh-github-keyring" }
+josh-cq-test-components = { path = "cq/josh-cq-test-components" }
 josh-test-webhook-service = { path = "deployment/josh-test-webhook-service" }
 josh-test-webhook-client = { path = "deployment/josh-test-webhook-client" }
