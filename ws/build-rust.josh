@@ -23,6 +23,7 @@ worktree = :[
     ::axum-cgi-server/
     ::hyper-reverse-proxy/
     ::josh-*/**/*
+    ::cq/
     ::forges/
     ::deployment/
     ::static/

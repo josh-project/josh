@@ -28,6 +28,7 @@ inputs = :[
             ::axum-cgi-server/
             ::hyper-reverse-proxy/
             ::josh-*/**/*
+            ::cq/
             ::forges/
             ::deployment/
         ]
@@ -46,6 +47,7 @@ inputs = :[
             ::axum-cgi-server/
             ::hyper-reverse-proxy/
             ::josh-*/**/*
+            ::cq/
             ::forges/
             ::deployment/
         ]
