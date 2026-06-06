@@ -1,0 +1,9 @@
+pub const PANEL_DEFAULT_WIDTH: f32 = 300.0;
+pub const WINDOW_MIN_WIDTH: f32 = 1000.0;
+pub const WINDOW_MIN_HEIGHT: f32 = 600.0;
+pub const COMMIT_BUBBLE_HEIGHT: f32 = 22.0;
+pub const BUBBLE_CORNER_RADIUS: u8 = 10;
+pub const BUBBLE_HORIZONTAL_PADDING: f32 = 8.0;
+pub const SHA_SHORT_LEN: usize = 8;
+pub const FONT_SIZE: f32 = 12.0;
+pub const REVWALK_LIMIT: usize = 10;

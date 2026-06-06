@@ -28,7 +28,7 @@ members = [
     "deployment/josh-test-webhook-service",
 ]
 
-exclude = ["josh-gui"]
+exclude = ["josh-gui", "devtools"]
 
 [profile.release]
 lto = "thin"

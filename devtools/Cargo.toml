@@ -1,0 +1,3 @@
+[workspace]
+members = ["git-tree-viewer", "git-tree-trace"]
+resolver = "2"
