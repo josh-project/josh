@@ -152,7 +152,7 @@ pub fn run_container(
                 continue;
             }
         };
-        if let Err(e) = run_container(repo, dep_tree, attempted, false) {
+        if let Err(e) = run_container(repo, dep_tree, attempted, extract_to_workdir) {
             dep_errors.push(format!("dependency {dep_name} failed: {e}"));
             continue;
         }
