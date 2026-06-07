@@ -58,14 +58,16 @@ Make a change in the filtered repository
 Push the change back
 
   $ josh push origin HEAD:refs/heads/master -f
+  Pushing 33f0c009c43980ba5e76995b53f9615a4d880a08 to origin/refs/heads/master
   To file://${TESTTMP}/remote
      14ecb7c..33f0c00  33f0c009c43980ba5e76995b53f9615a4d880a08 -> master
   
-  Pushed 33f0c009c43980ba5e76995b53f9615a4d880a08 to origin/refs/heads/master
+  Pushed 1 ref(s) to origin
   $ josh push
+  Pushing 33f0c009c43980ba5e76995b53f9615a4d880a08 to origin/refs/heads/master
   Everything up-to-date
   
-  Pushed 33f0c009c43980ba5e76995b53f9615a4d880a08 to origin/refs/heads/master
+  Pushed 1 ref(s) to origin
 
 Verify the change was pushed to the original repository
 
@@ -89,10 +91,11 @@ reverse filtering. Without --base the unfiltered base would be zero;
   $ git add file3
   $ git commit -q -m "add file3"
   $ josh push origin HEAD:refs/heads/feature --base=master
+  Pushing 0902bcdb4ce9d12071408a716f1e34c5cfeb6d8e to origin/refs/heads/feature
   To file://${TESTTMP}/remote
   * (glob)
   
-  Pushed * to origin/refs/heads/feature (glob)
+  Pushed 1 ref(s) to origin
 
 --base must resolve to an existing remote-tracking ref.
 
