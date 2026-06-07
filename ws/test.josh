@@ -5,7 +5,7 @@ inputs = :[
         :$label="cargo test"
         :#image[:+images/rust-dev-local]
         :$cache="sccache"
-        :$cmd="cargo test --workspace --offline --locked"
+        :$cmd="cargo test --workspace --offline --locked && sccache --show-stats"
 
         :+sidecars
 
