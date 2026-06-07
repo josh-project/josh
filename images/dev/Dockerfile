@@ -22,6 +22,7 @@ RUN apk add --no-cache \
     make \
     expat-dev \
     gettext \
+    jq \
     python3 \
     python3-dev \
     libffi-dev \

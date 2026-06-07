@@ -11,4 +11,4 @@ cp ${CARGO_TARGET_DIR}/debug/josh-filter /out/debug/
 cp ${CARGO_TARGET_DIR}/debug/josh-ssh-shell /out/debug/
 cp ${CARGO_TARGET_DIR}/debug/axum-cgi-server /out/debug/
 
-sccache --show-stats
+sh check-sccache.sh

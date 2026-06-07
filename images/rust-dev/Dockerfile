@@ -7,6 +7,7 @@ RUN apk add --no-cache \
     bash \
     git \
     git-daemon \
+    jq \
     zlib-static \
     zlib-dev \
     openssl-libs-static \

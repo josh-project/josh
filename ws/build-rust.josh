@@ -14,6 +14,7 @@ env = :[
 
 worktree = :[
     ::run.sh=ws/build-rust.sh
+    ::check-sccache.sh=ws/check-sccache.sh
     :+ws/patched-cargo
     ::Cargo.lock
     ::rust-toolchain.toml
