@@ -73,6 +73,63 @@ pub fn collect_pr_infos(repo: &git2::Repository, to_push: &[josh_changes::PushRe
         .collect()
 }
 
+/// Delete the current user's `@changes` and `@base` remote branches that have no open PR.
+///
+/// `@changes` and `@base` branches are treated independently: for each branch belonging to
+/// `email`, checks whether a corresponding open PR exists. If not, deletes the branch.
+pub async fn prune_stale_branches(
+    connection: &GithubApiConnection,
+    url: &str,
+    email: &str,
+    dry_run: bool,
+) -> anyhow::Result<()> {
+    let (owner, repo_name) = crate::repo::parse_owner_repo(url)?;
+
+    for prefix in &["heads/@changes", "heads/@base"] {
+        let branches = connection
+            .list_refs_by_prefix(&owner, &repo_name, prefix)
+            .await?;
+
+        // Filter to branches belonging to this user.
+        // Branch format: @changes/{base}/{email}/{id} or @base/{base}/{email}/{id}
+        let user_branches: Vec<String> = branches
+            .into_iter()
+            .filter(|b| {
+                let mut parts = b.splitn(4, '/');
+                parts.next(); // @changes or @base
+                parts.next(); // base
+                parts.next().map_or(false, |e| e == email)
+            })
+            .collect();
+
+        for branch in &user_branches {
+            let changes_branch = branch.replacen("@base", "@changes", 1);
+
+            match connection
+                .find_pull_request_by_head(&owner, &repo_name, &changes_branch)
+                .await
+            {
+                Ok(Some((_, number, _))) => {
+                    eprintln!("Keeping {} (open PR #{})", branch, number);
+                }
+                Ok(None) => {
+                    if dry_run {
+                        eprintln!("Would delete {} (no open PR)", branch);
+                    } else {
+                        match connection.delete_branch(&owner, &repo_name, branch).await {
+                            Ok(()) => eprintln!("Deleted {}", branch),
+                            Err(e) => eprintln!("Failed to delete {}: {}", branch, e),
+                        }
+                    }
+                }
+                Err(e) => eprintln!("Failed to look up PR for {}: {}", branch, e),
+            }
+        }
+    }
+
+    Ok(())
+}
+
 pub async fn create_or_update_prs(
     connection: &GithubApiConnection,
     url: &str,
