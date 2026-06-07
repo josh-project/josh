@@ -76,9 +76,7 @@ pub struct PublishArgs {
 }
 
 struct PreparedPush {
-    remote_name: String,
     to_push: Vec<PushRef>,
-    push_mode: PushMode,
     pr_infos: Vec<josh_github_changes::PrInfo>,
 }
 
@@ -88,7 +86,7 @@ fn prepare_push(
     base: Option<&str>,
     transaction: &josh_core::cache::Transaction,
     filter: josh_core::filter::Filter,
-    push_mode: PushMode,
+    push_mode: &PushMode,
     forge: &Option<Forge>,
 ) -> anyhow::Result<PreparedPush> {
     let repo = transaction.repo();
@@ -183,82 +181,91 @@ fn prepare_push(
         vec![]
     };
 
-    Ok(PreparedPush {
-        remote_name: remote_name.to_string(),
-        to_push,
-        push_mode,
-        pr_infos,
-    })
+    Ok(PreparedPush { to_push, pr_infos })
 }
 
-fn execute_push(
-    prepared: &PreparedPush,
+/// Push all refs to the remote in a single bundled `git push` invocation.
+///
+/// Every ref shares one remote URL and a uniform set of flags, so they are pushed together
+/// rather than one process per ref. This also makes `--atomic` meaningful across the whole
+/// set instead of applying to a single ref at a time.
+fn push_refs(
+    remote_name: &str,
+    to_push: &[PushRef],
     repo_path: &std::path::Path,
     url: &str,
     force: bool,
     atomic: bool,
     dry_run: bool,
 ) -> anyhow::Result<()> {
-    for push_ref in &prepared.to_push {
-        let mut git_push_args = vec!["push"];
-
-        if force || matches!(prepared.push_mode, PushMode::Split(_)) {
-            git_push_args.push("--force");
-        }
-
-        if atomic {
-            git_push_args.push("--atomic");
-        }
-
-        if dry_run {
-            git_push_args.push("--dry-run");
-        }
-
-        let target_remote = url.to_string();
-        let push_refspec = format!("{}:{}", push_ref.oid, push_ref.ref_name);
-
-        git_push_args.push(&target_remote);
-        git_push_args.push(&push_refspec);
-
-        if let Err(e) = spawn_git_command(repo_path, &git_push_args, &[]) {
-            eprintln!(
-                "Failed to push {} to {}/{}",
-                push_ref.oid, prepared.remote_name, push_ref.ref_name
-            );
-            eprintln!("{}", e);
-        } else {
-            eprintln!(
-                "Pushed {} to {}/{}",
-                push_ref.oid, prepared.remote_name, push_ref.ref_name
-            );
-        }
+    if to_push.is_empty() {
+        return Ok(());
     }
 
-    if !prepared.pr_infos.is_empty() {
-        use crate::forge::github;
+    let mut git_push_args = vec!["push"];
 
-        let rt = tokio::runtime::Runtime::new().context("Failed to create tokio runtime")?;
+    if force {
+        git_push_args.push("--force");
+    }
 
-        if let Err(e) = rt.block_on(async {
-            let api_connection = github::make_api_connection().await;
-            let api_connection = api_connection.with_context(|| github::api_connection_hint())?;
+    if atomic {
+        git_push_args.push("--atomic");
+    }
 
-            josh_github_changes::create_or_update_prs(
-                &api_connection,
-                url,
-                &prepared.pr_infos,
-                dry_run,
-            )
-            .await
-        }) {
-            eprintln!("Warning: failed to create/update GitHub PRs: {}", e);
-        }
+    if dry_run {
+        git_push_args.push("--dry-run");
+    }
+
+    git_push_args.push(url);
+
+    for push_ref in to_push {
+        eprintln!(
+            "Pushing {} to {}/{}",
+            push_ref.oid, remote_name, push_ref.ref_name
+        );
+    }
+
+    let refspecs: Vec<String> = to_push
+        .iter()
+        .map(|push_ref| format!("{}:{}", push_ref.oid, push_ref.ref_name))
+        .collect();
+    git_push_args.extend(refspecs.iter().map(String::as_str));
+
+    spawn_git_command(repo_path, &git_push_args, &[])
+        .with_context(|| format!("Failed to push to {}", remote_name))?;
+
+    eprintln!("Pushed {} ref(s) to {}", to_push.len(), remote_name);
+
+    Ok(())
+}
+
+/// Create or update GitHub PRs for the collected push refs.
+fn create_prs(
+    pr_infos: &[josh_github_changes::PrInfo],
+    url: &str,
+    dry_run: bool,
+) -> anyhow::Result<()> {
+    if pr_infos.is_empty() {
+        return Ok(());
+    }
+
+    use crate::forge::github;
+
+    let rt = tokio::runtime::Runtime::new().context("Failed to create tokio runtime")?;
+
+    if let Err(e) = rt.block_on(async {
+        let api_connection = github::make_api_connection().await;
+        let api_connection = api_connection.with_context(|| github::api_connection_hint())?;
+
+        josh_github_changes::create_or_update_prs(&api_connection, url, pr_infos, dry_run).await
+    }) {
+        eprintln!("Warning: failed to create/update GitHub PRs: {}", e);
     }
 
     Ok(())
 }
 
-fn run_push(
+fn orchestrate_push(
     remote: Option<&str>,
     refspecs_arg: &[String],
     base: Option<&str>,
@@ -293,7 +300,7 @@ fn run_push(
         refspecs_arg.to_vec()
     };
 
-    // Phase 1: Prepare all pushes (pure computation)
+    // Phase 1: Prepare all pushes (pure computation).
     let prepared_pushes: Vec<PreparedPush> = refspecs
         .iter()
         .map(|refspec| {
@@ -303,16 +310,43 @@ fn run_push(
                 base,
                 transaction,
                 filter,
-                push_mode.clone(),
+                &push_mode,
                 &forge,
             )
         })
         .collect::<anyhow::Result<Vec<_>>>()?;
 
-    // Phase 2: Execute all pushes (side effects)
-    for prepared in &prepared_pushes {
-        execute_push(prepared, repo.path(), &url, force, atomic, dry_run)?;
+    // Phase 2: Flatten the prepared pushes into one bundled set. Dedup by destination ref
+    // name (keep first) to tolerate duplicate or colliding refspec arguments, which an
+    // atomic push would otherwise reject.
+    let mut seen = std::collections::HashSet::new();
+    let mut to_push: Vec<PushRef> = Vec::new();
+    let mut pr_infos: Vec<josh_github_changes::PrInfo> = Vec::new();
+
+    for prepared in prepared_pushes {
+        for push_ref in prepared.to_push {
+            if seen.insert(push_ref.ref_name.clone()) {
+                to_push.push(push_ref);
+            }
+        }
+        pr_infos.extend(prepared.pr_infos);
     }
+
+    // Split mode always force-updates its per-change refs.
+    let force = force || matches!(push_mode, PushMode::Split(_));
+
+    // Phase 3: Execute the side effects.
+    push_refs(
+        remote_name,
+        &to_push,
+        repo.path(),
+        &url,
+        force,
+        atomic,
+        dry_run,
+    )?;
+
+    create_prs(&pr_infos, &url, dry_run)?;
 
     Ok(())
 }
@@ -321,7 +355,7 @@ pub fn handle_push(
     args: &PushArgs,
     transaction: &josh_core::cache::Transaction,
 ) -> anyhow::Result<()> {
-    run_push(
+    orchestrate_push(
         args.remote.as_deref(),
         &args.refspecs,
         args.base.as_deref(),
@@ -341,7 +375,7 @@ pub fn handle_publish(
     let config = repo.config().context("Failed to get git config")?;
     let push_mode = PushMode::Split(config.get_string("user.email").unwrap_or_default());
 
-    run_push(
+    orchestrate_push(
         args.remote.as_deref(),
         &args.refspecs,
         args.base.as_deref(),
