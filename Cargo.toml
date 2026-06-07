@@ -27,6 +27,7 @@ members = [
 
     "deployment/josh-test-webhook-client",
     "deployment/josh-test-webhook-service",
+    "deployment/josh-command-middleware",
 ]
 
 exclude = ["josh-gui", "devtools"]
@@ -105,6 +106,7 @@ josh-cq-test-components = { path = "cq/josh-cq-test-components", version = "26.5
 # Deployment
 josh-test-webhook-service = { path = "deployment/josh-test-webhook-service", version = "26.5.8" }
 josh-test-webhook-client = { path = "deployment/josh-test-webhook-client", version = "26.5.8" }
+josh-command-middleware = { path = "deployment/josh-command-middleware", version = "26.5.8" }
 
 [workspace.dependencies.git2]
 default-features = false
@@ -192,3 +194,4 @@ josh-github-keyring = { path = "forges/josh-github-keyring" }
 josh-cq-test-components = { path = "cq/josh-cq-test-components" }
 josh-test-webhook-service = { path = "deployment/josh-test-webhook-service" }
 josh-test-webhook-client = { path = "deployment/josh-test-webhook-client" }
+josh-command-middleware = { path = "deployment/josh-command-middleware" }

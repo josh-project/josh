@@ -3026,6 +3026,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "josh-command-middleware"
+version = "26.5.8"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "thiserror 2.0.18",
+ "tokio",
+]
+
+[[package]]
 name = "josh-compose"
 version = "26.5.8"
 dependencies = [
@@ -3139,9 +3149,11 @@ version = "26.5.8"
 dependencies = [
  "anyhow",
  "async-trait",
+ "base64",
  "chrono",
  "form_urlencoded",
  "http",
+ "josh-command-middleware",
  "jsonwebtoken",
  "mime",
  "reqwest 0.13.2",

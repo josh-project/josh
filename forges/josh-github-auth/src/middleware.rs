@@ -1,4 +1,6 @@
 use anyhow::Result;
+use base64::engine::Engine as _;
+use base64::engine::general_purpose::STANDARD as BASE64;
 use reqwest::header;
 use reqwest_middleware::{Middleware, Next};
 use secret_vault_value::SecretValue;
@@ -143,5 +145,36 @@ impl Middleware for GithubAuthMiddleware {
         );
 
         next.run(req, extensions).await
+    }
+}
+
+#[async_trait::async_trait]
+impl josh_command_middleware::CommandMiddleware for GithubAuthMiddleware {
+    async fn apply(&self, cmd: &mut josh_command_middleware::Command) -> anyhow::Result<()> {
+        let token = self.get_token().await.map_err(|e| {
+            josh_command_middleware::Error::Middleware(anyhow::anyhow!(
+                "failed to get auth token: {}",
+                e
+            ))
+        })?;
+
+        if cmd.program_mut().as_str() != "git" {
+            return Err(anyhow::anyhow!(
+                "Can't attach auth to anything other than git"
+            ));
+        }
+
+        // Git-over-HTTPS to GitHub authenticates via HTTP Basic auth, with the
+        // token supplied as the password (the username is ignored by GitHub, but
+        // `x-access-token` is the conventional value for app/installation tokens).
+        // The REST/GraphQL API uses `Bearer`, but git does not accept it.
+        let credentials = BASE64.encode(format!("x-access-token:{}", token));
+        let header = format!("http.extraHeader=Authorization: Basic {}", credentials);
+
+        let args = cmd.args_mut();
+        args.insert(0, header);
+        args.insert(0, "-c".to_string());
+
+        Ok(())
     }
 }
