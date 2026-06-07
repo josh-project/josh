@@ -5,7 +5,7 @@ inputs = :[
         :$label="cargo test"
         :#image[:+images/rust-dev-local]
         :$cache="sccache"
-        :$cmd="cargo test --workspace --offline --locked && sccache --show-stats"
+        :$cmd="cargo test --workspace --offline --locked && sh check-sccache.sh"
 
         :+sidecars
 
@@ -19,6 +19,7 @@ inputs = :[
         ]
 
         worktree = :[
+            ::check-sccache.sh=ws/check-sccache.sh
             ::Cargo.toml
             ::Cargo.lock
             ::rust-toolchain.toml
