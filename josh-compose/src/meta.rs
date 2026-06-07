@@ -24,6 +24,7 @@ pub struct WorkspaceMeta {
     pub cmd: String,
     pub cache: Option<String>,
     pub network: NetworkMode,
+    pub passthrough: Vec<(String, String)>,
     /// Tree OID of the image workspace. None for orchestrator-only workspaces.
     pub image: Option<git2::Oid>,
     /// Tree OID of the files to place in the container. None for orchestrator-only workspaces.
@@ -116,12 +117,15 @@ pub fn read_meta(repo: &git2::Repository, ws_tree: git2::Oid) -> anyhow::Result<
 
     let sidecars = read_sidecars(repo, ws_tree)?;
 
+    let passthrough = read_blob_entries(repo, ws_tree, "passthrough");
+
     Ok(WorkspaceMeta {
         label,
         output,
         cmd,
         cache,
         network,
+        passthrough,
         image,
         worktree,
         sidecars,

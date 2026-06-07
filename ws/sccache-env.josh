@@ -1,0 +1,5 @@
+env = :[
+    :$SCCACHE_BUCKET="josh-project-cache"
+    :$SCCACHE_ENDPOINT="https://19f2dfdd7c93980184be5e5809e8b252.r2.cloudflarestorage.com"
+    :$SCCACHE_REGION="auto"
+]

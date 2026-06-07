@@ -17,7 +17,7 @@ const SIDECAR_IP_PLACEHOLDER: &str = "{SIDECAR_IP}";
 /// Errors listing every missing variable when any are absent or empty, so that the
 /// developer sees the full set of misconfigured env vars in one go (locally and in CI).
 fn resolve_passthrough(
-    sidecar_name: &str,
+    context: &str,
     passthrough: &[(String, String)],
 ) -> anyhow::Result<Vec<(String, String)>> {
     let mut resolved = vec![];
@@ -32,7 +32,7 @@ fn resolve_passthrough(
     }
     if !missing.is_empty() {
         anyhow::bail!(
-            "sidecar {sidecar_name}: missing required passthrough env vars: {}",
+            "{context}: missing required passthrough env vars: {}",
             missing.join(", ")
         );
     }
@@ -46,7 +46,8 @@ fn resolve_passthrough(
 fn start_sidecar(repo: &git2::Repository, spec: &SidecarSpec) -> anyhow::Result<(String, String)> {
     let image_name = image::ensure_image(repo, spec.image)?;
 
-    let passthrough_env = resolve_passthrough(&spec.name, &spec.passthrough)?;
+    let passthrough_env =
+        resolve_passthrough(&format!("sidecar {}", spec.name), &spec.passthrough)?;
 
     podman::ensure_network_internal(SIDECAR_NETWORK)?;
 
@@ -194,6 +195,13 @@ pub fn run_container(
 
     // Read env vars from env/ subtree
     let mut env_vars = meta::read_blob_entries(repo, ws_tree, "env");
+
+    // Resolve workspace-level passthrough env vars from the host process.
+    if !workspace_meta.passthrough.is_empty() {
+        let passthrough_env =
+            resolve_passthrough(&workspace_meta.label, &workspace_meta.passthrough)?;
+        env_vars.extend(passthrough_env);
+    }
 
     // Start any declared sidecars and inject their IPs into the main container's env.
     // Any sidecar failure (missing creds, start error, readiness timeout) is fatal: tear

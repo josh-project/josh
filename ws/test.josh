@@ -13,9 +13,16 @@ inputs = :[
             :#fetch[:+ws/fetch]
         ]
 
+        :+ws/sccache-env
+
         env = :[
             :$RUSTFLAGS="-D warnings -Ctarget-feature=-crt-static"
             :$CARGO_HOME="/fetch/cargo-cache"
+        ]
+
+        passthrough = :[
+            :$AWS_ACCESS_KEY_ID="AWS_ACCESS_KEY_ID"
+            :$AWS_SECRET_ACCESS_KEY="AWS_SECRET_ACCESS_KEY"
         ]
 
         worktree = :[
