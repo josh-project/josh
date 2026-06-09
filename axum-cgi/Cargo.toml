@@ -8,7 +8,7 @@ repository = "https://github.com/josh-project/josh"
 
 [dependencies]
 bytes = "1.11.1"
-http = "1.4.0"
+http = "1.4.1"
 http-body-util = "0.1.0"
 
 futures.workspace = true
