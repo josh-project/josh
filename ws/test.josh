@@ -1,38 +1,7 @@
 :$label="test suite"
 :$output="none"
 inputs = :[
-    :#cargo-test[
-        :$label="cargo test"
-        :#image[:+images/rust-dev-local]
-        :$cache="sccache"
-        :$cmd="cargo test --workspace --offline --locked && sh check-sccache.sh"
-
-        :+sidecars
-
-        inputs = :[
-            :#fetch[:+ws/fetch]
-        ]
-
-        env = :[
-            :$RUSTFLAGS="-D warnings -Ctarget-feature=-crt-static"
-            :$CARGO_HOME="/fetch/cargo-cache"
-        ]
-
-        worktree = :[
-            ::check-sccache.sh=ws/check-sccache.sh
-            ::Cargo.toml
-            ::Cargo.lock
-            ::rust-toolchain.toml
-            ::rustfmt.toml
-            ::axum-cgi/
-            ::axum-cgi-server/
-            ::hyper-reverse-proxy/
-            ::josh-*/**/*
-            ::cq/
-            ::forges/
-            ::deployment/
-        ]
-    ]
+    :#cargo-test-run[:+ws/cargo-test-run]
     :#fmt[
         :$label="cargo fmt"
         :#image[:+images/rust-dev-local]

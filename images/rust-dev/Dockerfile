@@ -5,8 +5,6 @@ FROM ${BASE_IMAGE}
 
 RUN apk add --no-cache \
     bash \
-    git \
-    git-daemon \
     jq \
     zlib-static \
     zlib-dev \
