@@ -1,5 +1,8 @@
 set -e
 
+cp -a --reflink=auto /cargo-deps-build/target/. "${CARGO_TARGET_DIR}/"
+cp -a --reflink=auto /cargo-deps-build/build/. "${CARGO_BUILD_BUILD_DIR}/"
+
 cargo test --workspace --offline --locked --no-run --message-format=json \
     > /tmp/cargo.json
 

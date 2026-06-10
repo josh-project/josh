@@ -1,5 +1,8 @@
 set -e
 
+cp -a --reflink=auto /cargo-deps-build/target/. "${CARGO_TARGET_DIR}/"
+cp -a --reflink=auto /cargo-deps-build/build/. "${CARGO_BUILD_BUILD_DIR}/"
+
 export RUSTFLAGS="-D warnings -Ctarget-feature=-crt-static"
 cargo build --workspace $CARGO_BUILD_FEATURES --offline --locked
 
