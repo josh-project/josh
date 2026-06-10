@@ -14,10 +14,12 @@ worktree = :[
     ::**/Cargo.lock
     ::**/rust-toolchain.toml
     ::**/.cargo/
-    ::**/lib.rs
-    ::**/main.rs
-    ::**/bin/
-    ::**/build.rs
-    ::**/benches/
-    ::josh-core/benches/
+    :[
+        ::**/lib.rs
+        ::**/main.rs
+        ::**/bin/
+        ::**/build.rs
+        ::**/benches/
+        ::josh-core/benches/
+    ]:replace("(?s).+":"")
 ]
