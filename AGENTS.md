@@ -45,6 +45,13 @@ them directly.
 1. Edit the `.t` test file or the relevant source code.
 2. Re-run `josh compose run` — the changed working tree produces a new SHA, so the cache is bypassed automatically.
 
+### Do not use --clean or --clean-all
+
+Never pass `--clean` or `--clean-all` to `josh compose run`. The cache is reliable;
+clearing it just forces a full rebuild and wastes time. If something seems wrong
+that you believe a cache wipe would fix, stop and ask the user to run the clean
+in a separate terminal — do not run it yourself, ever.
+
 Test files live under `tests/` and are organized by subsystem:
 - `tests/filter/` — filter language tests (largest suite)
 - `tests/proxy/` — git proxy tests
