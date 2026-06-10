@@ -6,6 +6,7 @@
 
 inputs = :[
     :#fetch[:+ws/fetch]
+    :#cargo-deps-build[:+ws/cargo-deps-build]
 ]
 
 env = :[
