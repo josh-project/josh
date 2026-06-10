@@ -5,6 +5,7 @@ on:
     branches: [ master ]
   pull_request:
     branches: [ '**' ]
+    types: [opened, synchronize, reopened, ready_for_review]
   merge_group:
 
 env:
@@ -15,6 +16,7 @@ jobs:
   test:
     runs-on: ubuntu-latest
     name: CI
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     steps:
     - name: Free up disk space
       shell: bash
