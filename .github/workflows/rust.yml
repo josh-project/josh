@@ -77,7 +77,15 @@ jobs:
       env:
         AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
         AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
-      run: target/release/josh compose run HEAD ":[::sidecars.josh=ci-sidecars.josh,:/]:+compose"
+      run: |
+        set -o pipefail
+        target/release/josh compose run HEAD \
+          ":[::sidecars.josh=ci-sidecars.josh,:/]:+compose" 2>&1 \
+          | tee /tmp/compose-run.log
+        if grep -q SCCACHE_REMOTE_CACHE_MISSING /tmp/compose-run.log; then
+          echo "::error::sccache remote cache was not used during the build"
+          exit 1
+        fi
     - name: Push job markers and volumes to R2
       if: success() && (github.event_name != 'pull_request' || !github.event.pull_request.head.repo.fork)
       env:
