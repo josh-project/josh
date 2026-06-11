@@ -41,12 +41,12 @@ pub fn ListView(
     list_data: Signal<anyhow::Result<ListData>>,
     metadata_cache: Signal<HashMap<String, RowMetadata>>,
     mut scroll_offset: Signal<usize>,
-    branch: String,
+    scope: josh_changes::ChangesRef,
     mut page: Signal<Page>,
     mut selected_change: Signal<Option<String>>,
 ) -> Element {
     {
-        let branch_for_meta = branch.clone();
+        let scope_for_meta = scope.clone();
         use_effect(move || {
             let offset = *scroll_offset.read() as u32;
             let viewport_px = VISIBLE_ROWS * ROW_HEIGHT;
@@ -72,7 +72,7 @@ pub fn ListView(
             if needed.is_empty() {
                 return;
             }
-            let fetched = load_metadata_batch(&branch_for_meta, &needed);
+            let fetched = load_metadata_batch(&scope_for_meta, &needed);
             if !fetched.is_empty() {
                 let mut cache = metadata_cache.write();
                 for (cid, meta) in fetched {
@@ -285,11 +285,10 @@ pub fn ListView(
     }
 }
 
-pub fn load_rows(branch: &str) -> anyhow::Result<ListData> {
+pub fn load_rows(scope: &josh_changes::ChangesRef) -> anyhow::Result<ListData> {
     let repo = git2::Repository::discover(".")?;
 
-    let scopes = josh_changes::refs_on_branch(&repo, branch)?;
-    let changes = josh_changes::list_changes_in_scopes(&repo, &scopes)?;
+    let changes = josh_changes::list_changes(&repo, scope)?;
 
     let mut oid_to_change_id: HashMap<String, String> = HashMap::new();
     for change in &changes {
@@ -355,38 +354,37 @@ pub fn load_rows(branch: &str) -> anyhow::Result<ListData> {
     })
 }
 
-fn load_metadata_with_scopes(
+fn load_metadata(
     repo: &git2::Repository,
-    scopes: &[josh_changes::ChangesRef],
+    scope: &josh_changes::ChangesRef,
     change_id: &str,
 ) -> RowMetadata {
-    let (review_decision, check_status) =
-        josh_changes::read_pr_data_in_scopes(repo, change_id, scopes)
-            .ok()
-            .flatten()
-            .and_then(|json| {
-                serde_json::from_str::<serde_json::Value>(&json)
-                    .ok()
-                    .map(|v| {
-                        let rd = v["review_decision"]
-                            .as_str()
-                            .map(|s| s.to_string())
-                            .unwrap_or_default();
-                        let cs = v["check_status"]
-                            .as_str()
-                            .map(|s| s.to_string())
-                            .unwrap_or_default();
-                        (rd, cs)
-                    })
-            })
-            .unwrap_or_default();
+    let (review_decision, check_status) = josh_changes::read_pr_data(repo, change_id, scope)
+        .ok()
+        .flatten()
+        .and_then(|json| {
+            serde_json::from_str::<serde_json::Value>(&json)
+                .ok()
+                .map(|v| {
+                    let rd = v["review_decision"]
+                        .as_str()
+                        .map(|s| s.to_string())
+                        .unwrap_or_default();
+                    let cs = v["check_status"]
+                        .as_str()
+                        .map(|s| s.to_string())
+                        .unwrap_or_default();
+                    (rd, cs)
+                })
+        })
+        .unwrap_or_default();
 
-    let local_vote = josh_changes::read_vote_in_scopes(repo, change_id, None, scopes)
+    let local_vote = josh_changes::read_vote(repo, change_id, None, scope)
         .ok()
         .flatten()
         .map(|v| v.state);
 
-    let comments_count = josh_changes::read_comments_in_scopes(repo, change_id, scopes)
+    let comments_count = josh_changes::read_comments(repo, change_id, scope)
         .map(|c| c.len())
         .unwrap_or(0);
 
@@ -398,18 +396,18 @@ fn load_metadata_with_scopes(
     }
 }
 
-pub fn load_metadata_batch(branch: &str, change_ids: &[String]) -> Vec<(String, RowMetadata)> {
+pub fn load_metadata_batch(
+    scope: &josh_changes::ChangesRef,
+    change_ids: &[String],
+) -> Vec<(String, RowMetadata)> {
     if change_ids.is_empty() {
         return Vec::new();
     }
     let Ok(repo) = git2::Repository::discover(".") else {
         return Vec::new();
     };
-    let Ok(scopes) = josh_changes::refs_on_branch(&repo, branch) else {
-        return Vec::new();
-    };
     change_ids
         .iter()
-        .map(|cid| (cid.clone(), load_metadata_with_scopes(&repo, &scopes, cid)))
+        .map(|cid| (cid.clone(), load_metadata(&repo, scope, cid)))
         .collect()
 }
