@@ -457,9 +457,6 @@ pub fn handle_sync(
                     let target_branch = parse_changes_target(&pr.head_ref_name)
                         .unwrap_or_else(|| pr.base_ref_name.trim_start_matches("refs/heads/"))
                         .to_string();
-                    let local_scope = josh_changes::ChangesRef::Local {
-                        branch: target_branch.clone(),
-                    };
                     let remote_scope = josh_changes::ChangesRef::Remote {
                         remote: remote_name.clone(),
                         branch: target_branch.clone(),
@@ -475,7 +472,6 @@ pub fn handle_sync(
                                 repo,
                                 &change_id,
                                 &pr_node_id,
-                                &local_scope,
                                 &remote_scope,
                             )
                             .await
@@ -503,7 +499,6 @@ pub fn handle_sync(
                                 &change_id,
                                 &pr_node_id,
                                 &pr.head_oid,
-                                &local_scope,
                                 &remote_scope,
                             )
                             .await

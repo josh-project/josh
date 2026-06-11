@@ -424,16 +424,29 @@ pub fn save_comment(
         update_of: None,
     };
 
-    josh_changes::write_comment(
-        &repo,
-        &change,
-        &meta,
-        None,
-        None,
-        &josh_changes::ChangesRef::Local {
-            branch: branch.to_string(),
-        },
-    )
+    // If a Remote scope for this branch exists, route the comment through that
+    // remote's outbox so the next `sync --push` will post it. Otherwise keep
+    // it on the Local ref as a private note.
+    let scopes = josh_changes::refs_on_branch(&repo, branch)?;
+    let remote_scope = scopes
+        .iter()
+        .find(|s| matches!(s, josh_changes::ChangesRef::Remote { .. }))
+        .cloned();
+    match remote_scope {
+        Some(scope) => {
+            josh_changes::write_outbox_comment(&repo, &change, &meta, None, None, &scope)
+        }
+        None => josh_changes::write_comment(
+            &repo,
+            &change,
+            &meta,
+            None,
+            None,
+            &josh_changes::ChangesRef::Local {
+                branch: branch.to_string(),
+            },
+        ),
+    }
 }
 
 pub fn save_vote(sha: &str, state: &str, body: &str, branch: &str) -> anyhow::Result<String> {
@@ -441,20 +454,45 @@ pub fn save_vote(sha: &str, state: &str, body: &str, branch: &str) -> anyhow::Re
     let oid = git2::Oid::from_str(sha)?;
     let commit = repo.find_commit(oid)?;
     let change = josh_changes::Change::new(&repo, &commit);
-    let scope = josh_changes::ChangesRef::Local {
-        branch: branch.to_string(),
-    };
 
-    if !body.trim().is_empty() {
-        let meta = josh_changes::CommentMeta {
-            message: body.to_string(),
-            file: None,
-            location: None,
-            reply_to: None,
-            update_of: None,
-        };
-        josh_changes::write_comment(&repo, &change, &meta, None, None, &scope)?;
+    // Same policy as save_comment: if a Remote scope for this branch exists,
+    // queue everything in its outbox; otherwise fall back to Local. Keeps the
+    // body comment and the vote co-located.
+    let scopes = josh_changes::refs_on_branch(&repo, branch)?;
+    let remote_scope = scopes
+        .iter()
+        .find(|s| matches!(s, josh_changes::ChangesRef::Remote { .. }))
+        .cloned();
+
+    match remote_scope {
+        Some(scope) => {
+            if !body.trim().is_empty() {
+                let meta = josh_changes::CommentMeta {
+                    message: body.to_string(),
+                    file: None,
+                    location: None,
+                    reply_to: None,
+                    update_of: None,
+                };
+                josh_changes::write_outbox_comment(&repo, &change, &meta, None, None, &scope)?;
+            }
+            josh_changes::write_outbox_vote(&repo, &change, state, None, None, &scope)
+        }
+        None => {
+            let scope = josh_changes::ChangesRef::Local {
+                branch: branch.to_string(),
+            };
+            if !body.trim().is_empty() {
+                let meta = josh_changes::CommentMeta {
+                    message: body.to_string(),
+                    file: None,
+                    location: None,
+                    reply_to: None,
+                    update_of: None,
+                };
+                josh_changes::write_comment(&repo, &change, &meta, None, None, &scope)?;
+            }
+            josh_changes::write_vote(&repo, &change, state, None, None, &scope)
+        }
     }
-
-    josh_changes::write_vote(&repo, &change, state, None, None, &scope)
 }
