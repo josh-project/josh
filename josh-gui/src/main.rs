@@ -35,38 +35,14 @@ fn initial_branch() -> String {
         .unwrap_or_default()
 }
 
-fn available_branches() -> Vec<String> {
-    use std::collections::BTreeSet;
-    let mut set: BTreeSet<String> = BTreeSet::new();
-    if let Ok(repo) = git2::Repository::discover(".") {
-        if let Ok(refs) = josh_changes::all_changes_refs(&repo) {
-            for r in refs {
-                set.insert(r.branch().to_string());
-            }
-        }
-        if let Ok(b) = josh_changes::head_branch(&repo) {
-            set.insert(b);
-        }
-    }
-    set.into_iter().collect()
-}
-
 fn app() -> Element {
     let current_branch = use_signal(initial_branch);
-    let mut list_data: Signal<anyhow::Result<list::ListData>> =
+    let list_data: Signal<anyhow::Result<list::ListData>> =
         use_signal(|| load_rows(&current_branch.read()));
-    let mut metadata_cache: Signal<HashMap<String, RowMetadata>> = use_signal(HashMap::new);
-    let mut scroll_offset = use_signal(|| 0usize);
+    let metadata_cache: Signal<HashMap<String, RowMetadata>> = use_signal(HashMap::new);
+    let scroll_offset = use_signal(|| 0usize);
     let page = use_signal(|| Page::List);
     let mut selected_change = use_signal(|| None::<String>);
-
-    use_effect(move || {
-        let b = current_branch.read().clone();
-        list_data.set(load_rows(&b));
-        selected_change.set(None);
-        metadata_cache.write().clear();
-        scroll_offset.set(0);
-    });
 
     use_effect(move || {
         if let Ok(data) = &*list_data.read() {
@@ -119,10 +95,6 @@ fn app() -> Element {
         }
     };
 
-    let mut branch_signal = current_branch;
-    let branches = available_branches();
-    let branch_now = current_branch.read().clone();
-
     rsx! {
         style { {include_str!("style.css")} }
         div { class: "app", tabindex: "0", onkeydown: on_keydown,
@@ -141,14 +113,6 @@ fn app() -> Element {
                     }
                 }
                 {breadcrumb(&page.read(), page, list_data)}
-                select {
-                    class: "branch-selector",
-                    value: "{branch_now}",
-                    onchange: move |evt| branch_signal.set(evt.value()),
-                    for b in branches.iter() {
-                        option { value: "{b}", selected: *b == branch_now, "{b}" }
-                    }
-                }
             }
             match &*page.read() {
                 Page::List => rsx! {
