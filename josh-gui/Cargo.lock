@@ -3118,7 +3118,7 @@ dependencies = [
 
 [[package]]
 name = "josh-changes"
-version = "26.5.8"
+version = "26.6.11"
 dependencies = [
  "anyhow",
  "git2",
@@ -3127,7 +3127,7 @@ dependencies = [
 
 [[package]]
 name = "josh-core"
-version = "26.5.8"
+version = "26.6.11"
 dependencies = [
  "anyhow",
  "backtrace",
@@ -3165,7 +3165,7 @@ dependencies = [
 
 [[package]]
 name = "josh-filter"
-version = "26.5.8"
+version = "26.6.11"
 dependencies = [
  "anyhow",
  "git2",
@@ -3192,7 +3192,7 @@ dependencies = [
 
 [[package]]
 name = "josh-starlark"
-version = "26.5.8"
+version = "26.6.11"
 dependencies = [
  "allocative",
  "anyhow",
