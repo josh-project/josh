@@ -7,4 +7,5 @@ pub mod link;
 pub mod pull;
 pub mod push;
 pub mod run;
+pub mod scope;
 pub mod sync;
