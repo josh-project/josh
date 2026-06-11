@@ -625,7 +625,7 @@ pub fn apply_to_commit2(
             if let Some(oid) = transaction.get(filter, commit.id()) {
                 return Ok(Some(oid));
             }
-            let new_oid = downstack(repo, commit.id(), *base)?;
+            let new_oid = downstack(repo, transaction, commit.id(), *base)?;
             transaction.insert(filter, commit.id(), new_oid, false);
             return Ok(Some(new_oid));
         }
@@ -2078,6 +2078,7 @@ fn per_rev_filter(
 /// onto the minimised base via a 3-way merge. Returns the new tip OID.
 pub fn downstack(
     repo: &git2::Repository,
+    transaction: &cache::Transaction,
     change_oid: git2::Oid,
     base_oid: git2::Oid,
 ) -> anyhow::Result<git2::Oid> {
@@ -2112,10 +2113,10 @@ pub fn downstack(
 
     // Seed the affected dependency set with the change's own deps, then walk
     // intermediates backwards, keeping any commit whose deps intersect.
-    let mut affected = downstack_commit_deps(repo, &change_commit)?;
+    let mut affected = downstack_commit_deps(repo, transaction, &change_commit)?;
     let mut needed: Vec<bool> = vec![false; commits.len()];
     for (i, intermediate) in commits.iter().enumerate().rev() {
-        let deps = downstack_commit_deps(repo, intermediate)?;
+        let deps = downstack_commit_deps(repo, transaction, intermediate)?;
         if !deps.is_disjoint(&affected) {
             needed[i] = true;
             affected.extend(deps);
@@ -2172,15 +2173,27 @@ pub fn downstack(
 /// comes from a `Change-Series:` trailer and lets unrelated paths be linked
 /// explicitly.
 #[derive(Clone, Eq, Hash, PartialEq)]
-enum DownstackDep {
+pub(crate) enum DownstackDep {
     Path(String),
     Series(String),
 }
 
+/// Cache deps per commit oid within a single transaction. `split_changes`
+/// asks for the same intermediate's deps O(N) times across the stack, and a
+/// commit's deps set is a pure function of its oid (parent tree + own tree +
+/// trailer block) -- so memoising it collapses the duplicated work. The map
+/// lives on the transaction so `josh-proxy` doesn't accumulate entries
+/// across unrelated operations.
 fn downstack_commit_deps(
     repo: &git2::Repository,
+    transaction: &cache::Transaction,
     commit: &git2::Commit,
 ) -> anyhow::Result<std::collections::HashSet<DownstackDep>> {
+    let oid = commit.id();
+    if let Some(hit) = transaction.get_downstack_deps(oid) {
+        return Ok(hit);
+    }
+
     // Use the in-crate `tree::diff_paths` rather than libgit2's full diff
     // pipeline: it short-circuits subtrees by oid equality, which collapses
     // the typical "stack of single-file commits" deps walk down to a few
@@ -2201,6 +2214,8 @@ fn downstack_commit_deps(
     for s in series {
         deps.insert(DownstackDep::Series(s));
     }
+
+    transaction.insert_downstack_deps(oid, deps.clone());
     Ok(deps)
 }
 

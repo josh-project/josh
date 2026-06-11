@@ -75,6 +75,7 @@ struct Transaction2 {
     overlay_map: HashMap<(git2::Oid, git2::Oid), git2::Oid>,
     unapply_map: HashMap<git2::Oid, HashMap<git2::Oid, git2::Oid>>,
     legalize_map: HashMap<(crate::filter::Filter, git2::Oid), crate::filter::Filter>,
+    downstack_deps_map: HashMap<git2::Oid, std::collections::HashSet<crate::filter::DownstackDep>>,
 
     cache: std::sync::Arc<CacheStack>,
     path_tree: sled::Tree,
@@ -111,6 +112,7 @@ impl Transaction {
                 overlay_map: HashMap::new(),
                 unapply_map: HashMap::new(),
                 legalize_map: HashMap::new(),
+                downstack_deps_map: HashMap::new(),
                 cache,
                 path_tree,
                 invert_tree,
@@ -166,6 +168,23 @@ impl Transaction {
             return m.get(&from).cloned();
         }
         None
+    }
+
+    pub(crate) fn insert_downstack_deps(
+        &self,
+        oid: git2::Oid,
+        deps: std::collections::HashSet<crate::filter::DownstackDep>,
+    ) {
+        let mut t2 = self.t2.borrow_mut();
+        t2.downstack_deps_map.insert(oid, deps);
+    }
+
+    pub(crate) fn get_downstack_deps(
+        &self,
+        oid: git2::Oid,
+    ) -> Option<std::collections::HashSet<crate::filter::DownstackDep>> {
+        let t2 = self.t2.borrow_mut();
+        t2.downstack_deps_map.get(&oid).cloned()
     }
 
     pub fn insert_subtract(&self, from: (git2::Oid, git2::Oid), to: git2::Oid) {
