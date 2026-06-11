@@ -12,7 +12,6 @@ mod forges;
 mod refs;
 mod revisions;
 mod store;
-mod union;
 mod votes;
 
 pub use change::*;
@@ -21,5 +20,4 @@ pub use forges::*;
 pub use refs::*;
 pub use revisions::*;
 pub use store::*;
-pub use union::*;
 pub use votes::*;
