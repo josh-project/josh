@@ -2,6 +2,52 @@
 
 This page covers breaking changes introduced in recent releases and how to adapt to them.
 
+## `josh publish` renamed to `josh changes publish`
+
+*Applies when upgrading from r26.05.08 to r26.06.11.*
+
+The `publish` subcommand has moved under a new `changes` subcommand group, making room for
+further changes-related subcommands alongside `publish`.
+
+**How to migrate:** Update any scripts or CI invocations that call `josh publish` to use
+`josh changes publish` instead. All arguments and flags are unchanged.
+
+## "stack" push mode removed; `refs/split/...` magic ref renamed to `refs/publish/...`
+
+*Applies when upgrading from r26.05.08 to r26.06.11.*
+
+The old "stack" push mode has been removed. The proxy's publish magic ref has also been
+renamed from `refs/split/for/<branch>` to `refs/publish/for/<branch>` so that the proxy and
+the CLI use the same vocabulary.
+
+**How to migrate:** If you were pushing to `refs/split/for/<branch>`, push to
+`refs/publish/for/<branch>` instead. There is no replacement for the "stack" push mode; use
+publish mode instead.
+
+## `Requires:` commit footer replaced by `Change-Series:`
+
+*Applies when upgrading from r26.05.08 to r26.06.11.*
+
+The downstack algorithm has been rewritten to use path intersection rather than diff
+application. As part of that, the `Requires:` commit footer used to force ordering between
+commits has been replaced with `Change-Series:`. Assign two or more commits to a named series
+to keep them merged in order even when they touch disjoint files.
+
+**How to migrate:** Replace any `Requires:` commit footers with `Change-Series: <name>`,
+giving the series a stable name shared by all commits that must be merged in order.
+
+## Change footers only recognised in the trailing footer block
+
+*Applies when upgrading from r26.05.08 to r26.06.11.*
+
+`Change:`, `Change-Id:`, and `Change-Series:` lines are now only recognised when they appear
+in the trailing block of trailers at the end of the commit message. A body line that happens
+to start with one of those prefixes is no longer mis-parsed as a real trailer.
+
+**How to migrate:** If a commit message body contains a line that begins with `Change:`,
+`Change-Id:`, or `Change-Series:` outside the trailing footer block and you intended it as
+a trailer, move it into the footer block at the very end of the message.
+
 ## CRLF line endings in gpgsig headers preserved
 
 *Applies when upgrading from r24.10.04 to r26.04.19.*

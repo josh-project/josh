@@ -208,7 +208,7 @@ dependencies = [
 
 [[package]]
 name = "axum-cgi"
-version = "26.5.8"
+version = "26.6.11"
 dependencies = [
  "axum",
  "bytes",
@@ -1596,7 +1596,7 @@ dependencies = [
 
 [[package]]
 name = "josh-cq-test-components"
-version = "26.5.8"
+version = "26.6.11"
 dependencies = [
  "anyhow",
  "axum",
