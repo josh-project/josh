@@ -11,6 +11,13 @@ on:
 env:
   CARGO_TERM_COLOR: always
   JOSH_EXPERIMENTAL_FEATURES: "1"
+  # Bootstrap `josh` binary used by CI to drive `josh compose run` and to
+  # pull/push job markers, volumes, and images from R2. Pinned to a known-good
+  # commit that is already merged into `master` (so the build is reproducible
+  # for any branch and the binary is not rebuilt for every PR / merge-queue
+  # run). Bump when a backward-incompatible change to `josh compose` requires
+  # it; the new SHA must also already be on `origin/master`.
+  JOSH_BOOTSTRAP_SHA: caf2143216c07d2775fe566e52989fcb1b9d417c
 
 jobs:
   test:
@@ -47,16 +54,11 @@ jobs:
       run: .github/workflows/scripts/install-podman.sh
     - name: Install Rust toolchain
       uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
-    - name: Cache josh binary
-      id: cache-josh
-      if: github.event_name != 'pull_request' || !github.event.pull_request.head.repo.fork
-      uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
-      with:
-        path: target/release/josh
-        key: josh-binary-${{ runner.os }}-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml', 'josh-cli/**/*.rs', 'josh-core/**/*.rs', 'josh-filter/**/*.rs', 'josh-run/**/*.rs', 'josh-changes/**/*.rs', 'josh-compose/**/*.rs', 'forges/**/*.rs') }}
-    - name: Build josh binary
-      if: steps.cache-josh.outputs.cache-hit != 'true'
-      run: cargo build --release -p josh-cli
+    - name: Bootstrap josh binary
+      env:
+        AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+        AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+      run: .github/workflows/scripts/bootstrap-josh.sh
     - name: Pull cached job markers and volumes from R2
       if: github.event_name != 'pull_request' || !github.event.pull_request.head.repo.fork
       env:
