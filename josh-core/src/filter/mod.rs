@@ -2130,13 +2130,14 @@ pub fn downstack(
             continue;
         }
         let inter_parent = intermediate.parent(0)?;
-        let mut index = repo.merge_trees(
-            &inter_parent.tree()?,
-            &current_base.tree()?,
-            &intermediate.tree()?,
-            None,
+        let new_tree_oid = cached_merge_trees(
+            repo,
+            transaction,
+            inter_parent.tree_id(),
+            current_base.tree_id(),
+            intermediate.tree_id(),
         )?;
-        let new_tree = repo.find_tree(index.write_tree_to(repo)?)?;
+        let new_tree = repo.find_tree(new_tree_oid)?;
         let new_oid = history::rewrite_commit(
             repo,
             intermediate,
@@ -2149,13 +2150,14 @@ pub fn downstack(
 
     // Apply the change on top of the minimal base via 3-way merge.
     let change_parent = change_commit.parent(0)?;
-    let mut index = repo.merge_trees(
-        &change_parent.tree()?,
-        &current_base.tree()?,
-        &change_commit.tree()?,
-        None,
+    let new_tree_oid = cached_merge_trees(
+        repo,
+        transaction,
+        change_parent.tree_id(),
+        current_base.tree_id(),
+        change_commit.tree_id(),
     )?;
-    let new_tree = repo.find_tree(index.write_tree_to(repo)?)?;
+    let new_tree = repo.find_tree(new_tree_oid)?;
 
     let new_oid = history::rewrite_commit(
         repo,
@@ -2166,6 +2168,44 @@ pub fn downstack(
     )?;
 
     Ok(new_oid)
+}
+
+/// Memo libgit2's 3-way `merge_trees` + `write_tree_to` pair within the
+/// active transaction. The merged tree oid is a pure function of the three
+/// input tree oids (with `MergeOptions::None`), and `split_changes` issues
+/// many identical triples across per-tip `downstack` calls; turning each
+/// repeat into a hashmap hit is the win. Scoping to the transaction (rather
+/// than process-wide) keeps `josh-proxy` from accumulating entries across
+/// unrelated operations.
+fn cached_merge_trees(
+    repo: &git2::Repository,
+    transaction: &cache::Transaction,
+    a: git2::Oid,
+    b: git2::Oid,
+    c: git2::Oid,
+) -> anyhow::Result<git2::Oid> {
+    // Conventional 3-way identities. When the ancestor matches one side, the
+    // merge result is the other side -- common in a clean linear stack where
+    // the rebuilt parent's tree already equals the original intermediate's
+    // parent tree -- so we skip both the lookup and the merge.
+    if a == b {
+        return Ok(c);
+    }
+    if a == c {
+        return Ok(b);
+    }
+
+    let key = (a, b, c);
+    if let Some(hit) = transaction.get_merge_trees(key) {
+        return Ok(hit);
+    }
+    let tree_a = repo.find_tree(a)?;
+    let tree_b = repo.find_tree(b)?;
+    let tree_c = repo.find_tree(c)?;
+    let mut index = repo.merge_trees(&tree_a, &tree_b, &tree_c, None)?;
+    let oid = index.write_tree_to(repo)?;
+    transaction.insert_merge_trees(key, oid);
+    Ok(oid)
 }
 
 /// A dependency token used by `downstack` to decide whether two commits
