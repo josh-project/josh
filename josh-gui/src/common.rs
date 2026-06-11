@@ -72,10 +72,7 @@ pub fn repo_name() -> String {
     dir
 }
 
-fn subject_from_rows(
-    list_data: &anyhow::Result<crate::list::ListData>,
-    sha: &str,
-) -> String {
+fn subject_from_rows(list_data: &anyhow::Result<crate::list::ListData>, sha: &str) -> String {
     let Ok(data) = list_data else {
         return String::new();
     };
