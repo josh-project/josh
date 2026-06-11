@@ -138,8 +138,8 @@ pub async fn sync_change_comments_by_pr_number(
 }
 
 /// Post local comments (those without a `github_id`) to a GitHub PR.
-/// Reads drafts from `local_scope`, dedupes against the union of `gh_ids` maps
-/// across all refs, and writes new mappings into `remote_scope`.
+/// Reads drafts from `remote_scope`, dedupes against its `gh_ids` map,
+/// and writes new mappings back into `remote_scope`.
 /// Returns the number of comments successfully posted.
 pub async fn post_local_comments(
     connection: &GithubApiConnection,
@@ -160,7 +160,7 @@ pub async fn post_local_comments(
         return Ok(0);
     }
 
-    let github_ids = josh_changes::read_github_ids_union(repo, change_id)?;
+    let github_ids = josh_changes::read_github_ids(repo, change_id, remote_scope)?;
 
     // Collect unposted comments (no github_id mapping yet).
     let mut unposted: Vec<&josh_changes::Comment> = comments

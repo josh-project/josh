@@ -38,6 +38,19 @@ span.header-dir {
     white-space: nowrap;
 }
 
+span.header-scope {
+    margin-left: auto;
+    color: #888;
+    font-size: 0.85rem;
+    font-weight: 600;
+    background: #1f1f1f;
+    border: 1px solid #333;
+    padding: 0.15rem 0.55rem;
+    border-radius: 3px;
+    white-space: nowrap;
+    flex-shrink: 0;
+}
+
 .scroll-table {
     flex: 1;
     min-height: 0;
