@@ -2160,21 +2160,22 @@ fn downstack_commit_deps(
     repo: &git2::Repository,
     commit: &git2::Commit,
 ) -> anyhow::Result<std::collections::HashSet<DownstackDep>> {
-    let parent_tree = if commit.parent_count() > 0 {
-        Some(commit.parent(0)?.tree()?)
+    // Use the in-crate `tree::diff_paths` rather than libgit2's full diff
+    // pipeline: it short-circuits subtrees by oid equality, which collapses
+    // the typical "stack of single-file commits" deps walk down to a few
+    // tree lookups per call.
+    let parent_tree_id = if commit.parent_count() > 0 {
+        commit.parent(0)?.tree()?.id()
     } else {
-        None
+        git2::Oid::zero()
     };
-    let diff = repo.diff_tree_to_tree(parent_tree.as_ref(), Some(&commit.tree()?), None)?;
+    let commit_tree_id = commit.tree()?.id();
+
     let mut deps = std::collections::HashSet::new();
-    for delta in diff.deltas() {
-        if let Some(p) = delta.old_file().path().and_then(|p| p.to_str()) {
-            deps.insert(DownstackDep::Path(p.to_string()));
-        }
-        if let Some(p) = delta.new_file().path().and_then(|p| p.to_str()) {
-            deps.insert(DownstackDep::Path(p.to_string()));
-        }
+    for (path, _polarity) in tree::diff_paths(repo, parent_tree_id, commit_tree_id, "")? {
+        deps.insert(DownstackDep::Path(path));
     }
+
     let (_, series) = crate::trailers::parse_change_meta(commit.message().unwrap_or(""));
     for s in series {
         deps.insert(DownstackDep::Series(s));
