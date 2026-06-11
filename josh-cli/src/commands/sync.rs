@@ -2,6 +2,7 @@ use anyhow::{Context, anyhow};
 
 use josh_core::git::normalize_repo_path;
 
+use crate::commands::scope::ScopeArgs;
 use crate::config::read_remote_config;
 use crate::forge::Forge;
 use crate::forge::github;
@@ -11,19 +12,14 @@ use serde_json;
 /// Arguments for `josh changes sync`.
 #[derive(Debug, clap::Parser)]
 pub struct SyncArgs {
-    /// Josh remote name (default: origin).
-    #[arg()]
-    pub remote: Option<String>,
+    #[command(flatten)]
+    pub scope: ScopeArgs,
 
-    /// Discard existing refs/josh/changes before syncing.
+    /// Discard existing refs/josh/changes (for the resolved scope kind) before syncing.
     #[arg(long = "clean")]
     pub clean: bool,
 
-    /// Skip GitHub comment syncing; only update refs/josh/changes locally.
-    #[arg(long = "local")]
-    pub local: bool,
-
-    /// Push local comments that haven't been posted to GitHub yet.
+    /// Push outbox comments and votes to GitHub (Remote scope only).
     #[arg(long = "push")]
     pub push: bool,
 }
@@ -47,23 +43,39 @@ pub fn handle_sync(
         })
         .unwrap_or(git2::Oid::ZERO_SHA1);
 
-    let remote_name = args.remote.as_deref().unwrap_or("origin").to_string();
+    let resolved = args.scope.resolve(repo)?;
+    let remote_name = match &resolved {
+        josh_changes::ChangesRef::Remote { remote, .. } => Some(remote.clone()),
+        josh_changes::ChangesRef::Local { .. } => None,
+    };
 
     if args.clean {
-        clean_changes_refs(repo, &remote_name, args.local)?;
+        // Delete every changes ref of the resolved kind. For Local: every
+        // `refs/josh/changes/<branch>`. For Remote: every
+        // `refs/josh/remotes/<remote>/changes/<branch>` for the chosen remote.
+        let mut to_delete: Vec<josh_changes::ChangesRef> = Vec::new();
+        for scope in josh_changes::all_changes_refs(repo)? {
+            let keep = match (&scope, remote_name.as_deref()) {
+                (josh_changes::ChangesRef::Local { .. }, None) => true,
+                (josh_changes::ChangesRef::Remote { remote, .. }, Some(name)) => remote == name,
+                _ => false,
+            };
+            if keep {
+                to_delete.push(scope);
+            }
+        }
+        for scope in to_delete {
+            if let Ok(mut r) = repo.find_reference(&scope.ref_name()) {
+                r.delete()?;
+            }
+        }
     }
 
-    if !args.local {
+    if let Some(remote_name) = remote_name {
         let repo_path = normalize_repo_path(repo.path());
 
-        let remote_config =
-            read_remote_config(&repo_path, args.remote.as_deref().unwrap_or("origin"))
-                .with_context(|| {
-                    format!(
-                        "Failed to read remote config for '{}'",
-                        args.remote.as_deref().unwrap_or("origin")
-                    )
-                })?;
+        let remote_config = read_remote_config(&repo_path, &remote_name)
+            .with_context(|| format!("Failed to read remote config for '{}'", remote_name))?;
 
         if remote_config.forge != Some(Forge::Github) {
             return Err(anyhow!("sync is only supported for GitHub remotes"));
@@ -492,51 +504,24 @@ pub fn handle_sync(
             Ok::<_, anyhow::Error>(())
         })?;
     } else {
-        sync_local(repo, transaction, branch.as_deref(), head.id(), base_oid)?;
-    }
-
-    Ok(())
-}
-
-/// Sync local changes for the checked-out branch only (no GitHub interaction).
-fn sync_local(
-    repo: &git2::Repository,
-    transaction: &josh_core::cache::Transaction,
-    branch: Option<&str>,
-    head: git2::Oid,
-    base_oid: git2::Oid,
-) -> anyhow::Result<()> {
-    let branch = branch
-        .ok_or_else(|| anyhow!("HEAD is detached -- check out a branch to sync local changes"))?;
-    let changes = josh_changes::sync_changes(repo, transaction, head, base_oid, branch)?;
-    if changes.is_empty() {
-        println!("No local changes found.");
-    }
-    Ok(())
-}
-
-/// Delete every changes ref under the targeted scope, across all branches.
-fn clean_changes_refs(
-    repo: &git2::Repository,
-    remote_name: &str,
-    local_only: bool,
-) -> anyhow::Result<()> {
-    let mut to_delete: Vec<josh_changes::ChangesRef> = Vec::new();
-    for scope in josh_changes::all_changes_refs(repo)? {
-        let keep = match (&scope, local_only) {
-            (josh_changes::ChangesRef::Local { .. }, true) => true,
-            (josh_changes::ChangesRef::Remote { remote, .. }, false) => remote == remote_name,
-            _ => false,
+        if args.push {
+            return Err(anyhow!(
+                "--push requires --remote <name>; the Local ref has no posting target"
+            ));
+        }
+        let local_branch = match &resolved {
+            josh_changes::ChangesRef::Local { branch } => branch.clone(),
+            josh_changes::ChangesRef::Remote { .. } => unreachable!(),
         };
-        if keep {
-            to_delete.push(scope);
+        let _ = branch;
+        let changes =
+            josh_changes::sync_changes(repo, transaction, head.id(), base_oid, &local_branch)?;
+        if changes.is_empty() {
+            println!("No local changes found.");
+            return Ok(());
         }
     }
-    for scope in to_delete {
-        if let Ok(mut r) = repo.find_reference(&scope.ref_name()) {
-            r.delete()?;
-        }
-    }
+
     Ok(())
 }
 

@@ -208,6 +208,29 @@ pub enum ChangesRef {
 }
 
 impl ChangesRef {
+    /// Select the changes ref a command should operate on.
+    ///
+    /// `branch` defaults to the current HEAD's branch (see [`head_branch`]).
+    /// `remote` selects the `Remote` variant for that remote; `None` selects
+    /// the `Local` variant.
+    pub fn resolve(
+        repo: &git2::Repository,
+        branch: Option<&str>,
+        remote: Option<&str>,
+    ) -> anyhow::Result<ChangesRef> {
+        let branch = match branch {
+            Some(b) => b.to_string(),
+            None => head_branch(repo)?,
+        };
+        Ok(match remote {
+            Some(remote) => ChangesRef::Remote {
+                remote: remote.to_string(),
+                branch,
+            },
+            None => ChangesRef::Local { branch },
+        })
+    }
+
     pub fn ref_name(&self) -> String {
         match self {
             ChangesRef::Local { branch } => format!("refs/josh/changes/{}", branch),
@@ -285,14 +308,6 @@ pub fn all_changes_refs(repo: &git2::Repository) -> anyhow::Result<Vec<ChangesRe
         out.push(ChangesRef::Remote { remote, branch });
     }
     Ok(out)
-}
-
-/// Like `all_changes_refs`, but filtered to refs targeting `branch`.
-pub fn refs_on_branch(repo: &git2::Repository, branch: &str) -> anyhow::Result<Vec<ChangesRef>> {
-    Ok(all_changes_refs(repo)?
-        .into_iter()
-        .filter(|r| r.branch() == branch)
-        .collect())
 }
 
 #[cfg(test)]
