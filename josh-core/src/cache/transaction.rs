@@ -76,6 +76,7 @@ struct Transaction2 {
     unapply_map: HashMap<git2::Oid, HashMap<git2::Oid, git2::Oid>>,
     legalize_map: HashMap<(crate::filter::Filter, git2::Oid), crate::filter::Filter>,
     downstack_deps_map: HashMap<git2::Oid, std::collections::HashSet<crate::filter::DownstackDep>>,
+    merge_trees_map: HashMap<(git2::Oid, git2::Oid, git2::Oid), git2::Oid>,
 
     cache: std::sync::Arc<CacheStack>,
     path_tree: sled::Tree,
@@ -113,6 +114,7 @@ impl Transaction {
                 unapply_map: HashMap::new(),
                 legalize_map: HashMap::new(),
                 downstack_deps_map: HashMap::new(),
+                merge_trees_map: HashMap::new(),
                 cache,
                 path_tree,
                 invert_tree,
@@ -185,6 +187,23 @@ impl Transaction {
     ) -> Option<std::collections::HashSet<crate::filter::DownstackDep>> {
         let t2 = self.t2.borrow_mut();
         t2.downstack_deps_map.get(&oid).cloned()
+    }
+
+    pub(crate) fn insert_merge_trees(
+        &self,
+        key: (git2::Oid, git2::Oid, git2::Oid),
+        result: git2::Oid,
+    ) {
+        let mut t2 = self.t2.borrow_mut();
+        t2.merge_trees_map.insert(key, result);
+    }
+
+    pub(crate) fn get_merge_trees(
+        &self,
+        key: (git2::Oid, git2::Oid, git2::Oid),
+    ) -> Option<git2::Oid> {
+        let t2 = self.t2.borrow_mut();
+        t2.merge_trees_map.get(&key).copied()
     }
 
     pub fn insert_subtract(&self, from: (git2::Oid, git2::Oid), to: git2::Oid) {
