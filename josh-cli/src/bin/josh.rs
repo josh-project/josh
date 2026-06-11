@@ -3,7 +3,7 @@ use clap::Parser;
 
 use josh_cli::commands::auth::AuthArgs;
 use josh_cli::commands::cache::CacheArgs;
-use josh_cli::commands::changes::ListArgs;
+use josh_cli::commands::changes::{DepsArgs, ListArgs, ShowArgs};
 use josh_cli::commands::comment::CommentArgs;
 use josh_cli::commands::link::LinkArgs;
 use josh_cli::commands::push::{PublishArgs, PushArgs};
@@ -137,8 +137,12 @@ pub struct ChangesArgs {
 pub enum ChangesCommand {
     /// Push each commit as an independent, minimal diff (stacked changes workflow)
     Publish(PublishArgs),
-    /// List local changes that would be published (read-only)
+    /// List stored changes with a one-line summary per change
     List(ListArgs),
+    /// Print full detail for a change, including comments
+    Show(ShowArgs),
+    /// Print the change-ids this change depends on
+    Deps(DepsArgs),
     /// Add a comment to a change
     Comment(CommentArgs),
     /// Sync GitHub PR comments to local change comments
@@ -274,6 +278,12 @@ fn run_repo(cmd: &RepoCommand) -> anyhow::Result<()> {
             }
             ChangesCommand::List(list_args) => {
                 josh_cli::commands::changes::handle_list(list_args, &transaction)
+            }
+            ChangesCommand::Show(show_args) => {
+                josh_cli::commands::changes::handle_show(show_args, &transaction)
+            }
+            ChangesCommand::Deps(deps_args) => {
+                josh_cli::commands::changes::handle_deps(deps_args, &transaction)
             }
             ChangesCommand::Comment(comment_args) => {
                 josh_cli::commands::comment::handle_comment(comment_args, &transaction)
