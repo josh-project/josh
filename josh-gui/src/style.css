@@ -172,9 +172,9 @@ span.comment-ts {
 
 pre.comment-body {
     margin: 0;
-    font-family: inherit;
-    font-size: 0.85rem;
-    color: #bbb;
+    font-family: -apple-system, system-ui, sans-serif;
+    font-size: 0.95rem;
+    color: #e8a872;
     white-space: pre-wrap;
 }
 
@@ -254,17 +254,47 @@ table.changes tbody tr:hover td {
     background: #2a2a2a;
 }
 
-table.changes tbody tr.selected td,
+table.changes tbody tr.selected td {
+    background: #d8d8d8;
+    color: #1a1a1a;
+}
+
 table.changes tbody tr.selected:hover td {
-    background: #000000;
+    background: #e8e8e8;
+}
+
+table.changes tbody tr.selected td.num {
+    color: #555;
+}
+
+table.changes tbody tr.selected td.loading {
+    color: #888;
+}
+
+table.changes tbody tr.selected td.review-approved,
+table.changes tbody tr.selected td.vote-approve,
+table.changes tbody tr.selected td.check-success {
+    color: #2d6b3a;
+}
+
+table.changes tbody tr.selected td.review-changes-requested,
+table.changes tbody tr.selected td.vote-revise,
+table.changes tbody tr.selected td.check-failure {
+    color: #a02530;
+}
+
+table.changes tbody tr.selected td.review-review-required,
+table.changes tbody tr.selected td.vote-discuss,
+table.changes tbody tr.selected td.check-pending {
+    color: #8c5a23;
 }
 
 table.changes tbody tr.related td {
-    background: #2a2a2a;
+    background: #22303f;
 }
 
 table.changes tbody tr.related:hover td {
-    background: #333333;
+    background: #2d4054;
 }
 
 .diff-nav {
@@ -504,28 +534,6 @@ tr.diff-comment-row td {
 .diff-comment-inline {
     border-left: 2px solid #5a8ab5;
     padding: 0.25rem 0 0.25rem 0.6rem;
-}
-
-.diff-comment-inline .comment-header {
-    margin-bottom: 0.1rem;
-}
-
-.diff-comment-inline .comment-body {
-    margin: 0;
-    font-family: inherit;
-    font-size: 0.82rem;
-    color: #bbb;
-    white-space: pre-wrap;
-}
-
-.diff-comment-inline .comment-author {
-    color: #7ec699;
-    font-size: 0.78rem;
-}
-
-.diff-comment-inline .comment-ts {
-    color: #666;
-    font-size: 0.78rem;
 }
 
 .comment-form {
