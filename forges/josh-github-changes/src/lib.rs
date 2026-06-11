@@ -244,6 +244,21 @@ fn write_pr_comments(
         id_map.insert(comment.id.clone(), hash);
     }
 
+    // Cleanup: any outbox entry whose `gh_ids[hash]` points at a GitHub node
+    // we just observed in the fetch can now be dropped — the canonical copy
+    // lives under `comments/...` on this ref.
+    if let Some(change_id) = change.id() {
+        let fetched: std::collections::HashSet<&str> =
+            pr_data.comments.iter().map(|c| c.id.as_str()).collect();
+        let gh_ids = josh_changes::read_github_ids(repo, change_id, scope)?;
+        let to_remove: Vec<String> = gh_ids
+            .into_iter()
+            .filter(|(_, gh_id)| fetched.contains(gh_id.as_str()))
+            .map(|(local_hash, _)| local_hash)
+            .collect();
+        josh_changes::delete_outbox_comments(repo, change_id, scope, &to_remove)?;
+    }
+
     Ok(pr_data.comments.len())
 }
 
@@ -320,10 +335,16 @@ pub async fn post_local_comments(
     repo: &git2::Repository,
     change_id: &str,
     pr_node_id: &str,
-    local_scope: &josh_changes::ChangesRef,
     remote_scope: &josh_changes::ChangesRef,
 ) -> anyhow::Result<usize> {
-    let comments = josh_changes::read_comments(repo, change_id, local_scope)?;
+    // Pending comments live in `outbox/comments/...` on the Remote ref. Anything
+    // already under `comments/...` was either fetched from the remote or has
+    // already been posted; either way it should not be re-posted.
+    let comments: Vec<josh_changes::Comment> =
+        josh_changes::read_comments(repo, change_id, remote_scope)?
+            .into_iter()
+            .filter(|c| c.pending)
+            .collect();
     if comments.is_empty() {
         return Ok(0);
     }
@@ -435,10 +456,9 @@ pub async fn post_local_votes(
     change_id: &str,
     pr_node_id: &str,
     commit_oid: &str,
-    local_scope: &josh_changes::ChangesRef,
     remote_scope: &josh_changes::ChangesRef,
 ) -> anyhow::Result<usize> {
-    let votes = josh_changes::list_votes(repo, change_id, local_scope)?;
+    let votes = josh_changes::list_outbox_votes(repo, change_id, remote_scope)?;
     if votes.is_empty() {
         return Ok(0);
     }
@@ -463,6 +483,10 @@ pub async fn post_local_votes(
         josh_changes::store_github_vote_id(repo, change_id, user, vote_data, remote_scope)?;
         posted += 1;
     }
+
+    // Drop outbox entries whose post is now reflected in gh_vote_ids. Safe to
+    // call unconditionally -- it's a no-op when nothing needs cleaning.
+    josh_changes::cleanup_posted_outbox_votes(repo, change_id, remote_scope)?;
 
     Ok(posted)
 }

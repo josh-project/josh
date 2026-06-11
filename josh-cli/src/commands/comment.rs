@@ -48,6 +48,12 @@ pub struct CommentArgs {
     /// Target branch for the comment (defaults to HEAD's branch).
     #[arg(short = 'b', long = "branch")]
     pub branch: Option<String>,
+
+    /// Queue the comment in the outbox of the named remote so the next
+    /// `sync --push` will post it. Without this flag, the comment stays
+    /// private to the local changes ref.
+    #[arg(long = "remote")]
+    pub remote: Option<String>,
 }
 
 pub fn handle_comment(
@@ -121,15 +127,21 @@ pub fn handle_comment(
         Some(b) => b.clone(),
         None => josh_changes::head_branch(repo)?,
     };
-    josh_changes::write_comment(
-        repo,
-        &change,
-        &meta,
-        None,
-        None,
-        &josh_changes::ChangesRef::Local { branch },
-    )?;
 
-    println!("Comment saved.");
+    match &args.remote {
+        Some(remote) => {
+            let scope = josh_changes::ChangesRef::Remote {
+                remote: remote.clone(),
+                branch,
+            };
+            josh_changes::write_outbox_comment(repo, &change, &meta, None, None, &scope)?;
+            println!("Comment queued in outbox for remote '{}'.", remote);
+        }
+        None => {
+            let scope = josh_changes::ChangesRef::Local { branch };
+            josh_changes::write_comment(repo, &change, &meta, None, None, &scope)?;
+            println!("Comment saved (private to local ref).");
+        }
+    }
     Ok(())
 }
