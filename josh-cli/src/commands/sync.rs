@@ -2,6 +2,7 @@ use anyhow::{Context, anyhow};
 
 use josh_core::git::normalize_repo_path;
 
+use crate::commands::scope::ScopeArgs;
 use crate::config::read_remote_config;
 use crate::forge::Forge;
 use crate::forge::github;
@@ -10,19 +11,14 @@ use serde_json;
 /// Arguments for `josh changes sync`.
 #[derive(Debug, clap::Parser)]
 pub struct SyncArgs {
-    /// Josh remote name (default: origin).
-    #[arg()]
-    pub remote: Option<String>,
+    #[command(flatten)]
+    pub scope: ScopeArgs,
 
-    /// Discard existing refs/josh/changes before syncing.
+    /// Discard existing refs/josh/changes (for the resolved scope kind) before syncing.
     #[arg(long = "clean")]
     pub clean: bool,
 
-    /// Skip GitHub comment syncing; only update refs/josh/changes locally.
-    #[arg(long = "local")]
-    pub local: bool,
-
-    /// Push local comments that haven't been posted to GitHub yet.
+    /// Push outbox comments and votes to GitHub (Remote scope only).
     #[arg(long = "push")]
     pub push: bool,
 }
@@ -46,15 +42,21 @@ pub fn handle_sync(
         })
         .unwrap_or(git2::Oid::zero());
 
-    let remote_name = args.remote.as_deref().unwrap_or("origin").to_string();
+    let resolved = args.scope.resolve(repo)?;
+    let remote_name = match &resolved {
+        josh_changes::ChangesRef::Remote { remote, .. } => Some(remote.clone()),
+        josh_changes::ChangesRef::Local { .. } => None,
+    };
 
     if args.clean {
-        // Delete every changes ref under the targeted scope, across all branches.
+        // Delete every changes ref of the resolved kind. For Local: every
+        // `refs/josh/changes/<branch>`. For Remote: every
+        // `refs/josh/remotes/<remote>/changes/<branch>` for the chosen remote.
         let mut to_delete: Vec<josh_changes::ChangesRef> = Vec::new();
         for scope in josh_changes::all_changes_refs(repo)? {
-            let keep = match (&scope, args.local) {
-                (josh_changes::ChangesRef::Local { .. }, true) => true,
-                (josh_changes::ChangesRef::Remote { remote, .. }, false) => remote == &remote_name,
+            let keep = match (&scope, remote_name.as_deref()) {
+                (josh_changes::ChangesRef::Local { .. }, None) => true,
+                (josh_changes::ChangesRef::Remote { remote, .. }, Some(name)) => remote == name,
                 _ => false,
             };
             if keep {
@@ -68,17 +70,11 @@ pub fn handle_sync(
         }
     }
 
-    if !args.local {
+    if let Some(remote_name) = remote_name {
         let repo_path = normalize_repo_path(repo.path());
 
-        let remote_config =
-            read_remote_config(&repo_path, args.remote.as_deref().unwrap_or("origin"))
-                .with_context(|| {
-                    format!(
-                        "Failed to read remote config for '{}'",
-                        args.remote.as_deref().unwrap_or("origin")
-                    )
-                })?;
+        let remote_config = read_remote_config(&repo_path, &remote_name)
+            .with_context(|| format!("Failed to read remote config for '{}'", remote_name))?;
 
         if remote_config.forge != Some(Forge::Github) {
             return Err(anyhow!("sync is only supported for GitHub remotes"));
@@ -534,10 +530,18 @@ pub fn handle_sync(
             Ok::<_, anyhow::Error>(())
         })?;
     } else {
-        let branch = branch.as_deref().ok_or_else(|| {
-            anyhow!("HEAD is detached -- check out a branch to sync local changes")
-        })?;
-        let changes = josh_changes::sync_changes(repo, transaction, head.id(), base_oid, branch)?;
+        if args.push {
+            return Err(anyhow!(
+                "--push requires --remote <name>; the Local ref has no posting target"
+            ));
+        }
+        let local_branch = match &resolved {
+            josh_changes::ChangesRef::Local { branch } => branch.clone(),
+            josh_changes::ChangesRef::Remote { .. } => unreachable!(),
+        };
+        let _ = branch;
+        let changes =
+            josh_changes::sync_changes(repo, transaction, head.id(), base_oid, &local_branch)?;
         if changes.is_empty() {
             println!("No local changes found.");
             return Ok(());

@@ -5,6 +5,7 @@ mod list;
 
 use std::collections::HashMap;
 
+use clap::Parser;
 use dioxus::prelude::*;
 
 use common::breadcrumb;
@@ -12,13 +13,54 @@ use detail::DetailView;
 use diff::FileDiffView;
 use list::{ListView, RowMetadata, load_rows};
 
+#[derive(Debug, Parser)]
+#[command(name = "josh-gui")]
+struct Cli {
+    /// Target branch (default: HEAD's branch).
+    #[arg(short = 'b', long = "branch")]
+    branch: Option<String>,
+
+    /// View the changes ref for this remote instead of the Local one.
+    #[arg(long = "remote")]
+    remote: Option<String>,
+}
+
 fn main() {
+    let cli = Cli::parse();
+    let scope = resolve_initial_scope(&cli);
+
     dioxus::LaunchBuilder::new()
         .with_cfg(
             dioxus::desktop::Config::new()
                 .with_window(dioxus::desktop::WindowBuilder::new().with_title("Josh")),
         )
+        .with_context(scope)
         .launch(app);
+}
+
+fn resolve_initial_scope(cli: &Cli) -> josh_changes::ChangesRef {
+    let branch = cli.branch.clone().unwrap_or_else(|| {
+        git2::Repository::discover(".")
+            .ok()
+            .and_then(|r| josh_changes::head_branch(&r).ok())
+            .unwrap_or_default()
+    });
+    match &cli.remote {
+        Some(name) => josh_changes::ChangesRef::Remote {
+            remote: name.clone(),
+            branch,
+        },
+        None => josh_changes::ChangesRef::Local { branch },
+    }
+}
+
+pub fn scope_label(scope: &josh_changes::ChangesRef) -> String {
+    match scope {
+        josh_changes::ChangesRef::Local { branch } => format!("Local · {}", branch),
+        josh_changes::ChangesRef::Remote { remote, branch } => {
+            format!("remote: {} · {}", remote, branch)
+        }
+    }
 }
 
 #[derive(Clone, PartialEq)]
@@ -28,17 +70,11 @@ pub enum Page {
     FileDiff { sha: String, path: String },
 }
 
-fn initial_branch() -> String {
-    git2::Repository::discover(".")
-        .ok()
-        .and_then(|r| josh_changes::head_branch(&r).ok())
-        .unwrap_or_default()
-}
-
 fn app() -> Element {
-    let current_branch = use_signal(initial_branch);
+    let initial_scope = use_context::<josh_changes::ChangesRef>();
+    let current_scope = use_signal(|| initial_scope.clone());
     let list_data: Signal<anyhow::Result<list::ListData>> =
-        use_signal(|| load_rows(&current_branch.read()));
+        use_signal(|| load_rows(&current_scope.read()));
     let metadata_cache: Signal<HashMap<String, RowMetadata>> = use_signal(HashMap::new);
     let scroll_offset = use_signal(|| 0usize);
     let page = use_signal(|| Page::List);
@@ -95,6 +131,8 @@ fn app() -> Element {
         }
     };
 
+    let scope_text = scope_label(&current_scope.read());
+
     rsx! {
         style { {include_str!("style.css")} }
         div { class: "app", tabindex: "0", onkeydown: on_keydown,
@@ -113,6 +151,7 @@ fn app() -> Element {
                     }
                 }
                 {breadcrumb(&page.read(), page, list_data)}
+                span { class: "header-scope", "{scope_text}" }
             }
             match &*page.read() {
                 Page::List => rsx! {
@@ -120,7 +159,7 @@ fn app() -> Element {
                         list_data,
                         metadata_cache,
                         scroll_offset,
-                        branch: current_branch.read().clone(),
+                        scope: current_scope.read().clone(),
                         page,
                         selected_change,
                     }
@@ -128,7 +167,7 @@ fn app() -> Element {
                 Page::Detail { sha } => rsx! {
                     DetailView {
                         sha: sha.clone(),
-                        branch: current_branch.read().clone(),
+                        scope: current_scope.read().clone(),
                         page,
                     }
                 },
@@ -136,7 +175,7 @@ fn app() -> Element {
                     FileDiffView {
                         sha: sha.clone(),
                         path: path.clone(),
-                        branch: current_branch.read().clone(),
+                        scope: current_scope.read().clone(),
                         page,
                     }
                 },

@@ -349,7 +349,7 @@ pub async fn post_local_comments(
         return Ok(0);
     }
 
-    let github_ids = josh_changes::read_github_ids_union(repo, change_id)?;
+    let github_ids = josh_changes::read_github_ids(repo, change_id, remote_scope)?;
 
     // Collect unposted comments (no github_id mapping yet).
     let mut unposted: Vec<&josh_changes::Comment> = comments
