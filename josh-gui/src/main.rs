@@ -3,12 +3,14 @@ mod detail;
 mod diff;
 mod list;
 
+use std::collections::HashMap;
+
 use dioxus::prelude::*;
 
 use common::breadcrumb;
 use detail::DetailView;
 use diff::FileDiffView;
-use list::{ListView, load_rows};
+use list::{ListView, RowMetadata, load_rows};
 
 fn main() {
     dioxus::LaunchBuilder::new()
@@ -53,6 +55,8 @@ fn app() -> Element {
     let current_branch = use_signal(initial_branch);
     let mut list_data: Signal<anyhow::Result<list::ListData>> =
         use_signal(|| load_rows(&current_branch.read()));
+    let mut metadata_cache: Signal<HashMap<String, RowMetadata>> = use_signal(HashMap::new);
+    let mut scroll_offset = use_signal(|| 0usize);
     let page = use_signal(|| Page::List);
     let mut selected_change = use_signal(|| None::<String>);
 
@@ -60,6 +64,8 @@ fn app() -> Element {
         let b = current_branch.read().clone();
         list_data.set(load_rows(&b));
         selected_change.set(None);
+        metadata_cache.write().clear();
+        scroll_offset.set(0);
     });
 
     use_effect(move || {
@@ -78,21 +84,6 @@ fn app() -> Element {
             let _ = dioxus::document::eval(
                 "setTimeout(function(){var el=document.querySelector('.app');if(el)el.focus();},0)",
             );
-        }
-    });
-
-    use_effect(move || {
-        let cid = selected_change.read();
-        if let Some(cid) = cid.as_deref() {
-            if let Ok(data) = &*list_data.read() {
-                if let Some(row) = data.rows.iter().find(|r| r.change_id == cid) {
-                    let js = format!(
-                        "var el=document.getElementById('change-{0}');if(el)el.scrollIntoView({{block:'nearest'}});",
-                        row.sha
-                    );
-                    let _ = dioxus::document::eval(&js);
-                }
-            }
         }
     });
 
@@ -160,7 +151,16 @@ fn app() -> Element {
                 }
             }
             match &*page.read() {
-                Page::List => rsx! { ListView { list_data, page, selected_change } },
+                Page::List => rsx! {
+                    ListView {
+                        list_data,
+                        metadata_cache,
+                        scroll_offset,
+                        branch: current_branch.read().clone(),
+                        page,
+                        selected_change,
+                    }
+                },
                 Page::Detail { sha } => rsx! {
                     DetailView {
                         sha: sha.clone(),

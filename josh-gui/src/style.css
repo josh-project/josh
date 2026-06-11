@@ -47,6 +47,13 @@ span.header-dir {
 table.changes {
     border-collapse: collapse;
     width: 100%;
+    table-layout: fixed;
+}
+
+table.changes td.num {
+    text-align: right;
+    color: #999;
+    font-variant-numeric: tabular-nums;
 }
 
 table.changes th {
@@ -58,9 +65,22 @@ table.changes th {
     border-bottom: 1px solid #444;
 }
 
+table.changes tbody tr {
+    height: 32px;
+}
+
 table.changes td {
-    padding: 0.35rem 0.75rem;
+    padding: 0 0.75rem;
     border-bottom: 1px solid #2a2a2a;
+    box-sizing: border-box;
+    height: 32px;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+}
+
+table.changes td.loading {
+    color: #555;
 }
 
 code {
