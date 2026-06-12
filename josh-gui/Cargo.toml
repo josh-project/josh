@@ -17,3 +17,4 @@ dioxus = { version = "0.7", features = ["desktop"] }
 serde_json = "1.0"
 josh-changes = { path = "../josh-changes" }
 git2 = { version = "0.20.4", default-features = false, features = ["vendored-libgit2"] }
+tokio = { version = "1", features = ["time"] }
