@@ -39,18 +39,30 @@ pub struct ListData {
 #[component]
 pub fn ListView(
     list_data: Signal<anyhow::Result<ListData>>,
-    metadata_cache: Signal<HashMap<String, RowMetadata>>,
+    mut metadata_cache: Signal<HashMap<String, RowMetadata>>,
     mut scroll_offset: Signal<usize>,
     scope: josh_changes::ChangesRef,
     mut page: Signal<Page>,
     mut selected_change: Signal<Option<String>>,
 ) -> Element {
+    let changes_ref_oid = use_context::<Signal<Option<git2::Oid>>>();
+    let mut prev_metadata_oid = use_signal(|| None::<Option<git2::Oid>>);
+
     {
         let scope_for_meta = scope.clone();
         use_effect(move || {
+            let cur_oid = *changes_ref_oid.read();
             let offset = *scroll_offset.read() as u32;
             let viewport_px = VISIBLE_ROWS * ROW_HEIGHT;
             let overscan_px = OVERSCAN_ROWS * ROW_HEIGHT;
+
+            // If the changes ref has changed since we last populated the cache,
+            // the cached metadata is stale — drop it and refetch.
+            if prev_metadata_oid.peek().as_ref() != Some(&cur_oid) {
+                metadata_cache.write().clear();
+                prev_metadata_oid.set(Some(cur_oid));
+            }
+
             let data_ref = list_data.peek();
             let Ok(data) = &*data_ref else {
                 return;
