@@ -36,7 +36,7 @@ repository, limiting visibility, scope, CI rebuilds, etc.
 You can try this out quickly with this repo and the `docs` folder:
 
 ```
-git clone https://josh-project.dev/josh.git:/docs.git
+git clone https://git.josh-project.dev/josh.git:/docs.git
 ```
 
 ### Build / CI
