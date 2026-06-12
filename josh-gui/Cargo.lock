@@ -4416,6 +4416,7 @@ dependencies = [
  "josh-github-changes",
  "serde",
  "serde_json",
+ "tokio",
 ]
 
 [[package]]
