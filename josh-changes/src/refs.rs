@@ -255,6 +255,15 @@ impl ChangesRef {
     }
 }
 
+/// Return the current OID of the changes ref under `scope`, or `None` if the
+/// ref doesn't exist yet. Used by callers that need a single value to compare
+/// against to detect ref changes.
+pub fn read_ref_oid(repo: &git2::Repository, scope: &ChangesRef) -> Option<git2::Oid> {
+    repo.find_reference(&scope.ref_name())
+        .ok()
+        .and_then(|r| r.target())
+}
+
 /// Read HEAD and return the current branch shorthand. Errors on a
 /// detached HEAD with a message asking the caller to pass an explicit branch.
 // PORT: symbolic-HEAD read is not expressible via resolve_ref; move to a
