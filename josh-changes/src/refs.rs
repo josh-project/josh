@@ -255,6 +255,13 @@ impl ChangesRef {
     }
 }
 
+/// Return the changes ref's target OID, if it exists.
+pub fn read_ref_oid(repo: &git2::Repository, scope: &ChangesRef) -> Option<git2::Oid> {
+    repo.find_reference(&scope.ref_name())
+        .ok()
+        .and_then(|r| r.target())
+}
+
 /// Read HEAD and return the current branch shorthand. Errors on a
 /// detached HEAD with a message asking the caller to pass an explicit branch.
 pub fn head_branch(transaction: &josh_core::cache::Transaction) -> anyhow::Result<String> {

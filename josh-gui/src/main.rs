@@ -74,12 +74,52 @@ pub enum Page {
 fn app() -> Element {
     let initial_scope = use_context::<josh_changes::ChangesRef>();
     let current_scope = use_signal(|| initial_scope.clone());
-    let list_data: Signal<anyhow::Result<list::ListData>> =
+
+    // Views subscribe to this signal to invalidate ref-derived data.
+    let mut changes_ref_oid: Signal<Option<git2::Oid>> = use_signal(|| {
+        git2::Repository::discover(".")
+            .ok()
+            .and_then(|r| josh_changes::read_ref_oid(&r, &current_scope.read()))
+    });
+    use_context_provider(|| changes_ref_oid);
+
+    let mut list_data: Signal<anyhow::Result<list::ListData>> =
         use_signal(|| load_rows(&current_scope.read()));
     let metadata_cache: Signal<HashMap<String, RowMetadata>> = use_signal(HashMap::new);
     let scroll_offset = use_signal(|| 0usize);
     let page = use_signal(|| Page::List);
     let mut selected_change = use_signal(|| None::<String>);
+
+    use_effect(move || {
+        let _ = changes_ref_oid.read();
+        let scope = current_scope.read().clone();
+        list_data.set(load_rows(&scope));
+    });
+
+    // Avoid waiting for the poll after switching scopes.
+    use_effect(move || {
+        let scope = current_scope.read().clone();
+        let new_oid = git2::Repository::discover(".")
+            .ok()
+            .and_then(|r| josh_changes::read_ref_oid(&r, &scope));
+        if new_oid != *changes_ref_oid.peek() {
+            changes_ref_oid.set(new_oid);
+        }
+    });
+
+    // Only publish OID changes to keep idle views from reloading.
+    use_future(move || async move {
+        loop {
+            tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+            let scope = current_scope.peek().clone();
+            let new_oid = git2::Repository::discover(".")
+                .ok()
+                .and_then(|r| josh_changes::read_ref_oid(&r, &scope));
+            if new_oid != *changes_ref_oid.peek() {
+                changes_ref_oid.set(new_oid);
+            }
+        }
+    });
 
     use_effect(move || {
         if let Ok(data) = &*list_data.read() {

@@ -46,6 +46,9 @@ pub struct PrInfo {
 
 #[component]
 pub fn DetailView(sha: String, scope: josh_changes::ChangesRef, mut page: Signal<Page>) -> Element {
+    let changes_ref_oid = use_context::<Signal<Option<git2::Oid>>>();
+    // Establish a reactive dependency on ref changes.
+    let _ = changes_ref_oid.read();
     let data = load_detail(&sha, &scope);
     let mut vote_body = use_signal(String::new);
 
@@ -232,13 +235,10 @@ pub fn DetailView(sha: String, scope: josh_changes::ChangesRef, mut page: Signal
                                             class: "vote-btn approve",
                                             onclick: move |_| {
                                                 let body = vote_body.read().clone();
-                                                let _ = save_vote(
-                                                    &sha, "approve", &body, &scope,
-                                                );
+                                                if save_vote(&sha, "approve", &body, &scope).is_ok() {
+                                                    bump_changes_ref_oid(changes_ref_oid, &scope);
+                                                }
                                                 vote_body.set(String::new());
-                                                page.set(Page::Detail {
-                                                    sha: sha.clone(),
-                                                });
                                             },
                                             "Approve"
                                         }
@@ -252,13 +252,10 @@ pub fn DetailView(sha: String, scope: josh_changes::ChangesRef, mut page: Signal
                                             class: "vote-btn discuss",
                                             onclick: move |_| {
                                                 let body = vote_body.read().clone();
-                                                let _ = save_vote(
-                                                    &sha, "discuss", &body, &scope,
-                                                );
+                                                if save_vote(&sha, "discuss", &body, &scope).is_ok() {
+                                                    bump_changes_ref_oid(changes_ref_oid, &scope);
+                                                }
                                                 vote_body.set(String::new());
-                                                page.set(Page::Detail {
-                                                    sha: sha.clone(),
-                                                });
                                             },
                                             "Discuss"
                                         }
@@ -272,13 +269,10 @@ pub fn DetailView(sha: String, scope: josh_changes::ChangesRef, mut page: Signal
                                             class: "vote-btn revise",
                                             onclick: move |_| {
                                                 let body = vote_body.read().clone();
-                                                let _ = save_vote(
-                                                    &sha, "revise", &body, &scope,
-                                                );
+                                                if save_vote(&sha, "revise", &body, &scope).is_ok() {
+                                                    bump_changes_ref_oid(changes_ref_oid, &scope);
+                                                }
                                                 vote_body.set(String::new());
-                                                page.set(Page::Detail {
-                                                    sha: sha.clone(),
-                                                });
                                             },
                                             "Revise"
                                         }
@@ -435,6 +429,19 @@ pub fn save_comment(
     // surface flush errors) before reporting success.
     transaction.flush_mem_odb()?;
     Ok(content_hash)
+}
+
+/// Refresh the shared OID after a local ref mutation.
+pub fn bump_changes_ref_oid(
+    mut changes_ref_oid: Signal<Option<git2::Oid>>,
+    scope: &josh_changes::ChangesRef,
+) {
+    let new_oid = git2::Repository::discover(".")
+        .ok()
+        .and_then(|r| josh_changes::read_ref_oid(&r, scope));
+    if new_oid != *changes_ref_oid.peek() {
+        changes_ref_oid.set(new_oid);
+    }
 }
 
 pub fn save_vote(
