@@ -1,105 +1,73 @@
 ![仅保留单一历史](/splash.jpg)
 
-借助对 Git 历史进行快速、增量且可逆的过滤，将 monorepo 的优点与 multirepo 的优势结合起来。
+Josh——“Just One Single History”——是一套工具与服务，共同构成一个平台，用于扩展基于Git的分布式开发与协作。
 
-`josh-proxy` 可与任意 Git 托管服务集成：
+Josh的目标是解决当某一组织内，甚至跨多个组织从事软件开发的人数增加时所出现的挑战。其目标体验是：在任意规模的代码库中、由任意数量的贡献者协同工作，而不会降低变更速度。
 
-```
-$ docker run \
-    -p 8000:8000 \
-    -e JOSH_REMOTE=https://github.com \
-    -v josh-vol:/data/git \
-    joshproject/josh-proxy:latest
-```
+## 使用案例
 
-参见[Container options](https://josh-project.github.io/josh/reference/container.html) 页面，获取完整环境变量列表。
+### 仓库过滤
 
-## 用例
+软件组织经常遇到的一个痛点是：为了解决可扩展性、访问控制和范围划分的问题，必须将仓库按项目拆分为多个独立仓库。
 
-### 部分克隆 <a href="https://josh-project.dev/~/ui/browse?repo=josh.git&path=&filter=%3A%2Fdocs&rev=HEAD"><img src="https://img.shields.io/badge/try_it-josh--project.dev-black"/></a>
+我们认为多个仓库本身并非固有优势，而是当下可用工具效率低下的权宜之计。多年来，像GitHub这样的Git平台在集体认知中塑造了对Git能力的若干假设，这些假设至今仍影响着组织在软件开发方式上的决策。
 
-通过将 monorepo 的子目录作为独立仓库来缩小克隆的范围与体积。
+Josh实现了挑战这些假设的核心组件，快速且可逆的Git历史记录变换使得无需再考虑仓库边界——一旦可以独立呈现仓库的任何部分，同时保留历史和贡献能力，边界便不复存在。这带来了前所未有的灵活性：边界不再是静态的——常常是反映组织划分并造成孤岛的静态边界——而是可以在任意时刻、针对特定语境临时决定，并每秒成千上万次进行动态调整的。
+
+例如，Josh能够将monorepo的子文件夹表示为独立仓库，限制可见性、范围、CI重构建等。
+
+以该库和`docs`文件夹为例，你可以快速尝试：
 
 ```
-$ git clone https://josh-project.dev/josh.git:/docs.git
+git clone https://josh-project.dev/josh.git:/docs.git
 ```
 
-克隆的部分仓库（partial repo）在行为上像普通的 Git 仓库，但仅包含子目录下的文件，以及只包含影响这些文件的提交记录。该仓库既支持 fetch，也支持 push。
+### 构建/CI
 
-这不仅能减少工作树中文件的数量、提升客户端性能，还能利用 Git 的分布式开发能力与第三方在 monorepo 的某部分上协作。例如，可以只将仓库的选定部分镜像到公开的 GitHub 仓库或特定客户处。
+Josh的另一个常见用例是与CI和构建系统的集成。Josh提供了GraphQL API，无需检出仓库，即可查看仓库的状态，以及仓库的任意部分映射。对仓库中的任何子项目，这提供了一种快速回答以下问题的方法：
 
-### 项目组合/工作区（Workspace）
+> _此代码以前是否已成功构建？_
 
-简化代码共享和依赖管理。除了对子目录的简单映射外，Josh 还支持对 monorepo 中的内容进行过滤、重映射和任意虚拟仓库的组合。
+## 入门指南
 
-映射信息本身也存储在仓库中，同代码一起进行版本化管理。
+目前Josh项目包含两个主要组成部分：
 
-<table>
-    <thead>
-        <tr>
-            <th>中央 monorepo</th>
-            <th>项目工作区</th>
-            <th>workspace.josh 文件</th>
-        </tr>
-    </thead>
-    <tbody>
-        <tr>
-            <td rowspan=2><img src="docs/src/img/central.svg?sanitize=true" alt="central.git 中的文件和文件夹" /></td>
-            <td><img src="docs/src/img/project1.svg?sanitize=true" alt="project1.git 中的文件和文件夹" /></td>
-            <td>
-<pre>
-dependencies = :/modules:[
-    ::tools/
-    ::library1/
-]
-</pre>
-        </tr>
-        <tr>
-            <td><img src="docs/src/img/project2.svg?sanitize=true" alt="project2.git 中的文件和文件夹" /></td>
-            <td>
-<pre>libs/library1 = :/modules/library1</pre></td>
-        </tr>
-    </tbody>
-</table>
+* _josh CLI_：支持Git仓库部分映射的本地工具。查看<a href="https://josh-project.github.io/josh/guide/gettingstarted.html"> CLI入门指南</a>。
+* _josh-proxy_：一个Git HTTP与SSH代理，提供即时的历史变换（可为多用户提供共享缓存）以及GraphQL API。查看<a href="https://josh-project.github.io/josh/reference/proxy.html">proxy文档</a>。
 
-工作区表现为普通的 Git 仓库：
+除了上面的链接外，Josh还依赖几个核心概念：
 
-```
-$ git clone http://josh/central.git:workspace=workspaces/project1.git
-```
+* **过滤器**：用于描述所需仓库变换的方式：https://josh-project.github.io/josh/reference/filters.html
+* **工作区**：持久化、版本化的过滤器https://josh-project.github.io/josh/guide/workspaces.html
 
-### 简化的 CI/CD
+## 常见问题解答
 
-将所有内容保存在单一仓库后，对每个交付物，CI/CD 系统只需查看一个源即可。而在传统的 monorepo 环境中，依赖管理由构建系统负责，构建系统通常针对特定语言定制，并且需要在文件系统上检出输入文件。因此在不克隆整个仓库并理解所用语言如何处理依赖的情况下，通常无法回答
+请参阅[常见问题解答](https://josh-project.github.io/josh/faq.html)。
 
-> “某次提交会影响哪些交付物，需要重新构建哪些内容？”
+## 即将具有的功能
 
-这个问题。
+我们正在开发一些尚未完全成熟的功能，但最终会在稳定版本中提供。包括：
 
-尤其对于 C 系列语言，隐藏的头文件依赖很容易被忽略。因此通过沙箱限制编译器可见文件，以确保可重现构建，几乎是必要的。
+* 支持过滤与PR堆栈的队列合并
+* 用于堆叠变更的代码审查界面
+* 用Starlark语法编写的过滤器
+* `josh compose`——基于过滤器概念构建的容器化构建编排器
 
-使用 Josh，每个交付物都有自己的虚拟 Git 仓库，在 `workspace.josh` 文件中声明依赖。这样，要回答上述问题，就可以简单地比较提交 ID（commit IDs）。并且由于树过滤（tree filtering），每次构建都被严格沙箱化，仅能看到 monorepo 中实际被映射的部分。
+<hr/>
 
-因此，通常无需像常规构建工具那样克隆多个仓库，即可确定需要重新构建的交付物。
+<hr/>
 
-### GraphQL API
-
-在不克隆仓库的情况下访问 Git 中的内容通常很有用——例如供 CI/CD 系统或 Web 前端（如 dashboard）使用。
-
-Josh 为此提供了 GraphQL API。例如，可以用它查找树中当前存在的所有工作区：
-
-```
-query {
-  rev(at:"refs/heads/master", filter:"::**/workspace.josh") {
-    files { path }
-  }
-}
-```
-
-### 缓存代理
-
-即便不使用部分克隆或工作区等高级功能，`josh-proxy` 也可以作为缓存代理，减少站点间流量或 CI 对主 Git 托管的大量请求。
-
-## 常见问题
-
-详见[常见问题（FAQ）](https://josh-project.github.io/josh/faq_zh_CN.html)页面。
+> *_摘自Linus Torvalds 2007年在谷歌关于git的演讲：_*
+>
+> **听众：**
+>
+> 您是否可以只从仓库中拉取一部分文件，而不是整个库？
+>
+> **Linus：**
+>
+> 你可以把这些文件导出为tar包，也可以导出为单个文件；你还可以重写整个历史，使某个仓库变成“只包含那部分内容的新库”。这类操作是可行的，但代价较高——例如在将旧仓库导入到一个巨大的Git仓库后，再把它拆分为多个较小仓库时会用到。我的意思是，这种做法虽能实现，但一般应尽量避免。这并不是说git不能处理大型项目，只是说git的性能不会像其他情况那样好。你还会遇到一些不希望出现的问题。
+>
+> 跳过这个问题，回到性能问题上来。说到性能，很多人似乎认为性能就是同样的事做得更快，但事实并非如此。
+>
+> 性能并非仅此而已。如果做得非常快、非常好，人们会开始以不同的方式使用它。
+>
