@@ -3269,8 +3269,10 @@ name = "josh-changes"
 version = "26.6.11"
 dependencies = [
  "anyhow",
+ "clap",
  "git2",
  "josh-core",
+ "log",
  "serde",
  "serde_json",
 ]
