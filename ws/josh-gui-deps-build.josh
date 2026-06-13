@@ -1,0 +1,33 @@
+:$label="josh-gui cargo deps build"
+:#image[:+images/rust-gui-dev-local]
+:$cache="sccache"
+
+:+sidecars
+
+inputs = :[
+    :#fetch[:+ws/josh-gui-fetch]
+]
+
+env = :[
+    :$RUSTFLAGS="-D warnings -Ctarget-feature=-crt-static"
+    :$CARGO_HOME="/fetch/cargo-cache"
+]
+
+worktree = :[
+    ::run.sh=ws/josh-gui-deps-build.sh
+    ::check-sccache.sh=ws/check-sccache.sh
+    :+ws/patched-cargo
+    ::**/Cargo.toml
+    ::**/Cargo.lock
+    ::rust-toolchain.toml
+    ::**/.cargo/
+    :[
+        ::**/lib.rs
+        ::**/benches/**/*.rs
+    ]:replace("(?s).+":"")
+    :[
+        ::**/main.rs
+        ::**/src/bin/**/*.rs
+        ::**/build.rs
+    ]:replace("(?s).+":"fn main(){}")
+]
