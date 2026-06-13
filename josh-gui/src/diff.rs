@@ -18,6 +18,7 @@ struct DiffLine {
     text: String,
     old_ln: Option<usize>,
     new_ln: Option<usize>,
+    #[allow(dead_code)]
     line_number: usize,
 }
 
