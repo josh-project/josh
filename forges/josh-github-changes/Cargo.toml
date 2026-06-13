@@ -9,11 +9,17 @@ repository = "https://github.com/josh-project/josh"
 keywords = ["git", "github", "monorepo", "workflow"]
 
 [dependencies]
-git2.workspace = true
 anyhow.workspace = true
-url.workspace = true
+git2.workspace = true
+reqwest.workspace = true
+reqwest-middleware.workspace = true
 serde_json.workspace = true
+tokio.workspace = true
+url.workspace = true
 
 josh-changes.workspace = true
+josh-core.workspace = true
+josh-github-auth.workspace = true
 josh-github-graphql.workspace = true
+josh-github-keyring.workspace = true
 josh-github-webhooks.workspace = true
