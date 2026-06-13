@@ -1,0 +1,32 @@
+:$label="josh-gui build"
+:#image[:+images/rust-gui-dev-local]
+:$cache="sccache"
+:$output="none"
+
+:+sidecars
+
+inputs = :[
+    :#fetch[:+ws/josh-gui-fetch]
+    :#josh-gui-deps-build[:+ws/josh-gui-deps-build]
+]
+
+env = :[
+    :$RUSTFLAGS="-D warnings -Ctarget-feature=-crt-static"
+    :$CARGO_HOME="/fetch/cargo-cache"
+]
+
+worktree = :[
+    ::run.sh=ws/josh-gui-build.sh
+    ::check-sccache.sh=ws/check-sccache.sh
+    :+ws/patched-cargo
+    ::Cargo.lock
+    ::rust-toolchain.toml
+    ::rustfmt.toml
+    ::axum-cgi/
+    ::axum-cgi-server/
+    ::hyper-reverse-proxy/
+    ::josh-*/**/*
+    ::cq/
+    ::forges/
+    ::deployment/
+]

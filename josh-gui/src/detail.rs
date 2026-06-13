@@ -16,12 +16,14 @@ pub struct StackCommit {
     pub sha: String,
     pub subject: String,
     pub author: String,
+    #[allow(dead_code)]
     pub series: String,
 }
 
 pub struct DetailData {
     pub change_id: String,
     pub sha: String,
+    #[allow(dead_code)]
     pub subject: String,
     pub message: String,
     pub author: String,
