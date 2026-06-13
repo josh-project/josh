@@ -11,9 +11,11 @@ keywords = ["git", "monorepo", "workflow", "scm"]
 [dependencies]
 anyhow.workspace = true
 chrono.workspace = true
-
+clap.workspace = true
 gix-actor.workspace = true
 gix-hash.workspace = true
+gix.workspace = true
+log.workspace = true
 serde.workspace = true
 
 josh-core.workspace = true

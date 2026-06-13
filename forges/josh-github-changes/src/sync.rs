@@ -2,38 +2,131 @@
 //! their comments, garbage-collect changes whose PRs closed, and push local
 //! feedback back to GitHub.
 
-use anyhow::{Context, anyhow};
+use anyhow::{anyhow, Context};
 use std::str::FromStr;
 
 use josh_core::git::normalize_repo_path;
 use josh_github_graphql::connection::GithubApiConnection;
 use josh_github_graphql::operations::pull_request::{PrData, PrSummary};
 
-use super::{api_connection_hint, make_api_connection};
+use crate::cache::CachePolicy;
+use crate::connection::{api_connection_hint, make_api_connection};
+use crate::repo::parse_owner_repo;
 
-use super::cache::CachePolicy;
-use crate::config::read_remote_config;
-use crate::forge::Forge;
+#[derive(Debug, Clone, Copy)]
+pub struct SyncOptions {
+    /// Remove existing refs for the selected scope before syncing.
+    pub clean: bool,
+    /// Publish pending comments and votes to GitHub.
+    pub push: bool,
+    /// Bypass fingerprint-cache reads.
+    pub no_cache: bool,
+    /// Fingerprint lifetime in seconds.
+    pub cache_ttl: u64,
+}
 
-/// Sync against GitHub: resolve the (owner, repo) pair for the remote and run
-/// the async sync on a fresh tokio runtime.
-pub fn sync(
+impl Default for SyncOptions {
+    fn default() -> Self {
+        Self {
+            clean: false,
+            push: false,
+            no_cache: false,
+            cache_ttl: 3600,
+        }
+    }
+}
+
+#[derive(Debug, Default, Clone, Copy)]
+pub struct SyncReport {
+    pub local_changes: usize,
+    pub synced: usize,
+    pub skipped: usize,
+    pub total_comments: usize,
+    pub cleaned: usize,
+    pub total_posted: usize,
+    pub total_votes_posted: usize,
+}
+
+/// Synchronize a local scope or its configured GitHub remote.
+pub async fn sync(
+    transaction: &josh_core::cache::Transaction,
+    scope: &josh_changes::ChangesRef,
+    opts: SyncOptions,
+) -> anyhow::Result<SyncReport> {
+    match scope {
+        josh_changes::ChangesRef::Local { branch } => {
+            if opts.push {
+                return Err(anyhow!(
+                    "--push requires --remote <name>; the Local ref has no posting target"
+                ));
+            }
+            if opts.clean {
+                clean_scopes(transaction, None)?;
+            }
+            let changes = josh_changes::sync_local(transaction, branch)?;
+            if changes.is_empty() {
+                println!("No local changes found.");
+            }
+            Ok(SyncReport {
+                local_changes: changes.len(),
+                ..Default::default()
+            })
+        }
+        josh_changes::ChangesRef::Remote { remote, branch } => {
+            let repo_path = normalize_repo_path(transaction.path());
+            let remote_config = josh_changes::remote_config::read_remote_config(&repo_path, remote)
+                .with_context(|| format!("Failed to read remote config for '{}'", remote))?;
+            if remote_config.forge != Some(josh_changes::remote_config::Forge::Github) {
+                return Err(anyhow!("sync is only supported for GitHub remotes"));
+            }
+            sync_from_github(transaction, remote, branch, &remote_config.url, opts).await
+        }
+    }
+}
+
+/// Synchronize one GitHub remote into its changes ref.
+pub async fn sync_from_github(
     transaction: &josh_core::cache::Transaction,
     remote_name: &str,
-    policy: &CachePolicy,
-    push: bool,
-) -> anyhow::Result<()> {
-    let (owner, repo_name) = resolve_github_remote(transaction, Some(remote_name))?;
-
-    let rt = tokio::runtime::Runtime::new()?;
-    rt.block_on(run_sync(
+    _branch: &str,
+    github_url: &str,
+    opts: SyncOptions,
+) -> anyhow::Result<SyncReport> {
+    if opts.clean {
+        clean_scopes(transaction, Some(remote_name))?;
+    }
+    let (owner, repo_name) = parse_owner_repo(github_url)?;
+    let policy = CachePolicy::new(opts.no_cache, opts.cache_ttl);
+    run_sync(
         transaction,
         remote_name,
         &owner,
         &repo_name,
-        policy,
-        push,
-    ))
+        &policy,
+        opts.push,
+    )
+    .await
+}
+
+fn clean_scopes(
+    transaction: &josh_core::cache::Transaction,
+    remote_name: Option<&str>,
+) -> anyhow::Result<()> {
+    let mut to_delete = Vec::new();
+    for scope in josh_changes::all_changes_refs(transaction)? {
+        let selected = match (&scope, remote_name) {
+            (josh_changes::ChangesRef::Local { .. }, None) => true,
+            (josh_changes::ChangesRef::Remote { remote, .. }, Some(name)) => remote == name,
+            _ => false,
+        };
+        if selected {
+            to_delete.push(scope);
+        }
+    }
+    for scope in to_delete {
+        transaction.delete_ref(&scope.ref_name(), josh_core::cache::Expected::Any)?;
+    }
+    Ok(())
 }
 
 /// Pull every open PR's changes and comments from GitHub, garbage-collect
@@ -45,7 +138,7 @@ async fn run_sync(
     repo_name: &str,
     policy: &CachePolicy,
     push: bool,
-) -> anyhow::Result<()> {
+) -> anyhow::Result<SyncReport> {
     let api = make_api_connection()
         .await
         .with_context(api_connection_hint)?;
@@ -54,7 +147,7 @@ async fn run_sync(
     eprintln!("Found {} open PRs on GitHub.", prs.len());
 
     if prs.is_empty() {
-        return Ok(());
+        return Ok(SyncReport::default());
     }
 
     let target_branch_shas = fetch_sync_objects(transaction, owner, repo_name, &prs)?;
@@ -109,8 +202,9 @@ async fn run_sync(
         }
     }
 
+    let report = stats.sync_report();
     stats.report();
-    Ok(())
+    Ok(report)
 }
 
 #[derive(Default)]
@@ -201,6 +295,18 @@ impl SyncStats {
     fn track_gc_skipped(&mut self, change_id: &str, pr_number: i64, reason: String) {
         self.gc_skipped
             .push((change_id.to_string(), pr_number, reason));
+    }
+
+    fn sync_report(&self) -> SyncReport {
+        SyncReport {
+            local_changes: 0,
+            synced: self.synced.len(),
+            skipped: self.skipped.len(),
+            total_comments: self.synced.iter().map(|(_, comments)| comments).sum(),
+            cleaned: self.cleaned.len(),
+            total_posted: self.pushed.iter().map(|(_, comments, _)| comments).sum(),
+            total_votes_posted: self.pushed.iter().map(|(_, _, votes)| votes).sum(),
+        }
     }
 
     /// Print the end-of-sync summary.
@@ -371,21 +477,21 @@ impl GithubSyncCtx<'_> {
 
         josh_changes::store_diff_data(self.transaction, &change, &meta.remote_scope)?;
 
-        josh_github_changes::store_pr_data(
+        crate::store_pr_data(
             self.transaction,
             &meta.change_id,
             &meta.pr_data,
             &meta.remote_scope,
         )?;
 
-        let fetched = josh_github_changes::fetched_comments(&meta.pr_data);
+        let fetched = crate::fetched_comments(&meta.pr_data);
         let written = josh_changes::store_fetched_comments(
             self.transaction,
             &change,
             &fetched,
             &meta.remote_scope,
         )?;
-        josh_github_changes::record_fetched_comments(
+        crate::record_fetched_comments(
             self.transaction,
             &meta.change_id,
             &written,
@@ -538,12 +644,9 @@ impl GithubSyncCtx<'_> {
 
             // Record the final PR state for every candidate, open or closed;
             // a failed ref write skips the candidate like any other failure.
-            if let Err(e) = josh_github_changes::store_pr_data(
-                self.transaction,
-                change_id,
-                &pr_data,
-                remote_scope,
-            ) {
+            if let Err(e) =
+                crate::store_pr_data(self.transaction, change_id, &pr_data, remote_scope)
+            {
                 stats.track_gc_skipped(
                     change_id,
                     pr_number,
@@ -569,10 +672,10 @@ impl GithubSyncCtx<'_> {
                 change_id,
                 remote_scope,
                 &[
-                    josh_github_changes::GITHUB_PR_DATA_PATH,
-                    josh_github_changes::GITHUB_COMMENT_NODE_IDS_PATH,
-                    josh_github_changes::GITHUB_VOTE_NODE_IDS_PATH,
-                    josh_github_changes::GITHUB_CACHE_PATH,
+                    crate::GITHUB_PR_DATA_PATH,
+                    crate::GITHUB_COMMENT_NODE_IDS_PATH,
+                    crate::GITHUB_VOTE_NODE_IDS_PATH,
+                    crate::GITHUB_CACHE_PATH,
                 ],
             ) {
                 Ok(()) => stats.track_cleaned(change_id, pr_number, &pr_data.state),
@@ -596,17 +699,12 @@ impl GithubSyncCtx<'_> {
                 let comments =
                     josh_changes::read_comments(self.transaction, &change_id, &remote_scope)
                         .and_then(|c| {
-                            josh_github_changes::pending_comments(
-                                self.transaction,
-                                &change_id,
-                                &remote_scope,
-                                c,
-                            )
+                            crate::pending_comments(self.transaction, &change_id, &remote_scope, c)
                         });
                 let votes =
                     josh_changes::list_outbox_votes(self.transaction, &change_id, &remote_scope)
                         .and_then(|outbox| {
-                            josh_github_changes::pending_votes(
+                            crate::pending_votes(
                                 self.transaction,
                                 &change_id,
                                 &remote_scope,
@@ -683,13 +781,13 @@ impl GithubSyncCtx<'_> {
         };
 
         if let Some(c) = comments {
-            let post = josh_github_changes::post_comments(self.api, &pr_node_id, c).await;
+            let post = crate::post_comments(self.api, &pr_node_id, c).await;
             let written: Vec<(String, String)> = post
                 .posted
                 .iter()
                 .map(|p| (p.local_id.clone(), p.github_id.clone()))
                 .collect();
-            match josh_github_changes::store_comment_node_ids(
+            match crate::store_comment_node_ids(
                 self.transaction,
                 &pending.change_id,
                 &written,
@@ -708,14 +806,9 @@ impl GithubSyncCtx<'_> {
         }
 
         if let Some(v) = votes {
-            let post = josh_github_changes::post_votes(
-                self.api,
-                &pr_node_id,
-                &pending.head_oid,
-                &v.pending,
-            )
-            .await;
-            match josh_github_changes::store_vote_node_ids(
+            let post =
+                crate::post_votes(self.api, &pr_node_id, &pending.head_oid, &v.pending).await;
+            match crate::store_vote_node_ids(
                 self.transaction,
                 &pending.change_id,
                 &post.posted,
@@ -728,7 +821,7 @@ impl GithubSyncCtx<'_> {
             }
             // Drop outbox entries whose post is now reflected in gh_vote_node_ids.
             // Safe unconditionally -- no-op when nothing needs cleaning.
-            if let Err(e) = josh_github_changes::cleanup_posted_outbox_votes(
+            if let Err(e) = crate::cleanup_posted_outbox_votes(
                 self.transaction,
                 &pending.change_id,
                 &pending.remote_scope,
@@ -768,7 +861,7 @@ fn resolve_pr_number(
     // Custom Change-Id; read the PR number from stored PR data. A corrupt or
     // schema-drifted blob is reported instead of silently dropping the change
     // from GC.
-    match josh_github_changes::read_pr_data(transaction, change_id, remote_scope) {
+    match crate::read_pr_data(transaction, change_id, remote_scope) {
         Ok(Some(data)) => Some(data.number),
         Ok(None) => None,
         Err(e) => {
@@ -815,23 +908,6 @@ fn remote_scope_for(remote_name: &str, target_branch: &str) -> josh_changes::Cha
     }
 }
 
-/// Read the remote config and return the GitHub (owner, repo) pair.
-fn resolve_github_remote(
-    transaction: &josh_core::cache::Transaction,
-    remote: Option<&str>,
-) -> anyhow::Result<(String, String)> {
-    let remote_name = remote.unwrap_or("origin");
-    let repo_path = normalize_repo_path(transaction.path());
-    let remote_config = read_remote_config(&repo_path, remote_name)
-        .with_context(|| format!("Failed to read remote config for '{}'", remote_name))?;
-
-    if remote_config.forge != Some(Forge::Github) {
-        return Err(anyhow!("sync is only supported for GitHub remotes"));
-    }
-
-    josh_github_changes::repo::parse_owner_repo(&remote_config.url)
-}
-
 fn fetch_sync_objects(
     transaction: &josh_core::cache::Transaction,
     owner: &str,
@@ -852,11 +928,11 @@ fn fetch_sync_objects(
                 refspecs.push(oid.clone());
             }
         }
-        if let Some(target) = parse_changes_target(&pr.head_ref_name)
-            && seen_targets.insert(target.clone())
-        {
-            refspecs.push(format!("+refs/heads/{0}:{SCRATCH}/{0}", target));
-            targets.push(target);
+        if let Some(target) = parse_changes_target(&pr.head_ref_name) {
+            if seen_targets.insert(target.clone()) {
+                refspecs.push(format!("+refs/heads/{0}:{SCRATCH}/{0}", target));
+                targets.push(target);
+            }
         }
     }
 

@@ -3300,12 +3300,14 @@ version = "26.8.28"
 dependencies = [
  "anyhow",
  "chrono",
+ "clap",
  "gix",
  "gix-actor",
  "gix-hash",
  "josh-core",
  "josh-git-serde",
  "josh-gix-ext",
+ "log",
  "serde",
  "tempfile",
 ]
@@ -3565,10 +3567,16 @@ dependencies = [
  "josh-changes",
  "josh-core",
  "josh-git-serde",
+ "josh-github-auth",
  "josh-github-graphql",
+ "josh-github-keyring",
  "josh-github-webhooks",
+ "reqwest",
+ "reqwest-middleware",
  "serde",
+ "serde_json",
  "tempfile",
+ "tokio",
  "url",
 ]
 
