@@ -75,10 +75,12 @@ RUN cd lfs-test-server && GOPATH=/opt/git-lfs go install
 
 ENV PATH=${PATH}:/opt/git-lfs/bin
 
+ARG GIT_LFS_SHA=b84b33847fe6458f36ef521534dc0eac953cb379
 RUN <<EOF
 set -eux
 git clone https://github.com/git-lfs/git-lfs.git /usr/src/git-lfs
 cd /usr/src/git-lfs
+git checkout "${GIT_LFS_SHA}"
 make
 cp bin/git-lfs /opt/git-lfs/bin
 EOF
