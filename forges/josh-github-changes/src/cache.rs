@@ -11,6 +11,61 @@ use josh_github_graphql::operations::pull_request::PrSummary;
 
 use serde::{Deserialize, Serialize};
 
+/// Freezes cache policy and time across one sync run.
+pub(crate) struct CachePolicy {
+    no_cache: bool,
+    ttl: u64,
+    now: u64,
+}
+
+impl CachePolicy {
+    pub(crate) fn new(no_cache: bool, ttl: u64) -> Self {
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_secs())
+            .unwrap_or(0);
+        CachePolicy { no_cache, ttl, now }
+    }
+
+    /// Treat read errors as misses after reporting them.
+    pub(crate) fn lookup(
+        &self,
+        transaction: &Transaction,
+        change_id: &str,
+        remote_scope: &ChangesRef,
+        pr: &PrSummary,
+    ) -> bool {
+        if self.no_cache {
+            return false;
+        }
+        match read_sync_fingerprint(transaction, change_id, remote_scope) {
+            Ok(Some(fp)) if fp.matches(pr) && fp.is_fresh(self.now, self.ttl) => true,
+            Ok(_) => false,
+            Err(e) => {
+                eprintln!(
+                    "  PR #{}: failed to read sync cache: {} — fetching fresh",
+                    pr.number, e
+                );
+                false
+            }
+        }
+    }
+
+    pub(crate) fn record(
+        &self,
+        transaction: &Transaction,
+        change_id: &str,
+        remote_scope: &ChangesRef,
+        pr: &PrSummary,
+    ) {
+        // Forced fetches bypass reads but still refresh the cache.
+        let fp = SyncFingerprint::from_summary(pr, self.now);
+        if let Err(e) = store_sync_fingerprint(transaction, change_id, &fp, remote_scope) {
+            eprintln!("  PR #{}: failed to write sync cache: {}", pr.number, e);
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SyncFingerprint {
     pub updated_at: String,
