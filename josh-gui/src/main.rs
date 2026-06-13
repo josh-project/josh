@@ -147,7 +147,6 @@ fn list_view(rows: Signal<anyhow::Result<Vec<Row>>>, mut page: Signal<Page>) -> 
                 thead {
                     tr {
                         th { "Change-Id" }
-                        th { "SHA" }
                         th { "Subject" }
                         th { "Author" }
                         th { "Series" }
@@ -162,17 +161,15 @@ fn list_view(rows: Signal<anyhow::Result<Vec<Row>>>, mut page: Signal<Page>) -> 
                                     tr {
                                         onclick: move |_| page.set(Page::Detail { sha: s.clone() }),
                                         td { code { "{change_id}" } }
-                                        td { code { "{&sha[..8]}" } }
                                         td { "{subject}" }
                                         td { "{author}" }
                                         td { "{series}" }
                                     }
                                 }
                             },
-                            Row::Contributing { change_id, sha, subject, author, series } => rsx! {
+                            Row::Contributing { change_id, sha: _, subject, author, series } => rsx! {
                                 tr { class: "contributing",
                                     td { code { class: "muted", "{change_id}" } }
-                                    td { code { "{&sha[..8]}" } }
                                     td { "{subject}" }
                                     td { "{author}" }
                                     td { "{series}" }
