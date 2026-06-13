@@ -182,6 +182,32 @@ pub fn sync_changes(
     Ok(changes)
 }
 
+/// Run a local-scope sync end-to-end: derive tip from HEAD, derive base from
+/// `refs/remotes/origin/<HEAD branch>`, and store discovered changes under the
+/// `ChangesRef::Local { branch }` ref.
+///
+/// The `branch` argument selects the scope ref; the HEAD branch (which may
+/// differ when a caller passes an explicit target) is used only to find the
+/// base commit.
+pub fn sync_local(
+    repo: &git2::Repository,
+    transaction: &josh_core::cache::Transaction,
+    branch: &str,
+) -> anyhow::Result<Vec<Change>> {
+    let head = repo.head()?.peel_to_commit()?;
+    let head_branch = repo.head()?.shorthand().ok().map(|s| s.to_string());
+    let base_oid = head_branch
+        .as_ref()
+        .and_then(|b| {
+            repo.find_reference(&format!("refs/remotes/origin/{}", b))
+                .ok()
+                .and_then(|r| r.peel_to_commit().ok())
+                .map(|c| c.id())
+        })
+        .unwrap_or(git2::Oid::ZERO_SHA1);
+    sync_changes(transaction, head.id(), base_oid, branch)
+}
+
 pub fn list_changes(
     transaction: &josh_core::cache::Transaction,
     scope: &ChangesRef,

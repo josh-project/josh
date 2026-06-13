@@ -1,11 +1,11 @@
-use std::sync::Arc;
-
 use anyhow::Context;
 
+use josh_github_auth::APP_CLIENT_ID;
 use josh_github_auth::device_flow::DeviceAuthFlow;
-use josh_github_auth::middleware::GithubAuthMiddleware;
-use josh_github_auth::{APP_CLIENT_ID, GITHUB_USER_TOKEN_ENV};
-use josh_github_graphql::connection::GithubApiConnection;
+
+pub use josh_github_changes::connection::{
+    GITHUB_USER_TOKEN_ENV, api_connection_hint, make_api_connection,
+};
 
 /// Login to GitHub using device flow and store the token.
 pub async fn login() -> anyhow::Result<()> {
@@ -51,21 +51,4 @@ pub fn logout() -> anyhow::Result<()> {
     keyring.delete_credential()?;
 
     Ok(())
-}
-
-pub async fn make_api_connection() -> Option<GithubApiConnection> {
-    let middleware =
-        GithubAuthMiddleware::from_environment(josh_github_keyring::load_stored_token())?;
-
-    Some(GithubApiConnection::from_middleware(
-        Arc::new(middleware),
-        None,
-    ))
-}
-
-pub fn api_connection_hint() -> String {
-    format!(
-        "Couldn't create API connection; log in to GitHub with 'josh auth login github', or set {} environment variable",
-        GITHUB_USER_TOKEN_ENV
-    )
 }
