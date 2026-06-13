@@ -49,6 +49,37 @@ span.header-scope {
     border-radius: 3px;
     white-space: nowrap;
     flex-shrink: 0;
+    cursor: pointer;
+    user-select: none;
+}
+
+span.header-scope:hover {
+    border-color: #555;
+    color: #aaa;
+}
+
+span.header-scope.syncing {
+    cursor: default;
+    pointer-events: none;
+}
+
+span.header-scope.syncing::before {
+    content: "";
+    display: inline-block;
+    width: 10px;
+    height: 10px;
+    margin-right: 0.4rem;
+    vertical-align: middle;
+    border: 1.5px solid #444;
+    border-top-color: #aaa;
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+    to {
+        transform: rotate(360deg);
+    }
 }
 
 .scroll-table {
