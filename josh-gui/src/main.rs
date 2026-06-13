@@ -64,6 +64,25 @@ pub fn scope_label(scope: &josh_changes::ChangesRef) -> String {
     }
 }
 
+async fn run_sync(scope: josh_changes::ChangesRef) -> anyhow::Result<()> {
+    let paths = josh_core::git::discover_repository_paths()?;
+    let cache = std::sync::Arc::new(
+        josh_core::cache::CacheStack::new()
+            .with_backend(josh_core::cache::SledCacheBackend::new(&paths.common_dir))
+            .with_backend(josh_core::cache::DistributedCacheBackend::new(
+                &paths.common_dir,
+            )?),
+    );
+    let transaction = josh_core::cache::TransactionContext::new(&paths.git_dir, cache).open()?;
+    josh_github_changes::sync::sync(
+        &transaction,
+        &scope,
+        josh_github_changes::sync::SyncOptions::default(),
+    )
+    .await?;
+    Ok(())
+}
+
 #[derive(Clone, PartialEq)]
 pub enum Page {
     List,
@@ -176,6 +195,27 @@ fn app() -> Element {
     };
 
     let scope_text = scope_label(&current_scope.read());
+    let mut sync_in_progress: Signal<bool> = use_signal(|| false);
+    let scope_class = if *sync_in_progress.read() {
+        "header-scope syncing"
+    } else {
+        "header-scope"
+    };
+    let on_sync_click = move |_| {
+        // Avoid subscribing this handler to the signal it mutates.
+        if *sync_in_progress.peek() {
+            return;
+        }
+        sync_in_progress.set(true);
+        let scope = current_scope.read().clone();
+        spawn(async move {
+            if let Err(e) = run_sync(scope).await {
+                eprintln!("sync failed: {e:#}");
+            }
+            sync_in_progress.set(false);
+            // Let the ref poll publish the resulting OID.
+        });
+    };
 
     rsx! {
         style { {include_str!("style.css")} }
@@ -195,7 +235,7 @@ fn app() -> Element {
                     }
                 }
                 {breadcrumb(&page.read(), page, list_data)}
-                span { class: "header-scope", "{scope_text}" }
+                span { class: "{scope_class}", onclick: on_sync_click, "{scope_text}" }
             }
             match &*page.read() {
                 Page::List => rsx! {
