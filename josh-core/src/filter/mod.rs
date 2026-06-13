@@ -1927,11 +1927,29 @@ fn per_rev_filter(
     let meta = filter.into_meta();
     let commit_filter = propagate_meta(commit_filter, &meta);
     // Compute the difference between the current commit's filter and each parent's filter.
-    // This determines what new content should be contributed by that parent in the filtered history.
+    // Figure out which new entries in this commit's tree appeared because of the filter changes,
+    // as opposed of the changes of the trees itself. For those entries, we want to create
+    // synthetic merges that preserve the history of the new entries coming in.
     let extra_parents = parent_filters
         .into_iter()
         .map(|(parent, pcw)| {
-            let f = opt::optimize(to_filter(Op::Subtract(commit_filter.peel(), pcw.peel())));
+            // `Op::Pin` is somewhat of a special category: it doesn't operate on either
+            // commit trees or the history graph, and is more of a marker for per-rev
+            // filter application process. Therefore, in the tree-level `apply`, it's an identity.
+            //
+            // This is important because we rely on the filter optimizer to properly fold
+            // `Op::Subtract`. If there are pins inside, the optimizer will not be able to collapse
+            // it, and this will trigger extra history walks in `apply_to_commit2` below.
+            //
+            // Actual work of :pin still happens in `pin_details` below, so the :pin still works.
+            fn strip_pins(f: Filter) -> Filter {
+                legalize_pin(f, &|_| to_filter(Op::Nop))
+            }
+
+            let f = opt::optimize(to_filter(Op::Subtract(
+                strip_pins(commit_filter.peel()),
+                strip_pins(pcw.peel()),
+            )));
             let f = propagate_meta(f, &meta);
             apply_to_commit2(f, &parent, transaction)
         })
