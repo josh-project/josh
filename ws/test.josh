@@ -2,6 +2,7 @@
 :$output="none"
 inputs = :[
     :#cargo-test-run[:+ws/cargo-test-run]
+    :#josh-gui-build[:+ws/josh-gui-build]
     :#fmt[
         :$label="cargo fmt"
         :#image[:+images/rust-dev-local]
