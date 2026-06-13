@@ -1,21 +1,6 @@
-use clap::ValueEnum;
-use std::fmt::Formatter;
-
 pub mod github;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
-pub enum Forge {
-    /// GitHub
-    Github,
-}
-
-impl std::fmt::Display for Forge {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Forge::Github => f.write_str("github"),
-        }
-    }
-}
+pub use josh_changes::remote_config::Forge;
 
 pub fn guess_forge(url: &str) -> Option<Forge> {
     if josh_github_auth::is_github_url(url) {

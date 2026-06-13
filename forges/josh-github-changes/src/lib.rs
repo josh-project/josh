@@ -1,5 +1,7 @@
 pub mod admission;
+pub mod connection;
 pub mod repo;
+pub mod sync;
 
 use std::collections::HashMap;
 
