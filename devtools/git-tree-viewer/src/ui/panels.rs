@@ -98,7 +98,7 @@ fn show_left_panel(ui: &mut egui::Ui, app: &mut GitDebugApp) {
             egui::Panel::bottom("left_bottom_pane")
                 .resizable(true)
                 .default_size(PANEL_DEFAULT_WIDTH)
-                .show_inside(ui, |ui| {
+                .show(ui, |ui| {
                     show_commits_section(ui, app);
                 });
         }
@@ -140,23 +140,23 @@ fn show_central_panel(ui: &mut egui::Ui, app: &mut GitDebugApp) {
 }
 
 pub fn show_panels(ui: &mut egui::Ui, app: &mut GitDebugApp) {
-    egui::Panel::top("top_panel").show_inside(ui, |ui| {
+    egui::Panel::top("top_panel").show(ui, |ui| {
         show_top_panel(ui, &app.ui_state.error);
     });
 
     egui::Panel::left("left_panel")
         .default_size(PANEL_DEFAULT_WIDTH)
-        .show_inside(ui, |ui| {
+        .show(ui, |ui| {
             show_left_panel(ui, app);
         });
 
     egui::Panel::right("right_panel")
         .default_size(PANEL_DEFAULT_WIDTH)
-        .show_inside(ui, |ui| {
+        .show(ui, |ui| {
             show_file_preview(ui, &app.ui_state.selected_file, &app.ui_state.file_content);
         });
 
-    egui::CentralPanel::default().show_inside(ui, |ui| {
+    egui::CentralPanel::default().show(ui, |ui| {
         show_central_panel(ui, app);
     });
 }

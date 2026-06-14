@@ -28,7 +28,7 @@ const WINDOW_SIZE: [f32; 2] = [265.0, 120.0];
 
 impl eframe::App for ModeDialog {
     fn ui(&mut self, ui: &mut egui::Ui, _: &mut eframe::Frame) {
-        egui::CentralPanel::default().show_inside(ui, |ui| {
+        egui::CentralPanel::default().show(ui, |ui| {
             ui.vertical_centered(|ui| {
                 ui.heading("Git Tree Viewer");
                 ui.separator();
