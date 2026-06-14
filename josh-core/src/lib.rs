@@ -143,6 +143,27 @@ impl $name {
     }
 }
 
+/// Reset all of josh's caches to a cold state.
+///
+/// This clears the process-global in-memory caches shared across transactions,
+/// the workspace/ancestor caches, and the on-disk sled cache. It does not touch
+/// the filter interning tables or the filter optimizer memoization, which are
+/// structural and independent of repository data.
+///
+/// Per-transaction in-memory caches are not cleared here: transactions are
+/// ephemeral, so callers reset them simply by dropping and reopening the
+/// transaction.
+///
+/// Nuking the on-disk sled cache is safe: it is ephemeral and, when configured,
+/// backed by a remote cache. Intended for benchmarks and tests that need a cold
+/// cache between runs.
+pub fn reset_caches() -> anyhow::Result<()> {
+    cache::clear_global_caches();
+    filter::clear_caches();
+    cache::sled_clear()?;
+    Ok(())
+}
+
 #[tracing::instrument(level = tracing::Level::TRACE, skip(transaction))]
 pub fn filter_commit(
     transaction: &cache::Transaction,

@@ -27,5 +27,6 @@ worktree = :[
     ::cq/
     ::forges/
     ::deployment/
+    ::devtools/josh-test-support/
     ::static/
 ]

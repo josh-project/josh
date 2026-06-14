@@ -27,6 +27,12 @@ static ANCESTORS: LazyLock<
     std::sync::Mutex<std::collections::HashMap<git2::Oid, std::collections::HashSet<git2::Oid>>>,
 > = LazyLock::new(Default::default);
 
+/// Clear the process-global workspace and ancestor caches.
+pub fn clear_caches() {
+    WORKSPACES.lock().unwrap().clear();
+    ANCESTORS.lock().unwrap().clear();
+}
+
 // MESSAGE_MATCH_ALL_REGEX is now in josh-filter
 
 // Filter type and builder methods are now in josh-filter

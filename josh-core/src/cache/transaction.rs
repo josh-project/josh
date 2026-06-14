@@ -23,6 +23,13 @@ static POPULATE_MAP: LazyLock<RwLock<HashMap<(git2::Oid, git2::Oid), git2::Oid>>
 static GLOB_MAP: LazyLock<RwLock<HashMap<(git2::Oid, git2::Oid), git2::Oid>>> =
     LazyLock::new(Default::default);
 
+/// Clear the process-global in-memory caches shared across all transactions.
+pub fn clear_global_caches() {
+    REF_CACHE.write().unwrap().clear();
+    POPULATE_MAP.write().unwrap().clear();
+    GLOB_MAP.write().unwrap().clear();
+}
+
 pub struct TransactionContext {
     path: std::path::PathBuf,
     cache: std::sync::Arc<CacheStack>,

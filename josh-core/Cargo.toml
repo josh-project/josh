@@ -10,7 +10,11 @@ readme = "../README.md"
 edition = "2024"
 
 [[bench]]
-name = "ultrawide"
+name = "ultrawide_parse"
+harness = false
+
+[[bench]]
+name = "ultrawide_pin"
 harness = false
 
 [dependencies]
@@ -52,3 +56,5 @@ josh-starlark.workspace = true
 [dev-dependencies]
 rand = "0.10.1"
 criterion2 = { version = "3.0.3" }
+tempfile.workspace = true
+josh-test-support = { path = "../devtools/josh-test-support" }
