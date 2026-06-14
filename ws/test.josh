@@ -19,6 +19,7 @@ inputs = :[
             ::cq/
             ::forges/
             ::deployment/
+            ::devtools/josh-test-support/
         ]
     ]
     :!ws/tests-per-category[::tests/]:exclude[:[::tests/]]

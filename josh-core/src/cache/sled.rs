@@ -8,6 +8,25 @@ use crate::filter::Filter;
 
 static DB: LazyLock<std::sync::Mutex<Option<sled::Db>>> = LazyLock::new(Default::default);
 
+/// Remove all entries from every tree in the global on-disk cache.
+///
+/// This nukes the persistent sled cache. Doing so is safe: the sled cache is
+/// ephemeral and, when configured, backed by a remote cache. Primarily intended
+/// for benchmarks and tests that need a cold cache between runs. Does nothing if
+/// the cache has not been loaded.
+pub fn sled_clear() -> anyhow::Result<()> {
+    let db = DB.lock().unwrap();
+    let Some(db) = db.as_ref() else {
+        return Ok(());
+    };
+
+    for name in db.tree_names() {
+        db.open_tree(&name)?.clear()?;
+    }
+
+    Ok(())
+}
+
 pub fn sled_print_stats() -> anyhow::Result<()> {
     let db = DB.lock().unwrap();
     let db = match db.as_ref() {

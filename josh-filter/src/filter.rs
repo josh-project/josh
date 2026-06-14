@@ -47,6 +47,12 @@ impl Filter {
         self.chain(to_filter(Op::Exclude(other)))
     }
 
+    /// Chain a filter that pins the result of `other`, holding back entries that
+    /// would otherwise change across revisions
+    pub fn pin(self, other: Filter) -> Filter {
+        self.chain(to_filter(Op::Pin(other)))
+    }
+
     /// Create a no-op filter that passes everything through unchanged
     pub fn nop(self) -> Filter {
         self
