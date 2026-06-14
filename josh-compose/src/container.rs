@@ -156,11 +156,13 @@ pub fn run_container(
             dep_errors.push(format!("dependency {dep_name} failed: {e}"));
             continue;
         }
+        let dep_meta = meta::read_meta(repo, dep_tree)?;
+        if dep_meta.output == OutputMode::None {
+            continue;
+        }
         let dep_out_vol = format!("out_{dep_tree}");
         if !podman::volume_exists(&dep_out_vol)? {
-            dep_errors.push(format!(
-                "dependency {dep_name} has no output volume (output must not be 'none')"
-            ));
+            dep_errors.push(format!("dependency {dep_name} has no output volume"));
             continue;
         }
         dep_volumes.push((dep_out_vol, format!("/{dep_name}"), true));
