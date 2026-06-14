@@ -15,7 +15,7 @@ git2 = { version = "0.21", default-features = false, features = ["vendored-opens
 anyhow = { version = "1", features = ["backtrace"] }
 clap = { version = "4.6.1", features = ["derive", "env"] }
 egui = "0.34.2"
-eframe = { version = "0.34.2", default-features = false, features = ["wgpu"] }
+eframe = { version = "0.34.2", default-features = false, features = ["wgpu", "wayland", "x11"] }
 axum = { version = "0.8", default-features = false, features = ["http1", "json", "tokio"] }
 tokio = { version = "1", default-features = false, features = ["rt-multi-thread", "net"] }
 serde = { version = "1", features = ["derive"] }
