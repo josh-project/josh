@@ -36,7 +36,7 @@ so the workspace.josh will still appear in the root of the workspace
           :prefix=a
       ]
       ::sub2/subsub/
-      b = ::ws/workspace.josh
+      b/ws = :/ws::workspace.josh
   ]
   [2] :workspace=ws
   [3] reachable_roots

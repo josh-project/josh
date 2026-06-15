@@ -49,10 +49,14 @@
   6c3969ebc7f3a9286e3b94fea28646aaaa9021b1
   [1] :prefix=b
   [2] :/sub3
-  [2] :[
-      a = :/sub1
-      ::sub2/subsub/
-  ]
+  [2] :subtract[
+          :[
+              st = :/st::config.josh
+              a = :/sub1
+              ::sub2/subsub/
+          ]
+          :/st::config.josh
+      ]
   [3] :+st/config
   [7] reachable_roots
   [7] sequence_number
@@ -61,17 +65,25 @@
   [1] :prefix=b
   [2] :+st_new/config
   [2] :/sub3
-  [2] :[
-      a = :/sub1
-      ::sub2/subsub/
-  ]
+  [2] :subtract[
+          :[
+              st = :/st::config.josh
+              a = :/sub1
+              ::sub2/subsub/
+          ]
+          :/st::config.josh
+      ]
   [3] :+st/config
-  [5] :[
-      ::st/config.josh
-      a = :/sub1
-      ::sub2/subsub/
-      b = :/sub3
-  ]
+  [5] :subtract[
+          :[
+              st = :/st::config.josh
+              st_new = :/st_new::config.josh
+              a = :/sub1
+              ::sub2/subsub/
+              b = :/sub3
+          ]
+          :/st_new::config.josh
+      ]
   [7] reachable_roots
   [7] sequence_number
 
@@ -184,27 +196,36 @@
   $ josh-filter -s :+st/config master --update refs/heads/filtered
   267d7721cca8af54f01f44756b10ede7b22ef238
   [1] :prefix=b
+  [1] :prefix=st_new
   [2] :+st_new/config
   [2] :/sub3
-  [2] :[
-      a = :/sub1
-      ::sub2/subsub/
-  ]
   [2] :subtract[
-          ::st_new/config.josh
+          :/st_new::config.josh
           :[
               a = :/sub1
               ::sub2/subsub/
               b = :/sub3
           ]
       ]
+  [2] :subtract[
+          :[
+              st = :/st::config.josh
+              a = :/sub1
+              ::sub2/subsub/
+          ]
+          :/st::config.josh
+      ]
   [4] :+st/config
-  [5] :[
-      ::st/config.josh
-      a = :/sub1
-      ::sub2/subsub/
-      b = :/sub3
-  ]
-  [8] reachable_roots
-  [8] sequence_number
+  [5] :subtract[
+          :[
+              st = :/st::config.josh
+              st_new = :/st_new::config.josh
+              a = :/sub1
+              ::sub2/subsub/
+              b = :/sub3
+          ]
+          :/st_new::config.josh
+      ]
+  [9] reachable_roots
+  [9] sequence_number
 

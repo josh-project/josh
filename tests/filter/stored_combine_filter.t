@@ -52,11 +52,16 @@
   $ josh-filter -s :+st/config
   9527d0249f419b172c6ca02390fde00f81e9c078
   [2] :+st/config
-  [2] :[
-      ::sub1/
-      ::sub2/subsub/
-  ]
-  [2] :prefix=x
+  [2] :subtract[
+          :[
+              st = :/st::config.josh
+              x = :[
+                  ::sub1/
+                  ::sub2/subsub/
+              ]
+          ]
+          :/st::config.josh
+      ]
   [4] reachable_roots
   [4] sequence_number
 
@@ -84,21 +89,31 @@
   f9e1862628d454b0cc4e98305983335d9c615113
   [2] :+st/config
   [2] :+st2/config
-  [2] :[
-      ::sub1/
-      ::sub2/subsub/
-  ]
-  [2] :prefix=x
-  [3] :[
-      a = :[
-          ::sub2/subsub/
-          ::sub3/
+  [2] :subtract[
+          :[
+              st = :/st::config.josh
+              x = :[
+                  ::sub1/
+                  ::sub2/subsub/
+              ]
+          ]
+          :/st::config.josh
       ]
-      blub = :/sub1
-  ]
-  [3] :prefix=xyz
-  [7] reachable_roots
-  [7] sequence_number
+  [3] :subtract[
+          :[
+              st2 = :/st2::config.josh
+              xyz = :[
+                  a = :[
+                      ::sub2/subsub/
+                      ::sub3/
+                  ]
+                  blub = :/sub1
+              ]
+          ]
+          :/st2::config.josh
+      ]
+  [4] reachable_roots
+  [4] sequence_number
 
   $ git log --graph --pretty=%s FILTERED_HEAD
   * add st

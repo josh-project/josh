@@ -563,6 +563,7 @@ fn step(filter: Filter) -> Filter {
     }
     let original = filter;
     let result = to_filter(match to_op(filter) {
+        Op::Subdir(path) if path.as_os_str().is_empty() => Op::Nop,
         Op::Subdir(path) => {
             if path.components().count() > 1 {
                 Op::Chain(
@@ -574,6 +575,7 @@ fn step(filter: Filter) -> Filter {
                 Op::Subdir(path)
             }
         }
+        Op::Prefix(path) if path.as_os_str().is_empty() => Op::Nop,
         Op::Prefix(path) => {
             if path.components().count() > 1 {
                 Op::Chain(
@@ -584,6 +586,27 @@ fn step(filter: Filter) -> Filter {
                 )
             } else {
                 Op::Prefix(path)
+            }
+        }
+        Op::File(dest_path, source_path)
+            if source_path.components().count() > 1 || dest_path.components().count() > 1 =>
+        {
+            if let (Some(src_parent), Some(src_name), Some(dst_parent), Some(dst_name)) = (
+                source_path.parent(),
+                source_path.file_name(),
+                dest_path.parent(),
+                dest_path.file_name(),
+            ) {
+                Op::Chain(vec![
+                    to_filter(Op::Subdir(src_parent.to_path_buf())),
+                    to_filter(Op::File(
+                        std::path::PathBuf::from(dst_name),
+                        std::path::PathBuf::from(src_name),
+                    )),
+                    to_filter(Op::Prefix(dst_parent.to_path_buf())),
+                ])
+            } else {
+                Op::File(dest_path, source_path)
             }
         }
         Op::Rev(filters) => Op::Rev(

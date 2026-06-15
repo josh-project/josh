@@ -240,11 +240,12 @@ filter = compose(all_file_filters)
     let filter = evaluate(script, root_tree_oid, &repo)?;
     let filter_spec = spec(filter);
 
-    // The filter should contain all files: README.md, src/main.rs, src/lib/utils.rs
-    // Compose of file filters (sorted alphabetically): :[::README.md,::src/lib/utils.rs,::src/main.rs]
+    // The filter should contain all files: README.md, src/main.rs, src/lib/utils.rs.
+    // File filters with multi-component paths decompose into Subdir + File + Prefix
+    // chains; common Subdir/Prefix layers around `src` and `lib` get factored out.
     assert_eq!(
         filter_spec,
-        ":[::README.md,::src/lib/utils.rs,::src/main.rs]"
+        ":[::README.md,:/src:[:/lib::utils.rs:prefix=lib,::main.rs]:prefix=src]"
     );
     Ok(())
 }

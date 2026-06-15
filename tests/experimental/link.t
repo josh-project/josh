@@ -32,14 +32,16 @@ Test Link filter (identical to Adapt)
 
   $ josh-filter -s :adapt=submodules:link=embedded master --update refs/josh/filter/master
   92633928cfadfc6a62a6e9b6d5f2a1e133b24877
+  [1] ::.link.josh
   [1] :embed=libs
+  [1] :prefix=libs
   [1] :unapply(547cadac76e234f77d5b363a4c517bf7a85cd4ee:/libs)
   [2] :"{@}"
-  [2] ::libs/.link.josh
+  [2] :/libs
   [2] :adapt=submodules
   [2] :link=embedded
-  [7] reachable_roots
-  [7] sequence_number
+  [8] reachable_roots
+  [8] sequence_number
   $ git ls-tree -r --name-only refs/josh/filter/master
   libs/.link.josh
   libs/bar/file2.txt
