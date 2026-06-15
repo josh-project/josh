@@ -21,6 +21,8 @@ static INVERTED: LazyLock<std::sync::Mutex<FilterHashMap>> =
     LazyLock::new(|| std::sync::Mutex::new(HashMap::default()));
 static SIMPLIFIED: LazyLock<std::sync::Mutex<FilterHashMap>> =
     LazyLock::new(|| std::sync::Mutex::new(HashMap::default()));
+static FLATTENED: LazyLock<std::sync::Mutex<FilterHashMap>> =
+    LazyLock::new(|| std::sync::Mutex::new(HashMap::default()));
 
 fn normalize_path(path: &std::path::Path) -> std::path::PathBuf {
     let mut components = path.components().peekable();
@@ -196,6 +198,9 @@ pub fn simplify(filter: Filter) -> Filter {
  * the difference between two complex filters.
  */
 pub fn flatten(filter: Filter) -> Filter {
+    if let Some(f) = FLATTENED.lock().unwrap().get(&filter) {
+        return *f;
+    }
     let original = filter;
     let result = to_filter(match to_op(filter) {
         Op::Compose(filters) => {
@@ -243,7 +248,9 @@ pub fn flatten(filter: Filter) -> Filter {
                         new_chain[i] = compose_filter;
                         result.push(to_filter(Op::Chain(new_chain)));
                     }
-                    return to_filter(Op::Compose(result));
+                    let distributed = to_filter(Op::Compose(result));
+                    FLATTENED.lock().unwrap().insert(original, distributed);
+                    return distributed;
                 }
             }
             Op::Chain(flattened.iter().map(|f| flatten(*f)).collect())
@@ -261,11 +268,14 @@ pub fn flatten(filter: Filter) -> Filter {
         _ => to_op(filter),
     });
 
-    if result == original {
+    let r = if result == original {
         result
     } else {
         flatten(result)
-    }
+    };
+
+    FLATTENED.lock().unwrap().insert(original, r);
+    r
 }
 
 // FIXME: This code is somewhat complex and can probably be simplified
