@@ -52,8 +52,8 @@
 
   $ josh-filter -s c=:exclude[::sub1/file2] master --update refs/josh/filter/master
   d407c3a1d5fc72fb0e001795b08d76c4b246f8d0
+  [2] :exclude[:/sub1::file2:prefix=sub1]
   [2] :exclude[::sub1/]
-  [2] :exclude[::sub1/file2]
   [3] :prefix=c
   [5] reachable_roots
   [5] sequence_number
@@ -73,9 +73,9 @@
 
   $ josh-filter -s c=:exclude[::sub2/file3] master --update refs/josh/filter/master
   04cda64def8cdb4ef3c4507362e5d66c58bd935e
+  [2] :exclude[:/sub1::file2:prefix=sub1]
+  [2] :exclude[:/sub2::file3:prefix=sub2]
   [2] :exclude[::sub1/]
-  [2] :exclude[::sub1/file2]
-  [2] :exclude[::sub2/file3]
   [4] :prefix=c
   [5] reachable_roots
   [5] sequence_number

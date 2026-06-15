@@ -34,13 +34,17 @@ by ".josh" but rather kept and extended
   $ josh-filter -s :+st/config.filter master --update refs/josh/master
   3397ec2c69d5c8f67ad39cf477b3711683022d84
   [2] :+st/config.filter
-  [2] :[
-      :/sub1:[
-          ::file1
-          ::file2
+  [2] :subtract[
+          :[
+              st = :/st::config.filter.josh
+              :/sub1:[
+                  ::file1
+                  ::file2
+              ]
+              ::sub2/subsub/
+          ]
+          :/st::config.filter.josh
       ]
-      ::sub2/subsub/
-  ]
   [3] reachable_roots
   [3] sequence_number
 

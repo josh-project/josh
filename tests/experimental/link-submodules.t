@@ -63,13 +63,15 @@ Test Adapt filter - should expand submodule into actual tree content
   $ josh-filter -s :adapt=submodules:link=embedded master --update refs/josh/filter/master
   21b7f3ca0990df3f3bd6affb2d737f6f3b8f0ab2
   [1] :embed=libs
-  [2] ::libs/.link.josh
+  [2] :/libs
+  [2] ::.link.josh
+  [2] :prefix=libs
   [2] :unapply(e1d45e29c75aca63c80d13d82216ccfad39af822:/libs)
   [3] :"{@}"
   [3] :adapt=submodules
   [3] :link=embedded
-  [10] reachable_roots
-  [10] sequence_number
+  [11] reachable_roots
+  [11] sequence_number
   $ git log --graph --pretty=%s refs/josh/filter/master
   *   add libs submodule
   |\  
@@ -150,13 +152,15 @@ Test Adapt with multiple submodules
   $ josh-filter -s :adapt=submodules master --update refs/josh/filter/master
   36e64c35239749063d0ff71e5d67b6104a8ec8a4
   [1] :embed=libs
-  [2] ::libs/.link.josh
+  [2] :/libs
+  [2] ::.link.josh
+  [2] :prefix=libs
   [2] :unapply(e1d45e29c75aca63c80d13d82216ccfad39af822:/libs)
   [3] :"{@}"
   [3] :link=embedded
   [4] :adapt=submodules
-  [11] reachable_roots
-  [11] sequence_number
+  [12] reachable_roots
+  [12] sequence_number
   $ git ls-tree --name-only -r refs/josh/filter/master
   libs/.link.josh
   main.txt
@@ -175,14 +179,19 @@ Test Adapt with multiple submodules
   [1] :embed=libs
   [1] :embed=modules/another
   [1] :unapply(108820becc39a6a21212e893a7cde9250b564825:/modules/another)
-  [2] ::libs/.link.josh
-  [2] ::modules/another/.link.josh
+  [2] :/another
+  [2] :/libs
+  [2] :/modules
+  [2] :prefix=another
+  [2] :prefix=libs
+  [2] :prefix=modules
   [2] :unapply(e1d45e29c75aca63c80d13d82216ccfad39af822:/libs)
+  [3] ::.link.josh
   [4] :"{@}"
   [4] :adapt=submodules
   [4] :link=embedded
-  [15] reachable_roots
-  [15] sequence_number
+  [18] reachable_roots
+  [18] sequence_number
   $ git log --graph --pretty=%s refs/josh/filter/master
   *   add another submodule
   |\  
@@ -257,16 +266,21 @@ Test Adapt with submodule changes - add commits to submodule and update
   039bfc0995f10cd1bb1b3771b084c1acfca6949e
   [1] :embed=modules/another
   [1] :unapply(108820becc39a6a21212e893a7cde9250b564825:/modules/another)
-  [2] ::modules/another/.link.josh
+  [2] :/another
+  [2] :/modules
   [2] :embed=libs
+  [2] :prefix=another
+  [2] :prefix=modules
   [2] :unapply(e1d45e29c75aca63c80d13d82216ccfad39af822:/libs)
-  [3] ::libs/.link.josh
+  [3] :/libs
+  [3] :prefix=libs
+  [4] ::.link.josh
   [4] :unapply(ded577ab7e4ed784dfd17e7c2d184fe667e24eae:/libs)
   [5] :"{@}"
   [5] :adapt=submodules
   [5] :link=embedded
-  [21] reachable_roots
-  [21] sequence_number
+  [25] reachable_roots
+  [25] sequence_number
   $ git log --graph --pretty=%s:%H refs/josh/filter/master
   *   update libs submodule:039bfc0995f10cd1bb1b3771b084c1acfca6949e
   |\  
@@ -309,17 +323,21 @@ Test Adapt with submodule changes - add commits to submodule and update
   c5ce38ecbae793a62ed4b46bb9f98e09eb71d78c
   [1] :embed=modules/another
   [1] :unapply(108820becc39a6a21212e893a7cde9250b564825:/modules/another)
-  [2] ::modules/another/.link.josh
+  [2] :/another
+  [2] :/modules
   [2] :embed=libs
+  [2] :prefix=another
+  [2] :prefix=modules
   [2] :unapply(e1d45e29c75aca63c80d13d82216ccfad39af822:/libs)
-  [3] ::libs/.link.josh
+  [3] :prefix=libs
+  [4] ::.link.josh
   [4] :unapply(ded577ab7e4ed784dfd17e7c2d184fe667e24eae:/libs)
   [5] :"{@}"
   [5] :adapt=submodules
   [5] :link=embedded
-  [9] :/libs
-  [29] reachable_roots
-  [29] sequence_number
+  [12] :/libs
+  [33] reachable_roots
+  [33] sequence_number
   $ git log --graph --pretty=%s:%H FILTERED_HEAD
   *   update libs submodule:c5ce38ecbae793a62ed4b46bb9f98e09eb71d78c
   |\  
@@ -333,18 +351,22 @@ Test Adapt with submodule changes - add commits to submodule and update
   c5ce38ecbae793a62ed4b46bb9f98e09eb71d78c
   [1] :embed=modules/another
   [1] :unapply(108820becc39a6a21212e893a7cde9250b564825:/modules/another)
-  [2] ::modules/another/.link.josh
+  [2] :/another
+  [2] :/modules
   [2] :embed=libs
+  [2] :prefix=another
+  [2] :prefix=modules
   [2] :unapply(e1d45e29c75aca63c80d13d82216ccfad39af822:/libs)
-  [3] ::libs/.link.josh
+  [3] :prefix=libs
+  [4] ::.link.josh
   [4] :unapply(ded577ab7e4ed784dfd17e7c2d184fe667e24eae:/libs)
   [5] :"{@}"
   [5] :adapt=submodules
   [5] :link=embedded
   [6] :prune=trivial-merge
-  [9] :/libs
-  [31] reachable_roots
-  [31] sequence_number
+  [12] :/libs
+  [35] reachable_roots
+  [35] sequence_number
   $ git log --graph --pretty=%s:%H FILTERED_HEAD
   *   update libs submodule:c5ce38ecbae793a62ed4b46bb9f98e09eb71d78c
   |\  
@@ -360,19 +382,23 @@ Test Adapt with submodule changes - add commits to submodule and update
   3061af908a0dc1417902fbd7208bb2b8dc354e6c
   [1] :embed=modules/another
   [1] :unapply(108820becc39a6a21212e893a7cde9250b564825:/modules/another)
-  [2] ::modules/another/.link.josh
+  [2] :/another
+  [2] :/modules
   [2] :embed=libs
+  [2] :prefix=another
+  [2] :prefix=modules
   [2] :unapply(e1d45e29c75aca63c80d13d82216ccfad39af822:/libs)
-  [3] ::libs/.link.josh
+  [3] :prefix=libs
+  [4] ::.link.josh
   [4] :unapply(ded577ab7e4ed784dfd17e7c2d184fe667e24eae:/libs)
   [5] :"{@}"
   [5] :adapt=submodules
   [5] :export
   [5] :link=embedded
   [6] :prune=trivial-merge
-  [9] :/libs
-  [31] reachable_roots
-  [31] sequence_number
+  [12] :/libs
+  [35] reachable_roots
+  [35] sequence_number
   $ git log --graph --pretty=%s:%H:%T FILTERED_HEAD
   * add file4.txt:3061af908a0dc1417902fbd7208bb2b8dc354e6c:ac420a625dfb874002210e623a7fdb55708ef2fa
   * add file3.txt:411907f127aa115588a614ec1dff6ee3c4696173:2935d839ce5e2fa8d5d8fb1a8541bf95b98fbedb
@@ -382,19 +408,23 @@ Test Adapt with submodule changes - add commits to submodule and update
   3061af908a0dc1417902fbd7208bb2b8dc354e6c
   [1] :embed=modules/another
   [1] :unapply(108820becc39a6a21212e893a7cde9250b564825:/modules/another)
-  [2] ::modules/another/.link.josh
+  [2] :/another
+  [2] :/modules
   [2] :embed=libs
+  [2] :prefix=another
+  [2] :prefix=modules
   [2] :unapply(e1d45e29c75aca63c80d13d82216ccfad39af822:/libs)
-  [3] ::libs/.link.josh
+  [3] :prefix=libs
+  [4] ::.link.josh
   [4] :unapply(ded577ab7e4ed784dfd17e7c2d184fe667e24eae:/libs)
   [5] :"{@}"
   [5] :adapt=submodules
   [5] :export
   [5] :link=embedded
   [6] :prune=trivial-merge
-  [9] :/libs
-  [31] reachable_roots
-  [31] sequence_number
+  [12] :/libs
+  [35] reachable_roots
+  [35] sequence_number
   $ git log --graph --pretty=%s:%H FILTERED_HEAD
   * add file4.txt:3061af908a0dc1417902fbd7208bb2b8dc354e6c
   * add file3.txt:411907f127aa115588a614ec1dff6ee3c4696173
@@ -404,21 +434,23 @@ Test Adapt with submodule changes - add commits to submodule and update
   a62789476855b6c89d1f15ba935d1a937e3ccd67
   [1] :embed=modules/another
   [1] :unapply(108820becc39a6a21212e893a7cde9250b564825:/modules/another)
-  [2] :/another
-  [2] ::modules/another/.link.josh
   [2] :embed=libs
+  [2] :prefix=another
+  [2] :prefix=modules
   [2] :unapply(e1d45e29c75aca63c80d13d82216ccfad39af822:/libs)
-  [3] ::libs/.link.josh
+  [3] :prefix=libs
+  [4] :/another
+  [4] ::.link.josh
   [4] :unapply(ded577ab7e4ed784dfd17e7c2d184fe667e24eae:/libs)
   [5] :"{@}"
   [5] :adapt=submodules
   [5] :export
   [5] :link=embedded
   [6] :prune=trivial-merge
-  [7] :/modules
-  [9] :/libs
-  [33] reachable_roots
-  [33] sequence_number
+  [9] :/modules
+  [12] :/libs
+  [37] reachable_roots
+  [37] sequence_number
   $ git log --graph --pretty=%s:%H FILTERED_HEAD
   * add another submodule:a62789476855b6c89d1f15ba935d1a937e3ccd67
   * add another.txt:8fbd01fa31551a059e280f68ac37397712feb59e
@@ -427,21 +459,23 @@ Test Adapt with submodule changes - add commits to submodule and update
   039bfc0995f10cd1bb1b3771b084c1acfca6949e
   [1] :embed=modules/another
   [1] :unapply(108820becc39a6a21212e893a7cde9250b564825:/modules/another)
-  [2] :/another
-  [2] ::modules/another/.link.josh
   [2] :embed=libs
+  [2] :prefix=another
+  [2] :prefix=modules
   [2] :unapply(e1d45e29c75aca63c80d13d82216ccfad39af822:/libs)
-  [3] ::libs/.link.josh
+  [3] :prefix=libs
+  [4] :/another
+  [4] ::.link.josh
   [4] :unapply(ded577ab7e4ed784dfd17e7c2d184fe667e24eae:/libs)
   [5] :"{@}"
   [5] :adapt=submodules
   [5] :export
   [5] :link=embedded
   [6] :prune=trivial-merge
-  [7] :/modules
-  [9] :/libs
-  [33] reachable_roots
-  [33] sequence_number
+  [9] :/modules
+  [12] :/libs
+  [37] reachable_roots
+  [37] sequence_number
   $ rm -Rf libs
   $ rm -Rf modules
   $ git checkout testsubexport
@@ -469,21 +503,23 @@ Test Adapt with submodule changes - add commits to submodule and update
   005cde5c84fbcf17526a0e2fec0a2932c4ce8f24
   [1] :embed=modules/another
   [1] :unapply(108820becc39a6a21212e893a7cde9250b564825:/modules/another)
-  [2] :/another
-  [2] ::modules/another/.link.josh
   [2] :embed=libs
+  [2] :prefix=another
+  [2] :prefix=modules
   [2] :unapply(e1d45e29c75aca63c80d13d82216ccfad39af822:/libs)
-  [3] ::libs/.link.josh
+  [3] :prefix=libs
+  [4] :/another
+  [4] ::.link.josh
   [4] :unapply(ded577ab7e4ed784dfd17e7c2d184fe667e24eae:/libs)
   [5] :"{@}"
   [5] :adapt=submodules
   [5] :link=embedded
   [6] :export
-  [7] :/modules
   [7] :prune=trivial-merge
-  [10] :/libs
-  [36] reachable_roots
-  [36] sequence_number
+  [9] :/modules
+  [13] :/libs
+  [40] reachable_roots
+  [40] sequence_number
 
   $ git checkout testsubexported
   Switched to branch 'testsubexported'
@@ -508,23 +544,24 @@ Test Adapt with submodule changes - add commits to submodule and update
   [1] :embed=modules/another
   [1] :prefix=modules/another
   [1] :unapply(108820becc39a6a21212e893a7cde9250b564825:/modules/another)
-  [2] :/another
-  [2] ::modules/another/.link.josh
   [2] :embed=libs
+  [2] :prefix=another
+  [2] :prefix=modules
   [2] :unapply(e1d45e29c75aca63c80d13d82216ccfad39af822:/libs)
-  [3] ::libs/.link.josh
-  [4] :prefix=libs
+  [4] :/another
+  [4] ::.link.josh
   [4] :unapply(ded577ab7e4ed784dfd17e7c2d184fe667e24eae:/libs)
   [5] :"{@}"
   [5] :adapt=submodules
   [5] :link=embedded
   [6] :export
-  [7] :/modules
+  [7] :prefix=libs
   [7] :prune=trivial-merge
-  [10] :/libs
+  [9] :/modules
   [10] :unlink
-  [36] reachable_roots
-  [36] sequence_number
+  [13] :/libs
+  [40] reachable_roots
+  [40] sequence_number
 
   $ git log --graph --pretty=%s:%H:%T refs/heads/unlinked_master
   *   update libs submodule:3d95fb6ef91b355b85f191cc16ac494a2c9651b3:0dff040bb48e18b3a89c345d5209fe73b3ca6ed1

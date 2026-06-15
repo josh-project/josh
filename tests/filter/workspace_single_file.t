@@ -79,14 +79,14 @@
           ::file1
           ::file2
       ]
-      ::sub2/subsub
+      ::sub2/subsub/
   ]
   [2] :[
       :/sub1:[
           ::file1
           ::file2
       ]
-      ::sub2/subsub/
+      sub2 = :/sub2::subsub
   ]
   [2] :workspace=ws
   [2] :workspace=ws2

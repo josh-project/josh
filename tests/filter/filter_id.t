@@ -195,13 +195,13 @@ Exclude of compose should not be split out
       ::a/
       ::b/
   ]:exclude[
-      ::a/a
-      ::b/b
+      a = :/a::a
+      b = :/b::b
   ]
   $ josh-filter --reverse -p :[:/a:prefix=a,:/b:prefix=b]:exclude[::a/a,::b/b]
   :exclude[
-      ::a/a
-      ::b/b
+      a = :/a::a
+      b = :/b::b
   ]:[
       ::a/
       ::b/

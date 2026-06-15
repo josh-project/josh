@@ -26,10 +26,14 @@
   $ josh-filter -s :+st/config master --update refs/heads/filtered
   b1f056d2e78ad2f39e0b52e17e9aea6aa01c54aa
   [2] :+st/config
-  [2] :[
-      a = :/sub1
-      ::sub2/subsub/
-  ]
+  [2] :subtract[
+          :[
+              st = :/st::config.josh
+              a = :/sub1
+              ::sub2/subsub/
+          ]
+          :/st::config.josh
+      ]
   [3] reachable_roots
   [3] sequence_number
 
@@ -61,10 +65,14 @@
   $ josh-filter -s :+st/config --reverse master --update refs/heads/filtered
   b3ae61d547a0c794fa987774cf2d02131c5c3ad7
   [2] :+st/config
-  [2] :[
-      a = :/sub1
-      ::sub2/subsub/
-  ]
+  [2] :subtract[
+          :[
+              st = :/st::config.josh
+              a = :/sub1
+              ::sub2/subsub/
+          ]
+          :/st::config.josh
+      ]
   [3] reachable_roots
   [3] sequence_number
   $ git checkout master

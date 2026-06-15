@@ -25,10 +25,14 @@
   $ josh-filter -s :+st/config master --update refs/josh/master
   6f43d8ee3bbf33e24fa190605ed12c47e6ede762
   [2] :+st/config
-  [2] :[
-      ::sub1/
-      ::sub2/subsub/
-  ]
+  [2] :subtract[
+          :[
+              st = :/st::config.josh
+              ::sub1/
+              ::sub2/subsub/
+          ]
+          :/st::config.josh
+      ]
   [3] reachable_roots
   [3] sequence_number
 
