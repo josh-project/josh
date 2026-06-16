@@ -598,6 +598,17 @@ fn step(filter: Filter) -> Filter {
                 Op::Prefix(path)
             }
         }
+        Op::Blob(dest_path, content) if dest_path.components().count() > 1 => {
+            if let (Some(dst_parent), Some(dst_name)) = (dest_path.parent(), dest_path.file_name())
+            {
+                Op::Chain(vec![
+                    to_filter(Op::Blob(std::path::PathBuf::from(dst_name), content)),
+                    to_filter(Op::Prefix(dst_parent.to_path_buf())),
+                ])
+            } else {
+                Op::Blob(dest_path, content)
+            }
+        }
         Op::File(dest_path, source_path)
             if source_path.components().count() > 1 || dest_path.components().count() > 1 =>
         {
