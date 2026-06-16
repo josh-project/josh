@@ -1,5 +1,5 @@
 use crate::check_experimental_features_enabled;
-use crate::op::{LazyRef, Op};
+use crate::op::{BlobContent, LazyRef, Op};
 use crate::opt;
 use crate::persist::{self, to_filter, to_op};
 use std::sync::LazyLock;
@@ -138,7 +138,21 @@ impl Filter {
         content: impl Into<String>,
     ) -> anyhow::Result<Filter> {
         check_experimental_features_enabled("Blob filter")?;
-        Ok(self.chain(to_filter(Op::Blob(path.into(), content.into()))))
+        Ok(self.chain(to_filter(Op::Blob(
+            path.into(),
+            BlobContent::Inline(content.into()),
+        ))))
+    }
+
+    /// Chain a filter that inserts an existing blob (referenced by its OID) at the specified path.
+    /// Syntax: `:$path=<sha>`. Useful for large blobs that should not be inlined as a string.
+    pub fn blob_oid(
+        self,
+        path: impl Into<std::path::PathBuf>,
+        oid: git2::Oid,
+    ) -> anyhow::Result<Filter> {
+        check_experimental_features_enabled("Blob filter")?;
+        Ok(self.chain(to_filter(Op::Blob(path.into(), BlobContent::Oid(oid)))))
     }
 
     /// Chain a filter that removes the `.link.josh` marker to produce a standalone history
