@@ -4,7 +4,7 @@ use rand::prelude::*;
 use std::cell::RefCell;
 use std::ops::DerefMut;
 
-const N_FILES: usize = if cfg!(debug_assertions) { 50 } else { 100 };
+const N_FILES: usize = if cfg!(debug_assertions) { 50 } else { 500 };
 
 const N_COMMITS: usize = if cfg!(debug_assertions) { 5 } else { 10 };
 
@@ -56,7 +56,7 @@ impl PinBench {
     }
 }
 
-fn random_string(rng: &mut ThreadRng, len: usize) -> String {
+fn random_string(rng: &mut StdRng, len: usize) -> String {
     (0..len)
         .map(|_| {
             use rand::distr::Alphabetic;
@@ -82,7 +82,7 @@ fn build_initial_state(
 
     // Create multiple nested subfolders in the benchmark repo; aiming for a uniform
     // distribution of a number of files in each subfolder.
-    let mut rng = rand::rng();
+    let mut rng = StdRng::seed_from_u64(0);
     let files_in_folder =
         rand::distr::Uniform::try_from(N_PER_SUBFOLDER_MIN..=N_PER_SUBFOLDER_MAX)?;
 
@@ -158,7 +158,7 @@ fn build_history(
     // Shouldn't matter for this benchmark, we don't look into blobs
     const BLOB_CONTENT_LEN: usize = 10;
 
-    let rng = RefCell::new(rand::rng());
+    let rng = RefCell::new(StdRng::seed_from_u64(0));
     let include_path = || rng.borrow_mut().random_bool(PROB_FILE_UPDATED);
     let hold_off = || rng.borrow_mut().random_bool(PROB_UPDATE_ON_HOLD);
 
