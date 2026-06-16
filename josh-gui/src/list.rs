@@ -302,13 +302,10 @@ pub fn load_rows(scope: &josh_changes::ChangesRef) -> anyhow::Result<ListData> {
 
     let changes = josh_changes::list_changes(&repo, scope)?;
 
-    let mut oid_to_change_id: HashMap<String, String> = HashMap::new();
-    for change in &changes {
-        oid_to_change_id.insert(
-            change.commit().to_string(),
-            change.id().unwrap_or("").to_string(),
-        );
-    }
+    let known: HashSet<String> = changes
+        .iter()
+        .filter_map(|c| c.id().map(|s| s.to_string()))
+        .collect();
 
     let mut rows = Vec::new();
     let mut dependencies: HashMap<String, Vec<String>> = HashMap::new();
@@ -325,15 +322,7 @@ pub fn load_rows(scope: &josh_changes::ChangesRef) -> anyhow::Result<ListData> {
 
         let change_id = change.id().unwrap_or("").to_string();
 
-        let mut deps: Vec<String> = Vec::new();
-        for oid in change.contributing(&repo)? {
-            let oid_str = oid.to_string();
-            if let Some(dep_id) = oid_to_change_id.get(&oid_str) {
-                if dep_id != &change_id {
-                    deps.push(dep_id.clone());
-                }
-            }
-        }
+        let deps: Vec<String> = change.dependency_ids(&repo, &known)?;
 
         rows.push(Row {
             change_id: change_id.clone(),
