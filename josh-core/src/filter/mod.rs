@@ -15,7 +15,7 @@ pub use josh_filter::opt;
 pub use josh_filter::opt::invert;
 pub use josh_filter::persist::{as_tree, from_tree};
 pub use josh_filter::persist::{peel_op, to_filter, to_op, to_ops};
-pub use josh_filter::{Filter, LazyRef, Op, RevMatch};
+pub use josh_filter::{BlobContent, Filter, LazyRef, Op, RevMatch};
 pub use josh_filter::{as_file, pretty, spec};
 
 pub mod text;
@@ -1363,7 +1363,10 @@ pub fn apply<'a>(
             )?))
         }
         Op::Blob(dest_path, content) => {
-            let blob_oid = repo.blob(content.as_bytes())?;
+            let blob_oid = match content {
+                BlobContent::Inline(s) => repo.blob(s.as_bytes())?,
+                BlobContent::Oid(oid) => repo.find_blob(*oid)?.id(),
+            };
             Ok(x.clone().with_tree(tree::insert(
                 repo,
                 &tree::empty(repo),
@@ -1439,7 +1442,11 @@ pub fn apply<'a>(
         Op::TreeId(path, subfilter) => {
             let applied = apply(transaction, *subfilter, x.clone())?;
             let oid_str = applied.tree().id().to_string();
-            apply(transaction, to_filter(Op::Blob(path.clone(), oid_str)), x)
+            apply(
+                transaction,
+                to_filter(Op::Blob(path.clone(), BlobContent::Inline(oid_str))),
+                x,
+            )
         }
         Op::ObjectRef(path) => {
             let repo = transaction.repo();

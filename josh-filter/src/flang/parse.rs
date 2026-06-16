@@ -4,7 +4,7 @@ use crate::filter::Filter;
 use crate::opt;
 use crate::opt::invert;
 use crate::persist::to_filter;
-use crate::{LazyRef, Op, RevMatch};
+use crate::{BlobContent, LazyRef, Op, RevMatch};
 
 use anyhow::{Context, anyhow};
 use indoc::{formatdoc, indoc};
@@ -163,7 +163,12 @@ fn parse_item(pair: pest::iterators::Pair<Rule>) -> anyhow::Result<Filter> {
             check_experimental_features_enabled("Blob filter")?;
             let mut inner = pair.into_inner();
             let path = Path::new(&unquote(inner.next().unwrap().as_str())).to_owned();
-            let content = unquote(inner.next().unwrap().as_str());
+            let content_pair = inner.next().unwrap();
+            let content = match content_pair.as_rule() {
+                Rule::string => BlobContent::Inline(unquote(content_pair.as_str())),
+                Rule::blob_oid => BlobContent::Oid(git2::Oid::from_str(content_pair.as_str())?),
+                _ => unreachable!(),
+            };
             Ok(to_filter(Op::Blob(path, content)))
         }
         Rule::filter_presub => {

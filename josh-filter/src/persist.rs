@@ -7,7 +7,7 @@ use std::sync::LazyLock;
 
 use crate::filter::{Filter, reachable_roots, sequence_number};
 use crate::hash::PassthroughHasher;
-use crate::op::{LazyRef, Op, RevMatch};
+use crate::op::{BlobContent, LazyRef, Op, RevMatch};
 
 pub(crate) static FILTERS: LazyLock<
     std::sync::Mutex<HashMap<Filter, Op, BuildHasherDefault<PassthroughHasher>>>,
@@ -358,8 +358,13 @@ impl InMemoryBuilder {
                 push_tree_entries(&mut entries, [("prefix", params_tree)]);
             }
             Op::Blob(path, content) => {
-                let params_tree =
-                    self.build_str_params(&[path.to_string_lossy().as_ref(), content.as_str()]);
+                let path = path.to_string_lossy();
+                let params_tree = match content {
+                    BlobContent::Inline(s) => self.build_str_params(&[path.as_ref(), "inline", s]),
+                    BlobContent::Oid(oid) => {
+                        self.build_str_params(&[path.as_ref(), "oid", &oid.to_string()])
+                    }
+                };
                 push_tree_entries(&mut entries, [("blob", params_tree)]);
             }
             Op::File(dest_path, source_path) => {
@@ -680,10 +685,18 @@ fn from_tree2(repo: &git2::Repository, tree_oid: git2::Oid) -> anyhow::Result<Op
             let inner = repo.find_tree(entry.id())?;
             let path_blob =
                 repo.find_blob(inner.get_name("0").context("blob: missing path")?.id())?;
-            let content_blob =
-                repo.find_blob(inner.get_name("1").context("blob: missing content")?.id())?;
+            let kind_blob =
+                repo.find_blob(inner.get_name("1").context("blob: missing kind")?.id())?;
+            let value_blob =
+                repo.find_blob(inner.get_name("2").context("blob: missing value")?.id())?;
             let path = std::str::from_utf8(path_blob.content())?;
-            let content = std::str::from_utf8(content_blob.content())?.to_string();
+            let kind = std::str::from_utf8(kind_blob.content())?;
+            let value = std::str::from_utf8(value_blob.content())?;
+            let content = match kind {
+                "inline" => BlobContent::Inline(value.to_string()),
+                "oid" => BlobContent::Oid(git2::Oid::from_str(value)?),
+                other => return Err(anyhow::anyhow!("blob: unknown content kind {:?}", other)),
+            };
             Ok(Op::Blob(std::path::PathBuf::from(path), content))
         }
         "file" => {

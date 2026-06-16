@@ -17,6 +17,10 @@ Roundtrip: path with special chars is quoted
   $ josh-filter -p ':$"hello world.txt"="content"'
   :$"hello world.txt"="content"
 
+Roundtrip: blob specified by sha renders as bare hex
+  $ josh-filter -p ':$added.txt=e69de29bb2d1d6434b8b29ae775ad8c2e48c5391'
+  :$added.txt=e69de29bb2d1d6434b8b29ae775ad8c2e48c5391
+
 Inverse renders as :exclude[::path]
   $ josh-filter --reverse -p ':$added.txt="hello world"'
   :exclude[::added.txt]
@@ -44,3 +48,34 @@ Apply: compose with blob inserts blob alongside other files
   +++ b/file1
   @@ -0,0 +1 @@
   +contents1
+
+Apply: blob referenced by sha is inserted at the destination path
+  $ OID=$(printf 'big content' | git hash-object -w --stdin)
+  $ josh-filter -s ":\$added.txt=$OID" master --update refs/josh/filter/master3 1> /dev/null
+  $ git show josh/filter/master3:added.txt
+  big content (no-eol)
+
+Apply: referencing a non-blob sha (a commit) fails
+  $ COMMIT=$(git rev-parse HEAD)
+  $ josh-filter -s ":\$bad.txt=$COMMIT" master --update refs/josh/filter/bad 2> /dev/null
+  [1] :$added.txt="hello world"
+  [1] :$added.txt=422057123b178e433e852ef1dfee39368fb5a8ce
+  [1] :[
+      :/sub1
+      :$added.txt="hello world"
+  ]
+  [1] reachable_roots
+  [1] sequence_number
+  [1]
+
+Apply: referencing a nonexistent sha fails
+  $ josh-filter -s ':$bad.txt=0000000000000000000000000000000000000001' master --update refs/josh/filter/bad2 2> /dev/null
+  [1] :$added.txt="hello world"
+  [1] :$added.txt=422057123b178e433e852ef1dfee39368fb5a8ce
+  [1] :[
+      :/sub1
+      :$added.txt="hello world"
+  ]
+  [1] reachable_roots
+  [1] sequence_number
+  [1]
