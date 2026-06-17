@@ -248,6 +248,17 @@ fn ultrawide_pin(c: &mut Criterion) {
             josh_core::reset_caches().expect("reset caches");
             let transaction = bench.context.open(None).expect("open transaction");
 
+            // Optional: route object writes through an in-memory mempack backend instead
+            // of the loose-file backend, to measure the ODB write-path overhead. Reads of
+            // the pre-built history fall through to the lower-priority loose backend. The
+            // odb is bound first so it outlives the borrowed mempack handle.
+            let mempack_odb = std::env::var_os("JOSH_BENCH_MEMPACK")
+                .map(|_| transaction.repo().odb().expect("odb"));
+            let _mempack = mempack_odb.as_ref().map(|odb| {
+                odb.add_new_mempack_backend(1000)
+                    .expect("add mempack backend")
+            });
+
             let iter_span = tracing::info_span!(target: "bench", "iter").entered();
 
             runner.run(|| {
