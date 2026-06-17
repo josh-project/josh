@@ -11,8 +11,32 @@ pub static MESSAGE_MATCH_ALL_REGEX: LazyLock<regex::Regex> =
 
 /// Filters are represented as `git2::Oid`, however they are not ever stored
 /// inside the repo.
-#[derive(Clone, Hash, PartialEq, Eq, Copy, PartialOrd, Ord)]
+#[derive(Clone, Copy, Hash)]
 pub struct Filter(pub git2::Oid);
+
+// Compare the underlying 20 bytes directly in Rust instead of deriving these traits, which
+// would delegate to git2::Oid's FFI git_oid_equal/git_oid_cmp. Byte-wise comparison of the
+// Oid is unsigned and lexicographic, matching libgit2's semantics exactly, and stays
+// consistent with the derived Hash (which also hashes the raw bytes).
+impl PartialEq for Filter {
+    fn eq(&self, other: &Self) -> bool {
+        self.0.as_bytes() == other.0.as_bytes()
+    }
+}
+
+impl Eq for Filter {}
+
+impl PartialOrd for Filter {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for Filter {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.0.as_bytes().cmp(other.0.as_bytes())
+    }
+}
 
 impl Default for Filter {
     fn default() -> Filter {
