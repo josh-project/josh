@@ -100,6 +100,12 @@ impl Transaction {
         cache: std::sync::Arc<CacheStack>,
         ref_prefix: Option<&str>,
     ) -> Transaction {
+        // Disable libgit2's strict object creation globally: josh only ever writes objects
+        // whose referenced objects it has just produced or read, so the per-write existence
+        // checks are pure overhead. This is a process-wide C global, set exactly once.
+        static STRICT_OBJECT_CREATION_OFF: std::sync::Once = std::sync::Once::new();
+        STRICT_OBJECT_CREATION_OFF.call_once(|| git2::opts::strict_object_creation(false));
+
         log::debug!("new transaction");
 
         let (path_tree, invert_tree, trigram_index_tree) =
