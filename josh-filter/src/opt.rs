@@ -238,7 +238,7 @@ pub fn flatten(filter: Filter) -> Filter {
                     let others_invertible = flattened
                         .iter()
                         .enumerate()
-                        .all(|(j, f)| j == i || invert(*f).is_ok());
+                        .all(|(j, f)| j == i || is_invertible(*f));
                     if !others_invertible {
                         break;
                     }
@@ -788,6 +788,37 @@ fn step(filter: Filter) -> Filter {
 
     OPTIMIZED.lock().unwrap().insert(original, result);
     result
+}
+
+/// Whether `invert(filter)` would succeed, without building or hashing any
+/// filters. Mirrors the Ok/Err structure of `invert` (its direct-mapping and
+/// recursive cases return `Ok`, everything else `Err`), so the result matches
+/// `invert(filter).is_ok()`. Used to test invertibility cheaply in loops where
+/// the inverted filter itself is not needed.
+fn is_invertible(filter: Filter) -> bool {
+    match to_op(filter) {
+        Op::Nop
+        | Op::Message(..)
+        | Op::Prune
+        | Op::Export
+        | Op::Empty
+        | Op::Link(..)
+        | Op::Subdir(_)
+        | Op::File(..)
+        | Op::Prefix(_)
+        | Op::Pattern(_)
+        | Op::Rev(_)
+        | Op::RegexReplace(_)
+        | Op::Pin(_)
+        | Op::Blob(..)
+        | Op::TreeId(..)
+        | Op::ObjectDeref(_)
+        | Op::ObjectRef(_) => true,
+        Op::Meta(_, f) => is_invertible(f),
+        Op::Chain(filters) | Op::Compose(filters) => filters.iter().all(|&f| is_invertible(f)),
+        Op::Exclude(f) => is_invertible(f),
+        _ => false,
+    }
 }
 
 pub fn invert(filter: Filter) -> anyhow::Result<Filter> {
