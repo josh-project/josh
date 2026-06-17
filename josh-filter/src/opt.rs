@@ -9,11 +9,12 @@ use crate::op::Op;
 use crate::persist::{peel_op, to_filter, to_op};
 use anyhow::anyhow;
 use std::cmp::Ordering;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::hash::BuildHasherDefault;
 use std::sync::LazyLock;
 
 type FilterHashMap = HashMap<Filter, Filter, BuildHasherDefault<PassthroughHasher>>;
+type FilterSet = HashSet<Filter, BuildHasherDefault<PassthroughHasher>>;
 
 static OPTIMIZED: LazyLock<std::sync::Mutex<FilterHashMap>> =
     LazyLock::new(|| std::sync::Mutex::new(HashMap::default()));
@@ -766,9 +767,14 @@ fn step(filter: Filter) -> Filter {
             }
             (_, Op::Compose(bv)) if bv.contains(&af) => to_op(step(to_filter(Op::Empty))),
             (Op::Compose(mut av), Op::Compose(mut bv)) => {
-                let v = av.clone();
-                av.retain(|x| !bv.contains(x));
-                bv.retain(|x| !v.contains(x));
+                // Set difference via hash lookup instead of linear `contains`,
+                // turning the O(N*M) retains into O(N+M). `Filter` is just a
+                // 20-byte git OID, so `PassthroughHasher` (identity) avoids
+                // rehashing bytes that are already a hash.
+                let bv_set: FilterSet = bv.iter().copied().collect();
+                let av_set: FilterSet = av.iter().copied().collect();
+                av.retain(|x| !bv_set.contains(x));
+                bv.retain(|x| !av_set.contains(x));
 
                 Op::Subtract(
                     step(to_filter(Op::Compose(av))),
