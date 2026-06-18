@@ -311,8 +311,8 @@
   |   |   |   `-- 5eaa207c7aba64f4deb19a9acd060c254fb239
   |   |   |-- info
   |   |   `-- pack
-  |   |       |-- pack-4ee5410a0d07448774a9d777901482c58c903f84.idx
-  |   |       `-- pack-4ee5410a0d07448774a9d777901482c58c903f84.pack
+  |   |       |-- pack-696a550f418733d7b1efd4d9b50a388f6a78b21c.idx
+  |   |       `-- pack-696a550f418733d7b1efd4d9b50a388f6a78b21c.pack
   |   `-- refs
   |       |-- heads
   |       |-- josh
