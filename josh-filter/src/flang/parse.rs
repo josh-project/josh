@@ -4,7 +4,7 @@ use crate::filter::Filter;
 use crate::opt;
 use crate::opt::invert;
 use crate::persist::to_filter;
-use crate::{BlobContent, LazyRef, Op, RevMatch};
+use crate::{BlobContent, LazyRef, Op, Regex, RevMatch};
 
 use anyhow::{Context, anyhow};
 use indoc::{formatdoc, indoc};
@@ -339,7 +339,7 @@ fn parse_item(pair: pest::iterators::Pair<Rule>) -> anyhow::Result<Filter> {
                 .tuples()
                 .map(|(regex, replacement)| {
                     regex::Regex::new(&regex)
-                        .map(|r| (r, replacement))
+                        .map(|r| (Regex(r), replacement))
                         .context("invalid regex")
                 })
                 .collect::<Result<Vec<_>, _>>()?;
