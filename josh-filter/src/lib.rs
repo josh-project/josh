@@ -9,7 +9,7 @@ pub use filter::{Filter, compose};
 pub use flang::parse;
 pub use flang::{as_file, pretty, spec};
 pub use op::LinkMode;
-pub use op::{BlobContent, LazyRef, Op, RevMatch};
+pub use op::{BlobContent, LazyRef, Op, Regex, RevMatch};
 
 static EXPERIMENTAL_FEATURES: std::sync::LazyLock<bool> =
     std::sync::LazyLock::new(|| std::env::var("JOSH_EXPERIMENTAL_FEATURES").as_deref() == Ok("1"));

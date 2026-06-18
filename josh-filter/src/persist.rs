@@ -3,44 +3,75 @@ use gix_object::WriteTo;
 use gix_object::bstr::BString;
 use std::collections::HashMap;
 use std::hash::BuildHasherDefault;
-use std::sync::LazyLock;
+use std::sync::{LazyLock, OnceLock};
 
 use crate::filter::{Filter, reachable_roots, sequence_number};
 use crate::hash::PassthroughHasher;
-use crate::op::{BlobContent, LazyRef, Op, RevMatch};
+use crate::op::{BlobContent, LazyRef, Op, Regex, RevMatch};
 
+/// An interned, immutable `Op` together with its lazily-computed `Filter` OID.
+/// Nodes are leaked (`&'static`) and live for the process lifetime, exactly like the
+/// `Op`s previously stored in `FILTERS`. The OID is built at most once via `build_op`.
+pub(crate) struct Node {
+    op: Op,
+    oid: OnceLock<git2::Oid>,
+}
+
+/// `Filter` (OID) -> node, populated when a node's OID is first materialized in `to_filter`.
+/// Used by `to_op_ref` to resolve a `Filter` back to its `Op` without cloning.
 pub(crate) static FILTERS: LazyLock<
-    std::sync::Mutex<HashMap<Filter, Op, BuildHasherDefault<PassthroughHasher>>>,
+    std::sync::Mutex<HashMap<Filter, &'static Node, BuildHasherDefault<PassthroughHasher>>>,
 > = LazyLock::new(Default::default);
 
+/// Canonicalizes each `Op` to a single interned node by structural equality, so `to_filter`
+/// can skip `build_op` when an equal `Op` was interned before. `Op` derives `Hash`/`Eq`, so
+/// the `Op` itself is the key — no separate fingerprint.
+static INTERN: LazyLock<std::sync::Mutex<HashMap<Op, &'static Node>>> =
+    LazyLock::new(Default::default);
+
+static NOP_OP: Op = Op::Nop;
+
 pub fn peel_op(filter: Filter) -> Op {
-    let op = to_op(filter);
+    peel_op_ref(filter).clone()
+}
+
+pub fn peel_op_ref(filter: Filter) -> &'static Op {
+    let op = to_op_ref(filter);
     if let Op::Meta(_, f) = op {
-        peel_op(f)
+        peel_op_ref(*f)
     } else {
         op
     }
 }
 
 pub fn to_op(filter: Filter) -> Op {
+    to_op_ref(filter).clone()
+}
+
+pub fn to_op_ref(filter: Filter) -> &'static Op {
     if filter == sequence_number() || filter == reachable_roots() {
-        return Op::Nop;
+        return &NOP_OP;
     }
-    FILTERS
+    let node = *FILTERS
         .lock()
         .unwrap()
         .get(&filter)
-        .expect("unknown filter")
-        .clone()
+        .expect("unknown filter");
+    &node.op
 }
 
 pub fn to_ops(filters: &[Filter]) -> Vec<Op> {
     filters.iter().map(|x| to_op(*x)).collect()
 }
 
-/// Get a clone of the FILTERS map for use in as_tree/from_tree
+/// Get the known `Filter` -> `Op` mappings for use in as_tree/from_tree.
 pub fn get_filters() -> HashMap<Filter, Op, BuildHasherDefault<PassthroughHasher>> {
-    FILTERS.lock().unwrap().clone()
+    FILTERS
+        .lock()
+        .unwrap()
+        .iter()
+        .map(|(f, node)| (*f, node.op.clone()))
+        .collect()
 }
 
 fn push_blob_entries(
@@ -284,7 +315,7 @@ impl InMemoryBuilder {
 
     fn build_regex_replace_params(
         &mut self,
-        replacements: &[(regex::Regex, String)],
+        replacements: &[(Regex, String)],
     ) -> gix_hash::ObjectId {
         let mut outer_entries = Vec::new();
         for (i, (regex, replacement)) in replacements.iter().enumerate() {
@@ -501,14 +532,32 @@ impl InMemoryBuilder {
     }
 }
 
-pub fn to_filter(op: Op) -> Filter {
-    let mut builder = InMemoryBuilder::new();
-    let tree_id = builder.build_op(&op).expect("failed to build op");
-    let oid = git2::Oid::from_bytes(tree_id.as_bytes()).unwrap();
+// Canonicalize an `Op` to its single interned node via structural equality. On a hit we
+// return the existing node and drop `op`; on a miss we leak a node (its `Op` lives for the
+// process, exactly like the old `FILTERS` map) and key it by a clone of the `Op`.
+fn intern(op: Op) -> &'static Node {
+    let mut intern = INTERN.lock().unwrap();
+    if let Some(node) = intern.get(&op) {
+        return node;
+    }
+    let node: &'static Node = Box::leak(Box::new(Node {
+        op: op.clone(),
+        oid: OnceLock::new(),
+    }));
+    intern.insert(op, node);
+    node
+}
 
-    let f = Filter(oid);
-    FILTERS.lock().unwrap().entry(f).or_insert(op);
-    f
+pub fn to_filter(op: Op) -> Filter {
+    let node = intern(op);
+    let oid = *node.oid.get_or_init(|| {
+        let mut builder = InMemoryBuilder::new();
+        let tree_id = builder.build_op(&node.op).expect("failed to build op");
+        let oid = git2::Oid::from_bytes(tree_id.as_bytes()).unwrap();
+        FILTERS.lock().unwrap().entry(Filter(oid)).or_insert(node);
+        oid
+    });
+    Filter(oid)
 }
 
 pub fn as_tree(repo: &git2::Repository, filter: Filter) -> anyhow::Result<git2::Oid> {
@@ -670,7 +719,7 @@ fn from_tree2(repo: &git2::Repository, tree_oid: git2::Oid) -> anyhow::Result<Op
             let fmt = std::str::from_utf8(fmt_blob.content())?.to_string();
             let regex_str = std::str::from_utf8(regex_blob.content())?;
             let regex = regex::Regex::new(regex_str).context("invalid regex")?;
-            Ok(Op::Message(fmt, regex))
+            Ok(Op::Message(fmt, Regex(regex)))
         }
         "subdir" => {
             let inner = repo.find_tree(entry.id())?;
@@ -1003,7 +1052,7 @@ fn from_tree2(repo: &git2::Repository, tree_oid: git2::Oid) -> anyhow::Result<Op
                 let regex_str = std::str::from_utf8(regex_blob.content())?;
                 let replacement = std::str::from_utf8(replacement_blob.content())?.to_string();
                 let regex = regex::Regex::new(regex_str)?;
-                replacements.push((regex, replacement));
+                replacements.push((Regex(regex), replacement));
             }
             Ok(Op::RegexReplace(replacements))
         }

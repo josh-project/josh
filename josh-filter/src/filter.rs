@@ -1,5 +1,5 @@
 use crate::check_experimental_features_enabled;
-use crate::op::{BlobContent, LazyRef, Op};
+use crate::op::{BlobContent, LazyRef, Op, Regex};
 use crate::opt;
 use crate::persist::{self, to_filter, to_op};
 use std::sync::LazyLock;
@@ -242,13 +242,13 @@ impl Filter {
     pub fn message(self, m: &str) -> Filter {
         self.chain(to_filter(Op::Message(
             m.to_string(),
-            MESSAGE_MATCH_ALL_REGEX.clone(),
+            Regex(MESSAGE_MATCH_ALL_REGEX.clone()),
         )))
     }
 
     /// Chain a message filter that transforms commit messages
     pub fn message_regex(self, m: impl Into<String>, regex: regex::Regex) -> Filter {
-        self.chain(to_filter(Op::Message(m.into(), regex)))
+        self.chain(to_filter(Op::Message(m.into(), Regex(regex))))
     }
 
     /// Chain a hook filter

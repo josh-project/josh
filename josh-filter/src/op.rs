@@ -1,11 +1,37 @@
 use crate::filter::Filter;
 use anyhow::anyhow;
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub enum LinkMode {
     Embedded,
     Snapshot,
     Pointer,
+}
+
+/// Newtype around `regex::Regex` adding structural `PartialEq`/`Eq`/`Hash` (by pattern
+/// string) so `Op` can derive them for use as an interning key. Derefs to the inner regex.
+#[derive(Clone, Debug)]
+pub struct Regex(pub regex::Regex);
+
+impl std::ops::Deref for Regex {
+    type Target = regex::Regex;
+    fn deref(&self) -> &regex::Regex {
+        &self.0
+    }
+}
+
+impl PartialEq for Regex {
+    fn eq(&self, other: &Self) -> bool {
+        self.0.as_str() == other.0.as_str()
+    }
+}
+
+impl Eq for Regex {}
+
+impl std::hash::Hash for Regex {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.0.as_str().hash(state);
+    }
 }
 
 impl std::fmt::Display for LinkMode {
@@ -35,13 +61,13 @@ pub enum LazyRef {
     Lazy(String),
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub enum BlobContent {
     Inline(String),
     Oid(git2::Oid),
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum RevMatch {
     /// `<` - matches if is_ancestor_of(commit, tip) && commit != tip (strict)
     AncestorStrict,
@@ -77,7 +103,7 @@ impl LazyRef {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub enum Op {
     Meta(std::collections::BTreeMap<String, String>, Filter),
 
@@ -100,7 +126,7 @@ pub enum Op {
     // Vec instead of BTreeMap to preserve order - first match wins
     Rev(Vec<(RevMatch, LazyRef, Filter)>),
     Prune,
-    RegexReplace(Vec<(regex::Regex, String)>),
+    RegexReplace(Vec<(Regex, String)>),
 
     Hook(String),
 
@@ -119,7 +145,7 @@ pub enum Op {
     ObjectRef(std::path::PathBuf),
 
     Pattern(String),
-    Message(String, regex::Regex),
+    Message(String, Regex),
 
     Unapply(LazyRef, Filter),
 
