@@ -147,6 +147,10 @@ pub fn spawn_git_command(
 ) -> anyhow::Result<()> {
     log::debug!("spawn_git_command: {:?}", args);
 
+    // Objects produced by in-process filtering live in the in-memory ODB backend, invisible to the
+    // external `git` process we are about to spawn. Flush them to a packfile on disk first.
+    crate::cache::flush_all_at(repo_path)?;
+
     let cwd = normalize_repo_path(repo_path);
 
     let mut command = std::process::Command::new("git");

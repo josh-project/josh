@@ -170,40 +170,29 @@ Check the branch again
       |-- info
       |   `-- exclude
       |-- objects
-      |   |-- 28
-      |   |   |-- 1431e1f2eaff44142f2c0512c06716b6ebd6d6
-      |   |   `-- d20855c7b65b5a9948283516ae62739360544d
-      |   |-- 49
-      |   |   `-- b12216dab2cefdb1cc0fcda7ab6bc9f8b882ab
-      |   |-- 56
-      |   |   `-- dc1f749ea31f735f981a42bc6c23e92baf2085
       |   |-- 75
       |   |   `-- 1ef4576e133fc6279ccf882cb812a9b4dcf5dd
       |   |-- 84
       |   |   `-- f7637c03dc38d6d22461003f6b9c65f6fdb4d3
       |   |-- 9d
       |   |   `-- aeafb9864cf43055ae93beb0afd6c7d144bfa4
-      |   |-- a5
-      |   |   `-- 5a119d24890de3a3e470f941217479629e50c6
-      |   |-- ab
-      |   |   `-- 26032e5a4ef35d64849e0af272ceb4b27948bf
       |   |-- b5
       |   |   `-- afbb444fd22857e78ee11ddd92b7dd2f5c7d11
-      |   |-- cf
-      |   |   `-- 704ed443e7351ab990ab68c916c2428dcf9100
-      |   |-- de
-      |   |   `-- 7cba2eb70af5ce3555c3670e7641f2f547db74
       |   |-- e5
       |   |   `-- 28cb6fde9d30fd62f42484c291bd1799245888
-      |   |-- ef
-      |   |   `-- 5ab66c07ba7c211e2a3d30bc9b6e4d5b6909fe
       |   |-- f4
       |   |   `-- 35f3fecaba02ae9cc9d462b1bd0d396fdf352f
       |   |-- info
       |   `-- pack
+      |       |-- pack-506f77be639c56f3124b09bc6c74ca46083eb416.idx
+      |       |-- pack-506f77be639c56f3124b09bc6c74ca46083eb416.pack
+      |       |-- pack-6f373fdfd68f130303e51d70f84843bbb3b9933d.idx
+      |       |-- pack-6f373fdfd68f130303e51d70f84843bbb3b9933d.pack
+      |       |-- pack-9284b8b46944ee6adfb791d61fa9faf125784a91.idx
+      |       `-- pack-9284b8b46944ee6adfb791d61fa9faf125784a91.pack
       `-- refs
           |-- heads
           |-- namespaces
           `-- tags
   
-  53 directories, 40 files
+  45 directories, 37 files

@@ -1,6 +1,7 @@
 mod backend;
 pub mod distributed;
 mod history_graph;
+mod mem_odb;
 pub mod sled;
 pub mod stack;
 mod transaction;
@@ -17,3 +18,12 @@ pub use history_graph::{
 pub use sled::{SledCacheBackend, sled_clear, sled_load, sled_open_josh_trees, sled_print_stats};
 pub use stack::CacheStack;
 pub use transaction::*;
+
+pub(crate) use mem_odb::flush_all_at;
+
+/// Flush in-memory objects in `repo`'s ODB backend to a packfile on disk. Call before handing the
+/// repository to an external `git` process, which cannot see the in-process in-memory backend.
+pub fn flush_objects(repo: &git2::Repository) -> anyhow::Result<()> {
+    mem_odb::flush_all(repo)?;
+    Ok(())
+}

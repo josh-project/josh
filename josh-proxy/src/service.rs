@@ -536,6 +536,10 @@ impl NamespacedRefs {
             .repo()
             .reference_symbolic(&source, &target, true, "write_to_repo")?;
 
+        // The filtered objects were written into the in-memory ODB backend; the `git http-backend`
+        // subprocess that serves them reads from disk, so flush before it runs.
+        self.transaction.flush_objects()?;
+
         Ok(())
     }
 

@@ -32,6 +32,8 @@ strfmt = "0.2.4"
 sled = "0.34.7"
 rustc-hash = "2.1.2"
 smallvec = "1.15.1"
+scc = "3.5"
+libgit2-sys = "0.18"
 
 anyhow.workspace = true
 chrono.workspace = true

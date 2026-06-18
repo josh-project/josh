@@ -192,31 +192,23 @@
       |   |   `-- 5984b1d05c7ba7842828bdc8669c69eed48540
       |   |-- 22
       |   |   `-- a3c9e53508f9532b5109352448c0051ff0a018
-      |   |-- 35
-      |   |   `-- 13da41fec4409551ee7aead656b211996b8f1d
-      |   |-- 47
-      |   |   `-- 8644b35118f1d733b14cafb04c51e5b6579243
       |   |-- 50
       |   |   `-- e9d1a4ad68f5edd03432b540ae6d56995810f5
-      |   |-- 76
-      |   |   `-- b2b18cc389f8dc88727cb143f362f3b4a07788
-      |   |-- 7c
-      |   |   `-- 30b7adfa79351301a11882adf49f438ec294f8
       |   |-- 8e
       |   |   `-- 9eedb14562d157b873eb24a08d6c0cd225624b
-      |   |-- b0
-      |   |   `-- c372112e15e6946f82bebf73b70f5b3e0d5066
       |   |-- c3
       |   |   `-- 4ad756a74e200f89b43b0d6f21b41eb284b454
-      |   |-- d5
-      |   |   `-- 89c2fd7b5d736b868c4e196898cd9f578eb77f
-      |   |-- d9
-      |   |   `-- a323ee316cda6f241fcc35cbd29d4a882aa45e
       |   |-- info
       |   `-- pack
+      |       |-- pack-9f1d5b705f285451a89d8e75d2e3ed95ba8cc998.idx
+      |       |-- pack-9f1d5b705f285451a89d8e75d2e3ed95ba8cc998.pack
+      |       |-- pack-a0d4d7da863ed9bcde8d55093ccc35b5c0e7fd27.idx
+      |       |-- pack-a0d4d7da863ed9bcde8d55093ccc35b5c0e7fd27.pack
+      |       |-- pack-b1bafc32ba8e81e4a1a2f5a5d465d9bc1eab7ee1.idx
+      |       `-- pack-b1bafc32ba8e81e4a1a2f5a5d465d9bc1eab7ee1.pack
       `-- refs
           |-- heads
           |-- namespaces
           `-- tags
   
-  56 directories, 40 files
+  49 directories, 39 files

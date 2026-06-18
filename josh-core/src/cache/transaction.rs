@@ -87,11 +87,26 @@ struct Transaction2 {
     nesting_level: usize,
 }
 
+/// Count of live transactions. Filtering opens a nested transaction per rayon worker, all sharing
+/// one process-global in-memory object store; flushing that store to disk only makes sense once the
+/// outermost transaction completes, so we flush when this count returns to zero.
+static LIVE_TRANSACTIONS: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+
 pub struct Transaction {
     t2: std::cell::RefCell<Transaction2>,
     repo: git2::Repository,
     ref_prefix: String,
     filter_hook: Option<std::sync::Arc<dyn FilterHook + Send + Sync>>,
+}
+
+impl Drop for Transaction {
+    fn drop(&mut self) {
+        if LIVE_TRANSACTIONS.fetch_sub(1, std::sync::atomic::Ordering::AcqRel) == 1 {
+            if let Err(e) = super::mem_odb::flush_all(&self.repo) {
+                log::error!("failed to flush in-memory object store: {e}");
+            }
+        }
+    }
 }
 
 impl Transaction {
@@ -105,6 +120,9 @@ impl Transaction {
         // checks are pure overhead. This is a process-wide C global, set exactly once.
         static STRICT_OBJECT_CREATION_OFF: std::sync::Once = std::sync::Once::new();
         STRICT_OBJECT_CREATION_OFF.call_once(|| git2::opts::strict_object_creation(false));
+
+        super::mem_odb::register(&repo);
+        LIVE_TRANSACTIONS.fetch_add(1, std::sync::atomic::Ordering::AcqRel);
 
         log::debug!("new transaction");
 
@@ -146,6 +164,14 @@ impl Transaction {
 
     pub fn repo(&self) -> &git2::Repository {
         &self.repo
+    }
+
+    /// Flush this transaction's in-memory objects to a packfile on disk. Call at boundaries where
+    /// an external `git` process is about to read the objects (e.g. before serving over HTTP),
+    /// since the in-memory backend is only visible in-process.
+    pub fn flush_objects(&self) -> anyhow::Result<()> {
+        super::mem_odb::flush_all(&self.repo)?;
+        Ok(())
     }
 
     pub fn refname(&self, r: &str) -> String {

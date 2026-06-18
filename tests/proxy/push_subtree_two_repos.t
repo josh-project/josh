@@ -172,40 +172,32 @@ Put a double slash in the URL to see that it also works
       |-- info
       |   `-- exclude
       |-- objects
-      |   |-- 03
-      |   |   `-- e4d4431d56b09a58ee53e177a966b75b5adc2a
-      |   |-- 0b
-      |   |   `-- 4cf6c9efbbda1eada39fa9c1d21d2525b027bb
-      |   |-- 1d
-      |   |   `-- 9470cf784c751ec8cc3556d50737a7de1f5262
-      |   |-- 3c
-      |   |   `-- cd09de42d21f7e5318bc5eaf258bf82e4103e6
       |   |-- 5c
       |   |   `-- 1144a1e71fe21014b2afec1ed3a3298bd46200
       |   |-- 6b
       |   |   `-- 46faacade805991bcaea19382c9d941828ce80
-      |   |-- 81
-      |   |   `-- b10fb4984d20142cd275b89c91c346e536876a
       |   |-- 8d
       |   |   `-- 08b32a321a9d226e3b22d01793f62a6c9b22e2
       |   |-- b1
       |   |   `-- 0b7acda365c0c0ed8f7482ccaf201ebbc6dd12
-      |   |-- ba
-      |   |   `-- 7e17233d9f79c96cb694959eb065302acd96a6
       |   |-- c6
       |   |   `-- 27a2e3a6bfbb7307f522ad94fdfc8c20b92967
       |   |-- d8
       |   |   `-- 388f5880393d255b371f1ed9b801d35620017e
-      |   |-- dc
-      |   |   `-- d1fcde90e4a52777feaf5d7e608f33e5eda53f
-      |   |-- e3
-      |   |   `-- 1c69658259e37ed5ad682c49a53ec5dc066aec
       |   |-- info
       |   `-- pack
+      |       |-- pack-0d4b38b140b6e8e4cae7dbc5e5ae6e12b11d2d52.idx
+      |       |-- pack-0d4b38b140b6e8e4cae7dbc5e5ae6e12b11d2d52.pack
+      |       |-- pack-2f3daab2c2bc0fa3c2cb94022cd73dbeb79fba8b.idx
+      |       |-- pack-2f3daab2c2bc0fa3c2cb94022cd73dbeb79fba8b.pack
+      |       |-- pack-9bd28ba2926c418d23678c7b9960f5577e09896b.idx
+      |       |-- pack-9bd28ba2926c418d23678c7b9960f5577e09896b.pack
+      |       |-- pack-f445d148fd9a82f820ea90fe67d7f3a794e393a4.idx
+      |       `-- pack-f445d148fd9a82f820ea90fe67d7f3a794e393a4.pack
       `-- refs
           |-- heads
           |-- namespaces
           `-- tags
   
-  53 directories, 37 files
+  45 directories, 37 files
 
