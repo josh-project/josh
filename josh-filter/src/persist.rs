@@ -513,6 +513,7 @@ pub fn to_filter(op: Op) -> Filter {
 
 pub fn as_tree(repo: &git2::Repository, filter: Filter) -> anyhow::Result<git2::Oid> {
     let odb = repo.odb()?;
+    let filter = crate::opt::optimize(filter);
 
     // If the tree exists in the ODB it means all children must already exist as
     // well so we can just return it.
