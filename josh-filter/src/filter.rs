@@ -1,7 +1,7 @@
 use crate::check_experimental_features_enabled;
 use crate::op::{BlobContent, LazyRef, Op, Regex};
 use crate::opt;
-use crate::persist::{self, to_filter, to_op};
+use crate::persist::{self, Node, to_filter, to_op};
 use std::sync::LazyLock;
 
 /// Match-all regex pattern used as the default for Op::Message when no regex is specified.
@@ -9,23 +9,32 @@ use std::sync::LazyLock;
 pub static MESSAGE_MATCH_ALL_REGEX: LazyLock<regex::Regex> =
     LazyLock::new(|| regex::Regex::new("(?s)^.*$").unwrap());
 
-/// Filters are represented as `git2::Oid`, however they are not ever stored
-/// inside the repo.
-#[derive(Clone, Copy, Hash)]
-pub struct Filter(pub git2::Oid);
+/// A filter is a handle to an interned, hash-consed `Node`. Filter identity is node identity:
+/// because interning canonicalizes one node per structurally-unique `Op`, two filters are equal
+/// iff they point at the same node. The content OID (used for persistence and cache keys) is
+/// computed lazily via [`Filter::id`] — never eagerly — so the optimizer can build and discard
+/// huge intermediate filters without ever hashing a tree.
+#[derive(Clone, Copy)]
+pub struct Filter(pub(crate) &'static Node);
 
-// Compare the underlying 20 bytes directly in Rust instead of deriving these traits, which
-// would delegate to git2::Oid's FFI git_oid_equal/git_oid_cmp. Byte-wise comparison of the
-// Oid is unsigned and lexicographic, matching libgit2's semantics exactly, and stays
-// consistent with the derived Hash (which also hashes the raw bytes).
+// Identity comparison: sound because every `Filter` originates from interning (or a memoized
+// sentinel), so structural equality coincides with pointer equality.
 impl PartialEq for Filter {
     fn eq(&self, other: &Self) -> bool {
-        self.0.as_bytes() == other.0.as_bytes()
+        std::ptr::eq(self.0, other.0)
     }
 }
 
 impl Eq for Filter {}
 
+impl std::hash::Hash for Filter {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        state.write_usize(self.0 as *const Node as usize);
+    }
+}
+
+// Order by content OID to keep any filter ordering deterministic across runs (pointer order is
+// not). This forces OID materialization, but no hot path sorts filters.
 impl PartialOrd for Filter {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
         Some(self.cmp(other))
@@ -34,7 +43,7 @@ impl PartialOrd for Filter {
 
 impl Ord for Filter {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        self.0.as_bytes().cmp(other.0.as_bytes())
+        self.id().as_bytes().cmp(other.id().as_bytes())
     }
 }
 
@@ -45,14 +54,10 @@ impl Default for Filter {
 }
 
 impl Filter {
+    /// The content-addressed OID of this filter, computed lazily on first call and cached on the
+    /// node. This is the only place a filter's tree is built (via `build_op`).
     pub fn id(&self) -> git2::Oid {
-        self.0
-    }
-
-    /// Create a Filter from an Oid. This is primarily used for special filters
-    /// like sequence_number that don't correspond to a normal Op variant.
-    pub(crate) fn from_oid(oid: git2::Oid) -> Filter {
-        Filter(oid)
+        *self.0.oid.get_or_init(|| persist::build_node_oid(self.0))
     }
 }
 
@@ -331,18 +336,23 @@ pub fn invert(filter: Filter) -> anyhow::Result<Filter> {
     opt::invert(filter)
 }
 
-/// Create a sequence_number filter used for tracking commit sequence numbers
+/// The sequence_number filter used for tracking commit sequence numbers. A memoized sentinel
+/// node whose OID is the zero OID, so identity comparison and cache-keying stay correct.
 pub fn sequence_number() -> Filter {
-    Filter::from_oid(git2::Oid::zero())
+    static F: LazyLock<Filter> = LazyLock::new(|| persist::sentinel(git2::Oid::zero()));
+    *F
 }
 
-/// Create a reachable_roots filter used for tracking the set of root commits
-/// (parentless commits) reachable from each commit. The cached value is the OID
-/// of a git blob whose content is the concatenation of 20-byte root OIDs.
+/// The reachable_roots filter used for tracking the set of root commits (parentless commits)
+/// reachable from each commit. The cached value is the OID of a git blob whose content is the
+/// concatenation of 20-byte root OIDs. A memoized sentinel node; its OID is all zeros except the
+/// last byte = 1, distinct from sequence_number()'s zero OID and unlikely to collide with a real
+/// SHA-1.
 pub fn reachable_roots() -> Filter {
-    // Sentinel OID: all zeros except the last byte = 1. Distinct from
-    // sequence_number()'s zero OID and unlikely to collide with a real SHA-1.
-    let mut bytes = [0u8; 20];
-    bytes[19] = 1;
-    Filter::from_oid(git2::Oid::from_bytes(&bytes).expect("valid sentinel oid"))
+    static F: LazyLock<Filter> = LazyLock::new(|| {
+        let mut bytes = [0u8; 20];
+        bytes[19] = 1;
+        persist::sentinel(git2::Oid::from_bytes(&bytes).expect("valid sentinel oid"))
+    });
+    *F
 }
