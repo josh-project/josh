@@ -15,10 +15,11 @@ use std::sync::LazyLock;
 
 type FilterHashMap = HashMap<Filter, Filter, BuildHasherDefault<PassthroughHasher>>;
 type FilterSet = HashSet<Filter, BuildHasherDefault<PassthroughHasher>>;
+type InvertHashMap = HashMap<Filter, Option<Filter>, BuildHasherDefault<PassthroughHasher>>;
 
 static OPTIMIZED: LazyLock<std::sync::Mutex<FilterHashMap>> =
     LazyLock::new(|| std::sync::Mutex::new(HashMap::default()));
-static INVERTED: LazyLock<std::sync::Mutex<FilterHashMap>> =
+static INVERTED: LazyLock<std::sync::Mutex<InvertHashMap>> =
     LazyLock::new(|| std::sync::Mutex::new(HashMap::default()));
 static SIMPLIFIED: LazyLock<std::sync::Mutex<FilterHashMap>> =
     LazyLock::new(|| std::sync::Mutex::new(HashMap::default()));
@@ -791,58 +792,62 @@ fn step(filter: Filter) -> Filter {
 }
 
 pub fn invert(filter: Filter) -> anyhow::Result<Filter> {
-    let result = match to_op(filter) {
-        Op::Nop => Some(Op::Nop),
-        Op::Message(..) => Some(Op::Nop),
-        Op::Prune => Some(Op::Prune),
-        Op::Export => Some(Op::Export),
-        Op::Empty => Some(Op::Empty),
-        Op::Link(..) => Some(Op::Unlink),
-        Op::Subdir(path) => Some(Op::Prefix(path)),
-        Op::File(dest_path, source_path) => Some(Op::File(source_path, dest_path)),
-        Op::Prefix(path) => Some(Op::Subdir(path)),
-        Op::Pattern(pattern) => Some(Op::Pattern(pattern)),
-        Op::Rev(_) => Some(Op::Nop),
-        Op::RegexReplace(_) => Some(Op::Nop),
-        Op::Pin(_) => Some(Op::Nop),
-        Op::Blob(path, _) => Some(Op::Exclude(to_filter(Op::File(path.clone(), path)))),
-        Op::TreeId(path, _) => Some(Op::Exclude(to_filter(Op::File(path.clone(), path)))),
-        Op::ObjectDeref(path) => Some(Op::ObjectRef(path.clone())),
-        Op::ObjectRef(path) => Some(Op::ObjectDeref(path.clone())),
-        _ => None,
-    };
-
-    if let Some(result) = result {
-        return Ok(to_filter(result));
+    if let Some(cached) = INVERTED.lock().unwrap().get(&filter).copied() {
+        return cached.ok_or_else(|| anyhow!("no invert {:?}", filter));
     }
 
-    let original = filter;
-    if let Some(f) = INVERTED.lock().unwrap().get(&filter) {
-        return Ok(*f);
-    }
+    let computed = (|| -> anyhow::Result<Filter> {
+        let result = match to_op(filter) {
+            Op::Nop => Some(Op::Nop),
+            Op::Message(..) => Some(Op::Nop),
+            Op::Prune => Some(Op::Prune),
+            Op::Export => Some(Op::Export),
+            Op::Empty => Some(Op::Empty),
+            Op::Link(..) => Some(Op::Unlink),
+            Op::Subdir(path) => Some(Op::Prefix(path)),
+            Op::File(dest_path, source_path) => Some(Op::File(source_path, dest_path)),
+            Op::Prefix(path) => Some(Op::Subdir(path)),
+            Op::Pattern(pattern) => Some(Op::Pattern(pattern)),
+            Op::Rev(_) => Some(Op::Nop),
+            Op::RegexReplace(_) => Some(Op::Nop),
+            Op::Pin(_) => Some(Op::Nop),
+            Op::Blob(path, _) => Some(Op::Exclude(to_filter(Op::File(path.clone(), path)))),
+            Op::TreeId(path, _) => Some(Op::Exclude(to_filter(Op::File(path.clone(), path)))),
+            Op::ObjectDeref(path) => Some(Op::ObjectRef(path.clone())),
+            Op::ObjectRef(path) => Some(Op::ObjectDeref(path.clone())),
+            _ => None,
+        };
 
-    let result = to_filter(match to_op(filter) {
-        Op::Meta(m, f) => Op::Meta(m, invert(f)?),
-        Op::Chain(filters) => {
-            let inverted: Vec<_> = filters
-                .iter()
-                .rev()
-                .map(|f| invert(*f))
-                .collect::<Result<_, _>>()?;
-            Op::Chain(inverted)
+        if let Some(result) = result {
+            return Ok(to_filter(result));
         }
-        Op::Compose(filters) => Op::Compose(
-            filters
-                .into_iter()
-                .map(invert)
-                .collect::<Result<Vec<_>, _>>()?,
-        ),
-        Op::Exclude(filter) => Op::Exclude(invert(filter)?),
-        _ => return Err(anyhow!("no invert {:?}", filter)),
-    });
 
-    let result = optimize(result);
+        let result = to_filter(match to_op(filter) {
+            Op::Meta(m, f) => Op::Meta(m, invert(f)?),
+            Op::Chain(filters) => {
+                let inverted: Vec<_> = filters
+                    .iter()
+                    .rev()
+                    .map(|f| invert(*f))
+                    .collect::<Result<_, _>>()?;
+                Op::Chain(inverted)
+            }
+            Op::Compose(filters) => Op::Compose(
+                filters
+                    .into_iter()
+                    .map(invert)
+                    .collect::<Result<Vec<_>, _>>()?,
+            ),
+            Op::Exclude(filter) => Op::Exclude(invert(filter)?),
+            _ => return Err(anyhow!("no invert {:?}", filter)),
+        });
 
-    INVERTED.lock().unwrap().insert(original, result);
-    Ok(result)
+        Ok(optimize(result))
+    })();
+
+    INVERTED
+        .lock()
+        .unwrap()
+        .insert(filter, computed.as_ref().ok().copied());
+    computed
 }
