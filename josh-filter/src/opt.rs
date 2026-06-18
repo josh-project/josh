@@ -842,7 +842,7 @@ pub fn invert(filter: Filter) -> anyhow::Result<Filter> {
             _ => return Err(anyhow!("no invert {:?}", filter)),
         });
 
-        Ok(optimize(result))
+        Ok(result)
     })();
 
     INVERTED

@@ -314,8 +314,6 @@
       |   |   `-- 4395792f8b6494b9a0fad94ebaf2d1b57422b8
       |   |-- 13
       |   |   `-- 7228bdcd2ae40007860a69d05168279d95117a
-      |   |-- 26
-      |   |   `-- 6864a895cac573b04a44bd40ee3bd8fe458a5f
       |   |-- 2e
       |   |   `-- aadc29a9215c79ff47c4b3a82a024816eb195a
       |   |-- 39
@@ -332,14 +330,10 @@
       |   |   `-- 52611a9e7c56dfdfeadec043ced6d6ef7a5c33
       |   |-- 4b
       |   |   `-- 825dc642cb6eb9a060e54bf8d69288fbee4904
-      |   |-- 4d
-      |   |   `-- 5d64cb11e557bba3e609d2b7a605bb80806e94
       |   |-- 5a
       |   |   `-- f4045367114a7584eefa64b95bb69d7f840aef
       |   |-- 64
       |   |   `-- d1f8d32b274d8c1eeb69891931f52b6ade9417
-      |   |-- 69
-      |   |   `-- d753308940fb9a6c60bf04d0b1c7421fd91aba
       |   |-- 77
       |   |   `-- 788a139643ad181e2b1684dd7f8a31e3da6249
       |   |-- 78
@@ -403,6 +397,6 @@
           |-- namespaces
           `-- tags
   
-  96 directories, 83 files
+  93 directories, 80 files
 
 $ cat ${TESTTMP}/josh-proxy.out
