@@ -1,9 +1,10 @@
 use std::hash::Hasher;
 use std::mem::size_of;
 
-/// A hasher that uses the first 8 bytes of a SHA1 hash directly as the hash value.
-/// This is designed to be used with HashMaps where the key is already a SHA1 hash,
-/// e.g. Filter or Oid, avoiding double-hashing.
+/// A hasher that uses an already-uniform key directly as the hash value, avoiding
+/// double-hashing. Two key shapes are supported: the first 8 bytes of a 20-byte SHA1
+/// (e.g. an `Oid` key) via `write`, or a single pointer-sized integer (e.g. an interned
+/// `Filter` node pointer) via `write_usize`.
 #[derive(Default)]
 pub struct PassthroughHasher {
     buffer: [u8; 8],
@@ -17,6 +18,15 @@ impl Hasher for PassthroughHasher {
         }
 
         u64::from_le_bytes(self.buffer)
+    }
+
+    // Used for interned `Filter` keys, whose hash is just the node pointer.
+    fn write_usize(&mut self, i: usize) {
+        if self.done {
+            panic!("hasher data already written");
+        }
+        self.buffer[..size_of::<usize>()].copy_from_slice(&i.to_le_bytes());
+        self.done = true;
     }
 
     // hyper-specialized: reject everything that's not sha1 length

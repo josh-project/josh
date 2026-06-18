@@ -2,34 +2,25 @@ use anyhow::{Context, anyhow};
 use gix_object::WriteTo;
 use gix_object::bstr::BString;
 use std::collections::HashMap;
-use std::hash::BuildHasherDefault;
 use std::sync::{LazyLock, OnceLock};
 
-use crate::filter::{Filter, reachable_roots, sequence_number};
-use crate::hash::PassthroughHasher;
+use crate::filter::Filter;
 use crate::op::{BlobContent, LazyRef, Op, Regex, RevMatch};
 
-/// An interned, immutable `Op` together with its lazily-computed `Filter` OID.
-/// Nodes are leaked (`&'static`) and live for the process lifetime, exactly like the
-/// `Op`s previously stored in `FILTERS`. The OID is built at most once via `build_op`.
+/// An interned, immutable `Op` together with its lazily-computed content OID.
+/// Nodes are leaked (`&'static`) and live for the process lifetime. A `Filter` is just a
+/// pointer to one of these nodes, so filter identity is node identity. The OID is built at
+/// most once, on demand, via `Filter::id`/`build_node_oid` — never during `to_filter`.
 pub(crate) struct Node {
-    op: Op,
-    oid: OnceLock<git2::Oid>,
+    pub(crate) op: Op,
+    pub(crate) oid: OnceLock<git2::Oid>,
 }
 
-/// `Filter` (OID) -> node, populated when a node's OID is first materialized in `to_filter`.
-/// Used by `to_op_ref` to resolve a `Filter` back to its `Op` without cloning.
-pub(crate) static FILTERS: LazyLock<
-    std::sync::Mutex<HashMap<Filter, &'static Node, BuildHasherDefault<PassthroughHasher>>>,
-> = LazyLock::new(Default::default);
-
-/// Canonicalizes each `Op` to a single interned node by structural equality, so `to_filter`
-/// can skip `build_op` when an equal `Op` was interned before. `Op` derives `Hash`/`Eq`, so
-/// the `Op` itself is the key — no separate fingerprint.
+/// Canonicalizes each `Op` to a single interned node by structural equality, so equal `Op`s
+/// map to the same node (and therefore the same `Filter` pointer). `Op` derives `Hash`/`Eq`
+/// and its child `Filter`s hash/compare by pointer, so the `Op` itself is the key.
 static INTERN: LazyLock<std::sync::Mutex<HashMap<Op, &'static Node>>> =
     LazyLock::new(Default::default);
-
-static NOP_OP: Op = Op::Nop;
 
 pub fn peel_op(filter: Filter) -> Op {
     peel_op_ref(filter).clone()
@@ -49,29 +40,28 @@ pub fn to_op(filter: Filter) -> Op {
 }
 
 pub fn to_op_ref(filter: Filter) -> &'static Op {
-    if filter == sequence_number() || filter == reachable_roots() {
-        return &NOP_OP;
-    }
-    let node = *FILTERS
-        .lock()
-        .unwrap()
-        .get(&filter)
-        .expect("unknown filter");
-    &node.op
+    &filter.0.op
 }
 
 pub fn to_ops(filters: &[Filter]) -> Vec<Op> {
     filters.iter().map(|x| to_op(*x)).collect()
 }
 
-/// Get the known `Filter` -> `Op` mappings for use in as_tree/from_tree.
-pub fn get_filters() -> HashMap<Filter, Op, BuildHasherDefault<PassthroughHasher>> {
-    FILTERS
-        .lock()
-        .unwrap()
-        .iter()
-        .map(|(f, node)| (*f, node.op.clone()))
-        .collect()
+/// Enumerate the direct child filters of an op, for reachable-set traversal in `as_tree`.
+fn child_filters(op: &Op) -> Vec<Filter> {
+    match op {
+        Op::Meta(_, f)
+        | Op::Exclude(f)
+        | Op::Pin(f)
+        | Op::Starlark(_, f)
+        | Op::TreeId(_, f)
+        | Op::Unapply(_, f) => vec![*f],
+        Op::Subtract(a, b) => vec![*a, *b],
+        Op::Compose(v) | Op::Chain(v) => v.clone(),
+        Op::Rev(v) => v.iter().map(|(_, _, f)| *f).collect(),
+        Op::Squash(Some(m)) => m.values().copied().collect(),
+        _ => vec![],
+    }
 }
 
 fn push_blob_entries(
@@ -534,7 +524,7 @@ impl InMemoryBuilder {
 
 // Canonicalize an `Op` to its single interned node via structural equality. On a hit we
 // return the existing node and drop `op`; on a miss we leak a node (its `Op` lives for the
-// process, exactly like the old `FILTERS` map) and key it by a clone of the `Op`.
+// process) and key it by a clone of the `Op`.
 fn intern(op: Op) -> &'static Node {
     let mut intern = INTERN.lock().unwrap();
     if let Some(node) = intern.get(&op) {
@@ -549,35 +539,57 @@ fn intern(op: Op) -> &'static Node {
 }
 
 pub fn to_filter(op: Op) -> Filter {
-    let node = intern(op);
-    let oid = *node.oid.get_or_init(|| {
-        let mut builder = InMemoryBuilder::new();
-        let tree_id = builder.build_op(&node.op).expect("failed to build op");
-        let oid = git2::Oid::from_bytes(tree_id.as_bytes()).unwrap();
-        FILTERS.lock().unwrap().entry(Filter(oid)).or_insert(node);
-        oid
-    });
-    Filter(oid)
+    Filter(intern(op))
+}
+
+/// Materialize a node's content OID, building its tree (and, recursively via `build_op`'s child
+/// `Filter::id` calls, its children's). Called only from `Filter::id`, never on the optimizer
+/// hot path.
+pub(crate) fn build_node_oid(node: &'static Node) -> git2::Oid {
+    let mut builder = InMemoryBuilder::new();
+    let tree_id = builder.build_op(&node.op).expect("failed to build op");
+    git2::Oid::from_bytes(tree_id.as_bytes()).unwrap()
+}
+
+/// Construct a sentinel filter: a unique leaked node whose OID is pre-seeded to `oid` (so it
+/// never goes through `build_op`) and whose op is `Nop`. Sentinels bypass interning, so each
+/// is a distinct node — pointer-identity equality keeps them distinct from the real `Nop`
+/// filter and from each other, while `to_op_ref` still yields `Nop`.
+pub(crate) fn sentinel(oid: git2::Oid) -> Filter {
+    let node: &'static Node = Box::leak(Box::new(Node {
+        op: Op::Nop,
+        oid: OnceLock::new(),
+    }));
+    node.oid.set(oid).expect("fresh OnceLock");
+    Filter(node)
 }
 
 pub fn as_tree(repo: &git2::Repository, filter: Filter) -> anyhow::Result<git2::Oid> {
     let odb = repo.odb()?;
     let filter = crate::opt::optimize(filter);
+    let root_oid = filter.id();
 
     // If the tree exists in the ODB it means all children must already exist as
     // well so we can just return it.
-    if odb.exists(filter.id()) {
-        return Ok(filter.id());
+    if odb.exists(root_oid) {
+        return Ok(root_oid);
     }
 
-    // We don't try to figure out what to write exactly, just write all
-    // filters we know about to the ODB
-    let filters = get_filters();
+    // Build the tree of every node reachable from `filter` into one builder. `build_op`
+    // references children by OID (via `Filter::id`), so each reachable node must be built
+    // for its own tree object to exist in the ODB.
     let mut builder = InMemoryBuilder::new();
-    for (f, op) in filters.into_iter() {
-        if !odb.exists(f.id()) {
-            builder.build_op(&op)?;
+    let mut seen = std::collections::HashSet::new();
+    let mut stack = vec![filter];
+    while let Some(f) = stack.pop() {
+        if !seen.insert(f.id()) {
+            continue;
         }
+        let op = to_op_ref(f);
+        if !odb.exists(f.id()) {
+            builder.build_op(op)?;
+        }
+        stack.extend(child_filters(op));
     }
 
     // Write all pending objects to the git2 repository
@@ -599,7 +611,7 @@ pub fn as_tree(repo: &git2::Repository, filter: Filter) -> anyhow::Result<git2::
     }
 
     // Now the tree should really be in the ODB
-    Ok(filter.id())
+    Ok(root_oid)
 }
 
 pub fn from_tree(repo: &git2::Repository, tree_oid: git2::Oid) -> anyhow::Result<Filter> {
