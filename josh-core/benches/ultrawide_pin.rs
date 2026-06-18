@@ -4,7 +4,11 @@ use rand::prelude::*;
 use std::cell::RefCell;
 use std::ops::DerefMut;
 
-const N_FILES: usize = if cfg!(debug_assertions) { 50 } else { 500 };
+const N_FILES: usize = if cfg!(debug_assertions) {
+    50 * 5
+} else {
+    500 * 5
+};
 
 const N_COMMITS: usize = if cfg!(debug_assertions) { 5 } else { 10 };
 
