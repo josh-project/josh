@@ -158,7 +158,7 @@ fn prepare_push(
         old_filtered_oid,
         local_commit,
         josh_core::history::OrphansMode::Keep,
-        None,
+        base.map(|_| original_target),
     )
     .context("Failed to unapply filter")?;
 
