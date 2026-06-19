@@ -41,6 +41,16 @@ pub struct PushArgs {
     /// branch that does not yet exist on the remote.
     #[arg(long = "base")]
     pub base: Option<String>,
+
+    /// Wrap the reverse-filtered commit in a merge commit on top of the
+    /// base (mirrors `josh-proxy`'s `git push -o merge`).
+    ///
+    /// The resulting commit has two parents — the base and the
+    /// reverse-filtered new commit — and its tree is the 3-way merge of
+    /// both. Requires --base, or a destination branch that already
+    /// exists on the remote, to anchor the merge.
+    #[arg(long = "merge", action = clap::ArgAction::SetTrue)]
+    pub merge: bool,
 }
 
 #[derive(Debug, clap::Parser)]
@@ -73,6 +83,13 @@ pub struct PublishArgs {
     /// See `josh push --base` for details.
     #[arg(long = "base")]
     pub base: Option<String>,
+
+    /// Wrap the reverse-filtered commit in a merge commit on top of the
+    /// base.
+    ///
+    /// See `josh push --merge` for details.
+    #[arg(long = "merge", action = clap::ArgAction::SetTrue)]
+    pub merge: bool,
 }
 
 struct PreparedPush {
@@ -84,6 +101,7 @@ fn prepare_push(
     refspec: &str,
     remote_name: &str,
     base: Option<&str>,
+    merge: bool,
     transaction: &josh_core::cache::Transaction,
     filter: josh_core::filter::Filter,
     push_mode: &PushMode,
@@ -161,6 +179,30 @@ fn prepare_push(
         base.map(|_| original_target),
     )
     .context("Failed to unapply filter")?;
+
+    let unfiltered_oid = if merge {
+        if original_target == git2::Oid::zero() {
+            return Err(anyhow!(
+                "--merge requires --base=<ref> or an existing destination ref"
+            ));
+        }
+        let base_commit = repo.find_commit(original_target)?;
+        let backward_commit = repo.find_commit(unfiltered_oid)?;
+        let merged_tree = repo
+            .merge_commits(&base_commit, &backward_commit, None)?
+            .write_tree_to(repo)?;
+        let signature = josh_core::git::josh_commit_signature()?;
+        repo.commit(
+            None,
+            &signature,
+            &signature,
+            &format!("Merge from {}", josh_core::filter::pretty(filter, 0)),
+            &repo.find_tree(merged_tree)?,
+            &[&base_commit, &backward_commit],
+        )?
+    } else {
+        unfiltered_oid
+    };
 
     log::debug!("unfiltered_oid: {:?}", unfiltered_oid);
 
@@ -272,6 +314,7 @@ fn orchestrate_push(
     remote: Option<&str>,
     refspecs_arg: &[String],
     base: Option<&str>,
+    merge: bool,
     force: bool,
     atomic: bool,
     dry_run: bool,
@@ -311,6 +354,7 @@ fn orchestrate_push(
                 refspec,
                 remote_name,
                 base,
+                merge,
                 transaction,
                 filter,
                 &push_mode,
@@ -363,6 +407,7 @@ pub fn handle_push(
         args.remote.as_deref(),
         &args.refspecs,
         args.base.as_deref(),
+        args.merge,
         args.force,
         args.atomic,
         args.dry_run,
@@ -383,6 +428,7 @@ pub fn handle_publish(
         args.remote.as_deref(),
         &args.refspecs,
         args.base.as_deref(),
+        args.merge,
         args.force,
         args.atomic,
         args.dry_run,
