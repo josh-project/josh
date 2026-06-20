@@ -14,11 +14,145 @@
 //! this backend, that wasted disk I/O disappears from the filter hot path while reads still resolve
 //! on-disk objects via delegation.
 
+use std::collections::HashMap;
 use std::ffi::{c_int, c_void};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::sync::mpsc::{Sender, SyncSender, sync_channel};
 
 use libgit2_sys as raw;
+
+/// Soft threshold of in-memory objects after which we kick off a mid-run packfile write on the
+/// background flusher. Sized high enough that the small object counts produced by the integration
+/// suite never cross it (so test snapshots, which encode specific pack filenames, stay stable) while
+/// still bounding RAM on large rewrites.
+const CHUNK_THRESHOLD: usize = 100_000;
+
+/// Approximate object count in [`STORE`]. Updated by `odb_write` (on a fresh insert) and
+/// `flush_chunk` (on eviction). Used solely to decide when to enqueue a background chunk flush;
+/// scc::HashMap has no O(1) len, so we maintain this counter alongside.
+static STORE_LEN: AtomicUsize = AtomicUsize::new(0);
+
+/// Set to true while a `FlushMsg::Chunk` is in the worker's mailbox or being processed. Prevents
+/// the write hot path from queueing redundant chunk requests every time `STORE_LEN` crosses a
+/// threshold multiple. Cleared by the worker once the chunk has been packed and evicted.
+static CHUNK_IN_FLIGHT: AtomicBool = AtomicBool::new(false);
+
+/// Path of the most-recently-registered repository. Used solely to route `Chunk` triggers from
+/// `odb_write` — Chunk callers don't know which transaction's repo is "current". Multi-repo callers
+/// (josh-proxy holds both `mirror/` and `overlay/` transactions) hand the path explicitly to the
+/// Drain path, so this slot is only consulted for mid-run Chunks.
+static LAST_REPO_PATH: std::sync::RwLock<Option<PathBuf>> = std::sync::RwLock::new(None);
+
+/// Lazily-spawned background packfile writer. See [`Flusher::spawn`].
+static FLUSHER: std::sync::LazyLock<Flusher> = std::sync::LazyLock::new(Flusher::spawn);
+
+/// Messages to the background flusher. Each carries the on-disk repo path explicitly because
+/// josh-proxy operates on TWO repos per request (`mirror/` for upstream and `overlay/` for the
+/// filtered view), so flushes must be routed to the correct one — they are not interchangeable
+/// even though the overlay registers the mirror as a runtime `add_disk_alternate`.
+enum FlushMsg {
+    /// Pack up to [`CHUNK_THRESHOLD`] objects from [`STORE`] into a new packfile and evict them.
+    /// Triggered from `odb_write` when `STORE_LEN` crosses a threshold multiple.
+    Chunk { repo_path: PathBuf },
+    /// Pack EVERY object currently in [`STORE`] into a single new packfile and ack when done.
+    /// Called at boundaries where an external `git` process is about to read the objects.
+    Drain {
+        repo_path: PathBuf,
+        ack: SyncSender<Result<(), String>>,
+    },
+}
+
+struct Flusher {
+    sender: Sender<FlushMsg>,
+}
+
+impl Flusher {
+    fn spawn() -> Flusher {
+        let (sender, receiver) = std::sync::mpsc::channel::<FlushMsg>();
+        std::thread::Builder::new()
+            .name("josh-mem-odb-flusher".to_string())
+            .spawn(move || worker_loop(receiver))
+            .expect("failed to spawn josh-mem-odb-flusher thread");
+        Flusher { sender }
+    }
+}
+
+/// Worker thread body. Caches one `git2::Repository` per path so we don't reopen and re-register
+/// the in-memory backend for every chunk. josh-proxy uses two distinct paths per request, so the
+/// cache is a small `HashMap`. The cached handle for a given path is dropped before each Drain to
+/// refresh its on-disk view of packs — see the Drain arm below.
+fn worker_loop(receiver: std::sync::mpsc::Receiver<FlushMsg>) {
+    let mut repos: HashMap<PathBuf, git2::Repository> = HashMap::new();
+    while let Ok(msg) = receiver.recv() {
+        match msg {
+            FlushMsg::Chunk { repo_path } => {
+                let result = with_repo(&mut repos, &repo_path, |repo| {
+                    flush_chunk(repo, Some(CHUNK_THRESHOLD))
+                });
+                if let Err(e) = result {
+                    log::error!("background chunk flush failed: {e}");
+                }
+                CHUNK_IN_FLIGHT.store(false, Ordering::Release);
+            }
+            FlushMsg::Drain { repo_path, ack } => {
+                // Drop the cached repo so its delegate ODB (which captures the on-disk pack list
+                // at open time and serves lookups with NO_REFRESH) is rebuilt to include packs
+                // written by prior Drains/Chunks. Otherwise back-to-back proxy requests would
+                // dedup against a stale snapshot and re-pack already-on-disk objects, growing
+                // each successive packfile.
+                repos.remove(&repo_path);
+                let result = with_repo(&mut repos, &repo_path, |repo| flush_chunk(repo, None));
+                let _ = ack.send(result.map_err(|e| e.to_string()));
+            }
+        }
+    }
+}
+
+fn with_repo<F, T>(
+    repos: &mut HashMap<PathBuf, git2::Repository>,
+    repo_path: &Path,
+    f: F,
+) -> Result<T, git2::Error>
+where
+    F: FnOnce(&git2::Repository) -> Result<T, git2::Error>,
+{
+    if !repos.contains_key(repo_path) {
+        let repo = git2::Repository::open(repo_path).map_err(|e| {
+            git2::Error::from_str(&format!("worker open({}): {e}", repo_path.display()))
+        })?;
+        // Use `attach_backend` (not `register`) — `register` is for the main thread to record
+        // `LAST_REPO_PATH`; the worker only needs the ODB swap on its own handle.
+        attach_backend(&repo);
+        repos.insert(repo_path.to_path_buf(), repo);
+    }
+    let repo = repos.get(repo_path).expect("inserted just above");
+    f(repo)
+}
+
+/// Try to enqueue a mid-run chunk flush. Best-effort: a single chunk request can be in flight at a
+/// time (controlled by `CHUNK_IN_FLIGHT`), and we need a known repo path. If either condition
+/// fails, the next threshold crossing will retry.
+fn maybe_trigger_chunk() {
+    if CHUNK_IN_FLIGHT
+        .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
+        .is_err()
+    {
+        return;
+    }
+    let path = LAST_REPO_PATH
+        .read()
+        .expect("LAST_REPO_PATH poisoned")
+        .clone();
+    let Some(repo_path) = path else {
+        CHUNK_IN_FLIGHT.store(false, Ordering::Release);
+        return;
+    };
+    if FLUSHER.sender.send(FlushMsg::Chunk { repo_path }).is_err() {
+        CHUNK_IN_FLIGHT.store(false, Ordering::Release);
+    }
+}
 
 /// Process-global in-memory object store shared by every backend instance. Every per-thread
 /// repository josh opens registers its own backend pointing at this one store, mirroring how the
@@ -39,17 +173,50 @@ impl MemOdb {
         }
     }
 
-    fn insert(&self, oid: git2::Oid, kind: raw::git_object_t, data: Arc<[u8]>) {
-        // A duplicate key means the identical (content-addressed) object is already present.
-        let _ = self.map.insert_sync(Key(oid), (kind, data));
+    /// Returns true if a new entry was inserted; false if an entry with the same OID was already
+    /// present (a duplicate, since OIDs are content-addressed). The caller uses this to keep the
+    /// approximate [`STORE_LEN`] counter in sync.
+    fn insert(&self, oid: git2::Oid, kind: raw::git_object_t, data: Arc<[u8]>) -> bool {
+        self.map.insert_sync(Key(oid), (kind, data)).is_ok()
     }
 }
 
-/// Drain every in-memory object into a packfile on disk and evict it from the store. Called when
-/// the outermost transaction completes so the on-disk repository is left whole for any subsequent
-/// process (e.g. a `git` subprocess) that expects the objects on disk. The packbuilder reads object
-/// contents back through `repo`'s odb, which must have this backend registered.
+/// Drain every in-memory object into a packfile on disk and evict it from the store. Routes the
+/// work through the background flusher and waits for it to finish, so on return STORE is empty and
+/// the packfile is durable. Called at boundaries where an external `git` process is about to read
+/// the objects from disk.
 pub(crate) fn flush_all(repo: &git2::Repository) -> Result<(), git2::Error> {
+    drain_via_worker(repo.path())
+}
+
+fn drain_via_worker(repo_path: &Path) -> Result<(), git2::Error> {
+    let (ack_tx, ack_rx) = sync_channel::<Result<(), String>>(1);
+    if FLUSHER
+        .sender
+        .send(FlushMsg::Drain {
+            repo_path: repo_path.to_path_buf(),
+            ack: ack_tx,
+        })
+        .is_err()
+    {
+        return Err(git2::Error::from_str(
+            "background flusher channel disconnected",
+        ));
+    }
+    match ack_rx.recv() {
+        Ok(Ok(())) => Ok(()),
+        Ok(Err(msg)) => Err(git2::Error::from_str(&msg)),
+        Err(_) => Err(git2::Error::from_str(
+            "background flusher ack channel disconnected",
+        )),
+    }
+}
+
+/// Pack up to `max` objects (or all of them, if `max` is `None`) from [`STORE`] into a new
+/// packfile on disk and evict the packed OIDs from the store. Called only on the background
+/// flusher thread; `repo` must be its long-lived handle with the in-memory backend registered, so
+/// the packbuilder can read object contents back through `odb_read`.
+fn flush_chunk(repo: &git2::Repository, max: Option<usize>) -> Result<(), git2::Error> {
     let mut oids = Vec::new();
     STORE.map.iter_sync(|k, _| {
         oids.push(k.0);
@@ -59,8 +226,13 @@ pub(crate) fn flush_all(repo: &git2::Repository) -> Result<(), git2::Error> {
         return Ok(());
     }
     // scc iteration order is unspecified; sort so the packbuilder receives objects in a stable
-    // order and produces a deterministic packfile (hence a deterministic pack name).
+    // order and a chunk's pack file is reproducible given its input set.
     oids.sort();
+    if let Some(m) = max
+        && oids.len() > m
+    {
+        oids.truncate(m);
+    }
 
     // The in-memory backend's `freshen` is deliberately memory-only (so the hot write path never
     // stats disk), which means objects already present on disk get re-written into memory rather
@@ -81,10 +253,14 @@ pub(crate) fn flush_all(repo: &git2::Repository) -> Result<(), git2::Error> {
         pb.write(&repo.path().join("objects").join("pack"), 0)?;
     }
 
-    // Every flushed object is now durable (already on disk, or just packed), so evict the lot.
+    // Every selected object is now durable (already on disk, or just packed), so evict the lot.
+    let mut removed = 0usize;
     for oid in &oids {
-        STORE.map.remove_sync(&Key(*oid));
+        if STORE.map.remove_sync(&Key(*oid)).is_some() {
+            removed += 1;
+        }
     }
+    STORE_LEN.fetch_sub(removed, Ordering::Relaxed);
     Ok(())
 }
 
@@ -121,16 +297,15 @@ unsafe fn disk_contains(disk: *mut raw::git_odb, oid: &git2::Oid) -> bool {
     }
 }
 
-/// Like [`flush_all`] but for callers that only have a repository path: opens the repo, attaches
-/// the backend so the packbuilder can read in-memory objects, and flushes. Used at external-git
-/// boundaries (e.g. before spawning a `git` subprocess) where no live transaction is in hand.
+/// Like [`flush_all`] but for callers that only have a repository path: hands the path to the
+/// background flusher and waits for the drain to complete. Used at external-git boundaries (e.g.
+/// before spawning a `git` subprocess) where no live transaction is in hand. The worker opens (and
+/// caches) the repository itself with the in-memory backend attached.
 pub(crate) fn flush_all_at(repo_path: &Path) -> anyhow::Result<()> {
-    if STORE.map.is_empty() {
+    if STORE_LEN.load(Ordering::Relaxed) == 0 && STORE.map.is_empty() {
         return Ok(());
     }
-    let repo = git2::Repository::open(repo_path)?;
-    register(&repo);
-    flush_all(&repo)?;
+    drain_via_worker(repo_path)?;
     Ok(())
 }
 
@@ -195,6 +370,18 @@ struct JoshBackend {
 /// sound only because josh pins `git2` exactly; a version bump must re-verify the layout and the
 /// continued presence of `git_odb_new`/`git_repository_set_odb`/`git_odb_object_*`.
 pub(crate) fn register(repo: &git2::Repository) {
+    // Remember this path for write-path Chunk triggers (see `maybe_trigger_chunk`). Drain callers
+    // pass the path explicitly because josh-proxy uses multiple repos per request.
+    if let Ok(mut slot) = LAST_REPO_PATH.write() {
+        *slot = Some(repo.path().to_path_buf());
+    }
+    attach_backend(repo);
+}
+
+/// ODB-swap half of [`register`], with no side effect on the process-wide `REPO_PATH` slot. The
+/// background flusher calls this on its own cached repo handles so that the path tracking remains
+/// owned by the main thread.
+fn attach_backend(repo: &git2::Repository) {
     unsafe {
         let repo_raw = *(repo as *const git2::Repository as *const *mut raw::git_repository);
 
@@ -365,7 +552,15 @@ extern "C" fn odb_write(
         let store = backend_store(backend);
         let key = oid_to_key(oid);
         let bytes: Arc<[u8]> = std::slice::from_raw_parts(data as *const u8, len).into();
-        store.insert(key.0, kind, bytes);
+        if store.insert(key.0, kind, bytes) {
+            let new_len = STORE_LEN.fetch_add(1, Ordering::Relaxed) + 1;
+            // Use the approximate counter to decide when to kick off a background pack. Comparing
+            // against a single multiple is cheap and good enough; if we miss one boundary because
+            // another thread bumped past it, the next write will retry.
+            if new_len % CHUNK_THRESHOLD == 0 {
+                maybe_trigger_chunk();
+            }
+        }
         raw::GIT_OK
     }
 }
