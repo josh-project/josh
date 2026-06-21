@@ -1949,6 +1949,52 @@ fn legalize_stored(t: &cache::Transaction, f: Filter, tree: &git2::Tree) -> anyh
     Ok(r)
 }
 
+// Compute the difference between the current commit's filter and each parent's filter.
+// Figure out which new entries in this commit's tree appeared because of the filter changes,
+// as opposed of the changes of the trees itself. For those entries, we create synthetic
+// merges that splice in the history of the new entries coming in. Returns `Ok(None)` to
+// propagate the same short-circuit as `apply_to_commit2` (parent not yet filtered).
+fn compute_splice_parents(
+    transaction: &cache::Transaction,
+    commit_filter: Filter,
+    parent_filters: Vec<(git2::Commit, Filter)>,
+    meta: &std::collections::BTreeMap<String, String>,
+) -> anyhow::Result<Option<Vec<git2::Oid>>> {
+    // `Op::Pin` is somewhat of a special category: it doesn't operate on either
+    // commit trees or the history graph, and is more of a marker for per-rev
+    // filter application process. Therefore, in the tree-level `apply`, it's an identity.
+    //
+    // This is important because we rely on the filter optimizer to properly fold
+    // `Op::Subtract`. If there are pins inside, the optimizer will not be able to collapse
+    // it, and this will trigger extra history walks in `apply_to_commit2` below.
+    //
+    // Actual work of :pin still happens in `pin_details` in `per_rev_filter`, so :pin still works.
+    fn strip_pins(f: Filter) -> Filter {
+        legalize_pin(f, &|_| to_filter(Op::Empty))
+    }
+
+    let splice_parents = parent_filters
+        .into_iter()
+        .map(|(parent, pcw)| {
+            let f = opt::optimize(to_filter(Op::Subtract(
+                strip_pins(commit_filter.peel()),
+                strip_pins(pcw.peel()),
+            )));
+            let f = propagate_meta(f, meta);
+            apply_to_commit2(f, &parent, transaction)
+        })
+        .collect::<anyhow::Result<Option<Vec<_>>>>()?;
+
+    let splice_parents = some_or!(splice_parents, { return Ok(None) });
+
+    Ok(Some(
+        splice_parents
+            .into_iter()
+            .filter(|&oid| oid != git2::Oid::zero())
+            .collect(),
+    ))
+}
+
 fn per_rev_filter(
     transaction: &cache::Transaction,
     commit: &git2::Commit,
@@ -1960,41 +2006,16 @@ fn per_rev_filter(
     // into the per-commit filter so they are applied during commit rewriting.
     let meta = filter.into_meta();
     let commit_filter = propagate_meta(commit_filter, &meta);
-    // Compute the difference between the current commit's filter and each parent's filter.
-    // Figure out which new entries in this commit's tree appeared because of the filter changes,
-    // as opposed of the changes of the trees itself. For those entries, we want to create
-    // synthetic merges that preserve the history of the new entries coming in.
-    let extra_parents = parent_filters
-        .into_iter()
-        .map(|(parent, pcw)| {
-            // `Op::Pin` is somewhat of a special category: it doesn't operate on either
-            // commit trees or the history graph, and is more of a marker for per-rev
-            // filter application process. Therefore, in the tree-level `apply`, it's an identity.
-            //
-            // This is important because we rely on the filter optimizer to properly fold
-            // `Op::Subtract`. If there are pins inside, the optimizer will not be able to collapse
-            // it, and this will trigger extra history walks in `apply_to_commit2` below.
-            //
-            // Actual work of :pin still happens in `pin_details` below, so the :pin still works.
-            fn strip_pins(f: Filter) -> Filter {
-                legalize_pin(f, &|_| to_filter(Op::Nop))
-            }
 
-            let f = opt::optimize(to_filter(Op::Subtract(
-                strip_pins(commit_filter.peel()),
-                strip_pins(pcw.peel()),
-            )));
-            let f = propagate_meta(f, &meta);
-            apply_to_commit2(f, &parent, transaction)
-        })
-        .collect::<anyhow::Result<Option<Vec<_>>>>()?;
-
-    let extra_parents = some_or!(extra_parents, { return Ok(None) });
-
-    let extra_parents: Vec<_> = extra_parents
-        .into_iter()
-        .filter(|&oid| oid != git2::Oid::zero())
-        .collect();
+    let splice_parents =
+        if history::history_flag(meta.get("history").map(String::as_str), "no-splice") {
+            vec![]
+        } else {
+            some_or!(
+                compute_splice_parents(transaction, commit_filter, parent_filters, &meta)?,
+                { return Ok(None) }
+            )
+        };
 
     let normal_parents = commit
         .parent_ids()
@@ -2004,8 +2025,8 @@ fn per_rev_filter(
 
     // Special case: `:pin` filter needs to be aware of filtered history
     let pin_details = if let Some(&parent) = normal_parents.first() {
-        let legalized_a = legalize_pin(commit_filter, &|f| f);
-        let legalized_b = legalize_pin(commit_filter, &|f| to_filter(Op::Exclude(f)));
+        let legalized_a = legalize_pin(commit_filter.peel(), &|f| f);
+        let legalized_b = legalize_pin(commit_filter.peel(), &|f| to_filter(Op::Exclude(f)));
 
         if legalized_a != legalized_b {
             let pin_subtract = apply(
@@ -2030,7 +2051,7 @@ fn per_rev_filter(
         None
     };
 
-    let filtered_parent_ids: Vec<_> = normal_parents.into_iter().chain(extra_parents).collect();
+    let filtered_parent_ids: Vec<_> = normal_parents.into_iter().chain(splice_parents).collect();
 
     let mut tree_data = apply(transaction, commit_filter, Rewrite::from_commit(commit)?)?;
 
