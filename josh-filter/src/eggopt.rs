@@ -1,23 +1,28 @@
 //! Experimental egg-based filter optimizer (POC).
 //!
-//! This is a wiring/correctness proof that the [`egg`] e-graph crate can drive a
-//! real josh filter optimization using the existing [`Filter`] representation
-//! end-to-end. It implements two rewrites — the Chain/Compose distribute <->
-//! factor pair, and a Prefix/Subdir cancellation — both as pure pattern
-//! rewrites: Prefix/Subdir paths are structural children, so path equality is
-//! handled by egg's unification rather than a Rust condition. Gated entirely
-//! behind the `--use-new-opt` flag.
+//! A wiring/correctness proof that the [`egg`] e-graph crate can drive a real
+//! josh filter optimization over the existing [`Filter`] representation
+//! end-to-end. The bar is semantic: [`egg_optimize`] may only ever return a
+//! filter that produces an equivalent tree and history to its input. [`opt`] is
+//! used as a semantic *reference* (and as the equivalence oracle), not a
+//! mechanical spec — where egg expresses an optimization more cleanly than
+//! `opt`'s ordered passes, the cleaner form wins. Gated behind `--use-new-opt`.
 //!
-//! The bar this module must meet is correctness, not speed or prettier output:
-//! [`egg_optimize`] must never return a filter that is not semantically
-//! equivalent to its input.
+//! Three rewrite families: the Chain/Compose distribute <-> factor pair; a
+//! Prefix/Subdir cancellation (paths are structural children, so path equality
+//! is egg's unification rather than a Rust condition); and a Subtract algebra —
+//! identity rules as pure patterns plus a bidirectional Compose set-difference
+//! via a custom applier (the one variadic rewrite).
 
 use crate::filter::Filter;
 use crate::op::{BlobContent, Op};
 use crate::opt;
 use crate::persist::{to_filter, to_op};
-use egg::{AstSize, Extractor, Id, RecExpr, Rewrite, Runner, Symbol, rewrite};
-use std::collections::HashMap;
+use egg::{
+    Applier, AstSize, EGraph, Extractor, Id, PatternAst, RecExpr, Rewrite, Runner, Subst, Symbol,
+    Var, rewrite,
+};
+use std::collections::{HashMap, HashSet};
 
 /// Field separator for the opaque atom symbols below.
 ///
@@ -203,6 +208,12 @@ fn rebuild(expr: &RecExpr<Josh>, seen: &mut HashMap<Id, Filter>, id: Id) -> Opti
 
 /// The rewrites this POC runs.
 ///
+/// All gated on the same semantic bar — the output must produce an equivalent
+/// tree and history, checked by [`equivalent`] using the trusted optimizer as a
+/// sufficient-but-not-necessary oracle. They capture the *spirit* of `opt.rs`,
+/// not its exact mechanism: several are one declarative step where `opt.rs`
+/// recurses.
+///
 /// * distribute/factor: for a single chain prefix element `p`,
 ///   ```text
 ///   distribute: Chain[p, Compose(z1..zn)] == Compose(Chain[p,z1], ..., Chain[p,zn])
@@ -222,6 +233,24 @@ fn rebuild(expr: &RecExpr<Josh>, seen: &mut HashMap<Id, Filter>, id: Id) -> Opti
 ///   equality, so this is a pure pattern rewrite with no Rust condition. Only
 ///   the exact two-element chain is handled; cancelling a pair inside a longer
 ///   chain is a follow-up (same arity limitation as distribute/factor).
+///
+/// * compose identity: `(compose)` is the empty tree and `(compose ?x)` is `?x`.
+///   Pure patterns because `Box<[Id]>` matches by exact arity; mirrors `opt.rs`
+///   Compose normalization and cleans up singleton/empty results from
+///   [`SubtractComposeDiff`].
+///
+/// * subtract identity algebra (pure patterns): `x - x = empty`, `empty - x =
+///   empty`, `x - nop = empty` (nop selects everything), `x - empty = x`.
+///
+/// * subtract pluck / absorb (pure patterns): when one operand is a single
+///   element (not a compose), mirror `opt.rs` cases 11/12 — pluck it out of the
+///   other side's compose, or collapse to empty if it is contained there. This
+///   is the gap the variadic applier cannot cover (it needs both operands to be
+///   composes). Fixed arities 2 and 3.
+///
+/// * subtract-compose-diff: `Subtract(Compose(A), Compose(B))` bidirectional set
+///   difference, via [`SubtractComposeDiff`] — the one rewrite that needs a
+///   custom applier because set difference is variadic.
 fn rules() -> Vec<Rewrite<Josh, ()>> {
     vec![
         rewrite!("distribute-compose-2";
@@ -236,7 +265,170 @@ fn rules() -> Vec<Rewrite<Josh, ()>> {
             "(chain ?p (compose ?z1 ?z2 ?z3))"),
         rewrite!("cancel-prefix-subdir";
             "(chain (prefix ?p) (subdir ?p))" => "nop"),
+        // Compose identity: empty compose = empty tree; singleton compose = its
+        // sole element. Exact-arity matching on Box<[Id]> makes these patterns.
+        rewrite!("compose-empty"; "(compose)" => "empty"),
+        rewrite!("compose-single"; "(compose ?x)" => "?x"),
+        // Subtract identity / annihilator algebra — all pure patterns; `nop`
+        // and `empty` are the opaque leaf atoms.
+        rewrite!("subtract-self"; "(subtract ?x ?x)" => "empty"),
+        rewrite!("subtract-empty-l"; "(subtract empty ?x)" => "empty"),
+        rewrite!("subtract-nop-r"; "(subtract ?x nop)" => "empty"),
+        rewrite!("subtract-empty-r"; "(subtract ?x empty)" => "?x"),
+        // Subtract pluck / absorb (pure patterns), mirroring opt.rs cases 11/12
+        // for the case one operand is a single element rather than a compose —
+        // the gap the variadic applier below cannot cover (it needs both
+        // operands to be composes). Pluck removes the element from the compose;
+        // absorb collapses to empty when the element is contained in the right.
+        // Fixed arities 2 and 3 (same convention as distribute/factor); larger
+        // arities are a mechanical follow-up. Duplicate-element degenerate cases
+        // are caught by the equivalence gate (see `equivalent`).
+        rewrite!("pluck-compose-2-0"; "(subtract (compose ?a ?b) ?a)" => "?b"),
+        rewrite!("pluck-compose-2-1"; "(subtract (compose ?a ?b) ?b)" => "?a"),
+        rewrite!("pluck-compose-3-0";
+            "(subtract (compose ?a ?b ?c) ?a)" => "(compose ?b ?c)"),
+        rewrite!("pluck-compose-3-1";
+            "(subtract (compose ?a ?b ?c) ?b)" => "(compose ?a ?c)"),
+        rewrite!("pluck-compose-3-2";
+            "(subtract (compose ?a ?b ?c) ?c)" => "(compose ?a ?b)"),
+        rewrite!("absorb-compose-2-0"; "(subtract ?a (compose ?a ?b))" => "empty"),
+        rewrite!("absorb-compose-2-1"; "(subtract ?a (compose ?b ?a))" => "empty"),
+        rewrite!("absorb-compose-3-0";
+            "(subtract ?a (compose ?a ?b ?c))" => "empty"),
+        rewrite!("absorb-compose-3-1";
+            "(subtract ?a (compose ?b ?a ?c))" => "empty"),
+        rewrite!("absorb-compose-3-2";
+            "(subtract ?a (compose ?b ?c ?a))" => "empty"),
+        // Subtract set-difference over two composes — variadic, so a custom
+        // applier rather than a pattern. See [`SubtractComposeDiff`].
+        rewrite!("subtract-compose-diff";
+            "(subtract ?a ?b)" => { SubtractComposeDiff::new() }),
     ]
+}
+
+/// `Subtract(Compose(A), Compose(B))` → the bidirectional set difference
+/// `Subtract(Compose(A\B), Compose(B\A))`.
+///
+/// This is the one rewrite that cannot be a pure pattern: removing a *variable*
+/// number of shared elements from a variadic `Compose` needs an applier that
+/// builds the result programmatically (egg rewrite patterns are fixed-arity).
+/// It captures the *spirit* of the trusted optimizer's set-difference case
+/// (`opt.rs`), not its mechanism — `opt` reaches the same result via a recursive
+/// single-element `retain` over a hashed `FilterSet`, whereas this adds the
+/// fully-differenced term in one step and lets the `compose`-identity rules
+/// clean up any singleton/empty result.
+///
+/// Bidirectional (rather than left-only `A\B`) because the equivalence gate
+/// canonicalizes via `opt`, which differsences both sides — a left-only
+/// candidate would be sound but fail `canon(input) == canon(candidate)` and so
+/// never fire. Both forms give the same tree, so this is correct for the right
+/// reason, not just to placate the gate.
+///
+/// Membership is by e-class identity (`egraph.find`): two elements are "the
+/// same" iff they share an e-class, which is exactly the Filter-OID hash-consing
+/// [`build`] establishes. Self-guarding: if either operand is not a `compose`,
+/// or the element sets are disjoint, it adds nothing. Because the result is
+/// disjoint, it will not re-fire on its own output.
+struct SubtractComposeDiff {
+    a: Var,
+    b: Var,
+}
+
+impl SubtractComposeDiff {
+    fn new() -> Self {
+        Self {
+            a: "?a".parse().expect("var ?a"),
+            b: "?b".parse().expect("var ?b"),
+        }
+    }
+}
+
+impl Applier<Josh, ()> for SubtractComposeDiff {
+    fn vars(&self) -> Vec<Var> {
+        vec![self.a, self.b]
+    }
+
+    fn apply_one(
+        &self,
+        egraph: &mut EGraph<Josh, ()>,
+        eclass: Id,
+        subst: &Subst,
+        _searcher_ast: Option<&PatternAst<Josh>>,
+        _rule_name: Symbol,
+    ) -> Vec<Id> {
+        let a = *subst.get(self.a).expect("bound ?a");
+        let b = *subst.get(self.b).expect("bound ?b");
+
+        let Some(av) = compose_children(egraph, a) else {
+            return vec![];
+        };
+        let Some(bv) = compose_children(egraph, b) else {
+            return vec![];
+        };
+
+        // Canonicalize elements to their e-class representative so two equal
+        // Filters (same OID -> same Id -> same class) compare as one element.
+        let a_set: HashSet<Id> = av.iter().map(|i| egraph.find(*i)).collect();
+        let b_set: HashSet<Id> = bv.iter().map(|i| egraph.find(*i)).collect();
+
+        // Only fire when an element can actually be removed; otherwise this is a
+        // no-op that would just re-match the original enode every iteration.
+        let overlaps = av.iter().any(|i| b_set.contains(&egraph.find(*i)))
+            || bv.iter().any(|i| a_set.contains(&egraph.find(*i)));
+        if !overlaps {
+            return vec![];
+        }
+
+        // A\B and B\A, deduped by canonical e-class (mirrors opt's two retains).
+        // First-seen order is preserved to keep extraction stable.
+        let mut diff_a = Vec::new();
+        let mut seen_a: HashSet<Id> = HashSet::new();
+        for &i in &av {
+            let c = egraph.find(i);
+            if !b_set.contains(&c) && seen_a.insert(c) {
+                diff_a.push(i);
+            }
+        }
+        let mut diff_b = Vec::new();
+        let mut seen_b: HashSet<Id> = HashSet::new();
+        for &i in &bv {
+            let c = egraph.find(i);
+            if !a_set.contains(&c) && seen_b.insert(c) {
+                diff_b.push(i);
+            }
+        }
+
+        // Build canonical operands (empty -> the empty atom, singleton -> the
+        // bare element) rather than Compose([])/Compose([x]). This mirrors opt's
+        // Compose normalization at construction time and, crucially, keeps those
+        // nodes out of the e-graph so the AstSize extractor has no tie to break
+        // between e.g. Compose([]) and the empty atom (both cost 1).
+        let left = compose_of(egraph, diff_a);
+        let right = compose_of(egraph, diff_b);
+        let differenced = egraph.add(Josh::Subtract([left, right]));
+        egraph.union(eclass, differenced);
+        vec![egraph.find(eclass)]
+    }
+}
+
+/// Children of the first `compose` node in `id`'s e-class, if it contains one.
+fn compose_children(egraph: &EGraph<Josh, ()>, id: Id) -> Option<Vec<Id>> {
+    egraph[id].nodes.iter().find_map(|node| match node {
+        Josh::Compose(kids) => Some(kids.to_vec()),
+        _ => None,
+    })
+}
+
+/// Build a canonical compose operand from an element list: empty becomes the
+/// `empty` atom, a singleton becomes the element itself, otherwise a `compose`.
+/// See [`SubtractComposeDiff`] for why construction-time canonicalization
+/// matters.
+fn compose_of(egraph: &mut EGraph<Josh, ()>, elems: Vec<Id>) -> Id {
+    match elems.len() {
+        0 => egraph.add(Josh::Symbol(Symbol::from("empty"))),
+        1 => elems[0],
+        _ => egraph.add(Josh::Compose(elems.into_boxed_slice())),
+    }
 }
 
 /// Canonicalize a filter via the trusted existing optimizer.
@@ -247,10 +439,14 @@ fn canon(f: Filter) -> Filter {
 /// Two filters are equivalent if they share a canonical form under the trusted
 /// existing optimizer.
 ///
-/// Note: `optimize` is not a complete normal form (that is the larger problem
-/// this POC is a step toward solving), so this check is sufficient but not
-/// necessary: genuinely equivalent filters may compare unequal, in which case
-/// `egg_optimize` conservatively returns its input unchanged.
+/// The true correctness bar is equivalent tree and history; `optimize` is used
+/// here only as a sound-but-incomplete proxy oracle for that (verifying real
+/// tree equivalence needs a repo, out of scope for this crate). So this check is
+/// sufficient but not necessary: genuinely equivalent filters may compare
+/// unequal — for instance if egg composes rules into something `opt` itself
+/// wouldn't reach — in which case `egg_optimize` conservatively returns its
+/// input unchanged. Strengthening this oracle is the follow-up that would let
+/// egg exploit optimizations beyond `opt`'s reach.
 fn equivalent(a: Filter, b: Filter) -> bool {
     canon(a) == canon(b)
 }
@@ -307,6 +503,10 @@ mod tests {
         to_filter(Op::Prefix(p.into()))
     }
 
+    fn compose(fs: &[Filter]) -> Filter {
+        to_filter(Op::Compose(fs.to_vec()))
+    }
+
     /// `Chain[p, Compose[z1, z2]]` — the factored form.
     fn factored() -> Filter {
         to_filter(Op::Chain(vec![
@@ -359,6 +559,7 @@ mod tests {
             ":/a:/b",
             ":[x=:/a:/b:/d,y=:/a:/c:/d]",
             ":subtract[a=:[::x/,::y/,::z/],b=:[::x/,::y/]]",
+            ":subtract[a=:[::x/,::y/,::z/],b=:[::x/,::y/,::w/]]",
         ] {
             let f = parse(spec).expect(spec);
             assert!(
@@ -388,5 +589,128 @@ mod tests {
         let out = egg_optimize(input);
         assert_eq!(out, input, "mismatched paths must not be rewritten");
         assert_ne!(out, to_filter(Op::Nop), "mismatched paths must not cancel");
+    }
+
+    #[test]
+    fn subtract_self_cancels_to_empty() {
+        // Subtract(x, x) == Empty. Both children are the same Filter, so they
+        // share one e-class and the (subtract ?x ?x) pattern matches natively —
+        // no Rust condition, exactly like cancel-prefix-subdir.
+        let x = subdir("a");
+        let input = to_filter(Op::Subtract(x, x));
+        let out = egg_optimize(input);
+        assert_eq!(out, to_filter(Op::Empty), "x - x must cancel to Empty");
+        assert_ne!(out, input, "egg must not have returned the input verbatim");
+    }
+
+    #[test]
+    fn subtract_identity_rules() {
+        // x - nop = Empty (nop selects everything); x - empty = x.
+        let x = subdir("a");
+        let nop = to_filter(Op::Nop);
+        let empty = to_filter(Op::Empty);
+
+        let out = egg_optimize(to_filter(Op::Subtract(x, nop)));
+        assert_eq!(out, empty, "x - nop must be Empty");
+
+        let out = egg_optimize(to_filter(Op::Subtract(x, empty)));
+        assert_eq!(out, x, "x - empty must be x");
+    }
+
+    #[test]
+    fn subtract_compose_set_difference() {
+        // Subtract(Compose[a,b], Compose[a,c]): element `a` is shared, so it is
+        // selected-then-subtracted on the left and present on the right — it
+        // contributes nothing either way. The bidirectional difference leaves
+        // Subtract(b, c), which opt also produces, so the gate accepts the
+        // smaller extracted form.
+        let input = to_filter(Op::Subtract(
+            compose(&[subdir("a"), subdir("b")]),
+            compose(&[subdir("a"), subdir("c")]),
+        ));
+        let out = egg_optimize(input);
+        let expected = to_filter(Op::Subtract(subdir("b"), subdir("c")));
+        assert_eq!(
+            out, expected,
+            "shared compose elements must be differenced away"
+        );
+        assert_ne!(out, input, "egg must not have returned the input verbatim");
+    }
+
+    #[test]
+    fn subtract_subset_collapses_to_empty() {
+        // A subset of B: A\B is empty, so the difference is Empty. Exercises the
+        // compose-empty cleanup of the applier's empty left side.
+        let input = to_filter(Op::Subtract(
+            compose(&[subdir("a"), subdir("b")]),
+            compose(&[subdir("a"), subdir("b"), subdir("c")]),
+        ));
+        let out = egg_optimize(input);
+        assert_eq!(out, to_filter(Op::Empty), "subset subtract must be Empty");
+        assert_ne!(out, input, "egg must not have returned the input verbatim");
+    }
+
+    #[test]
+    fn disjoint_compose_subtract_stays_equivalent() {
+        // No shared elements: the set-difference applier self-guards (no
+        // overlap), so the subtract is left structurally as-is.
+        let input = to_filter(Op::Subtract(
+            compose(&[subdir("a"), subdir("b")]),
+            compose(&[subdir("c"), subdir("d")]),
+        ));
+        let out = egg_optimize(input);
+        assert!(
+            equivalent(input, out),
+            "disjoint subtract must stay equivalent"
+        );
+    }
+
+    #[test]
+    fn subtract_pluck_element_from_compose() {
+        // Subtract(Compose(a,b), a): a is an element of the left compose, so it
+        // is removed — opt.rs case 11. The variadic applier can't handle this
+        // (the right operand is a single element, not a compose); the pure
+        // pluck pattern fills that gap.
+        let input = to_filter(Op::Subtract(
+            compose(&[subdir("a"), subdir("b")]),
+            subdir("a"),
+        ));
+        let out = egg_optimize(input);
+        assert_eq!(out, subdir("b"), "plucked element must be removed");
+        assert_ne!(out, input, "egg must not have returned the input verbatim");
+    }
+
+    #[test]
+    fn subtract_pluck_middle_of_three() {
+        // Subtract(Compose(a,b,c), b) -> Compose(a,c): the 3-ary pluck rules are
+        // position-independent.
+        let input = to_filter(Op::Subtract(
+            compose(&[subdir("a"), subdir("b"), subdir("c")]),
+            subdir("b"),
+        ));
+        let out = egg_optimize(input);
+        assert_eq!(
+            out,
+            compose(&[subdir("a"), subdir("c")]),
+            "middle element must be plucked"
+        );
+        assert_ne!(out, input, "egg must not have returned the input verbatim");
+    }
+
+    #[test]
+    fn subtract_absorb_into_compose() {
+        // Subtract(a, Compose(a,b)): a is contained in the right compose, so the
+        // difference is empty — opt.rs case 12.
+        let input = to_filter(Op::Subtract(
+            subdir("a"),
+            compose(&[subdir("a"), subdir("b")]),
+        ));
+        let out = egg_optimize(input);
+        assert_eq!(
+            out,
+            to_filter(Op::Empty),
+            "contained element must absorb to empty"
+        );
+        assert_ne!(out, input, "egg must not have returned the input verbatim");
     }
 }
