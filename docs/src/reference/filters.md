@@ -48,9 +48,12 @@ This applies the `:/sub1` filter with the specified options attached as metadata
 The `history` option controls how the commit history is processed during filtering.
 It affects both how commits are walked and how merge commits are handled in the output history.
 
-**Available values:**
+The value is a comma-separated list of flags, so multiple behaviours can be combined in a
+single option — for example `history="linear,no-splice"`.
 
-- **`history="linear"`** - Produces a linear history by converting merge commits into regular commits,
+**Available flags:**
+
+- **`linear`** - Produces a linear history by converting merge commits into regular commits,
   creating a linear chain of commits in the output history.
 
   **Example:**
@@ -58,21 +61,35 @@ It affects both how commits are walked and how merge commits are handled in the 
   :~(history="linear")[:/sub1]
   ```
 
-- **`history="keep-trivial-merges"`** - Prevents dropping trivial merge commits that would
+- **`keep-trivial-merges`** - Prevents dropping trivial merge commits that would
   normally be pruned from the output history.
-  
+
   Normally, Josh will drop merge commits from the filtered history if their filtered tree is
-  identical to the first parent's tree. Setting this option to `"keep-trivial-merges"` preserves
-  these commits in the output history.
-  
+  identical to the first parent's tree. Setting this flag preserves these commits in the
+  output history.
+
   **Example:**
   ```
   :~(history="keep-trivial-merges")[::file1]
   ```
-  
+
   **Note for users of older versions:** In older versions of Josh, `"keep-trivial-merges"` was the
   default behavior. If you're upgrading from an older version and need to recreate the same history
   structure, you should explicitly set `history="keep-trivial-merges"` in your filter options.
+
+- **`no-splice`** - Disables the synthetic merges that Josh normally inserts when a filter
+  change causes new paths to become visible.
+
+  When a commit's filtered tree picks up entries because the *filter* changed (not the source
+  tree), Josh by default adds synthetic merge parents that splice in the prior history of those
+  newly-visible paths, so the filtered DAG doesn't look like those paths sprang from nowhere.
+  Setting this flag suppresses those synthetic parents — the filtered commit keeps only its
+  ordinary parents.
+
+  **Example:**
+  ```
+  :~(history="no-splice")[:workspace=ws]
+  ```
 
 ### Gpgsig option
 

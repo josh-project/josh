@@ -9,6 +9,12 @@ pub enum GpgsigMode {
     NormLf,
 }
 
+/// Returns true if a comma-separated meta value contains `flag` (trimmed).
+/// The `history` meta accepts multiple flags, e.g. `history="linear,no-splice"`.
+pub(crate) fn history_flag(value: Option<&str>, flag: &str) -> bool {
+    value.is_some_and(|v| v.split(',').any(|f| f.trim() == flag))
+}
+
 pub fn walk2(
     filter: filter::Filter,
     input: git2::Oid,
@@ -26,7 +32,7 @@ pub fn walk2(
 
     let walk = {
         let mut walk = transaction.repo().revwalk()?;
-        if filter.get_meta("history").is_some_and(|s| s == "linear") {
+        if history_flag(filter.get_meta("history").as_deref(), "linear") {
             walk.simplify_first_parent()?;
         }
         walk.set_sorting(git2::Sort::REVERSE | git2::Sort::TOPOLOGICAL)?;
@@ -870,14 +876,14 @@ fn create_filtered_commit2<'a>(
         }
     }
 
-    if options.get("history").is_some_and(|s| s == "linear") {
+    if history_flag(options.get("history").map(String::as_str), "linear") {
         filtered_parent_commits.truncate(1);
     }
 
-    if !options
-        .get("history")
-        .is_some_and(|s| s == "keep-trivial-merges")
-    {
+    if !history_flag(
+        options.get("history").map(String::as_str),
+        "keep-trivial-merges",
+    ) {
         if filtered_parent_commits.len() > 1 {
             let is_trivial_merge = filtered_parent_commits[0].tree_id() == rewrite_data.tree().id();
             let was_trivial_merge = original_commit

@@ -45,7 +45,9 @@ impl PinBench {
 
         // The filter under benchmark: select the workspace defined by the
         // `workspace/workspace.josh` files generated throughout the history.
-        let filter = josh_core::filter::Filter::new().workspace("workspace");
+        let filter = josh_core::filter::Filter::new()
+            .stored("workspace/workspace")
+            .with_meta("history", "no-splice");
 
         Ok(Self {
             _tmp: tmp,
