@@ -1,3 +1,4 @@
+pub mod eggopt;
 pub mod filter;
 pub mod flang;
 pub mod hash;

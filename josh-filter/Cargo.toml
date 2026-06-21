@@ -22,5 +22,6 @@ gix-object.workspace = true
 gix-hash.workspace = true
 regex.workspace = true
 serde_json.workspace = true
+egg = "0.11"
 
 [features]

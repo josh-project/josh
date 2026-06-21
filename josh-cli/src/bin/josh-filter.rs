@@ -86,6 +86,12 @@ fn make_app() -> clap::Command {
                 .short('p'),
         )
         .arg(
+            clap::Arg::new("use-new-opt")
+                .action(clap::ArgAction::SetTrue)
+                .long("use-new-opt")
+                .help("Use the experimental egg-based optimizer (POC) for -p"),
+        )
+        .arg(
             clap::Arg::new("filter-id")
                 .action(clap::ArgAction::SetTrue)
                 .help("Print the filter id and exit")
@@ -290,6 +296,14 @@ fn run_filter(args: Vec<String>) -> anyhow::Result<i32> {
     if args.get_flag("print-filter") {
         let filterobj = if args.get_flag("reverse") {
             josh_core::filter::invert(filterobj)?
+        } else {
+            filterobj
+        };
+        // Applied after the reverse handling so both `--use-new-opt -p` and
+        // `--use-new-opt -p --reverse` exercise the experimental optimizer. The
+        // flag has no effect on any other path.
+        let filterobj = if args.get_flag("use-new-opt") {
+            josh_core::filter::eggopt::egg_optimize(filterobj)
         } else {
             filterobj
         };
