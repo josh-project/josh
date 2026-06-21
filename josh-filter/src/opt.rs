@@ -243,16 +243,6 @@ pub fn flatten(filter: Filter) -> Filter {
                     if !others_invertible {
                         break;
                     }
-                    // Distributing a trailing Compose that has a non-empty prefix is
-                    // futile: it produces Compose([Chain[prefix, z_j]]) which step()'s
-                    // common_pre re-merges back to Chain[prefix, Compose(Z)]. For the
-                    // Chain[file_chain, compose(pinned)] shape this is an O(N*|pinned|)
-                    // build+collapse round-trip that converges to the input, so skip it.
-                    // Leading/middle Composes yield branches that are not re-merged and
-                    // are still distributed.
-                    if flattened.len() > 1 && i == flattened.len() - 1 {
-                        continue;
-                    }
                     // Distribute: create a Compose where each element is the chain with one compose element
                     let mut result = vec![];
                     for compose_filter in compose_filters {

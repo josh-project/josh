@@ -25,3 +25,8 @@ serde_json.workspace = true
 egg = "0.11"
 
 [features]
+
+[dev-dependencies]
+# Snapshot testing for the eggopt corpus quality harness. Highly experimental.
+insta = "1"
+anyhow.workspace = true

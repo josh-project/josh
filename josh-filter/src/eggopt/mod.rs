@@ -54,19 +54,18 @@ pub fn equivalent(a: Filter, b: Filter) -> bool {
     canon(a) == canon(b)
 }
 
-/// Run the experimental egg-based optimizer over `filter`.
+/// Run the egg pipeline (build → saturate → extract → rebuild) and return the
+/// reduced candidate, WITHOUT the equivalence gate.
 ///
-/// - Idempotent-ish and deterministic.
-/// - Never returns a non-equivalent filter. If any `Op` in the tree is not
-///   representable by the egg language, the input is returned unchanged; and as
-///   a final guard the output is checked for equivalence, falling back to the
-///   input if the egg output could not be proven equivalent.
-pub fn egg_optimize(filter: Filter) -> Filter {
+/// Exposed for experiments (`optimize_compare`) that want to see what egg
+/// produced even when the sound-but-incomplete [`equivalent`] gate rejects it
+/// (in which case [`egg_optimize`] conservatively returns the input unchanged).
+/// Returns `None` if any `Op` in the tree is not representable by the egg
+/// language (`build`/`rebuild` bail out).
+pub fn egg_candidate(filter: Filter) -> Option<Filter> {
     let mut expr = RecExpr::default();
     let mut seen_build = HashMap::new();
-    if build(&mut expr, &mut seen_build, filter).is_none() {
-        return filter;
-    }
+    build(&mut expr, &mut seen_build, filter)?;
 
     let rules = rules();
     let runner = Runner::<Josh, JoshAnalysis>::default()
@@ -81,11 +80,20 @@ pub fn egg_optimize(filter: Filter) -> Filter {
     let (_cost, best) = Extractor::new(&runner.egraph, AstSize).find_best(root);
 
     let mut seen_rebuild = HashMap::new();
-    let candidate = match rebuild(&best, &mut seen_rebuild, best.root()) {
-        Some(f) => f,
-        None => return filter,
-    };
+    rebuild(&best, &mut seen_rebuild, best.root())
+}
 
+/// Run the experimental egg-based optimizer over `filter`.
+///
+/// - Idempotent-ish and deterministic.
+/// - Never returns a non-equivalent filter. If any `Op` in the tree is not
+///   representable by the egg language, the input is returned unchanged; and as
+///   a final guard the output is checked for equivalence, falling back to the
+///   input if the egg output could not be proven equivalent.
+pub fn egg_optimize(filter: Filter) -> Filter {
+    let Some(candidate) = egg_candidate(filter) else {
+        return filter;
+    };
     if equivalent(filter, candidate) {
         candidate
     } else {

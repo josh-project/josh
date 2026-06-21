@@ -1,4 +1,4 @@
-use crate::eggopt::appliers::{FactorChain, PrefixSubdirConflict, SubtractComposeDiff};
+use crate::eggopt::appliers::{CommonPost, CommonPre, PrefixSubdirConflict, SubtractComposeDiff};
 use crate::eggopt::lang::{Josh, JoshAnalysis};
 use egg::{EGraph, Id, Rewrite, Subst, Var, rewrite};
 
@@ -59,10 +59,18 @@ pub(crate) fn rules() -> Vec<Rewrite<Josh, JoshAnalysis>> {
             "(cons (chain ?p ?z) (chain ?p ?tail))"),
         rewrite!("distribute-chain-nil";
             "(chain ?p nil)" => "nil"),
-        // Chain/Compose factor: a cons-list of chains sharing one prefix pulls it
-        // out. Whole-list, so an applier (see [`FactorChain`]).
-        rewrite!("factor-chain";
-            "(cons ?h ?tail)" => { FactorChain::new() }),
+        // Chain/Compose common_pre: a cons-list of chains sharing one head pulls
+        // it out. Whole-list, so an applier (see [`CommonPre`]); generalized to
+        // chains of any length (the old `FactorChain` matched 2-element chains
+        // only), which is what lets a decomposed wide compose factor at each
+        // directory level.
+        rewrite!("common-pre";
+            "(cons ?h ?tail)" => { CommonPre::new() }),
+        // Chain/Compose common_post: the mirror — a cons-list of chains sharing
+        // one *tail* pulls it out, guarded to Prefix/Message tails (the ops that
+        // commute with Compose). See [`CommonPost`].
+        rewrite!("common-post";
+            "(cons ?h ?tail)" => { CommonPost::new() }),
         rewrite!("cancel-prefix-subdir";
             "(chain (prefix ?p) (subdir ?p))" => "nop"),
         // Prefix/Subdir conflict (same depth, different path -> empty): custom

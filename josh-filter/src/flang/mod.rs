@@ -150,6 +150,24 @@ pub fn spec(filter: Filter) -> String {
     spec2(&to_op(filter))
 }
 
+/// Like [`spec`] but a *pure* render — no [`opt::simplify`] pass.
+///
+/// [`spec`] re-simplifies because its contract is the round-trip
+/// `parse(spec(F)) == F`; that hides an optimizer's true output by re-running
+/// `opt` over it. The eggopt corpus snapshots need to show what the optimizer
+/// actually produced, so this drops the simplify line and renders the filter
+/// as-is. This is the render half of the `_egg` "parallel stack"
+/// (see also [`parse_egg`](crate::flang::parse::parse_egg)).
+pub fn spec_egg(filter: Filter) -> String {
+    if filter == sequence_number() {
+        return "sequence_number".to_string();
+    }
+    if filter == reachable_roots() {
+        return "reachable_roots".to_string();
+    }
+    spec2(&to_op(filter))
+}
+
 pub(crate) fn spec2(op: &Op) -> String {
     match op {
         Op::Compose(filters) => {

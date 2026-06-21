@@ -520,6 +520,38 @@ pub fn parse(filter_spec: &str) -> anyhow::Result<Filter> {
     )?))))
 }
 
+/// Parse a filter spec WITHOUT running the trusted optimizer — the "raw" parse.
+///
+/// [`parse`] optimizes as a side effect of construction: its `filter_chain`
+/// branch builds the chain via [`Filter::chain`], and its workspace branch wraps
+/// the result in [`opt::optimize`]. The egg optimizer is meant to see the
+/// *un-reduced* filter so corpus snapshots show egg's own reduction (not opt's),
+/// so this mirrors [`parse`]'s two grammar branches but builds the result with
+/// [`to_filter`] directly and skips the `optimize` step. This is the parse half
+/// of the `_egg` "parallel stack" (see also [`spec_egg`](crate::spec_egg)).
+pub fn parse_egg(filter_spec: &str) -> anyhow::Result<Filter> {
+    if filter_spec.is_empty() {
+        return Ok(to_filter(Op::Empty));
+    }
+    if let Ok(r) = Grammar::parse(Rule::filter_chain, filter_spec) {
+        let mut r = r;
+        let r = r.next().unwrap();
+        let items = r
+            .into_inner()
+            .map(parse_item)
+            .collect::<anyhow::Result<Vec<_>>>()?;
+        // Build the chain raw: Filter::chain would optimize at every step. A
+        // one-item chain is the item itself (parse() reaches the same via the
+        // Empty-annihilating chain() fold); zero items is the empty filter.
+        return Ok(match items.len() {
+            0 => to_filter(Op::Empty),
+            1 => items.into_iter().next().unwrap(),
+            _ => to_filter(Op::Chain(items)),
+        });
+    }
+    Ok(to_filter(Op::Compose(parse_workspace(filter_spec)?)))
+}
+
 /// Get the potential leading comments from a workspace.josh as a string
 pub fn get_comments(filter_spec: &str) -> Result<String, String> {
     if let Ok(r) = Grammar::parse(Rule::workspace_file, filter_spec) {
