@@ -1,4 +1,4 @@
-use crate::eggopt::appliers::SubtractComposeDiff;
+use crate::eggopt::appliers::{PrefixSubdirConflict, SubtractComposeDiff};
 use crate::eggopt::lang::Josh;
 use egg::{Rewrite, rewrite};
 
@@ -29,6 +29,13 @@ use egg::{Rewrite, rewrite};
 ///   equality, so this is a pure pattern rewrite with no Rust condition. Only
 ///   the exact two-element chain is handled; cancelling a pair inside a longer
 ///   chain is a follow-up (same arity limitation as distribute/factor).
+///
+/// * prefix-subdir-conflict: the complementary case `Chain[Prefix(a), Subdir(b)]`
+///   with `a != b` but the *same* component count is the empty tree (`opt.rs`
+///   conflict case) — a same-depth `Subdir(b)` cannot exist after re-rooting at
+///   `a`. Needs a custom applier ([`PrefixSubdirConflict`]) because the guard
+///   combines a disequality with a component-count comparison, neither of which
+///   a pattern can express; same two-element-chain scope as cancel.
 ///
 /// * compose identity / dedup / empty-removal: `(compose)` is the empty tree and
 ///   `(compose ?x)` is `?x` (exact-arity match on `Box<[Id]>`); adjacent equal
@@ -77,6 +84,12 @@ pub(crate) fn rules() -> Vec<Rewrite<Josh, ()>> {
             "(chain ?p (compose ?z1 ?z2 ?z3 ?z4))"),
         rewrite!("cancel-prefix-subdir";
             "(chain (prefix ?p) (subdir ?p))" => "nop"),
+        // Prefix/Subdir conflict: Chain[Prefix(a), Subdir(b)] with a != b but the
+        // same component count is the empty tree (opt's conflict case). Needs a
+        // custom applier for the disequality + component-count guard; same-path
+        // is the cancel rule above. See [`PrefixSubdirConflict`].
+        rewrite!("prefix-subdir-conflict";
+            "(chain (prefix ?a) (subdir ?b))" => { PrefixSubdirConflict::new() }),
         // Compose identity: empty compose = empty tree; singleton compose = its
         // sole element. Exact-arity matching on Box<[Id]> makes these patterns.
         rewrite!("compose-empty"; "(compose)" => "empty"),

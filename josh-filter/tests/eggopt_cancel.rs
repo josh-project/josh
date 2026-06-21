@@ -16,12 +16,35 @@ fn prefix_subdir_chain_cancels_to_nop() {
 }
 
 #[test]
-fn mismatched_paths_do_not_cancel() {
-    // Different paths must not cancel: the pattern requires the prefix's and
-    // subdir's path to be the same variable `?p`, which mismatched paths
-    // fail to satisfy, so the chain is returned unchanged.
-    let input = to_filter(Op::Chain(vec![prefix("p"), subdir("q")]));
+fn prefix_subdir_conflict_yields_empty() {
+    // Chain[Prefix(a), Subdir(b)] with a != b but the same component count is a
+    // conflict: after re-rooting at `a`, a same-depth Subdir(b) selects a subtree
+    // that cannot exist, so opt reduces the whole chain to Empty.
+    let input = to_filter(Op::Chain(vec![prefix("a"), subdir("b")]));
     let out = egg_optimize(input);
-    assert_eq!(out, input, "mismatched paths must not be rewritten");
-    assert_ne!(out, to_filter(Op::Nop), "mismatched paths must not cancel");
+    assert_eq!(out, to_filter(Op::Empty), "conflicting pair must be Empty");
+    assert_ne!(out, input, "egg must not have returned the input verbatim");
+}
+
+#[test]
+fn prefix_subdir_conflict_multicomponent_yields_empty() {
+    // Same-depth different multi-component paths conflict too (both depth 2).
+    let input = to_filter(Op::Chain(vec![prefix("a/b"), subdir("c/d")]));
+    let out = egg_optimize(input);
+    assert_eq!(
+        out,
+        to_filter(Op::Empty),
+        "same-depth different multi-component paths must conflict to Empty",
+    );
+    assert_ne!(out, input, "egg must not have returned the input verbatim");
+}
+
+#[test]
+fn prefix_subdir_different_depth_stays() {
+    // Different component counts are NOT a conflict (opt leaves the chain
+    // untouched), so neither the cancel nor the conflict rule fires and egg
+    // returns the input unchanged.
+    let input = to_filter(Op::Chain(vec![prefix("a/b"), subdir("c")]));
+    let out = egg_optimize(input);
+    assert_eq!(out, input, "different-depth pair must not be rewritten");
 }

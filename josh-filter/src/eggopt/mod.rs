@@ -10,12 +10,15 @@
 //!
 //! The rewrite set spans seven families, all gated on the same semantic bar
 //! (the output must produce an equivalent tree and history): Chain/Compose
-//! distribute <-> factor; Prefix/Subdir cancellation; Compose identity, dedup,
-//! and Empty-removal; Exclude/Pin identity; a Subtract algebra (identity,
-//! Message-Message, pluck/absorb) as pure patterns; and a bidirectional Compose
-//! set-difference via a custom applier (the one variadic rewrite). Path and
-//! Message data are structural children, so path equality and message
-//! recognition are egg's unification rather than Rust conditions.
+//! distribute <-> factor; Prefix/Subdir cancellation and its conflict case;
+//! Compose identity, dedup, and Empty-removal; Exclude/Pin identity; a Subtract
+//! algebra (identity, Message-Message, pluck/absorb) as pure patterns; and a
+//! bidirectional Compose set-difference. Two rules use custom appliers — the
+//! Prefix/Subdir conflict (a disequality + component-count guard) and the Compose
+//! set-difference (the one variadic rewrite) — because their guards are not
+//! expressible as patterns. Path and Message data are structural children, so
+//! path equality and message recognition are egg's unification rather than Rust
+//! conditions.
 
 mod appliers;
 mod convert;
