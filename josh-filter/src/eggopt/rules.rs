@@ -1,174 +1,124 @@
-use crate::eggopt::appliers::{PrefixSubdirConflict, SubtractComposeDiff};
-use crate::eggopt::lang::Josh;
-use egg::{Rewrite, rewrite};
+use crate::eggopt::appliers::{FactorChain, PrefixSubdirConflict, SubtractComposeDiff};
+use crate::eggopt::lang::{Josh, JoshAnalysis};
+use egg::{EGraph, Id, Rewrite, Subst, Var, rewrite};
 
 /// The rewrites this POC runs.
 ///
 /// All gated on the same semantic bar — the output must produce an equivalent
 /// tree and history, checked by [`crate::eggopt::equivalent`] using the trusted
 /// optimizer as a sufficient-but-not-necessary oracle. They capture the *spirit*
-/// of `opt.rs`, not its exact mechanism: several are one declarative step where
-/// `opt.rs` recurses.
+/// of `opt.rs`, not its exact mechanism.
 ///
-/// * distribute/factor: for a single chain prefix element `p`,
-///   ```text
-///   distribute: Chain[p, Compose(z1..zn)] == Compose(Chain[p,z1], ..., Chain[p,zn])
-///   factor:     the reverse.
-///   ```
-///   Unconditionally semantics-preserving (Chain is sequential composition,
-///   Compose is parallel merge). Written for one prefix element and compose
-///   arities 2, 3, and 4 — the subset covering the `:/a:[...]` shapes from
-///   `tests/filter/pretty_print.t` plus one extra arity. Longer prefixes or
-///   larger composes are left untouched (and thus stay equivalent); more
-///   fixed-arity cases are a mechanical follow-up.
+/// `Compose` is a cons-list (`Cons`/`Nil`), so the rules that were arity-limited
+/// under `Box<[Id]>` (dedup, empty-removal, distribute, pluck, absorb) now match a
+/// list of **any length** at a fixed arity, and the two variadic rules that were
+/// impossible as patterns (dedup at any position, membership-gated absorb) become a
+/// 2-arity pattern plus an element-set [`JoshAnalysis`] condition. `Chain` stays
+/// `Box<[Id]>` (it is ordered; cons order non-determinism is fine for `Compose`, a
+/// set, but wrong for `Chain`).
 ///
-/// * cancel-prefix-subdir: `Chain[Prefix(p), Subdir(p)] == Nop`, mirroring the
-///   adjacent-pair cancellation in the trusted optimizer (`opt.rs` flatten).
-///   Because the path is a structural child, a single pattern variable `?p`
-///   unifies the prefix's and subdir's path — egg's own matcher enforces path
-///   equality, so this is a pure pattern rewrite with no Rust condition. Only
-///   the exact two-element chain is handled; cancelling a pair inside a longer
-///   chain is a follow-up (same arity limitation as distribute/factor).
-///
-/// * prefix-subdir-conflict: the complementary case `Chain[Prefix(a), Subdir(b)]`
-///   with `a != b` but the *same* component count is the empty tree (`opt.rs`
-///   conflict case) — a same-depth `Subdir(b)` cannot exist after re-rooting at
-///   `a`. Needs a custom applier ([`PrefixSubdirConflict`]) because the guard
-///   combines a disequality with a component-count comparison, neither of which
-///   a pattern can express; same two-element-chain scope as cancel.
-///
-/// * compose identity / dedup / empty-removal: `(compose)` is the empty tree and
-///   `(compose ?x)` is `?x` (exact-arity match on `Box<[Id]>`); adjacent equal
-///   elements collapse (`dedup`); and `empty` is dropped wherever it appears
-///   (empty is the identity of parallel merge). Mirrors `opt.rs` Compose
-///   normalization and cleans up singleton/empty results from
-///   [`SubtractComposeDiff`]. Dedup/empty-removal are written for arities 2 and
-///   3.
-///
-/// * exclude / pin identity: `Exclude(nop) == empty` (excluding everything keeps
-///   nothing), `Exclude(empty) == Pin(empty) == nop` (an empty tree has nothing
-///   to exclude/pin). Pure patterns; mirrors `opt.rs` step.
-///
-/// * subtract identity algebra (pure patterns): `x - x = empty`, `empty - x =
-///   empty`, `x - nop = empty` (nop selects everything), `x - empty = x`, and
-///   `Message - Message = empty` (two message filters produce the same tree, so
-///   their difference is empty). Message is structural so a pattern matches "any
-///   message".
-///
-/// * subtract pluck / absorb (pure patterns): when one operand is a single
-///   element (not a compose), mirror `opt.rs` cases 11/12 — pluck it out of the
-///   other side's compose, or collapse to empty if it is contained there. This
-///   is the gap the variadic applier cannot cover (it needs both operands to be
-///   composes). Fixed arities 2, 3, and 4.
-///
-/// * subtract-compose-diff: `Subtract(Compose(A), Compose(B))` bidirectional set
-///   difference, via [`SubtractComposeDiff`] — the one rewrite that needs a
-///   custom applier because set difference is variadic.
-pub(crate) fn rules() -> Vec<Rewrite<Josh, ()>> {
+/// * distribute (2 rules): `Chain[p, Compose(z1..zn)] ⇄ Compose(Chain[p,z1], ...)`.
+///   Forward peels one element off the cons-list per fire; the nil base case is
+///   `Chain[p, empty] = empty` (empty right-annihilates chain). Any arity. The
+///   reverse (factor) is a custom applier — pulling a shared prefix out of a whole
+///   list is a common-pre operation, not a local pattern.
+/// * factor ([`FactorChain`] applier): a cons-list whose every element is
+///   `chain ?p ?_` for one `?p` factors to `chain ?p <cons of the second children>`.
+///   Whole-list (the RHS rebuilds the spine), so an applier like the set-difference
+///   one; cons-lists make the traversal declarative but not the reconstruction.
+/// * cancel-prefix-subdir / prefix-subdir-conflict: unchanged (2-element chains).
+/// * compose empty-removal + dedup: `(cons empty ?t) => ?t` (any position, pure
+///   pattern) and `(cons ?x ?t) => ?t` when `?t`'s element-set contains `?x` (dedup
+///   at any position, incl. non-consecutive — `opt`'s consecutive-only `Vec::dedup`
+///   misses that). Singleton/empty composes collapse at `rebuild`, not as a rule.
+/// * exclude / pin identity: unchanged.
+/// * subtract identity / Message-Message: unchanged.
+/// * subtract pluck (2 pure patterns, any arity/position): pluck-head removes the
+///   element when it is the list head; pluck-deeper pushes the subtract one step
+///   down the spine. To fixpoint they remove an element from anywhere.
+/// * subtract absorb (1 pattern + condition): `(subtract ?x ?l) => empty` when
+///   `?l`'s set contains `?x`.
+/// * subtract-compose-diff ([`SubtractComposeDiff`] applier): the full bidirectional
+///   `Subtract(Compose A, Compose B)` set-difference — variadic, so still an
+///   applier (cons-aware); the single-element cases are the pluck/absorb rules.
+pub(crate) fn rules() -> Vec<Rewrite<Josh, JoshAnalysis>> {
     vec![
-        rewrite!("distribute-compose-2";
-            "(chain ?p (compose ?z1 ?z2))" => "(compose (chain ?p ?z1) (chain ?p ?z2))"),
-        rewrite!("factor-compose-2";
-            "(compose (chain ?p ?z1) (chain ?p ?z2))" => "(chain ?p (compose ?z1 ?z2))"),
-        rewrite!("distribute-compose-3";
-            "(chain ?p (compose ?z1 ?z2 ?z3))" =>
-            "(compose (chain ?p ?z1) (chain ?p ?z2) (chain ?p ?z3))"),
-        rewrite!("factor-compose-3";
-            "(compose (chain ?p ?z1) (chain ?p ?z2) (chain ?p ?z3))" =>
-            "(chain ?p (compose ?z1 ?z2 ?z3))"),
-        rewrite!("distribute-compose-4";
-            "(chain ?p (compose ?z1 ?z2 ?z3 ?z4))" =>
-            "(compose (chain ?p ?z1) (chain ?p ?z2) (chain ?p ?z3) (chain ?p ?z4))"),
-        rewrite!("factor-compose-4";
-            "(compose (chain ?p ?z1) (chain ?p ?z2) (chain ?p ?z3) (chain ?p ?z4))" =>
-            "(chain ?p (compose ?z1 ?z2 ?z3 ?z4))"),
+        // Chain/Compose distribute (any arity): peel one element per fire; the
+        // base case `Chain[p, empty] = empty` cleans up the recursion's tail.
+        rewrite!("distribute-chain-cons";
+            "(chain ?p (cons ?z ?tail))" =>
+            "(cons (chain ?p ?z) (chain ?p ?tail))"),
+        rewrite!("distribute-chain-nil";
+            "(chain ?p nil)" => "nil"),
+        // Chain/Compose factor: a cons-list of chains sharing one prefix pulls it
+        // out. Whole-list, so an applier (see [`FactorChain`]).
+        rewrite!("factor-chain";
+            "(cons ?h ?tail)" => { FactorChain::new() }),
         rewrite!("cancel-prefix-subdir";
             "(chain (prefix ?p) (subdir ?p))" => "nop"),
-        // Prefix/Subdir conflict: Chain[Prefix(a), Subdir(b)] with a != b but the
-        // same component count is the empty tree (opt's conflict case). Needs a
-        // custom applier for the disequality + component-count guard; same-path
-        // is the cancel rule above. See [`PrefixSubdirConflict`].
+        // Prefix/Subdir conflict (same depth, different path -> empty): custom
+        // applier for the disequality + component-count guard. See
+        // [`PrefixSubdirConflict`].
         rewrite!("prefix-subdir-conflict";
             "(chain (prefix ?a) (subdir ?b))" => { PrefixSubdirConflict::new() }),
-        // Compose identity: empty compose = empty tree; singleton compose = its
-        // sole element. Exact-arity matching on Box<[Id]> makes these patterns.
-        rewrite!("compose-empty"; "(compose)" => "empty"),
-        rewrite!("compose-single"; "(compose ?x)" => "?x"),
-        // Compose dedup + Empty-removal (mirrors opt's `dedup()` + `retain(!=
-        // Empty)` on a Compose). Empty is the identity of Compose (parallel
-        // merge), so it is dropped wherever it appears; adjacent equal elements
-        // collapse. Fixed arity 2 and 3 (larger is a mechanical follow-up).
-        rewrite!("compose-dedup-2"; "(compose ?x ?x)" => "?x"),
-        rewrite!("compose-dedup-3-0"; "(compose ?x ?x ?y)" => "(compose ?x ?y)"),
-        rewrite!("compose-dedup-3-1"; "(compose ?x ?y ?y)" => "(compose ?x ?y)"),
-        rewrite!("compose-drop-empty-2-0"; "(compose empty ?x)" => "?x"),
-        rewrite!("compose-drop-empty-2-1"; "(compose ?x empty)" => "?x"),
-        rewrite!("compose-drop-empty-3-0"; "(compose empty ?x ?y)" => "(compose ?x ?y)"),
-        rewrite!("compose-drop-empty-3-1"; "(compose ?x empty ?y)" => "(compose ?x ?y)"),
-        rewrite!("compose-drop-empty-3-2"; "(compose ?x ?y empty)" => "(compose ?x ?y)"),
-        // Exclude / Pin identity (mirrors opt step): Exclude(nop) selects nothing
-        // -> Empty; Exclude/Pin of an empty tree is a no-op -> Nop. Pure patterns
-        // because `nop`/`empty` are the opaque leaf atoms.
+        // Compose empty-removal (any position): empty is the identity of Compose
+        // (parallel merge), so a leading empty element is dropped; run to fixpoint
+        // it drops empties anywhere. Singleton/empty composes collapse at rebuild.
+        rewrite!("compose-drop-empty";
+            "(cons empty ?tail)" => "?tail"),
+        // Compose dedup (any position): drop a head element that also appears later
+        // in the list. Run to fixpoint this dedups the whole list — including
+        // non-consecutive duplicates, the case opt's consecutive-only Vec::dedup
+        // misses. Compose is a set, so keeping any occurrence is the canonical tree.
+        rewrite!("compose-dedup";
+            "(cons ?x ?tail)" => "?tail" if contains("?x", "?tail")),
+        // Exclude / Pin identity (unchanged): nop/empty are the opaque leaf atoms.
         rewrite!("exclude-nop"; "(exclude nop)" => "empty"),
         rewrite!("exclude-empty"; "(exclude empty)" => "nop"),
         rewrite!("pin-empty"; "(pin empty)" => "nop"),
-        // Subtract identity / annihilator algebra — all pure patterns; `nop`
-        // and `empty` are the opaque leaf atoms.
+        // Subtract identity / annihilator algebra (unchanged, pure patterns).
         rewrite!("subtract-self"; "(subtract ?x ?x)" => "empty"),
         rewrite!("subtract-empty-l"; "(subtract empty ?x)" => "empty"),
         rewrite!("subtract-nop-r"; "(subtract ?x nop)" => "empty"),
         rewrite!("subtract-empty-r"; "(subtract ?x empty)" => "?x"),
         // Any two Message filters have an empty tree difference: a Message only
-        // rewrites commit metadata, never the tree (opt.rs line 740). A pure
-        // pattern because Message is structural — `(message ?m)` matches any
-        // message regardless of its format/regex payload. The two `?m` bindings
-        // are distinct variables, so this also covers identical messages (which
-        // `subtract-self` reaches first).
+        // rewrites commit metadata, never the tree. Pure pattern (Message is
+        // structural); the two ?m bindings are distinct, so this also covers
+        // identical messages (which subtract-self reaches first).
         rewrite!("subtract-message-message";
             "(subtract (message ?m1) (message ?m2))" => "empty"),
-        // Subtract pluck / absorb (pure patterns), mirroring opt.rs cases 11/12
-        // for the case one operand is a single element rather than a compose —
-        // the gap the variadic applier below cannot cover (it needs both
-        // operands to be composes). Pluck removes the element from the compose;
-        // absorb collapses to empty when the element is contained in the right.
-        // Fixed arities 2, 3, and 4 (same convention as distribute/factor);
-        // larger arities are a mechanical follow-up. Duplicate-element
-        // degenerate cases are caught by the equivalence gate (see `equivalent`).
-        rewrite!("pluck-compose-2-0"; "(subtract (compose ?a ?b) ?a)" => "?b"),
-        rewrite!("pluck-compose-2-1"; "(subtract (compose ?a ?b) ?b)" => "?a"),
-        rewrite!("pluck-compose-3-0";
-            "(subtract (compose ?a ?b ?c) ?a)" => "(compose ?b ?c)"),
-        rewrite!("pluck-compose-3-1";
-            "(subtract (compose ?a ?b ?c) ?b)" => "(compose ?a ?c)"),
-        rewrite!("pluck-compose-3-2";
-            "(subtract (compose ?a ?b ?c) ?c)" => "(compose ?a ?b)"),
-        rewrite!("pluck-compose-4-0";
-            "(subtract (compose ?a ?b ?c ?d) ?a)" => "(compose ?b ?c ?d)"),
-        rewrite!("pluck-compose-4-1";
-            "(subtract (compose ?a ?b ?c ?d) ?b)" => "(compose ?a ?c ?d)"),
-        rewrite!("pluck-compose-4-2";
-            "(subtract (compose ?a ?b ?c ?d) ?c)" => "(compose ?a ?b ?d)"),
-        rewrite!("pluck-compose-4-3";
-            "(subtract (compose ?a ?b ?c ?d) ?d)" => "(compose ?a ?b ?c)"),
-        rewrite!("absorb-compose-2-0"; "(subtract ?a (compose ?a ?b))" => "empty"),
-        rewrite!("absorb-compose-2-1"; "(subtract ?a (compose ?b ?a))" => "empty"),
-        rewrite!("absorb-compose-3-0";
-            "(subtract ?a (compose ?a ?b ?c))" => "empty"),
-        rewrite!("absorb-compose-3-1";
-            "(subtract ?a (compose ?b ?a ?c))" => "empty"),
-        rewrite!("absorb-compose-3-2";
-            "(subtract ?a (compose ?b ?c ?a))" => "empty"),
-        rewrite!("absorb-compose-4-0";
-            "(subtract ?a (compose ?a ?b ?c ?d))" => "empty"),
-        rewrite!("absorb-compose-4-1";
-            "(subtract ?a (compose ?b ?a ?c ?d))" => "empty"),
-        rewrite!("absorb-compose-4-2";
-            "(subtract ?a (compose ?b ?c ?a ?d))" => "empty"),
-        rewrite!("absorb-compose-4-3";
-            "(subtract ?a (compose ?b ?c ?d ?a))" => "empty"),
-        // Subtract set-difference over two composes — variadic, so a custom
-        // applier rather than a pattern. See [`SubtractComposeDiff`].
+        // Subtract pluck (any arity/position): remove an element from a cons-list.
+        // pluck-head fires when the element is the list head; pluck-deeper pushes
+        // the subtract one step down the spine. To fixpoint, removes it from
+        // anywhere; if absent, the subtract bottoms out at the empty list.
+        rewrite!("pluck-head";
+            "(subtract (cons ?x ?tail) ?x)" => "?tail"),
+        rewrite!("pluck-deeper";
+            "(subtract (cons ?h ?tail) ?x)" =>
+            "(cons ?h (subtract ?tail ?x))"),
+        // Subtract absorb: an element contained in a cons-list subtracts to empty.
+        rewrite!("absorb-into-list";
+            "(subtract ?x ?list)" => "empty" if contains("?x", "?list")),
+        // Subtract bidirectional set-difference over two composes — still variadic,
+        // so a custom applier (now cons-aware). See [`SubtractComposeDiff`].
         rewrite!("subtract-compose-diff";
             "(subtract ?a ?b)" => { SubtractComposeDiff::new() }),
     ]
+}
+
+/// Condition for `compose-dedup` and `absorb-into-list`: the cons-list bound to
+/// `list` has an element-set (the [`JoshAnalysis`] annotation) containing the
+/// canonical representative of `elem`. A closure of this shape implements
+/// [`egg::Condition`].
+fn contains(
+    elem: &str,
+    list: &str,
+) -> impl Fn(&mut EGraph<Josh, JoshAnalysis>, Id, &Subst) -> bool {
+    let elem_var = elem.parse::<Var>().expect("elem var");
+    let list_var = list.parse::<Var>().expect("list var");
+    move |egraph, _eclass, subst| {
+        let e = *subst.get(elem_var).expect("bound elem");
+        let l = *subst.get(list_var).expect("bound list");
+        egraph[l].data.contains(&egraph.find(e))
+    }
 }

@@ -1,7 +1,8 @@
 use crate::filter::Filter;
 use crate::op::{BlobContent, Op};
 use crate::persist::to_filter;
-use egg::{Id, Symbol};
+use egg::{Analysis, DidMerge, EGraph, Id, Symbol};
+use std::collections::HashSet;
 
 /// Field separator for the opaque atom symbols below.
 ///
@@ -14,17 +15,28 @@ pub(crate) const SEP: char = '\x00';
 egg::define_language! {
     /// Mirror of the `Op` variants needed to round-trip the supported rules.
     ///
-    /// `Compose`/`Chain`/`Subtract`/`Exclude`/`Pin` are structural containers.
+    /// `Compose` is represented as a cons-list (`Cons`/`Nil`) rather than a
+    /// variadic `Box<[Id]>`: egg matches `Box<[Id]>` by exact child arity (the
+    /// "variadic wall"), so any rule that removes a variable number of elements
+    /// (dedup, set-difference) is impossible as a pure pattern. A cons-list
+    /// sidesteps that — a 2-child `Cons` pattern matches a list of any length.
+    /// `Compose` is a set (order-independent), so cons order is irrelevant and the
+    /// element-set [`JoshAnalysis`] annotation is the canonical membership check.
+    ///
+    /// `Chain` stays `Box<[Id]>`: it is an *ordered* sequence, and cons order
+    /// non-determinism is acceptable for `Compose` (a set) but would be wrong for
+    /// `Chain`. `Subtract`/`Exclude`/`Pin` are structural containers.
     /// `Prefix`/`Subdir` carry their path as a structural child so a pattern
     /// variable can unify two equal paths (see `cancel-prefix-subdir`). `Message`
     /// is structural too, so a pattern can match "any message" regardless of its
     /// format/regex payload (see `subtract-message-message`); the rest of the leaf
     /// data ops are opaque atoms.
     pub(crate) enum Josh {
-        // Variadic containers. Rewrite patterns match these by exact child count,
-        // so a 2-child pattern only matches a 2-child node (see egg's
-        // `define_language!` docs on `Box<[Id]>`).
-        "compose" = Compose(Box<[Id]>),
+        // Cons-list Compose: a list is Cons(head, tail) chained down to Nil, so a
+        // 2-child pattern matches a list of any length. Compose is a set.
+        "cons" = Cons([Id; 2]),
+        "nil" = Nil,
+        // Ordered sequence container; still matched by exact child count.
         "chain" = Chain(Box<[Id]>),
         "subtract" = Subtract([Id; 2]),
         "exclude" = Exclude(Id),
@@ -40,6 +52,97 @@ egg::define_language! {
         // Opaque leaf atoms; the carried data is encoded into the symbol string.
         Symbol(Symbol),
     }
+}
+
+/// Per-e-class element-set annotation — the cons-list pivot's enabling mechanism.
+///
+/// For a cons-list e-class this is the set of canonical element `Id`s it contains
+/// (its "membership set"); for `Nil`, atoms, and non-Compose nodes it is empty. It
+/// lets a rewrite *guard* on membership without a variadic matcher: dedup is
+/// `(cons ?x ?tail) => ?tail` when the tail's set contains `?x`, and absorb is
+/// `(subtract ?x ?l) => empty` when `?l`'s set contains `?x`. Both are variadic
+/// under `Box<[Id]>` (impossible as patterns); both are 2-arity patterns under cons
+/// + this analysis.
+///
+/// Computed by [`Analysis::make`] — a `Cons` node's set is its tail's set plus the
+/// canonical head — and unioned by [`Analysis::merge`] on class merge. egg
+/// re-derives the data via `remake` on rebuild, so no `modify` hook is needed to
+/// keep it sound.
+#[derive(Default)]
+pub(crate) struct JoshAnalysis;
+
+impl Analysis<Josh> for JoshAnalysis {
+    type Data = HashSet<Id>;
+
+    fn make(egraph: &mut EGraph<Josh, Self>, enode: &Josh, _id: Id) -> Self::Data {
+        match enode {
+            // `EGraph::Index` canonicalizes on access, so `egraph[*t].data` is
+            // already the canonical tail set; `find` is needed only for the head
+            // `Id` we store into the set, so membership compares canonical reps.
+            Josh::Cons([h, t]) => {
+                let mut s = egraph[*t].data.clone();
+                s.insert(egraph.find(*h));
+                s
+            }
+            _ => HashSet::new(),
+        }
+    }
+
+    fn merge(&mut self, to: &mut HashSet<Id>, from: HashSet<Id>) -> DidMerge {
+        let pre = to.len();
+        to.extend(from);
+        // `from` is always a subset of the merged `to`, so `b_merged` is false; a
+        // conservative `DidMerge(true, _)` re-queues parents for annotation refresh.
+        DidMerge(pre != to.len(), false)
+    }
+}
+
+/// Walk a cons-list spine from `id`, collecting canonical head `Id`s until `Nil`.
+/// Returns `None` if `id`'s e-class holds neither a `Cons` nor a `Nil` node (i.e.
+/// it is not a pure cons-list) — the caller then leaves it untouched. Shared by the
+/// appliers that inspect a `Compose` ([`crate::eggopt::appliers`]).
+///
+/// Cycle-safe: `dedup` / `drop-empty` legitimately union a cons-list with its own
+/// tail (or with `Nil`), so a class can contain both a `Cons` and the `Nil`/tail it
+/// points at. A naive walk would loop forever there, so visited classes break the
+/// walk and return the elements seen so far. That partial list is fine for the
+/// callers — the appliers self-guard on it, and the equivalence gate checks the
+/// final result regardless.
+pub(crate) fn cons_elems(egraph: &EGraph<Josh, JoshAnalysis>, start: Id) -> Option<Vec<Id>> {
+    let mut out = Vec::new();
+    let mut visited = HashSet::<Id>::new();
+    let mut id = egraph.find(start);
+    loop {
+        if !visited.insert(id) {
+            break;
+        }
+        match egraph[id].nodes.iter().find_map(|n| match n {
+            Josh::Cons([h, t]) => Some((*h, *t)),
+            _ => None,
+        }) {
+            Some((h, t)) => {
+                out.push(egraph.find(h));
+                id = egraph.find(t);
+            }
+            None => {
+                if egraph[id].nodes.iter().any(|n| matches!(n, Josh::Nil)) {
+                    break;
+                }
+                return None;
+            }
+        }
+    }
+    Some(out)
+}
+
+/// Build a cons-list of `elems` (empty -> `Nil`), prepending each canonical head and
+/// adding the nodes to the e-graph. The mirror of [`cons_elems`].
+pub(crate) fn cons_fold(egraph: &mut EGraph<Josh, JoshAnalysis>, elems: &[Id]) -> Id {
+    let mut tail = egraph.add(Josh::Nil);
+    for &h in elems.iter().rev() {
+        tail = egraph.add(Josh::Cons([egraph.find(h), tail]));
+    }
+    tail
 }
 
 /// Encode a leaf `Op` as an opaque atom symbol. Returns `None` for any `Op`

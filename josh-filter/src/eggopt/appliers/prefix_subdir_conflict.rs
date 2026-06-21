@@ -1,4 +1,4 @@
-use crate::eggopt::lang::Josh;
+use crate::eggopt::lang::{Josh, JoshAnalysis};
 use egg::{Applier, EGraph, Id, PatternAst, Subst, Symbol, Var};
 use std::path::Path;
 
@@ -34,14 +34,14 @@ impl PrefixSubdirConflict {
     }
 }
 
-impl Applier<Josh, ()> for PrefixSubdirConflict {
+impl Applier<Josh, JoshAnalysis> for PrefixSubdirConflict {
     fn vars(&self) -> Vec<Var> {
         vec![self.a, self.b]
     }
 
     fn apply_one(
         &self,
-        egraph: &mut EGraph<Josh, ()>,
+        egraph: &mut EGraph<Josh, JoshAnalysis>,
         eclass: Id,
         subst: &Subst,
         _searcher_ast: Option<&PatternAst<Josh>>,
@@ -83,7 +83,7 @@ impl Applier<Josh, ()> for PrefixSubdirConflict {
 /// Returns a `&'static str` because egg interns `Symbol`s in a global table, so
 /// the slice outlives the `&EGraph` borrow and never conflicts with a later
 /// `&mut EGraph` call (e.g. `egraph.add`).
-fn symbol_str(egraph: &EGraph<Josh, ()>, id: Id) -> Option<&'static str> {
+fn symbol_str(egraph: &EGraph<Josh, JoshAnalysis>, id: Id) -> Option<&'static str> {
     egraph[id].nodes.iter().find_map(|node| match node {
         Josh::Symbol(s) => Some(s.as_str()),
         _ => None,

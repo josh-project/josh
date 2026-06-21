@@ -24,9 +24,10 @@ mod appliers;
 mod convert;
 mod lang;
 mod rules;
+pub mod spike_conslist;
 
 use crate::eggopt::convert::{build, rebuild};
-use crate::eggopt::lang::Josh;
+use crate::eggopt::lang::{Josh, JoshAnalysis};
 use crate::eggopt::rules::rules;
 use crate::filter::Filter;
 use crate::opt;
@@ -68,7 +69,7 @@ pub fn egg_optimize(filter: Filter) -> Filter {
     }
 
     let rules = rules();
-    let runner = Runner::<Josh, ()>::default()
+    let runner = Runner::<Josh, JoshAnalysis>::default()
         .with_expr(&expr)
         // Mandatory limits: e-graphs can blow up, and extraction always runs
         // (best-so-far) even when a limit is hit.

@@ -17,11 +17,16 @@ pub(crate) fn build(
     }
     let id = match to_op(f) {
         Op::Compose(cs) => {
-            let kids = cs
-                .iter()
-                .map(|&c| build(expr, seen, c))
-                .collect::<Option<Vec<_>>>()?;
-            expr.add(Josh::Compose(kids.into_boxed_slice()))
+            // Fold right into a cons-list: Compose[a, b, c] -> Cons(a, Cons(b,
+            // Cons(c, Nil))); an empty compose -> Nil. Iterating in reverse and
+            // prepending keeps the element order, and shared subterms still
+            // memoize by `Filter` OID via `seen` (RecExpr dedups the cons enodes).
+            let mut tail = expr.add(Josh::Nil);
+            for &c in cs.iter().rev() {
+                let h = build(expr, seen, c)?;
+                tail = expr.add(Josh::Cons([h, tail]));
+            }
+            tail
         }
         Op::Chain(cs) => {
             let kids = cs
@@ -81,12 +86,17 @@ pub(crate) fn rebuild(
         return Some(f);
     }
     let f = match &expr[id] {
-        Josh::Compose(kids) => {
-            let v = kids
-                .iter()
-                .map(|&c| rebuild(expr, seen, c))
-                .collect::<Option<Vec<_>>>()?;
-            to_filter(Op::Compose(v))
+        Josh::Cons(_) | Josh::Nil => {
+            let elems = rebuild_cons(expr, seen, id)?;
+            // Singleton/empty collapse at the boundary (E9 + singleton-flatten),
+            // NOT an egg rule: a blanket (cons ?x nil) => ?x is unsound inside a
+            // list's tail slot, but rebuild knows the spine, so it is sound here.
+            // Required by tests that assert `out == a`, not `out == Compose[a]`.
+            match elems.len() {
+                0 => to_filter(Op::Empty),
+                1 => elems.into_iter().next().unwrap(),
+                _ => to_filter(Op::Compose(elems)),
+            }
         }
         Josh::Chain(kids) => {
             let v = kids
@@ -120,4 +130,27 @@ pub(crate) fn rebuild(
     };
     seen.insert(id, f);
     Some(f)
+}
+
+/// Walk a cons-list spine starting at `id`, rebuilding each head element, until
+/// `Nil`. Returns the element list, or `None` if the spine is malformed (e.g. an
+/// atom where a list tail is expected), which makes `egg_optimize` fall back to
+/// the identity filter.
+fn rebuild_cons(
+    expr: &RecExpr<Josh>,
+    seen: &mut HashMap<Id, Filter>,
+    mut id: Id,
+) -> Option<Vec<Filter>> {
+    let mut elems = Vec::new();
+    loop {
+        match &expr[id] {
+            Josh::Nil => break,
+            Josh::Cons([h, t]) => {
+                elems.push(rebuild(expr, seen, *h)?);
+                id = *t;
+            }
+            _ => return None,
+        }
+    }
+    Some(elems)
 }

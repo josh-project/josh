@@ -1,4 +1,4 @@
-use crate::eggopt::lang::Josh;
+use crate::eggopt::lang::{Josh, JoshAnalysis, cons_elems, cons_fold};
 use egg::{Applier, EGraph, Id, PatternAst, Subst, Symbol, Var};
 use std::collections::HashSet;
 
@@ -6,26 +6,25 @@ use std::collections::HashSet;
 /// `Subtract(Compose(A\B), Compose(B\A))`.
 ///
 /// This is the one rewrite that cannot be a pure pattern: removing a *variable*
-/// number of shared elements from a variadic `Compose` needs an applier that
-/// builds the result programmatically (egg rewrite patterns are fixed-arity).
-/// It captures the *spirit* of the trusted optimizer's set-difference case
-/// (`opt.rs`), not its mechanism — `opt` reaches the same result via a recursive
-/// single-element `retain` over a hashed `FilterSet`, whereas this adds the
-/// fully-differenced term in one step and lets the `compose`-identity rules
-/// clean up any singleton/empty result.
+/// number of shared elements from a cons-list `Compose` needs an applier that
+/// builds the result programmatically. (The *single-element* cases are the pure
+/// `pluck-head` / `pluck-deeper` / `absorb-into-list` rules; this applier handles
+/// the full two-compose intersection.) It captures the *spirit* of the trusted
+/// optimizer's set-difference case (`opt.rs`), not its mechanism — `opt` reaches
+/// the same result via a recursive single-element `retain` over a hashed
+/// `FilterSet`, whereas this adds the fully-differenced term in one step.
 ///
 /// Bidirectional (rather than left-only `A\B`) because the equivalence gate
-/// canonicalizes via `opt`, which differsences both sides — a left-only
-/// candidate would be sound but fail `canon(input) == canon(candidate)` and so
-/// never fire. Both forms give the same tree, so this is correct for the right
-/// reason, not just to placate the gate.
+/// canonicalizes via `opt`, which differsences both sides — a left-only candidate
+/// would be sound but fail `canon(input) == canon(candidate)` and so never fire.
+/// Both forms give the same tree, so this is correct for the right reason, not just
+/// to placate the gate.
 ///
-/// Membership is by e-class identity (`egraph.find`): two elements are "the
-/// same" iff they share an e-class, which is exactly the Filter-OID hash-consing
-/// [`build`](crate::eggopt::convert::build) establishes. Self-guarding: if
-/// either operand is not a `compose`, or the element sets are disjoint, it adds
-/// nothing. Because the result is disjoint, it will not re-fire on its own
-/// output.
+/// Membership is by e-class identity (`egraph.find`): two elements are "the same"
+/// iff they share an e-class, exactly the Filter-OID hash-consing
+/// [`build`](crate::eggopt::convert::build) establishes. Self-guarding: if either
+/// operand is not a cons-list, or the element sets are disjoint, it adds nothing.
+/// Because the result is disjoint, it will not re-fire on its own output.
 pub(crate) struct SubtractComposeDiff {
     a: Var,
     b: Var,
@@ -40,14 +39,14 @@ impl SubtractComposeDiff {
     }
 }
 
-impl Applier<Josh, ()> for SubtractComposeDiff {
+impl Applier<Josh, JoshAnalysis> for SubtractComposeDiff {
     fn vars(&self) -> Vec<Var> {
         vec![self.a, self.b]
     }
 
     fn apply_one(
         &self,
-        egraph: &mut EGraph<Josh, ()>,
+        egraph: &mut EGraph<Josh, JoshAnalysis>,
         eclass: Id,
         subst: &Subst,
         _searcher_ast: Option<&PatternAst<Josh>>,
@@ -56,10 +55,10 @@ impl Applier<Josh, ()> for SubtractComposeDiff {
         let a = *subst.get(self.a).expect("bound ?a");
         let b = *subst.get(self.b).expect("bound ?b");
 
-        let Some(av) = compose_children(egraph, a) else {
+        let Some(av) = cons_elems(egraph, a) else {
             return vec![];
         };
-        let Some(bv) = compose_children(egraph, b) else {
+        let Some(bv) = cons_elems(egraph, b) else {
             return vec![];
         };
 
@@ -95,11 +94,11 @@ impl Applier<Josh, ()> for SubtractComposeDiff {
             }
         }
 
-        // Build canonical operands (empty -> the empty atom, singleton -> the
-        // bare element) rather than Compose([])/Compose([x]). This mirrors opt's
-        // Compose normalization at construction time and, crucially, keeps those
-        // nodes out of the e-graph so the AstSize extractor has no tie to break
-        // between e.g. Compose([]) and the empty atom (both cost 1).
+        // Build canonical operands: empty -> the `empty` atom (so `subtract-empty-l`
+        // then fires to empty), singleton -> the bare element, otherwise a
+        // cons-list. This mirrors opt's Compose normalization at construction time
+        // and keeps AstSize ties out of the graph (a bare element costs less than
+        // `Cons(x, Nil)`).
         let left = compose_of(egraph, diff_a);
         let right = compose_of(egraph, diff_b);
         let differenced = egraph.add(Josh::Subtract([left, right]));
@@ -108,22 +107,13 @@ impl Applier<Josh, ()> for SubtractComposeDiff {
     }
 }
 
-/// Children of the first `compose` node in `id`'s e-class, if it contains one.
-fn compose_children(egraph: &EGraph<Josh, ()>, id: Id) -> Option<Vec<Id>> {
-    egraph[id].nodes.iter().find_map(|node| match node {
-        Josh::Compose(kids) => Some(kids.to_vec()),
-        _ => None,
-    })
-}
-
 /// Build a canonical compose operand from an element list: empty becomes the
-/// `empty` atom, a singleton becomes the element itself, otherwise a `compose`.
-/// See [`SubtractComposeDiff`] for why construction-time canonicalization
-/// matters.
-fn compose_of(egraph: &mut EGraph<Josh, ()>, elems: Vec<Id>) -> Id {
+/// `empty` atom, a singleton becomes the element itself, otherwise a cons-list.
+/// See [`SubtractComposeDiff`] for why construction-time canonicalization matters.
+fn compose_of(egraph: &mut EGraph<Josh, JoshAnalysis>, elems: Vec<Id>) -> Id {
     match elems.len() {
         0 => egraph.add(Josh::Symbol(Symbol::from("empty"))),
-        1 => elems[0],
-        _ => egraph.add(Josh::Compose(elems.into_boxed_slice())),
+        1 => egraph.find(elems[0]),
+        _ => cons_fold(egraph, &elems),
     }
 }
