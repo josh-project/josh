@@ -8,11 +8,14 @@
 //! mechanical spec — where egg expresses an optimization more cleanly than
 //! `opt`'s ordered passes, the cleaner form wins. Gated behind `--use-new-opt`.
 //!
-//! Three rewrite families: the Chain/Compose distribute <-> factor pair; a
-//! Prefix/Subdir cancellation (paths are structural children, so path equality
-//! is egg's unification rather than a Rust condition); and a Subtract algebra —
-//! identity rules as pure patterns plus a bidirectional Compose set-difference
-//! via a custom applier (the one variadic rewrite).
+//! The rewrite set spans seven families, all gated on the same semantic bar
+//! (the output must produce an equivalent tree and history): Chain/Compose
+//! distribute <-> factor; Prefix/Subdir cancellation; Compose identity, dedup,
+//! and Empty-removal; Exclude/Pin identity; a Subtract algebra (identity,
+//! Message-Message, pluck/absorb) as pure patterns; and a bidirectional Compose
+//! set-difference via a custom applier (the one variadic rewrite). Path and
+//! Message data are structural children, so path equality and message
+//! recognition are egg's unification rather than Rust conditions.
 
 use crate::filter::Filter;
 use crate::op::{BlobContent, Op};
@@ -37,8 +40,10 @@ egg::define_language! {
     ///
     /// `Compose`/`Chain`/`Subtract`/`Exclude`/`Pin` are structural containers.
     /// `Prefix`/`Subdir` carry their path as a structural child so a pattern
-    /// variable can unify two equal paths (see `cancel-prefix-subdir`); the rest
-    /// of the leaf data ops are opaque atoms.
+    /// variable can unify two equal paths (see `cancel-prefix-subdir`). `Message`
+    /// is structural too, so a pattern can match "any message" regardless of its
+    /// format/regex payload (see `subtract-message-message`); the rest of the leaf
+    /// data ops are opaque atoms.
     enum Josh {
         // Variadic containers. Rewrite patterns match these by exact child count,
         // so a 2-child pattern only matches a 2-child node (see egg's
@@ -52,6 +57,10 @@ egg::define_language! {
         // share an e-class and unify under one pattern variable.
         "prefix" = Prefix(Id),
         "subdir" = Subdir(Id),
+        // Message is structural (not an opaque atom) so a pattern can recognize
+        // "any message". Its single child `Symbol` carries the NUL-separated
+        // format/regex payload, which is never inspected by a pattern.
+        "message" = Message(Id),
         // Opaque leaf atoms; the carried data is encoded into the symbol string.
         Symbol(Symbol),
     }
@@ -61,8 +70,8 @@ egg::define_language! {
 /// variant (or payload) the egg language does not model, which makes `build`
 /// bail out and `egg_optimize` fall back to the identity filter.
 ///
-/// `Prefix`/`Subdir` are intentionally absent here: they are structural nodes,
-/// not atoms, and are handled directly in `build`/`rebuild`.
+/// `Prefix`/`Subdir`/`Message` are intentionally absent here: they are
+/// structural nodes, not atoms, and are handled directly in `build`/`rebuild`.
 fn op_to_atom(op: &Op) -> Option<String> {
     Some(match op {
         Op::File(dst, src) => format!("file{SEP}{}{SEP}{}", dst.to_str()?, src.to_str()?),
@@ -73,7 +82,6 @@ fn op_to_atom(op: &Op) -> Option<String> {
         Op::Nop => "nop".to_string(),
         Op::Empty => "empty".to_string(),
         Op::Pattern(p) => format!("pattern{SEP}{p}"),
-        Op::Message(fmt, re) => format!("message{SEP}{fmt}{SEP}{}", re.as_str()),
         _ => return None,
     })
 }
@@ -103,10 +111,6 @@ fn atom_to_filter(s: &str) -> Option<Filter> {
                 _ => return None,
             };
             Op::Blob(path.into(), content)
-        }
-        "message" => {
-            let (fmt, regex_str) = rest?.split_once(SEP)?;
-            Op::Message(fmt.to_string(), regex::Regex::new(regex_str).ok()?)
         }
         _ => return None,
     };
@@ -155,6 +159,15 @@ fn build(expr: &mut RecExpr<Josh>, seen: &mut HashMap<Filter, Id>, f: Filter) ->
             let p = expr.add(Josh::Symbol(Symbol::from(path.to_str()?)));
             expr.add(Josh::Subdir(p))
         }
+        Op::Message(fmt, re) => {
+            // Structural (not an atom) so a pattern can match "any message". The
+            // payload is one symbol so the node count stays the same as an atom.
+            let payload = expr.add(Josh::Symbol(Symbol::from(format!(
+                "{fmt}{SEP}{}",
+                re.as_str()
+            ))));
+            expr.add(Josh::Message(payload))
+        }
         other => {
             let atom = op_to_atom(&other)?;
             expr.add(Josh::Symbol(Symbol::from(atom)))
@@ -200,6 +213,13 @@ fn rebuild(expr: &RecExpr<Josh>, seen: &mut HashMap<Id, Filter>, id: Id) -> Opti
             Josh::Symbol(s) => to_filter(Op::Subdir(s.as_str().into())),
             _ => return None,
         },
+        Josh::Message(p) => match &expr[*p] {
+            Josh::Symbol(s) => {
+                let (fmt, re) = s.as_str().split_once(SEP)?;
+                to_filter(Op::Message(fmt.to_string(), regex::Regex::new(re).ok()?))
+            }
+            _ => return None,
+        },
         Josh::Symbol(sym) => atom_to_filter(sym.as_str())?,
     };
     seen.insert(id, f);
@@ -221,10 +241,10 @@ fn rebuild(expr: &RecExpr<Josh>, seen: &mut HashMap<Id, Filter>, id: Id) -> Opti
 ///   ```
 ///   Unconditionally semantics-preserving (Chain is sequential composition,
 ///   Compose is parallel merge). Written for one prefix element and compose
-///   arities 2 and 3 — the minimal viable subset covering the `:/a:[...]` shapes
-///   from `tests/filter/pretty_print.t`. Longer prefixes or larger composes are
-///   left untouched (and thus stay equivalent); more fixed-arity cases are a
-///   mechanical follow-up.
+///   arities 2, 3, and 4 — the subset covering the `:/a:[...]` shapes from
+///   `tests/filter/pretty_print.t` plus one extra arity. Longer prefixes or
+///   larger composes are left untouched (and thus stay equivalent); more
+///   fixed-arity cases are a mechanical follow-up.
 ///
 /// * cancel-prefix-subdir: `Chain[Prefix(p), Subdir(p)] == Nop`, mirroring the
 ///   adjacent-pair cancellation in the trusted optimizer (`opt.rs` flatten).
@@ -234,19 +254,29 @@ fn rebuild(expr: &RecExpr<Josh>, seen: &mut HashMap<Id, Filter>, id: Id) -> Opti
 ///   the exact two-element chain is handled; cancelling a pair inside a longer
 ///   chain is a follow-up (same arity limitation as distribute/factor).
 ///
-/// * compose identity: `(compose)` is the empty tree and `(compose ?x)` is `?x`.
-///   Pure patterns because `Box<[Id]>` matches by exact arity; mirrors `opt.rs`
-///   Compose normalization and cleans up singleton/empty results from
-///   [`SubtractComposeDiff`].
+/// * compose identity / dedup / empty-removal: `(compose)` is the empty tree and
+///   `(compose ?x)` is `?x` (exact-arity match on `Box<[Id]>`); adjacent equal
+///   elements collapse (`dedup`); and `empty` is dropped wherever it appears
+///   (empty is the identity of parallel merge). Mirrors `opt.rs` Compose
+///   normalization and cleans up singleton/empty results from
+///   [`SubtractComposeDiff`]. Dedup/empty-removal are written for arities 2 and
+///   3.
+///
+/// * exclude / pin identity: `Exclude(nop) == empty` (excluding everything keeps
+///   nothing), `Exclude(empty) == Pin(empty) == nop` (an empty tree has nothing
+///   to exclude/pin). Pure patterns; mirrors `opt.rs` step.
 ///
 /// * subtract identity algebra (pure patterns): `x - x = empty`, `empty - x =
-///   empty`, `x - nop = empty` (nop selects everything), `x - empty = x`.
+///   empty`, `x - nop = empty` (nop selects everything), `x - empty = x`, and
+///   `Message - Message = empty` (two message filters produce the same tree, so
+///   their difference is empty). Message is structural so a pattern matches "any
+///   message".
 ///
 /// * subtract pluck / absorb (pure patterns): when one operand is a single
 ///   element (not a compose), mirror `opt.rs` cases 11/12 — pluck it out of the
 ///   other side's compose, or collapse to empty if it is contained there. This
 ///   is the gap the variadic applier cannot cover (it needs both operands to be
-///   composes). Fixed arities 2 and 3.
+///   composes). Fixed arities 2, 3, and 4.
 ///
 /// * subtract-compose-diff: `Subtract(Compose(A), Compose(B))` bidirectional set
 ///   difference, via [`SubtractComposeDiff`] — the one rewrite that needs a
@@ -263,26 +293,58 @@ fn rules() -> Vec<Rewrite<Josh, ()>> {
         rewrite!("factor-compose-3";
             "(compose (chain ?p ?z1) (chain ?p ?z2) (chain ?p ?z3))" =>
             "(chain ?p (compose ?z1 ?z2 ?z3))"),
+        rewrite!("distribute-compose-4";
+            "(chain ?p (compose ?z1 ?z2 ?z3 ?z4))" =>
+            "(compose (chain ?p ?z1) (chain ?p ?z2) (chain ?p ?z3) (chain ?p ?z4))"),
+        rewrite!("factor-compose-4";
+            "(compose (chain ?p ?z1) (chain ?p ?z2) (chain ?p ?z3) (chain ?p ?z4))" =>
+            "(chain ?p (compose ?z1 ?z2 ?z3 ?z4))"),
         rewrite!("cancel-prefix-subdir";
             "(chain (prefix ?p) (subdir ?p))" => "nop"),
         // Compose identity: empty compose = empty tree; singleton compose = its
         // sole element. Exact-arity matching on Box<[Id]> makes these patterns.
         rewrite!("compose-empty"; "(compose)" => "empty"),
         rewrite!("compose-single"; "(compose ?x)" => "?x"),
+        // Compose dedup + Empty-removal (mirrors opt's `dedup()` + `retain(!=
+        // Empty)` on a Compose). Empty is the identity of Compose (parallel
+        // merge), so it is dropped wherever it appears; adjacent equal elements
+        // collapse. Fixed arity 2 and 3 (larger is a mechanical follow-up).
+        rewrite!("compose-dedup-2"; "(compose ?x ?x)" => "?x"),
+        rewrite!("compose-dedup-3-0"; "(compose ?x ?x ?y)" => "(compose ?x ?y)"),
+        rewrite!("compose-dedup-3-1"; "(compose ?x ?y ?y)" => "(compose ?x ?y)"),
+        rewrite!("compose-drop-empty-2-0"; "(compose empty ?x)" => "?x"),
+        rewrite!("compose-drop-empty-2-1"; "(compose ?x empty)" => "?x"),
+        rewrite!("compose-drop-empty-3-0"; "(compose empty ?x ?y)" => "(compose ?x ?y)"),
+        rewrite!("compose-drop-empty-3-1"; "(compose ?x empty ?y)" => "(compose ?x ?y)"),
+        rewrite!("compose-drop-empty-3-2"; "(compose ?x ?y empty)" => "(compose ?x ?y)"),
+        // Exclude / Pin identity (mirrors opt step): Exclude(nop) selects nothing
+        // -> Empty; Exclude/Pin of an empty tree is a no-op -> Nop. Pure patterns
+        // because `nop`/`empty` are the opaque leaf atoms.
+        rewrite!("exclude-nop"; "(exclude nop)" => "empty"),
+        rewrite!("exclude-empty"; "(exclude empty)" => "nop"),
+        rewrite!("pin-empty"; "(pin empty)" => "nop"),
         // Subtract identity / annihilator algebra — all pure patterns; `nop`
         // and `empty` are the opaque leaf atoms.
         rewrite!("subtract-self"; "(subtract ?x ?x)" => "empty"),
         rewrite!("subtract-empty-l"; "(subtract empty ?x)" => "empty"),
         rewrite!("subtract-nop-r"; "(subtract ?x nop)" => "empty"),
         rewrite!("subtract-empty-r"; "(subtract ?x empty)" => "?x"),
+        // Any two Message filters have an empty tree difference: a Message only
+        // rewrites commit metadata, never the tree (opt.rs line 740). A pure
+        // pattern because Message is structural — `(message ?m)` matches any
+        // message regardless of its format/regex payload. The two `?m` bindings
+        // are distinct variables, so this also covers identical messages (which
+        // `subtract-self` reaches first).
+        rewrite!("subtract-message-message";
+            "(subtract (message ?m1) (message ?m2))" => "empty"),
         // Subtract pluck / absorb (pure patterns), mirroring opt.rs cases 11/12
         // for the case one operand is a single element rather than a compose —
         // the gap the variadic applier below cannot cover (it needs both
         // operands to be composes). Pluck removes the element from the compose;
         // absorb collapses to empty when the element is contained in the right.
-        // Fixed arities 2 and 3 (same convention as distribute/factor); larger
-        // arities are a mechanical follow-up. Duplicate-element degenerate cases
-        // are caught by the equivalence gate (see `equivalent`).
+        // Fixed arities 2, 3, and 4 (same convention as distribute/factor);
+        // larger arities are a mechanical follow-up. Duplicate-element
+        // degenerate cases are caught by the equivalence gate (see `equivalent`).
         rewrite!("pluck-compose-2-0"; "(subtract (compose ?a ?b) ?a)" => "?b"),
         rewrite!("pluck-compose-2-1"; "(subtract (compose ?a ?b) ?b)" => "?a"),
         rewrite!("pluck-compose-3-0";
@@ -291,6 +353,14 @@ fn rules() -> Vec<Rewrite<Josh, ()>> {
             "(subtract (compose ?a ?b ?c) ?b)" => "(compose ?a ?c)"),
         rewrite!("pluck-compose-3-2";
             "(subtract (compose ?a ?b ?c) ?c)" => "(compose ?a ?b)"),
+        rewrite!("pluck-compose-4-0";
+            "(subtract (compose ?a ?b ?c ?d) ?a)" => "(compose ?b ?c ?d)"),
+        rewrite!("pluck-compose-4-1";
+            "(subtract (compose ?a ?b ?c ?d) ?b)" => "(compose ?a ?c ?d)"),
+        rewrite!("pluck-compose-4-2";
+            "(subtract (compose ?a ?b ?c ?d) ?c)" => "(compose ?a ?b ?d)"),
+        rewrite!("pluck-compose-4-3";
+            "(subtract (compose ?a ?b ?c ?d) ?d)" => "(compose ?a ?b ?c)"),
         rewrite!("absorb-compose-2-0"; "(subtract ?a (compose ?a ?b))" => "empty"),
         rewrite!("absorb-compose-2-1"; "(subtract ?a (compose ?b ?a))" => "empty"),
         rewrite!("absorb-compose-3-0";
@@ -299,6 +369,14 @@ fn rules() -> Vec<Rewrite<Josh, ()>> {
             "(subtract ?a (compose ?b ?a ?c))" => "empty"),
         rewrite!("absorb-compose-3-2";
             "(subtract ?a (compose ?b ?c ?a))" => "empty"),
+        rewrite!("absorb-compose-4-0";
+            "(subtract ?a (compose ?a ?b ?c ?d))" => "empty"),
+        rewrite!("absorb-compose-4-1";
+            "(subtract ?a (compose ?b ?a ?c ?d))" => "empty"),
+        rewrite!("absorb-compose-4-2";
+            "(subtract ?a (compose ?b ?c ?a ?d))" => "empty"),
+        rewrite!("absorb-compose-4-3";
+            "(subtract ?a (compose ?b ?c ?d ?a))" => "empty"),
         // Subtract set-difference over two composes — variadic, so a custom
         // applier rather than a pattern. See [`SubtractComposeDiff`].
         rewrite!("subtract-compose-diff";
@@ -507,6 +585,13 @@ mod tests {
         to_filter(Op::Compose(fs.to_vec()))
     }
 
+    /// A Message filter rewriting the commit message with `fmt`, selecting
+    /// commits whose message matches `re`. Only the tree (not the message) is
+    /// observable downstream, so any two messages have an empty tree difference.
+    fn message(fmt: &str, re: &str) -> Filter {
+        to_filter(Op::Message(fmt.to_string(), regex::Regex::new(re).unwrap()))
+    }
+
     /// `Chain[p, Compose[z1, z2]]` — the factored form.
     fn factored() -> Filter {
         to_filter(Op::Chain(vec![
@@ -712,5 +797,106 @@ mod tests {
             "contained element must absorb to empty"
         );
         assert_ne!(out, input, "egg must not have returned the input verbatim");
+    }
+
+    #[test]
+    fn exclude_pin_identity_rules() {
+        let nop = to_filter(Op::Nop);
+        let empty = to_filter(Op::Empty);
+
+        // (exclude nop) => empty: excluding everything keeps nothing.
+        let out = egg_optimize(to_filter(Op::Exclude(nop)));
+        assert_eq!(out, empty, "exclude(nop) must be empty");
+        assert_ne!(out, to_filter(Op::Exclude(nop)));
+
+        // (exclude empty) => nop: an empty tree has nothing to exclude.
+        let out = egg_optimize(to_filter(Op::Exclude(empty)));
+        assert_eq!(out, nop, "exclude(empty) must be nop");
+
+        // (pin empty) => nop: pinning an empty tree is a no-op.
+        let out = egg_optimize(to_filter(Op::Pin(empty)));
+        assert_eq!(out, nop, "pin(empty) must be nop");
+    }
+
+    #[test]
+    fn compose_dedup_and_empty_removal() {
+        let a = subdir("a");
+        let b = subdir("b");
+
+        // Adjacent equal elements collapse (Vec::dedup in opt).
+        let out = egg_optimize(compose(&[a, a]));
+        assert_eq!(out, a, "compose(a, a) must dedup to a");
+
+        // Empty is the identity of compose, so it is dropped.
+        let out = egg_optimize(compose(&[a, to_filter(Op::Empty)]));
+        assert_eq!(out, a, "compose(a, empty) must drop empty");
+
+        // Empty removed from the middle of a 3-compose, leaving the pair.
+        let out = egg_optimize(compose(&[a, to_filter(Op::Empty), b]));
+        assert_eq!(
+            out,
+            compose(&[a, b]),
+            "compose(a, empty, b) must reduce to compose(a, b)"
+        );
+    }
+
+    #[test]
+    fn subtract_message_message_collapses_to_empty() {
+        // Any two Message filters produce the same tree (a Message only rewrites
+        // commit metadata), so their difference is empty — opt.rs line 740.
+        // Distinct format/regex payloads exercise that the rule matches "any
+        // message", not just identical ones.
+        let input = to_filter(Op::Subtract(message("{}", ".*"), message("v{}", "[0-9]+")));
+        let out = egg_optimize(input);
+        assert_eq!(out, to_filter(Op::Empty), "message - message must be empty");
+        assert_ne!(out, input, "egg must not have returned the input verbatim");
+    }
+
+    #[test]
+    fn subtract_pluck_element_from_four_compose() {
+        // 4-ary pluck, middle position: Subtract(Compose(a,b,c,d), b) ->
+        // Compose(a,c,d). Exercises the arity-4 pluck family.
+        let input = to_filter(Op::Subtract(
+            compose(&[subdir("a"), subdir("b"), subdir("c"), subdir("d")]),
+            subdir("b"),
+        ));
+        let out = egg_optimize(input);
+        assert_eq!(
+            out,
+            compose(&[subdir("a"), subdir("c"), subdir("d")]),
+            "must pluck b from the 4-compose"
+        );
+        assert_ne!(out, input, "egg must not have returned the input verbatim");
+    }
+
+    #[test]
+    fn distribute_compose_4_factors() {
+        // The arity-4 factored form Chain[p, Compose(z1..z4)] is cheaper than the
+        // distributed form, so either input extracts to the factored form.
+        let fact = to_filter(Op::Chain(vec![
+            subdir("p"),
+            compose(&[subdir("z1"), subdir("z2"), subdir("z3"), subdir("z4")]),
+        ]));
+        let dist = to_filter(Op::Compose(vec![
+            to_filter(Op::Chain(vec![subdir("p"), subdir("z1")])),
+            to_filter(Op::Chain(vec![subdir("p"), subdir("z2")])),
+            to_filter(Op::Chain(vec![subdir("p"), subdir("z3")])),
+            to_filter(Op::Chain(vec![subdir("p"), subdir("z4")])),
+        ]));
+        assert_eq!(
+            egg_optimize(dist),
+            fact,
+            "arity-4 distributed must factor back"
+        );
+        assert_eq!(
+            egg_optimize(fact),
+            fact,
+            "arity-4 factored must stay factored"
+        );
+        assert_ne!(
+            egg_optimize(dist),
+            dist,
+            "egg must not have returned the input"
+        );
     }
 }
