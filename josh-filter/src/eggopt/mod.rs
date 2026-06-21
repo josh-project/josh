@@ -11,7 +11,7 @@
 //! The rewrite set spans seven families, all gated on the same semantic bar
 //! (the output must produce an equivalent tree and history): Chain/Compose
 //! distribute <-> factor; Prefix/Subdir cancellation and its conflict case;
-//! Compose identity, dedup, and Empty-removal; Exclude/Pin identity; a Subtract
+//! Compose identity, dedup, Empty-removal, and flatten; Exclude/Pin identity; a Subtract
 //! algebra (identity, Message-Message, pluck/absorb) as pure patterns; and a
 //! bidirectional Compose set-difference. Two rules use custom appliers — the
 //! Prefix/Subdir conflict (a disequality + component-count guard) and the Compose

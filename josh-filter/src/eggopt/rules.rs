@@ -31,6 +31,15 @@ use egg::{EGraph, Id, Rewrite, Subst, Var, rewrite};
 ///   pattern) and `(cons ?x ?t) => ?t` when `?t`'s element-set contains `?x` (dedup
 ///   at any position, incl. non-consecutive — `opt`'s consecutive-only `Vec::dedup`
 ///   misses that). Singleton/empty composes collapse at `rebuild`, not as a rule.
+/// * compose flatten (2 rules): a nested compose splices into the outer one by
+///   append-via-cons, mirroring `opt`'s recursive `flatten`. `compose-flatten`
+///   peels the head element out of a nested list per fire
+///   (`(cons (cons ?a ?ta) ?tail) => (cons ?a (cons ?ta ?tail))`), and
+///   `compose-flatten-nil` drops a `Nil` head — the base case, produced when a
+///   nested list is peeled to nothing (e.g. a `Compose[Compose[x], t]` whose
+///   nested list collapses to `Nil`). To fixpoint this flattens nesting at any
+///   depth; the base case is distinct from `compose-drop-empty`, which matches the
+///   `empty` *atom* (`Op::Empty`), not `Nil` (an empty *list*).
 /// * exclude / pin identity: unchanged.
 /// * subtract identity / Message-Message: unchanged.
 /// * subtract pluck (2 pure patterns, any arity/position): pluck-head removes the
@@ -61,6 +70,19 @@ pub(crate) fn rules() -> Vec<Rewrite<Josh, JoshAnalysis>> {
         // [`PrefixSubdirConflict`].
         rewrite!("prefix-subdir-conflict";
             "(chain (prefix ?a) (subdir ?b))" => { PrefixSubdirConflict::new() }),
+        // Compose flatten (E1): a nested compose splices into the outer one by
+        // append-via-cons, mirroring opt's recursive flatten. compose-flatten peels
+        // one head element out of a nested list per fire; compose-flatten-nil drops
+        // a Nil head — the base case, produced when a nested list is peeled to
+        // nothing (a Nil head is an empty sub-compose, the identity). The base case
+        // is needed: peeling a singleton nested list Cons(x, Nil) leaves a Nil head,
+        // and without this rebuild would emit an Empty element where the empty
+        // compose should simply vanish. Run to fixpoint this flattens any depth.
+        rewrite!("compose-flatten";
+            "(cons (cons ?a ?ta) ?tail)" =>
+            "(cons ?a (cons ?ta ?tail))"),
+        rewrite!("compose-flatten-nil";
+            "(cons nil ?tail)" => "?tail"),
         // Compose empty-removal (any position): empty is the identity of Compose
         // (parallel merge), so a leading empty element is dropped; run to fixpoint
         // it drops empties anywhere. Singleton/empty composes collapse at rebuild.
