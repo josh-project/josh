@@ -3148,6 +3148,7 @@ name = "josh-filter"
 version = "26.6.11"
 dependencies = [
  "anyhow",
+ "clap",
  "egg",
  "git2",
  "gix-hash",

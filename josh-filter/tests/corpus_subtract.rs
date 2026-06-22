@@ -14,7 +14,7 @@
 //! because `a - a = empty` needs no element reduction.
 
 mod common;
-use common::report;
+use common::{chain, prefix, report, report_f, subdir, subtract};
 use insta::assert_snapshot;
 
 #[test]
@@ -64,5 +64,66 @@ fn subtract_disjoint_stays() -> anyhow::Result<()> {
     opt:  :subtract[:/a,:/b]:prefix=a (cost 5)
     egg:  :subtract[::a/,::b/] (cost 7)
     "#);
+    Ok(())
+}
+
+/// `opt` factors a shared leading element out of a `Subtract` of two chains
+/// (`Subtract(Chain[a,…], Chain[a,…]) → Chain[a, Subtract(…)]`, opt.rs:733-749).
+/// egg has no chain-aware subtract factor, so it leaves both operands intact. The
+/// constructed `Chain[Subdir("a"), …]` form is used because the spec syntax for a
+/// chain of single-component ops round-trips ambiguously through `spec_egg`.
+#[test]
+fn subtract_chain_shared_head() -> anyhow::Result<()> {
+    assert_snapshot!(
+        report_f(subtract(
+            chain(&[subdir("a"), subdir("b")]),
+            chain(&[subdir("a"), subdir("c")]),
+        ))?,
+        @r#"
+    raw:  :subtract[:/a/b,:/a/c] (cost 7)
+    opt:  :/a:subtract[:/b,:/c] (cost 5)
+    egg:  :subtract[:/a/b,:/a/c] (cost 7)
+    "#
+    );
+    Ok(())
+}
+
+/// `opt` factors a shared *trailing* element (here `Prefix("a")`) out of a
+/// `Subtract` of two chains — the subtract analogue of `common_post`, plus a
+/// prefix-hoist (opt.rs:750-764). egg has neither rule, so both operands keep
+/// their trailing prefix.
+#[test]
+fn subtract_chain_shared_tail() -> anyhow::Result<()> {
+    assert_snapshot!(
+        report_f(subtract(
+            chain(&[subdir("b"), prefix("a")]),
+            chain(&[subdir("c"), prefix("a")]),
+        ))?,
+        @r#"
+    raw:  :subtract[:/b:prefix=a,:/c:prefix=a] (cost 7)
+    opt:  :subtract[:/b,:/c]:prefix=a (cost 5)
+    egg:  :subtract[:/b:prefix=a,:/c:prefix=a] (cost 7)
+    "#
+    );
+    Ok(())
+}
+
+/// A realistic compound `Subtract` of two namespaces — the shape that exposes all
+/// the subtract gaps compounding: the shared `::x/,::y/` elements should
+/// difference away, the operands' `::z/`/`::w/` should canonicalize, and the
+/// trailing `prefix=a` should hoist. `opt` collapses 25 nodes to 6; egg leaves it
+/// untouched. (The equivalence still holds — egg falls back to the input — so this
+/// is purely a reduction-quality gap, the kind that bloats the filter applied at
+/// runtime.)
+#[test]
+fn subtract_namespaces_compounded() -> anyhow::Result<()> {
+    assert_snapshot!(
+        report(":subtract[a=:[::x/,::y/,::z/],b=:[::x/,::y/,::w/]]")?,
+        @r#"
+    raw:  :subtract[:[::x/,::y/,::z/]:prefix=a,:[::w/,::x/,::y/]:prefix=b] (cost 25)
+    opt:  :subtract[:/z,:/w]:prefix=z:prefix=a (cost 6)
+    egg:  :subtract[:[::x/,::y/,::z/]:prefix=a,:[::w/,::x/,::y/]:prefix=b] (cost 25)
+    "#
+    );
     Ok(())
 }

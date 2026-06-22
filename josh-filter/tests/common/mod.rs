@@ -23,6 +23,14 @@ pub fn compose(fs: &[Filter]) -> Filter {
     to_filter(Op::Compose(fs.to_vec()))
 }
 
+pub fn chain(fs: &[Filter]) -> Filter {
+    to_filter(Op::Chain(fs.to_vec()))
+}
+
+pub fn subtract(a: Filter, b: Filter) -> Filter {
+    to_filter(Op::Subtract(a, b))
+}
+
 /// A Message filter rewriting the commit message with `fmt`, selecting
 /// commits whose message matches `re`. Only the tree (not the message) is
 /// observable downstream, so any two messages have an empty tree difference.
@@ -59,12 +67,18 @@ pub fn opt_ref(spec: &str) -> anyhow::Result<String> {
 /// for an apples-to-apples compare.
 pub fn report(spec: &str) -> anyhow::Result<String> {
     let raw = parse_egg(spec)?;
-    let o = opt::optimize(raw);
-    let e = egg_optimize(raw);
+    report_f(raw)
+}
+
+/// Like [`report`], but for a directly-constructed `Filter` (no spec parse) — for
+/// gap cases more precisely built from `Op`s than expressed as a spec string.
+pub fn report_f(f: Filter) -> anyhow::Result<String> {
+    let o = opt::optimize(f);
+    let e = egg_optimize(f);
     Ok(format!(
         "raw:  {} (cost {})\nopt:  {} (cost {})\negg:  {} (cost {})",
-        spec_egg(raw),
-        cost(raw),
+        spec_egg(f),
+        cost(f),
         spec_egg(o),
         cost(o),
         spec_egg(e),

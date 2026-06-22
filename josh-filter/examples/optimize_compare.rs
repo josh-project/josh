@@ -34,22 +34,34 @@
 //! Before the timed sweep a small in-process warmup is discarded, so the first
 //! measured row is not inflated by one-time egg/EGraph and allocator setup.
 //!
-//! Run release for representative numbers (edit `SIZES` to change the sweep):
+//! Run release for representative numbers:
 //!
 //! ```sh
 //! cargo run --release --example optimize_compare -p josh-filter
+//! cargo run --release --example optimize_compare -p josh-filter -- --egg-only
+//! cargo run --release --example optimize_compare -p josh-filter -- --max-count 5000
 //! ```
 use std::path::PathBuf;
 use std::time::Instant;
 
-use josh_filter::Filter;
+use clap::Parser;
 use josh_filter::eggopt::egg_candidate;
 use josh_filter::op::Op;
-use josh_filter::opt;
 use josh_filter::persist::{to_filter, to_op};
+use josh_filter::{Filter, opt};
 
-/// Sizes to sweep. Edit this list to change the range.
-const SIZES: &[usize] = &[100, 200, 300, 500, 2000, 5000];
+#[derive(Parser)]
+#[command(about = "Scaling sweep of opt vs egg optimizer on wide-pin shape")]
+struct Args {
+    /// Skip opt::optimize; only run the egg pipeline.
+    #[arg(long)]
+    egg_only: bool,
+
+    /// Maximum N; sweep picks 3 points (start, ×5, end) per power-of-10 decade
+    /// from 10 up to this value.
+    #[arg(long, default_value_t = 1000)]
+    max_count: usize,
+}
 
 /// Fraction of files held back by the layered `:pin`, mirroring the benchmark's
 /// ~25 % hold probability.
@@ -65,6 +77,20 @@ const WARMUP_SIZE: usize = 200;
 /// row reads as a spurious outlier. A few iterations prime these before any row is
 /// timed.
 const WARMUP_ITERS: usize = 3;
+
+/// Generate sweep sizes: for each decade [10ᵏ, 10ᵏ⁺¹] up to `max_count`
+/// emit the start, midpoint (×5), and end, then deduplicate adjacent repeats.
+fn sweep_sizes(max_count: usize) -> Vec<usize> {
+    let mut sizes = vec![];
+    let mut decade = 10;
+    while decade < max_count {
+        let end = (decade * 10).min(max_count);
+        sizes.extend([decade, decade * 5, end]);
+        decade *= 10;
+    }
+    sizes.dedup();
+    sizes
+}
 
 /// Build the raw (un-optimized) pin-legalized shape for `n_files`: a `Compose` of
 /// `N` chains `Chain[file_i, Compose(pinned)]` — `compose(pinned)` as the bare
@@ -115,37 +141,62 @@ fn ms(elapsed: std::time::Duration) -> f64 {
 }
 
 fn main() {
-    println!(
-        "{:>6}  {:>10}  {:>10}  {:>10}  {:>9}  {:>9}",
-        "N", "opt (ms)", "egg (ms)", "opt/egg", "opt nodes", "egg nodes",
-    );
+    let args = Args::parse();
+    let sizes = sweep_sizes(args.max_count);
+
+    // Header
+    if args.egg_only {
+        println!("{:>6}  {:>10}  {:>9}", "N", "egg (ms)", "egg nodes");
+    } else {
+        println!(
+            "{:>6}  {:>10}  {:>10}  {:>10}  {:>9}  {:>9}",
+            "N", "opt (ms)", "egg (ms)", "opt/egg", "opt nodes", "egg nodes",
+        );
+    }
+
     // Discarded in-process warmup: prime egg/EGraph init, allocator caches, and CPU
     // frequency ramp so the first *measured* row isn't a one-time-cost outlier. The
     // warmup tags are distinct from the per-size `opt{n}`/`egg{n}` tags, so opt's
     // by-OID memo is not primed for any measurement.
     for i in 0..WARMUP_ITERS {
         let f = build_wide_pin(WARMUP_SIZE, &format!("warmup{i}"));
-        let _ = opt::optimize(f);
+        if !args.egg_only {
+            let _ = opt::optimize(f);
+        }
         let _ = egg_candidate(f);
     }
 
-    for &n in SIZES {
-        // Distinct tags per (optimizer, size) → distinct OIDs → cold caches, and
-        // identical shape across the two optimizers at a given size.
-        let f_opt = build_wide_pin(n, &format!("opt{n}"));
+    for &n in &sizes {
+        // eprintln!("build wide pin");
         let f_egg = build_wide_pin(n, &format!("egg{n}"));
-        let in_nodes = node_count(f_opt);
 
-        let t = Instant::now();
-        let optimized = opt::optimize(f_opt);
-        let opt_ms = ms(t.elapsed());
+        // eprintln!("count in nodes");
+        let in_nodes = node_count(f_egg);
 
+        // eprintln!("firing egg");
         let t = Instant::now();
         let candidate = egg_candidate(f_egg).expect("wide-pin filter is representable");
         let egg_ms = ms(t.elapsed());
 
-        let opt_nodes = node_count(optimized);
+        // eprintln!("counting nodes");
         let egg_nodes = node_count(candidate);
+
+        if args.egg_only {
+            println!(
+                "{:>6}  {:>10.2}  {:>9}  (in: {})",
+                n, egg_ms, egg_nodes, in_nodes,
+            );
+            continue;
+        }
+
+        // Distinct tags per optimizer → distinct OIDs → cold caches at each size.
+        let f_opt = build_wide_pin(n, &format!("opt{n}"));
+
+        let t = Instant::now();
+        let optimized = opt::optimize(f_opt);
+        let opt_ms = ms(t.elapsed());
+        let opt_nodes = node_count(optimized);
+
         let ratio = if egg_ms > 0.0 {
             opt_ms / egg_ms
         } else {
