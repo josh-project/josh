@@ -27,16 +27,19 @@ use libgit2_sys as raw;
 /// background flusher. Sized high enough that the small object counts produced by the integration
 /// suite never cross it (so test snapshots, which encode specific pack filenames, stay stable) while
 /// still bounding RAM on large rewrites.
-const CHUNK_THRESHOLD: usize = 100_000;
+const CHUNK_THRESHOLD: usize = 100_00;
 
 /// Approximate object count in [`STORE`]. Updated by `odb_write` (on a fresh insert) and
 /// `flush_chunk` (on eviction). Used solely to decide when to enqueue a background chunk flush;
 /// scc::HashMap has no O(1) len, so we maintain this counter alongside.
 static STORE_LEN: AtomicUsize = AtomicUsize::new(0);
 
-/// Set to true while a `FlushMsg::Chunk` is in the worker's mailbox or being processed. Prevents
-/// the write hot path from queueing redundant chunk requests every time `STORE_LEN` crosses a
-/// threshold multiple. Cleared by the worker once the chunk has been packed and evicted.
+/// Set to true while a `FlushMsg::Chunk` is in the worker's mailbox, being processed, or while
+/// the worker is self-rescheduling back-to-back chunks because `STORE_LEN` is still at/above
+/// `CHUNK_THRESHOLD`. Prevents the write hot path from queueing redundant chunk requests every
+/// time `STORE_LEN` crosses a threshold multiple. Cleared by the worker only after the store has
+/// dropped below the threshold (or a chunk errored), so a single triggering write drains the
+/// backlog without further write-side prods.
 static CHUNK_IN_FLIGHT: AtomicBool = AtomicBool::new(false);
 
 /// Path of the most-recently-registered repository. Used solely to route `Chunk` triggers from
@@ -88,11 +91,22 @@ fn worker_loop(receiver: std::sync::mpsc::Receiver<FlushMsg>) {
     while let Ok(msg) = receiver.recv() {
         match msg {
             FlushMsg::Chunk { repo_path } => {
-                let result = with_repo(&mut repos, &repo_path, |repo| {
-                    flush_chunk(repo, Some(CHUNK_THRESHOLD))
-                });
-                if let Err(e) = result {
-                    log::error!("background chunk flush failed: {e}");
+                // Self-reschedule: keep packing chunks back-to-back while the store is still at
+                // or above threshold, rather than waiting for the write hot path to land on the
+                // next exact multiple of CHUNK_THRESHOLD. CHUNK_IN_FLIGHT stays set across the
+                // loop so concurrent writers don't enqueue redundant Chunk messages. Break on
+                // error so a persistent failure can't hot-loop.
+                loop {
+                    let result = with_repo(&mut repos, &repo_path, |repo| {
+                        flush_chunk(repo, Some(CHUNK_THRESHOLD))
+                    });
+                    if let Err(e) = result {
+                        log::error!("background chunk flush failed: {e}");
+                        break;
+                    }
+                    if STORE_LEN.load(Ordering::Relaxed) < CHUNK_THRESHOLD {
+                        break;
+                    }
                 }
                 CHUNK_IN_FLIGHT.store(false, Ordering::Release);
             }

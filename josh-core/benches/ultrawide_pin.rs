@@ -5,12 +5,12 @@ use std::cell::RefCell;
 use std::ops::DerefMut;
 
 const N_FILES: usize = if cfg!(debug_assertions) {
-    50 * 5
+    50 * 10
 } else {
-    500 * 5
+    500 * 10
 };
 
-const N_COMMITS: usize = if cfg!(debug_assertions) { 5 } else { 10 };
+const N_COMMITS: usize = if cfg!(debug_assertions) { 5 * 10 } else { 10 * 10 };
 
 const N_PER_SUBFOLDER_MIN: usize = 10;
 const N_PER_SUBFOLDER_MAX: usize = 100;
