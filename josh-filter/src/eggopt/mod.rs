@@ -8,17 +8,19 @@
 //! mechanical spec — where egg expresses an optimization more cleanly than
 //! `opt`'s ordered passes, the cleaner form wins. Gated behind `--use-new-opt`.
 //!
-//! The rewrite set spans seven families, all gated on the same semantic bar
-//! (the output must produce an equivalent tree and history): Chain/Compose
-//! distribute <-> factor; Prefix/Subdir cancellation and its conflict case;
-//! Compose identity, dedup, Empty-removal, and flatten; Exclude/Pin identity; a Subtract
-//! algebra (identity, Message-Message, pluck/absorb) as pure patterns; and a
-//! bidirectional Compose set-difference. Two rules use custom appliers — the
-//! Prefix/Subdir conflict (a disequality + component-count guard) and the Compose
-//! set-difference (the one variadic rewrite) — because their guards are not
-//! expressible as patterns. Path and Message data are structural children, so
-//! path equality and message recognition are egg's unification rather than Rust
-//! conditions.
+//! The rewrite set spans six families, all gated on the same semantic bar
+//! (the output must produce an equivalent tree and history): Prefix/Subdir
+//! cancellation and its conflict case; Compose identity, dedup, Empty-removal,
+//! and flatten; Exclude/Pin identity; a Subtract algebra (identity,
+//! Message-Message, pluck/absorb) as pure patterns; and a bidirectional Compose
+//! set-difference. Two rules use custom appliers — the Prefix/Subdir conflict (a
+//! disequality + component-count guard) and the Compose set-difference (the one
+//! variadic rewrite) — because their guards are not expressible as patterns. Path
+//! and Message data are structural children, so path equality and message
+//! recognition are egg's unification rather than Rust conditions. The
+//! chain-over-compose factoring family (distribute / common_pre / common_post,
+//! plus boundary path decomposition) is deliberately omitted — see [`rules`] for
+//! the rationale.
 
 mod appliers;
 mod convert;

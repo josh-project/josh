@@ -1,4 +1,4 @@
-use crate::eggopt::appliers::{CommonPost, CommonPre, PrefixSubdirConflict, SubtractComposeDiff};
+use crate::eggopt::appliers::{PrefixSubdirConflict, SubtractComposeDiff};
 use crate::eggopt::lang::{Josh, JoshAnalysis};
 use egg::{EGraph, Id, Rewrite, Subst, Var, rewrite};
 
@@ -10,27 +10,13 @@ use egg::{EGraph, Id, Rewrite, Subst, Var, rewrite};
 /// of `opt.rs`, not its exact mechanism.
 ///
 /// `Compose` is a cons-list (`Cons`/`Nil`), so the rules that were arity-limited
-/// under `Box<[Id]>` (dedup, empty-removal, distribute, pluck, absorb) now match a
+/// under `Box<[Id]>` (dedup, empty-removal, flatten, pluck, absorb) now match a
 /// list of **any length** at a fixed arity, and the two variadic rules that were
 /// impossible as patterns (dedup at any position, membership-gated absorb) become a
 /// 2-arity pattern plus an element-set [`JoshAnalysis`] condition. `Chain` stays
 /// `Box<[Id]>` (it is ordered; cons order non-determinism is fine for `Compose`, a
 /// set, but wrong for `Chain`).
 ///
-/// * distribute (2 rules): `Chain[p, Compose(z1..zn)] ⇄ Compose(Chain[p,z1], ...)`.
-///   Forward peels one element off the cons-list per fire; the nil base case is
-///   `Chain[p, empty] = empty` (empty right-annihilates chain). Any arity. The
-///   reverse (factor) is a custom applier — pulling a shared prefix out of a whole
-///   list is a common-pre operation, not a local pattern.
-/// * factor ([`FactorChain`] applier): a cons-list whose every element is
-///   `chain ?p ?_` for one `?p` factors to `chain ?p <cons of the second children>`.
-///   Whole-list (the RHS rebuilds the spine), so an applier like the set-difference
-///   one; cons-lists make the traversal declarative but not the reconstruction.
-/// * cancel-prefix-subdir / prefix-subdir-conflict: unchanged (2-element chains).
-/// * compose empty-removal + dedup: `(cons empty ?t) => ?t` (any position, pure
-///   pattern) and `(cons ?x ?t) => ?t` when `?t`'s element-set contains `?x` (dedup
-///   at any position, incl. non-consecutive — `opt`'s consecutive-only `Vec::dedup`
-///   misses that). Singleton/empty composes collapse at `rebuild`, not as a rule.
 /// * compose flatten (2 rules): a nested compose splices into the outer one by
 ///   append-via-cons, mirroring `opt`'s recursive `flatten`. `compose-flatten`
 ///   peels the head element out of a nested list per fire
@@ -40,6 +26,11 @@ use egg::{EGraph, Id, Rewrite, Subst, Var, rewrite};
 ///   nested list collapses to `Nil`). To fixpoint this flattens nesting at any
 ///   depth; the base case is distinct from `compose-drop-empty`, which matches the
 ///   `empty` *atom* (`Op::Empty`), not `Nil` (an empty *list*).
+/// * cancel-prefix-subdir / prefix-subdir-conflict: unchanged (2-element chains).
+/// * compose empty-removal + dedup: `(cons empty ?t) => ?t` (any position, pure
+///   pattern) and `(cons ?x ?t) => ?t` when `?t`'s element-set contains `?x` (dedup
+///   at any position, incl. non-consecutive — `opt`'s consecutive-only `Vec::dedup`
+///   misses that). Singleton/empty composes collapse at `rebuild`, not as a rule.
 /// * exclude / pin identity: unchanged.
 /// * subtract identity / Message-Message: unchanged.
 /// * subtract pluck (2 pure patterns, any arity/position): pluck-head removes the
@@ -50,27 +41,19 @@ use egg::{EGraph, Id, Rewrite, Subst, Var, rewrite};
 /// * subtract-compose-diff ([`SubtractComposeDiff`] applier): the full bidirectional
 ///   `Subtract(Compose A, Compose B)` set-difference — variadic, so still an
 ///   applier (cons-aware); the single-element cases are the pluck/absorb rules.
+///
+/// Deliberately absent: the chain-over-compose *factoring* family —
+/// `distribute` (`Chain[p, Compose(zs)] ⇄ Compose(Chain[p, zi]…)`), its inverse
+/// `common_pre`/`common_post`, and boundary path decomposition. egg therefore does
+/// not build the shared-prefix directory trees that `opt`'s `step`+`common_pre`
+/// produce. `distribute` alone (without its `common_pre` inverse) only expands the
+/// e-graph — `AstSize` extraction undoes it, so it added no reduction while being
+/// the ultrawide blowup source — so it is dropped with the rest. The equivalence
+/// gate still accepts the un-factored form; only the corpus cost snapshots record
+/// the gap. Promoting paths to structural language elements would let these become
+/// honest rewrites, but that is a separate spike, deferred.
 pub(crate) fn rules() -> Vec<Rewrite<Josh, JoshAnalysis>> {
     vec![
-        // Chain/Compose distribute (any arity): peel one element per fire; the
-        // base case `Chain[p, empty] = empty` cleans up the recursion's tail.
-        rewrite!("distribute-chain-cons";
-            "(chain ?p (cons ?z ?tail))" =>
-            "(cons (chain ?p ?z) (chain ?p ?tail))"),
-        rewrite!("distribute-chain-nil";
-            "(chain ?p nil)" => "nil"),
-        // Chain/Compose common_pre: a cons-list of chains sharing one head pulls
-        // it out. Whole-list, so an applier (see [`CommonPre`]); generalized to
-        // chains of any length (the old `FactorChain` matched 2-element chains
-        // only), which is what lets a decomposed wide compose factor at each
-        // directory level.
-        rewrite!("common-pre";
-            "(cons ?h ?tail)" => { CommonPre::new() }),
-        // Chain/Compose common_post: the mirror — a cons-list of chains sharing
-        // one *tail* pulls it out, guarded to Prefix/Message tails (the ops that
-        // commute with Compose). See [`CommonPost`].
-        rewrite!("common-post";
-            "(cons ?h ?tail)" => { CommonPost::new() }),
         rewrite!("cancel-prefix-subdir";
             "(chain (prefix ?p) (subdir ?p))" => "nop"),
         // Prefix/Subdir conflict (same depth, different path -> empty): custom

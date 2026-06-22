@@ -1,29 +1,37 @@
-//! Rough one-shot timing of the trusted optimizer vs the experimental egg
-//! optimizer, on a filter shaped like the `ultrawide_pin` benchmark.
+//! Rough scaling sweep of the trusted optimizer vs the experimental egg
+//! optimizer, on the pin-legalized filter shape from `ultrawide_pin`.
 //!
-//! This is NOT a criterion benchmark — it builds one wide compose-with-pin
-//! filter (≈ `N_FILES` files, nested paths, a `.pin(compose(..))` on top, exactly
-//! like `josh-core/benches/ultrawide_pin.rs`), then runs each optimizer a single
-//! time and prints the wall-clock duration and output size. The goal is a rough
-//! payoff signal, not a statistically rigorous measurement.
+//! This is NOT a criterion benchmark — for each size `N` it builds the
+//! pin-legalized shape that `per_rev_filter` feeds to `opt` (a `Compose` of `N`
+//! wide-chains, each with `compose(pinned)` as its trailing element), then runs
+//! each optimizer's *pipeline* once and prints the wall-clock duration and output
+//! size. The point is the **scaling curve**: opt's `flatten` distributes that
+//! trailing compose into an O(N·|pinned|) tree that `step`'s `common_pre` then
+//! collapses again — the round trip commit `b01736b1b4` patched (unsoundly) — so
+//! opt is superlinear here. egg no longer carries the `distribute` rule (dropped
+//! with the chain-over-compose factoring family), so it never expands the trailing
+//! compose and scales gently on this shape — at the cost of not building opt's
+//! factored form. This example confirms egg avoids the pathology.
 //!
-//! Two correctness notes for interpreting the numbers:
+//! Three correctness notes for interpreting the numbers:
 //!
 //! * **Built raw, not via the `Filter` builder.** `Filter::chain`/`compose` call
 //!   `opt::optimize` while constructing, so a builder-built filter is already
-//!   optimized and re-optimizing would just hit opt's memo cache. We assemble the
-//!   `Op` tree with `to_filter` directly so both optimizers see genuinely
-//!   un-reduced input — the work opt actually grinds on in `per_rev_filter`.
+//!   optimized. We assemble the `Op` tree with `to_filter` directly so both
+//!   optimizers see genuinely un-reduced input.
 //!
-//! * **Two distinct filters, both cold.** `opt::optimize` memoizes by input OID.
-//!   Feeding both optimizers the *same* filter would let the second one reuse the
-//!   first's cached result. Instead each optimizer gets its own structurally
-//!   identical filter (only the leaf filenames differ, so the decomposition opt
-//!   performs is identical), keeping both measurements on a cold cache. This also
-//!   means egg's reported time honestly includes its equivalence gate's own cold
-//!   `opt::optimize` call on the input.
+//! * **Distinct filters per (optimizer, size), all cold.** `opt::optimize`
+//!   memoizes by input OID, so the tag encodes both the optimizer and the size,
+//!   giving every measurement its own OID-distinct filter (same shape/size, so
+//!   the work is identical) and keeping every run cold. The tag is also folded
+//!   into every path component so sub-problems don't share across sizes.
 //!
-//! Run release for representative numbers:
+//! * **Pipeline time only, not the gate.** `egg_optimize`'s equivalence gate
+//!   runs `opt` internally, so its total time would just mirror opt's curve and
+//!   hide egg's own scaling. We time `egg_candidate` (the ungated pipeline)
+//!   instead. The gate's soundness-vs-completeness is a separate question.
+//!
+//! Run release for representative numbers (edit `SIZES` to change the sweep):
 //!
 //! ```sh
 //! cargo run --release --example optimize_compare -p josh-filter
@@ -32,48 +40,47 @@ use std::path::PathBuf;
 use std::time::Instant;
 
 use josh_filter::Filter;
-use josh_filter::eggopt::{egg_candidate, equivalent};
+use josh_filter::eggopt::egg_candidate;
 use josh_filter::op::Op;
 use josh_filter::opt;
 use josh_filter::persist::{to_filter, to_op};
 
-/// Number of files in the wide compose, matching the spirit of the benchmark's
-/// `N_FILES` (debug 50 / release 500). Bumped to 2000 to make the optimization
-/// cost visible in a single-shot timing.
-const N_FILES: usize = 2000;
+/// Sizes to sweep. Edit this list to change the range.
+const SIZES: &[usize] = &[100, 200, 300, 500, 1000];
 
 /// Fraction of files held back by the layered `:pin`, mirroring the benchmark's
 /// ~25 % hold probability.
 const PIN_FRACTION: usize = 4;
 
-/// Build the raw (un-optimized) `wide.pin(compose(pinned))` filter.
-///
-/// `tag` is folded into every leaf filename so two calls with different tags
-/// produce structurally identical but OID-distinct filters (see the module docs).
-fn build_wide_pin(tag: &str) -> Filter {
-    let files = file_compose(tag, 0..N_FILES);
-    let pinned = file_compose(tag, 0..N_FILES / PIN_FRACTION);
-    // Chain[ Compose(files), Pin(Compose(pinned)) ] — built with `to_filter` so
-    // no optimization runs during construction.
-    to_filter(Op::Chain(vec![files, to_filter(Op::Pin(pinned))]))
+/// Build the raw (un-optimized) pin-legalized shape for `n_files`: a `Compose` of
+/// `N` chains `Chain[file_i, Compose(pinned)]` — `compose(pinned)` as the bare
+/// trailing element of each wide-chain, the structure whose `flatten`-distribution
+/// is the O(N·|pinned|) blowup. `tag` makes the filter OID-distinct per
+/// (optimizer, size) so caches stay cold (see the module docs).
+fn build_wide_pin(n_files: usize, tag: &str) -> Filter {
+    let pinned = file_compose(tag, 0..n_files / PIN_FRACTION);
+    let elements: Vec<Filter> = (0..n_files)
+        .map(|i| to_filter(Op::Chain(vec![single_file(tag, i), pinned])))
+        .collect();
+    to_filter(Op::Compose(elements))
 }
 
-/// A raw `Compose` of `File(dst, dst)` filters for the given indices, with
-/// 3-level-nested paths so opt's `step` decomposes them into `Subdir`/`Prefix`
-/// chains (the structure that stresses `common_pre`/`prefix_sort`).
+/// A raw `Compose` of `File(dst, dst)` filters for the given indices.
 fn file_compose(tag: &str, indices: impl Iterator<Item = usize>) -> Filter {
-    let files: Vec<Filter> = indices
-        .map(|i| {
-            // Deterministic pseudo-spread of files across shared subfolders, so
-            // the compose has overlapping prefixes for opt to factor.
-            let a = (i * 37) % 17;
-            let b = (i * 53) % 13;
-            let c = i % 7;
-            let path = PathBuf::from(format!("d{a}/e{b}/f{c}/file_{i}_{tag}"));
-            to_filter(Op::File(path.clone(), path))
-        })
-        .collect();
-    to_filter(Op::Compose(files))
+    to_filter(Op::Compose(indices.map(|i| single_file(tag, i)).collect()))
+}
+
+/// One raw `File(dst, dst)` filter with a 3-level-nested path, so the optimizers
+/// decompose it into `Subdir`/`Prefix` chains (the structure that stresses
+/// `common_pre`/`prefix_sort`).
+fn single_file(tag: &str, i: usize) -> Filter {
+    // Deterministic pseudo-spread across shared subfolders, so a compose has
+    // overlapping prefixes to factor.
+    let a = (i * 37) % 17;
+    let b = (i * 53) % 13;
+    let c = i % 7;
+    let path = PathBuf::from(format!("d{a}_{tag}/e{b}_{tag}/f{c}_{tag}/file_{i}"));
+    to_filter(Op::File(path.clone(), path))
 }
 
 /// Count internal `Op` nodes — a proxy for "how reduced is the result".
@@ -94,55 +101,35 @@ fn ms(elapsed: std::time::Duration) -> f64 {
 }
 
 fn main() {
-    let f_opt = build_wide_pin("opt");
-    let f_egg = build_wide_pin("egg");
-    let in_nodes = node_count(f_opt);
-
-    // opt (cold).
-    let t = Instant::now();
-    let optimized = opt::optimize(f_opt);
-    let opt_time = t.elapsed();
-
-    // egg pipeline, ungated (cold) — reveals egg's raw reduction even when the
-    // gate would reject it.
-    let t = Instant::now();
-    let candidate = egg_candidate(f_egg).expect("wide-pin filter is representable");
-    let egg_pipe_time = t.elapsed();
-    let cand_nodes = node_count(candidate);
-    let cand_reduced = candidate != f_egg;
-
-    // The equivalence gate: equivalent(input, candidate) runs opt on both. Timed
-    // separately so the pipeline cost and the gate cost are visible on their own.
-    let t = Instant::now();
-    let gate_ok = equivalent(f_egg, candidate);
-    let gate_time = t.elapsed();
-    let egg_final = if gate_ok { candidate } else { f_egg };
-
-    println!("optimize_compare: N_FILES = {N_FILES}, input = {in_nodes} nodes");
     println!(
-        "  opt::optimize    : {:>9.2} ms  -> {} nodes",
-        ms(opt_time),
-        node_count(optimized),
+        "{:>6}  {:>10}  {:>10}  {:>10}  {:>9}  {:>9}",
+        "N", "opt (ms)", "egg (ms)", "opt/egg", "opt nodes", "egg nodes",
     );
-    println!(
-        "  egg pipeline     : {:>9.2} ms  -> {} nodes  (ungated candidate; {})",
-        ms(egg_pipe_time),
-        cand_nodes,
-        if cand_reduced {
-            format!("reduced {in_nodes} -> {cand_nodes}")
+    for &n in SIZES {
+        // Distinct tags per (optimizer, size) → distinct OIDs → cold caches, and
+        // identical shape across the two optimizers at a given size.
+        let f_opt = build_wide_pin(n, &format!("opt{n}"));
+        let f_egg = build_wide_pin(n, &format!("egg{n}"));
+        let in_nodes = node_count(f_opt);
+
+        let t = Instant::now();
+        let optimized = opt::optimize(f_opt);
+        let opt_ms = ms(t.elapsed());
+
+        let t = Instant::now();
+        let candidate = egg_candidate(f_egg).expect("wide-pin filter is representable");
+        let egg_ms = ms(t.elapsed());
+
+        let opt_nodes = node_count(optimized);
+        let egg_nodes = node_count(candidate);
+        let ratio = if egg_ms > 0.0 {
+            opt_ms / egg_ms
         } else {
-            "unchanged".to_string()
-        },
-    );
-    println!(
-        "  egg gate check   : {:>9.2} ms  -> {}",
-        ms(gate_time),
-        if gate_ok { "ACCEPT" } else { "REJECT" },
-    );
-    println!(
-        "  egg_optimize eqv : {:>9.2} ms  -> {} nodes  (pipeline + gate; {})",
-        ms(egg_pipe_time + gate_time),
-        node_count(egg_final),
-        if gate_ok { "kept the reduction" } else { "fell back to input" },
-    );
+            f64::NAN
+        };
+        println!(
+            "{:>6}  {:>10.2}  {:>10.2}  {:>10.2}  {:>9}  {:>9}  (in: {})",
+            n, opt_ms, egg_ms, ratio, opt_nodes, egg_nodes, in_nodes,
+        );
+    }
 }

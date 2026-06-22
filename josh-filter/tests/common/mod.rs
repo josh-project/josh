@@ -30,22 +30,6 @@ pub fn message(fmt: &str, re: &str) -> Filter {
     to_filter(Op::Message(fmt.to_string(), regex::Regex::new(re).unwrap()))
 }
 
-/// `Chain[p, Compose[z1, z2]]` — the factored form.
-pub fn factored() -> Filter {
-    to_filter(Op::Chain(vec![
-        subdir("p"),
-        to_filter(Op::Compose(vec![subdir("z1"), subdir("z2")])),
-    ]))
-}
-
-/// `Compose[Chain[p, z1], Chain[p, z2]]` — the distributed form.
-pub fn distributed() -> Filter {
-    to_filter(Op::Compose(vec![
-        to_filter(Op::Chain(vec![subdir("p"), subdir("z1")])),
-        to_filter(Op::Chain(vec![subdir("p"), subdir("z2")])),
-    ]))
-}
-
 // ---- eggopt corpus quality harness -----------------------------------------
 //
 // These power the `corpus_*.rs` snapshot tests. Each takes a filter spec string,

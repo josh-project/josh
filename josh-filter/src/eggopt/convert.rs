@@ -48,20 +48,11 @@ pub(crate) fn build(
             let b = build(expr, seen, b)?;
             expr.add(Josh::Pin(b))
         }
-        // Path decomposition (opt::step E6/E7/E8), applied at the boundary so
-        // the common_pre/common_post appliers can factor shared directory
-        // prefixes: a multi-component path op becomes a `Chain` of
-        // single-component ops, the form opt factors internally. Single-component
-        // ops stay structural; leaf `File`s stay opaque atoms. Semantics-
-        // preserving (opt re-merges the components on the way back through
-        // simplify, so the equivalence gate converges).
-        Op::Subdir(path) if path.components().count() > 1 => decompose_subdir(expr, seen, &path)?,
-        Op::Prefix(path) if path.components().count() > 1 => decompose_prefix(expr, seen, &path)?,
-        Op::File(dst, src)
-            if src.components().count() > 1 || dst.components().count() > 1 =>
-        {
-            decompose_file(expr, seen, &dst, &src)?
-        }
+        // Path-carrying ops keep the WHOLE path as one structural `Symbol` child
+        // (no boundary decomposition): two equal paths share an e-class and unify
+        // under one pattern variable, and the Prefix/Subdir conflict rule sees
+        // the full path to compare depth. Multi-component `File`s fall through to
+        // the opaque-atom arm below.
         Op::Prefix(path) => {
             let p = expr.add(Josh::Symbol(Symbol::from(path.to_str()?)));
             expr.add(Josh::Prefix(p))
@@ -86,80 +77,6 @@ pub(crate) fn build(
     };
     seen.insert(f, id);
     Some(id)
-}
-
-/// E6: `Subdir(a/b/c) == Chain[Subdir(a), Subdir(b), Subdir(c)]`. Each component
-/// recurses through `build`, so a multi-component parent decomposes transitively
-/// to single-component structural ops.
-fn decompose_subdir(
-    expr: &mut RecExpr<Josh>,
-    seen: &mut HashMap<Filter, Id>,
-    path: &std::path::Path,
-) -> Option<Id> {
-    let kids = path
-        .components()
-        .map(|c| {
-            build(
-                expr,
-                seen,
-                to_filter(Op::Subdir(std::path::PathBuf::from(&c))),
-            )
-        })
-        .collect::<Option<Vec<_>>>()?;
-    Some(expr.add(Josh::Chain(kids.into_boxed_slice())))
-}
-
-/// E7: `Prefix(a/b/c) == Chain[Prefix(c), Prefix(b), Prefix(a)]` — reversed,
-/// because composition places under `c` first, then `b`, then `a`.
-fn decompose_prefix(
-    expr: &mut RecExpr<Josh>,
-    seen: &mut HashMap<Filter, Id>,
-    path: &std::path::Path,
-) -> Option<Id> {
-    let kids = path
-        .components()
-        .rev()
-        .map(|c| {
-            build(
-                expr,
-                seen,
-                to_filter(Op::Prefix(std::path::PathBuf::from(&c))),
-            )
-        })
-        .collect::<Option<Vec<_>>>()?;
-    Some(expr.add(Josh::Chain(kids.into_boxed_slice())))
-}
-
-/// E8: `File(dst, src)` with a multi-component path splits the leaf from its
-/// parent dir — `Chain[Subdir(src_parent), File(dst_name, src_name),
-/// Prefix(dst_parent)]` — so the shared directory prefixes can factor. The leaf
-/// `File(name, name)` is single-component and stays an opaque atom; the parents
-/// recurse through `build` and decompose transitively. Mirrors `opt::step`.
-fn decompose_file(
-    expr: &mut RecExpr<Josh>,
-    seen: &mut HashMap<Filter, Id>,
-    dst: &std::path::Path,
-    src: &std::path::Path,
-) -> Option<Id> {
-    let (Some(src_parent), Some(src_name)) = (src.parent(), src.file_name()) else {
-        return None;
-    };
-    let (Some(dst_parent), Some(dst_name)) = (dst.parent(), dst.file_name()) else {
-        return None;
-    };
-    let subdir = build(expr, seen, to_filter(Op::Subdir(src_parent.to_path_buf())))?;
-    let leaf = build(
-        expr,
-        seen,
-        to_filter(Op::File(
-            std::path::PathBuf::from(dst_name),
-            std::path::PathBuf::from(src_name),
-        )),
-    )?;
-    let prefix = build(expr, seen, to_filter(Op::Prefix(dst_parent.to_path_buf())))?;
-    Some(expr.add(Josh::Chain(
-        vec![subdir, leaf, prefix].into_boxed_slice(),
-    )))
 }
 
 /// Convert an extracted egg `RecExpr` back into a `Filter`, memoizing by e-node
