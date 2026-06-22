@@ -27,6 +27,7 @@ mod convert;
 mod lang;
 mod rules;
 pub mod spike_conslist;
+pub mod spike_paths;
 
 use crate::eggopt::convert::{build, rebuild};
 use crate::eggopt::lang::{Josh, JoshAnalysis};
