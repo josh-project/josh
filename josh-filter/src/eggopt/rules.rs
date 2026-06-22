@@ -42,25 +42,82 @@ use egg::{EGraph, Id, Rewrite, Subst, Var, rewrite};
 ///   `Subtract(Compose A, Compose B)` set-difference — variadic, so still an
 ///   applier (cons-aware); the single-element cases are the pluck/absorb rules.
 ///
-/// Deliberately absent: the chain-over-compose *factoring* family —
-/// `distribute` (`Chain[p, Compose(zs)] ⇄ Compose(Chain[p, zi]…)`), its inverse
-/// `common_pre`/`common_post`, and boundary path decomposition. egg therefore does
-/// not build the shared-prefix directory trees that `opt`'s `step`+`common_pre`
-/// produce. `distribute` alone (without its `common_pre` inverse) only expands the
-/// e-graph — `AstSize` extraction undoes it, so it added no reduction while being
-/// the ultrawide blowup source — so it is dropped with the rest. The equivalence
-/// gate still accepts the un-factored form; only the corpus cost snapshots record
-/// the gap. Promoting paths to structural language elements would let these become
-/// honest rewrites, but that is a separate spike, deferred.
+/// Now present (structural paths promoted): path decomposition
+/// (`subdir-decompose`/`prefix-decompose`, opt E6/E7) and a unidirectional
+/// `common-pre-factor` (no `distribute` inverse, so it never expands the e-graph
+/// the way the bidirectional family did). Decompose is honest and non-destructive
+/// (both forms coexist; `AstSize` picks), and it lets egg MATCH `opt` on the
+/// Prefix/Subdir conflict cases that need it (see `eggopt_cancel`). With decompose
+/// producing proper 2-element chains, `common-pre-factor` factors a shared leading
+/// element and `AstSize` picks the factored form when the shared subtree is large
+/// enough to beat the decompose cost — so egg now matches `opt` on the shared-
+/// prefix corpus case (see `corpus_gaps::workspace_common_prefix_factor`). Still
+/// absent: `common_post` (a one-shot Applier, not a pattern — see the rule-set
+/// comment below) and the variadic `distribute`/absorb inverses.
 pub(crate) fn rules() -> Vec<Rewrite<Josh, JoshAnalysis>> {
     vec![
         rewrite!("cancel-prefix-subdir";
-            "(chain (prefix ?p) (subdir ?p))" => "nop"),
+            "(chaincons (prefix ?p) (chaincons (subdir ?p) ?rest))" => "?rest"),
         // Prefix/Subdir conflict (same depth, different path -> empty): custom
-        // applier for the disequality + component-count guard. See
-        // [`PrefixSubdirConflict`].
+        // applier for the disequality + depth guard. See [`PrefixSubdirConflict`].
         rewrite!("prefix-subdir-conflict";
-            "(chain (prefix ?a) (subdir ?b))" => { PrefixSubdirConflict::new() }),
+            "(chaincons (prefix ?a) (chaincons (subdir ?b) ?rest))" =>
+            { PrefixSubdirConflict::new() }),
+        // E5 — an empty path (PathNil) is identity for Prefix/Subdir.
+        rewrite!("subdir-empty"; "(subdir pathnil)" => "nop"),
+        rewrite!("prefix-empty"; "(prefix pathnil)" => "nop"),
+        // E6 Subdir decompose — FORWARD (opt step has no .rev()). The two-deep
+        // guard matches only >=2-component paths, so a single component
+        // (pathcons h pathnil) is the base case and does not oscillate against
+        // subdir-empty. Decompose is a node-count LOSS, so AstSize keeps the whole
+        // path unless a downstream rule (common-pre-factor) makes the decomposed
+        // form pay off. The second element is wrapped in its own ChainCons (a
+        // proper 2-element chain) — a bare leaf as the ChainCons tail would conflate
+        // Chain's spine with the element and make rebuild bail.
+        rewrite!("subdir-decompose";
+            "(subdir (pathcons ?h (pathcons ?h2 ?t)))"
+            => "(chaincons (subdir (pathcons ?h pathnil)) (chaincons (subdir (pathcons ?h2 ?t)) chainnil))"),
+        // E7 Prefix decompose — REVERSED (opt step does .rev()): the LAST
+        // component becomes the FIRST chain element. Asymmetric with subdir. Same
+        // ChainCons-tail wrap as subdir-decompose.
+        rewrite!("prefix-decompose";
+            "(prefix (pathcons ?h (pathcons ?h2 ?t)))"
+            => "(chaincons (prefix (pathcons ?h2 ?t)) (chaincons (prefix (pathcons ?h pathnil)) chainnil))"),
+        // Chain normalize: flatten nested chains (associative, order-preserving)
+        // so decompose's nested output meets cancel/conflict/common_pre at any
+        // position; drop a ChainNil head (the flatten base case); eliminate Nop
+        // (the chain identity); and propagate Empty (any empty in a chain empties
+        // the whole chain, mirroring opt step).
+        rewrite!("chain-flatten";
+            "(chaincons (chaincons ?x ?y) ?z)" => "(chaincons ?x (chaincons ?y ?z))"),
+        rewrite!("chain-drop-chainnil"; "(chaincons chainnil ?t)" => "?t"),
+        rewrite!("chain-nop-l"; "(chaincons nop ?t)" => "?t"),
+        rewrite!("chain-empty-l"; "(chaincons empty ?t)" => "empty"),
+        rewrite!("chain-empty-r"; "(chaincons ?h empty)" => "empty"),
+        // common_pre factoring — a pure pattern. ?shared unifies by e-class
+        // identity across two chain heads in a Compose = opt common_pre's "first
+        // chain element equal" test (opt.rs). Run to fixpoint factors a shared
+        // leading element out of a Compose of Chains into Chain[shared,
+        // Compose[tails]] (opt.rs:648: Chain[common, Compose[rest]]). The Compose
+        // of tails is a *chain element* — the head of an inner ChainCons — NOT the
+        // chain's tail spine (which would conflate Compose's Cons with Chain's
+        // ChainCons and make rebuild bail). Unidirectional (contracting only) — no
+        // distribute inverse — so it never expands the e-graph the way the
+        // bidirectional family did.
+        rewrite!("common-pre-factor";
+            "(cons (chaincons ?shared ?t1) (cons (chaincons ?shared ?t2) ?rest))"
+            => "(chaincons ?shared (chaincons (cons ?t1 (cons ?t2 ?rest)) chainnil))"),
+        // common_post factoring — the tail analogue of common_pre: chains in a
+        // Compose sharing their LAST element merge their bodies (opt.rs:649-650 ->
+        // Chain[Compose[bodies], shared]). NOT a pattern rule here: a pairwise
+        // rule would merge two chains at a time, and run-to-fixpoint over N chains
+        // both bloats the e-graph (O(N^2) intermediate merges, the same pathology
+        // class as the dropped distribute) and can leave a malformed ChainCons
+        // (Compose cons-list in a chain-tail position) tied with the dedup form
+        // under AstSize, which extraction may pick and rebuild then rejects. It is
+        // implemented instead as a one-shot Applier (see appliers::CommonPost)
+        // that factors all N shared-tail chains in a single O(N) pass.
+
         // Compose flatten (E1): a nested compose splices into the outer one by
         // append-via-cons, mirroring opt's recursive flatten. compose-flatten peels
         // one head element out of a nested list per fire; compose-flatten-nil drops

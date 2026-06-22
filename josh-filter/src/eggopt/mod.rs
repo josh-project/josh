@@ -17,10 +17,11 @@
 //! disequality + component-count guard) and the Compose set-difference (the one
 //! variadic rewrite) — because their guards are not expressible as patterns. Path
 //! and Message data are structural children, so path equality and message
-//! recognition are egg's unification rather than Rust conditions. The
-//! chain-over-compose factoring family (distribute / common_pre / common_post,
-//! plus boundary path decomposition) is deliberately omitted — see [`rules`] for
-//! the rationale.
+//! recognition are egg's unification rather than Rust conditions. Path
+//! decomposition (opt E6/E7) and a unidirectional `common_pre` factoring rule are
+//! present (structural paths promoted); together they let egg match `opt`'s
+//! shared-prefix factoring on the corpus (see `corpus_gaps`). `common_post`
+//! factoring is an Applier, not a pattern rule (see [`rules`]).
 
 mod appliers;
 mod convert;

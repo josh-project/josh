@@ -29,11 +29,17 @@ pub(crate) fn build(
             tail
         }
         Op::Chain(cs) => {
-            let kids = cs
-                .iter()
-                .map(|&c| build(expr, seen, c))
-                .collect::<Option<Vec<_>>>()?;
-            expr.add(Josh::Chain(kids.into_boxed_slice()))
+            // Fold right into a chain cons-list: Chain[a, b, c] ->
+            // ChainCons(a, ChainCons(b, ChainCons(c, ChainNil))); an empty chain
+            // -> ChainNil (rebuild collapses it to Nop, the chain identity).
+            // Order is preserved (prepend in reverse), and the cons-list form lets
+            // head/tail rules (flatten, common_pre, decompose) match any length.
+            let mut tail = expr.add(Josh::ChainNil);
+            for &c in cs.iter().rev() {
+                let h = build(expr, seen, c)?;
+                tail = expr.add(Josh::ChainCons([h, tail]));
+            }
+            tail
         }
         Op::Subtract(a, b) => {
             let a = build(expr, seen, a)?;
@@ -48,17 +54,17 @@ pub(crate) fn build(
             let b = build(expr, seen, b)?;
             expr.add(Josh::Pin(b))
         }
-        // Path-carrying ops keep the WHOLE path as one structural `Symbol` child
-        // (no boundary decomposition): two equal paths share an e-class and unify
-        // under one pattern variable, and the Prefix/Subdir conflict rule sees
-        // the full path to compare depth. Multi-component `File`s fall through to
-        // the opaque-atom arm below.
+        // Path-carrying ops: the path is a PathCons/PathNil spine of component
+        // Symbols (see [`build_path`]), so two equal paths share an e-class and
+        // unify under one pattern variable, and the Prefix/Subdir conflict rule
+        // compares structural depth. Multi-component `File`s fall through to the
+        // opaque-atom arm below.
         Op::Prefix(path) => {
-            let p = expr.add(Josh::Symbol(Symbol::from(path.to_str()?)));
+            let p = build_path(expr, &path)?;
             expr.add(Josh::Prefix(p))
         }
         Op::Subdir(path) => {
-            let p = expr.add(Josh::Symbol(Symbol::from(path.to_str()?)));
+            let p = build_path(expr, &path)?;
             expr.add(Josh::Subdir(p))
         }
         Op::Message(fmt, re) => {
@@ -103,12 +109,17 @@ pub(crate) fn rebuild(
                 _ => to_filter(Op::Compose(elems)),
             }
         }
-        Josh::Chain(kids) => {
-            let v = kids
-                .iter()
-                .map(|&c| rebuild(expr, seen, c))
-                .collect::<Option<Vec<_>>>()?;
-            to_filter(Op::Chain(v))
+        Josh::ChainCons(_) | Josh::ChainNil => {
+            let elems = rebuild_chain(expr, seen, id)?;
+            // Empty chain -> Nop (chain identity), matching opt's step (which
+            // returns Nop for an all-Nop/empty chain); a single-element chain
+            // collapses to that element; else Op::Chain. Mirrors the Cons arm's
+            // boundary collapse, but with Nop (not Empty) as the identity.
+            match elems.len() {
+                0 => to_filter(Op::Nop),
+                1 => elems.into_iter().next().unwrap(),
+                _ => to_filter(Op::Chain(elems)),
+            }
         }
         Josh::Subtract([a, b]) => to_filter(Op::Subtract(
             rebuild(expr, seen, *a)?,
@@ -116,14 +127,11 @@ pub(crate) fn rebuild(
         )),
         Josh::Exclude(b) => to_filter(Op::Exclude(rebuild(expr, seen, *b)?)),
         Josh::Pin(b) => to_filter(Op::Pin(rebuild(expr, seen, *b)?)),
-        Josh::Prefix(p) => match &expr[*p] {
-            Josh::Symbol(s) => to_filter(Op::Prefix(s.as_str().into())),
-            _ => return None,
-        },
-        Josh::Subdir(p) => match &expr[*p] {
-            Josh::Symbol(s) => to_filter(Op::Subdir(s.as_str().into())),
-            _ => return None,
-        },
+        Josh::Prefix(p) => to_filter(Op::Prefix(rebuild_path(expr, *p)?)),
+        Josh::Subdir(p) => to_filter(Op::Subdir(rebuild_path(expr, *p)?)),
+        // PathCons/PathNil only appear as a Prefix/Subdir path child, rebuilt by
+        // `rebuild_path`. A bare one at the top of a rebuild is malformed.
+        Josh::PathCons(_) | Josh::PathNil => return None,
         Josh::Message(p) => match &expr[*p] {
             Josh::Symbol(s) => {
                 let (fmt, re) = s.as_str().split_once(SEP)?;
@@ -158,4 +166,67 @@ fn rebuild_cons(
         }
     }
     Some(elems)
+}
+
+/// Walk a chain cons-list spine starting at `id`, rebuilding each head element,
+/// until `ChainNil`. The chain analogue of [`rebuild_cons`]. Returns `None` if the
+/// spine is malformed, which makes `egg_optimize` fall back to the identity filter.
+fn rebuild_chain(
+    expr: &RecExpr<Josh>,
+    seen: &mut HashMap<Id, Filter>,
+    mut id: Id,
+) -> Option<Vec<Filter>> {
+    let mut elems = Vec::new();
+    loop {
+        match &expr[id] {
+            Josh::ChainNil => break,
+            Josh::ChainCons([h, t]) => {
+                elems.push(rebuild(expr, seen, *h)?);
+                id = *t;
+            }
+            _ => return None,
+        }
+    }
+    Some(elems)
+}
+
+/// Build a `PathCons`/`PathNil` spine for `path`'s components, mirroring `opt`'s
+/// `path.components()` iteration (opt.rs `step`). Each component becomes a
+/// `Symbol` so a path can be split on its component boundaries by decomposition
+/// rewrites. Returns `None` on a non-UTF-8 component, which makes `build` bail
+/// out (egg falls back to the identity filter). A single component is
+/// `PathCons(Sym, PathNil)` — always a spine, never a bare `Symbol`.
+fn build_path(expr: &mut RecExpr<Josh>, path: &std::path::Path) -> Option<Id> {
+    let comps: Vec<Symbol> = path
+        .components()
+        .map(|c| c.as_os_str().to_str().map(Symbol::from))
+        .collect::<Option<Vec<_>>>()?;
+    let mut tail = expr.add(Josh::PathNil);
+    for comp in comps.into_iter().rev() {
+        let h = expr.add(Josh::Symbol(comp));
+        tail = expr.add(Josh::PathCons([h, tail]));
+    }
+    Some(tail)
+}
+
+/// Walk a `PathCons` spine from `id`, pushing each component `Symbol` into a
+/// `PathBuf`, until `PathNil`. The mirror of [`build_path`]. Returns `None` only
+/// if the spine is malformed (which cannot happen for a spine `build_path`
+/// produced).
+fn rebuild_path(expr: &RecExpr<Josh>, mut id: Id) -> Option<std::path::PathBuf> {
+    let mut path = std::path::PathBuf::new();
+    loop {
+        match &expr[id] {
+            Josh::PathNil => break,
+            Josh::PathCons([h, t]) => {
+                match &expr[*h] {
+                    Josh::Symbol(s) => path.push(s.as_str()),
+                    _ => return None,
+                }
+                id = *t;
+            }
+            _ => return None,
+        }
+    }
+    Some(path)
 }

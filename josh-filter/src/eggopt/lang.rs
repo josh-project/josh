@@ -23,9 +23,15 @@ egg::define_language! {
     /// `Compose` is a set (order-independent), so cons order is irrelevant and the
     /// element-set [`JoshAnalysis`] annotation is the canonical membership check.
     ///
-    /// `Chain` stays `Box<[Id]>`: it is an *ordered* sequence, and cons order
-    /// non-determinism is acceptable for `Compose` (a set) but would be wrong for
-    /// `Chain`. `Subtract`/`Exclude`/`Pin` are structural containers.
+    /// `Chain` is also a cons-list (`ChainCons`/`ChainNil`), DISJOINT from
+    /// `Compose`'s `Cons`/`Nil`: although `Chain` is *ordered* where `Compose` is
+    /// a set, no chain rule reorders elements — flatten is associative,
+    /// `common_pre` factors the head and keeps tail order, and cancel/conflict
+    /// match positions — so the cons-order non-determinism that would be wrong for
+    /// an ordered sequence does not arise. The cons-list form is what lets
+    /// head/tail patterns (flatten, `common_pre`, path decompose) match a chain of
+    /// any length at a fixed arity, which the variadic `Box<[Id]>` "wall"
+    /// forbids. `Subtract`/`Exclude`/`Pin` are structural containers.
     /// `Prefix`/`Subdir` carry their path as a structural child so a pattern
     /// variable can unify two equal paths (see `cancel-prefix-subdir`). `Message`
     /// is structural too, so a pattern can match "any message" regardless of its
@@ -36,13 +42,28 @@ egg::define_language! {
         // 2-child pattern matches a list of any length. Compose is a set.
         "cons" = Cons([Id; 2]),
         "nil" = Nil,
-        // Ordered sequence container; still matched by exact child count.
-        "chain" = Chain(Box<[Id]>),
+        // Ordered sequence container as its OWN cons-list (ChainCons/ChainNil),
+        // disjoint from Compose's Cons/Nil: a 2-child pattern matches a chain of
+        // any length at a fixed arity (needed for flatten/common_pre/decompose).
+        // No chain rule reorders elements, so ordered semantics are preserved.
+        "chaincons" = ChainCons([Id; 2]),
+        "chainnil" = ChainNil,
         "subtract" = Subtract([Id; 2]),
         "exclude" = Exclude(Id),
         "pin" = Pin(Id),
-        // Path-carrying ops. The path is a child `Symbol`, so two equal paths
-        // share an e-class and unify under one pattern variable.
+        // Path representation, DISJOINT from `Compose`'s `Cons`/`Nil`: a path is a
+        // cons-list of component `Symbol`s via PathCons/PathNil. Reusing `Cons` is
+        // unsound — `compose-dedup` (`(cons ?x ?tail)`) would match a path-Cons and
+        // silently delete a repeated path component (e.g. `Subdir("a/b/a")`).
+        // Separate constructors keep the two list types invisible to each other's
+        // rules. A single component `"a"` is `PathCons(Sym, PathNil)` — always a
+        // spine, never a bare `Symbol`, so a pattern variable unifies two equal
+        // paths.
+        "pathcons" = PathCons([Id; 2]),
+        "pathnil" = PathNil,
+        // Path-carrying ops. The path is a PathCons/PathNil spine child, so two
+        // equal paths share an e-class and unify under one pattern variable, and
+        // decomposition (opt E6/E7) / join (E3/E4) are honest in-egg rewrites.
         "prefix" = Prefix(Id),
         "subdir" = Subdir(Id),
         // Message is structural (not an opaque atom) so a pattern can recognize

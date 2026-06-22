@@ -40,11 +40,19 @@ fn prefix_subdir_conflict_multicomponent_yields_empty() {
 }
 
 #[test]
-fn prefix_subdir_different_depth_stays() {
-    // Different component counts are NOT a conflict (opt leaves the chain
-    // untouched), so neither the cancel nor the conflict rule fires and egg
-    // returns the input unchanged.
+fn prefix_subdir_different_depth_is_empty() {
+    // After structural-path decompose, Prefix(a/b) splits to [Prefix(b), Prefix(a)]
+    // and flattens next to Subdir(c): the adjacent Prefix(a).Subdir(c) pair (depth
+    // 1==1, different path) is a conflict -> Empty. This MATCHES opt, whose step
+    // decomposes and conflicts the same way (canon of the input is Empty). Before
+    // structural paths egg left this unchanged -- a divergence the equivalence
+    // gate masked (canon of the input was already Empty); promotion closes it.
     let input = to_filter(Op::Chain(vec![prefix("a/b"), subdir("c")]));
     let out = egg_optimize(input);
-    assert_eq!(out, input, "different-depth pair must not be rewritten");
+    assert_eq!(
+        out,
+        to_filter(Op::Empty),
+        "different-depth pair conflicts to Empty after decompose (matching opt)",
+    );
+    assert_ne!(out, input, "egg must not have returned the input verbatim");
 }
