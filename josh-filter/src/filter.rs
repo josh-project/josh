@@ -40,7 +40,7 @@ impl Filter {
 
     /// Create a filter that is the result of feeding the output of `first` into `second`
     pub fn chain(self, second: Filter) -> Filter {
-        opt::optimize(to_filter(Op::Chain(vec![self, second])))
+        opt::optimize_v1(to_filter(Op::Chain(vec![self, second])))
     }
 
     pub fn exclude(self, other: Filter) -> Filter {
@@ -294,7 +294,7 @@ impl std::fmt::Debug for Filter {
 /// Create a filter that is the result of overlaying the output of filters in a vector
 /// sequentially; so f(0) -> f(1) -> ... -> f(N)
 pub fn compose(filters: &[Filter]) -> Filter {
-    opt::optimize(persist::to_filter(Op::Compose(filters.to_vec())))
+    opt::optimize_v1(persist::to_filter(Op::Compose(filters.to_vec())))
 }
 
 pub fn invert(filter: Filter) -> anyhow::Result<Filter> {

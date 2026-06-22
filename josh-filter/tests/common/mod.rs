@@ -58,7 +58,7 @@ pub fn egg_opt(spec: &str) -> anyhow::Result<String> {
 
 /// The trusted optimizer's output for the same raw parse — for side-by-side.
 pub fn opt_ref(spec: &str) -> anyhow::Result<String> {
-    Ok(spec_egg(opt::optimize(parse_egg(spec)?)))
+    Ok(spec_egg(opt::optimize_v1(parse_egg(spec)?)))
 }
 
 /// raw / opt / egg rendered side by side with a structural cost each, so each
@@ -73,7 +73,7 @@ pub fn report(spec: &str) -> anyhow::Result<String> {
 /// Like [`report`], but for a directly-constructed `Filter` (no spec parse) — for
 /// gap cases more precisely built from `Op`s than expressed as a spec string.
 pub fn report_f(f: Filter) -> anyhow::Result<String> {
-    let o = opt::optimize(f);
+    let o = opt::optimize_v1(f);
     let e = egg_optimize(f);
     Ok(format!(
         "raw:  {} (cost {})\nopt:  {} (cost {})\negg:  {} (cost {})",

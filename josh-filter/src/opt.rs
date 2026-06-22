@@ -11,7 +11,7 @@ use anyhow::anyhow;
 use std::cmp::Ordering;
 use std::collections::{HashMap, HashSet};
 use std::hash::BuildHasherDefault;
-use std::sync::LazyLock;
+use std::sync::{LazyLock, OnceLock};
 
 type FilterHashMap = HashMap<Filter, Filter, BuildHasherDefault<PassthroughHasher>>;
 type FilterSet = HashSet<Filter, BuildHasherDefault<PassthroughHasher>>;
@@ -25,6 +25,28 @@ static SIMPLIFIED: LazyLock<std::sync::Mutex<FilterHashMap>> =
     LazyLock::new(|| std::sync::Mutex::new(HashMap::default()));
 static FLATTENED: LazyLock<std::sync::Mutex<FilterHashMap>> =
     LazyLock::new(|| std::sync::Mutex::new(HashMap::default()));
+
+/// Memo for the egg-dispatch branch of [`optimize`]: `apply_to_commit` re-runs the
+/// optimizer per commit, so a per-process cache (the env var is fixed for the
+/// process via [`USE_EGG`]) avoids re-saturating the e-graph for a repeated filter.
+static EGG_DISPATCHED: LazyLock<std::sync::Mutex<FilterHashMap>> =
+    LazyLock::new(|| std::sync::Mutex::new(HashMap::default()));
+
+/// Whether the production filter stack runs the egg optimizer instead of the
+/// trusted [`optimize_v1`]. Read once per process from `USE_EGG_OPT` (true when
+/// set to a non-empty value other than `0`/`false`/`no`/`off`, case-insensitive).
+/// Stand-alone — does not require `JOSH_EXPERIMENTAL_FEATURES`.
+static USE_EGG: OnceLock<bool> = OnceLock::new();
+
+pub(crate) fn use_egg_opt() -> bool {
+    *USE_EGG.get_or_init(|| match std::env::var("USE_EGG_OPT") {
+        Ok(v) => {
+            let v = v.trim().to_ascii_lowercase();
+            !v.is_empty() && v != "0" && v != "false" && v != "no" && v != "off"
+        }
+        Err(_) => false,
+    })
+}
 
 fn normalize_path(path: &std::path::Path) -> std::path::PathBuf {
     let mut components = path.components().peekable();
@@ -86,9 +108,11 @@ fn dst_path2(op: &Op) -> std::path::PathBuf {
 
 /*
  * Attempt to create an alternative representation of a filter AST that is most
- * suitable for fast evaluation and cache reuse.
+ * suitable for fast evaluation and cache reuse. This is the PURE trusted
+ * optimizer: no env-var dispatch, and it is egg's own correctness oracle (see
+ * `eggopt::canon`), so it must never call back into a dispatcher or into egg.
  */
-pub fn optimize(filter: Filter) -> Filter {
+pub fn optimize_v1(filter: Filter) -> Filter {
     if let Some(f) = OPTIMIZED.lock().unwrap().get(&filter) {
         return *f;
     }
@@ -106,6 +130,24 @@ pub fn optimize(filter: Filter) -> Filter {
     };
 
     OPTIMIZED.lock().unwrap().insert(original, result);
+    result
+}
+
+/// The optimizer the production stack runs. Dispatches on [`use_egg_opt`]: when
+/// `USE_EGG_OPT` is set the filter is optimized with egg via
+/// [`eggopt::egg_or_opt`] (which falls back to [`optimize_v1`] when egg declines
+/// or its equivalence gate rejects, so a raw/un-reduced filter is never shipped);
+/// otherwise the trusted [`optimize_v1`] runs. The egg branch has its own memo
+/// ([`EGG_DISPATCHED`]) because `apply_to_commit` re-optimizes per commit.
+pub fn optimize(filter: Filter) -> Filter {
+    if !use_egg_opt() {
+        return optimize_v1(filter);
+    }
+    if let Some(f) = EGG_DISPATCHED.lock().unwrap().get(&filter) {
+        return *f;
+    }
+    let result = crate::eggopt::egg_or_opt(filter);
+    EGG_DISPATCHED.lock().unwrap().insert(filter, result);
     result
 }
 

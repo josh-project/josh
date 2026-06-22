@@ -1960,7 +1960,7 @@ fn per_rev_filter(
                 legalize_pin(f, &|_| to_filter(Op::Nop))
             }
 
-            let f = opt::optimize(to_filter(Op::Subtract(
+            let f = opt::optimize_v1(to_filter(Op::Subtract(
                 strip_pins(commit_filter.peel()),
                 strip_pins(pcw.peel()),
             )));
@@ -1990,7 +1990,7 @@ fn per_rev_filter(
         if legalized_a != legalized_b {
             let pin_subtract = apply(
                 transaction,
-                opt::optimize(to_filter(Op::Subtract(legalized_a, legalized_b))),
+                opt::optimize_v1(to_filter(Op::Subtract(legalized_a, legalized_b))),
                 Rewrite::from_commit(commit)?,
             )?;
 

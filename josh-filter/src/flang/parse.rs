@@ -499,8 +499,10 @@ pub fn quote(s: &str) -> String {
         .unwrap_or("<invalid string>".to_string())
 }
 
-/// Create a `Filter` from a string representation
-pub fn parse(filter_spec: &str) -> anyhow::Result<Filter> {
+/// Create a `Filter` from a string representation using the TRUSTED optimizer.
+/// This is the explicit `_v1` parse; the dispatcher [`parse`] routes here by
+/// default and to [`parse_v2_egg`] when `USE_EGG_OPT` is set.
+pub fn parse_v1(filter_spec: &str) -> anyhow::Result<Filter> {
     if filter_spec.is_empty() {
         return Ok(to_filter(Op::Empty));
     }
@@ -515,9 +517,28 @@ pub fn parse(filter_spec: &str) -> anyhow::Result<Filter> {
         return Ok(chain);
     };
 
-    Ok(opt::optimize(to_filter(Op::Compose(parse_workspace(
+    Ok(opt::optimize_v1(to_filter(Op::Compose(parse_workspace(
         filter_spec,
     )?))))
+}
+
+/// Create a `Filter` from a string representation using the egg optimizer. Parses
+/// raw (via [`parse_egg`], no intermediate optimization) then runs
+/// [`eggopt::egg_or_opt`], which falls back to [`opt::optimize_v1`] when egg
+/// declines — so this never returns a raw/un-reduced filter.
+pub fn parse_v2_egg(filter_spec: &str) -> anyhow::Result<Filter> {
+    Ok(crate::eggopt::egg_or_opt(parse_egg(filter_spec)?))
+}
+
+/// Create a `Filter` from a string representation. Dispatches on
+/// [`opt::use_egg_opt`]: egg ([`parse_v2_egg`]) when `USE_EGG_OPT` is set, the
+/// trusted optimizer ([`parse_v1`]) otherwise.
+pub fn parse(filter_spec: &str) -> anyhow::Result<Filter> {
+    if opt::use_egg_opt() {
+        parse_v2_egg(filter_spec)
+    } else {
+        parse_v1(filter_spec)
+    }
 }
 
 /// Parse a filter spec WITHOUT running the trusted optimizer — the "raw" parse.

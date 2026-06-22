@@ -42,8 +42,13 @@ use egg::{AstSize, EGraph, Extractor, Id, Language, RecExpr, Runner};
 use std::collections::{HashMap, HashSet};
 
 /// Canonicalize a filter via the trusted existing optimizer.
+///
+/// MUST be the pure `opt::optimize_v1`, never the `opt::optimize` dispatcher:
+/// `egg_optimize`/`egg_or_opt` prove equivalence through this, and the dispatcher
+/// routes back into egg when `USE_EGG_OPT` is set — so using it here would recurse
+/// (`optimize -> egg_or_opt -> equivalent -> canon -> optimize -> ...`).
 fn canon(f: Filter) -> Filter {
-    opt::optimize(f)
+    opt::optimize_v1(f)
 }
 
 /// Two filters are equivalent if they share a canonical form under the trusted
@@ -236,5 +241,20 @@ pub fn egg_optimize(filter: Filter) -> Filter {
         candidate
     } else {
         filter
+    }
+}
+
+/// The production-safe egg entry. Like [`egg_optimize`] but, when egg declines
+/// (an unrepresentable `Op`) or the [`equivalent`] gate rejects the candidate,
+/// falls back to [`opt::optimize_v1`] rather than the raw input — so a caller can
+/// never receive a raw/un-reduced filter. [`egg_optimize`] (raw fallback) stays
+/// available for corpus snapshots that need to show egg's true output.
+///
+/// The gate's oracle is the pure [`opt::optimize_v1`] (see [`canon`]), so this
+/// does not recurse through the `opt::optimize` dispatcher.
+pub fn egg_or_opt(filter: Filter) -> Filter {
+    match egg_candidate(filter) {
+        Some(c) if equivalent(filter, c) => c,
+        _ => opt::optimize_v1(filter),
     }
 }

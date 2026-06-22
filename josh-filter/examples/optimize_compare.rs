@@ -161,7 +161,7 @@ fn main() {
     for i in 0..WARMUP_ITERS {
         let f = build_wide_pin(WARMUP_SIZE, &format!("warmup{i}"));
         if !args.egg_only {
-            let _ = opt::optimize(f);
+            let _ = opt::optimize_v1(f);
         }
         let _ = egg_candidate(f);
     }
@@ -193,7 +193,7 @@ fn main() {
         let f_opt = build_wide_pin(n, &format!("opt{n}"));
 
         let t = Instant::now();
-        let optimized = opt::optimize(f_opt);
+        let optimized = opt::optimize_v1(f_opt);
         let opt_ms = ms(t.elapsed());
         let opt_nodes = node_count(optimized);
 
