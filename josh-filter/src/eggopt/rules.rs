@@ -1,4 +1,4 @@
-use crate::eggopt::appliers::{CommonPost, PrefixSubdirConflict, SubtractComposeDiff};
+use crate::eggopt::appliers::{PrefixSubdirConflict, SubtractComposeDiff};
 use crate::eggopt::lang::{Josh, JoshAnalysis};
 use egg::{EGraph, Id, Rewrite, Subst, Var, rewrite};
 
@@ -51,9 +51,14 @@ use egg::{EGraph, Id, Rewrite, Subst, Var, rewrite};
 /// producing proper 2-element chains, `common-pre-factor` factors a shared leading
 /// element and `AstSize` picks the factored form when the shared subtree is large
 /// enough to beat the decompose cost — so egg now matches `opt` on the shared-
-/// prefix corpus case (see `corpus_gaps::workspace_common_prefix_factor`). Still
-/// absent: `common_post` (a one-shot Applier, not a pattern — see the rule-set
-/// comment below) and the variadic `distribute`/absorb inverses.
+/// prefix corpus case (see `corpus_gaps::workspace_common_prefix_factor`).
+///
+/// `common_post` (the tail analogue) is NOT a rule here: as a matched `Applier` on
+/// `(cons ?h ?tail)` it was O(N²) (the LHS matches ~every cons cell of a large
+/// compose and re-factors each suffix). It is instead a targeted pass applied
+/// directly between saturation rounds — see `eggopt::egg_candidate` and
+/// [`crate::eggopt::appliers::factor_all_common_post`]. Still absent: the
+/// variadic `distribute`/absorb inverses.
 pub(crate) fn rules() -> Vec<Rewrite<Josh, JoshAnalysis>> {
     vec![
         rewrite!("cancel-prefix-subdir";
@@ -107,20 +112,8 @@ pub(crate) fn rules() -> Vec<Rewrite<Josh, JoshAnalysis>> {
         rewrite!("common-pre-factor";
             "(cons (chaincons ?shared ?t1) (cons (chaincons ?shared ?t2) ?rest))"
             => "(chaincons ?shared (chaincons (cons ?t1 (cons ?t2 ?rest)) chainnil))"),
-        // common_post factoring — the tail analogue of common_pre: a Compose of
-        // chains ALL sharing the same LAST element factors to
-        // Chain[Compose[bodies], shared] (opt.rs:649-650). A one-shot Applier
-        // ([`CommonPost`]), not a pairwise pattern: run-to-fixpoint over N chains
-        // would both bloat the e-graph (O(N^2) intermediate merges, the same
-        // pathology class as the dropped distribute) and leave a malformed
-        // ChainCons (a Compose cons-list in a chain-tail slot) tied with the dedup
-        // form under AstSize. The applier factors all N shared-tail chains in one
-        // O(N) Rust pass. Semantically sound by right-distribution of sequence over
-        // compose (valid for any tail), with two sound-subset guards that keep it
-        // from mutually exploding with `common-pre-factor`: all-or-nothing (opt.rs
-        // 519-521) and Compose-tail only. See [`appliers::CommonPost`].
-        rewrite!("common-post-factor";
-            "(cons ?h ?tail)" => { CommonPost::new() }),
+        // common_post factoring is a targeted pass, not a rule — see the rule-set
+        // doc comment above and `eggopt::egg_candidate`.
         // Compose flatten (E1): a nested compose splices into the outer one by
         // append-via-cons, mirroring opt's recursive flatten. compose-flatten peels
         // one head element out of a nested list per fire; compose-flatten-nil drops

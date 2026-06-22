@@ -30,13 +30,14 @@ mod rules;
 pub mod spike_conslist;
 pub mod spike_paths;
 
+use crate::eggopt::appliers::factor_all_common_post;
 use crate::eggopt::convert::{build, rebuild};
 use crate::eggopt::lang::{Josh, JoshAnalysis};
 use crate::eggopt::rules::rules;
 use crate::filter::Filter;
 use crate::opt;
-use egg::{AstSize, Extractor, RecExpr, Runner};
-use std::collections::HashMap;
+use egg::{AstSize, EGraph, Extractor, Id, Language, RecExpr, Runner};
+use std::collections::{HashMap, HashSet};
 
 /// Canonicalize a filter via the trusted existing optimizer.
 fn canon(f: Filter) -> Filter {
@@ -58,6 +59,103 @@ pub fn equivalent(a: Filter, b: Filter) -> bool {
     canon(a) == canon(b)
 }
 
+/// Extract the minimum-AstSize `RecExpr` rooted at `root`.
+///
+/// Replaces egg's `Extractor::find_best`, whose `find_costs` is a fixpoint over
+/// ALL classes that re-iterates every class on each cost improvement — O(depth)
+/// passes × O(classes) = O(N²) for the deep cons spines this optimizer produces
+/// (e.g. the factored `Compose[file_0..file_{N-1}]`, a spine of depth N). This
+/// instead does a single bottom-up pass in topological order (children before
+/// parents), O(total enodes) = O(N), and matches `AstSize` exactly (same cost
+/// fn, same first-min-enode tie-break). Falls back to egg's `Extractor` if the
+/// class graph has a cycle — the filter shapes here are acyclic, but unions can
+/// in principle create one.
+///
+/// Recursion depth is the e-graph's deepest spine (~N for the wide-pin shape);
+/// fine at the benchmark sizes but not protected against a stack overflow on
+/// pathologically deep inputs.
+fn extract_best(egraph: &EGraph<Josh, JoshAnalysis>, root: Id) -> (usize, RecExpr<Josh>) {
+    // Topological order (post-order DFS): each class is pushed after all of its
+    // children, so iterating `order` costs children before parents.
+    let mut order: Vec<Id> = Vec::new();
+    let mut visited: HashSet<Id> = HashSet::new();
+    let mut onstack: HashSet<Id> = HashSet::new();
+    if !topo_order(egraph, root, &mut visited, &mut onstack, &mut order) {
+        return Extractor::new(egraph, AstSize).find_best(root);
+    }
+
+    // Single bottom-up pass: each class's cheapest enode from its children's
+    // (already-set) costs. `cost < min` (strict) keeps the first enode at the
+    // minimum, matching egg's `Iterator::min_by`.
+    let mut best: HashMap<Id, (usize, Josh)> = HashMap::new();
+    for &id in &order {
+        let id = egraph.find(id);
+        let mut min: Option<(usize, Josh)> = None;
+        for enode in &egraph[id].nodes {
+            let mut cost = 1usize;
+            let mut ok = true;
+            for &child in enode.children() {
+                match best.get(&egraph.find(child)) {
+                    Some((cc, _)) => cost = cost.saturating_add(*cc),
+                    None => {
+                        ok = false;
+                        break;
+                    }
+                }
+            }
+            if ok {
+                match &min {
+                    None => min = Some((cost, enode.clone())),
+                    Some((mc, _)) if cost < *mc => min = Some((cost, enode.clone())),
+                    _ => {}
+                }
+            }
+        }
+        if let Some(m) = min {
+            best.insert(id, m);
+        }
+    }
+
+    let root = egraph.find(root);
+    let (cost, root_node) = best
+        .get(&root)
+        .cloned()
+        .expect("DAG root has a computed min-cost enode");
+    let expr = root_node.build_recexpr(|id| best[&egraph.find(id)].1.clone());
+    (cost, expr)
+}
+
+/// DFS post-order over the class graph (following every enode's children). Pushes
+/// each class after all of its children, so `order` ends up children-before-parents.
+/// Returns `false` if a back-edge (class-graph cycle) is found.
+fn topo_order(
+    egraph: &EGraph<Josh, JoshAnalysis>,
+    id: Id,
+    visited: &mut HashSet<Id>,
+    onstack: &mut HashSet<Id>,
+    order: &mut Vec<Id>,
+) -> bool {
+    let id = egraph.find(id);
+    if !visited.insert(id) {
+        return true;
+    }
+    onstack.insert(id);
+    for enode in &egraph[id].nodes {
+        for &child in enode.children() {
+            let child = egraph.find(child);
+            if onstack.contains(&child) {
+                return false; // back-edge: class-graph cycle
+            }
+            if !topo_order(egraph, child, visited, onstack, order) {
+                return false;
+            }
+        }
+    }
+    onstack.remove(&id);
+    order.push(id);
+    true
+}
+
 /// Run the egg pipeline (build → saturate → extract → rebuild) and return the
 /// reduced candidate, WITHOUT the equivalence gate.
 ///
@@ -66,22 +164,43 @@ pub fn equivalent(a: Filter, b: Filter) -> bool {
 /// (in which case [`egg_optimize`] conservatively returns the input unchanged).
 /// Returns `None` if any `Op` in the tree is not representable by the egg
 /// language (`build`/`rebuild` bail out).
+///
+/// `common_post` factoring is applied as a **targeted pass** between saturation
+/// rounds, not as a matched rewrite. As a rule on `(cons ?h ?tail)` it was O(N²):
+/// that LHS matches ~every cons cell of a large compose, and the applier re-factors
+/// each suffix in O(N). The targeted [`factor_all_common_post`] factors every
+/// compose-of-chains "spine top" once, in total O(e-graph size) — so the cheap
+/// rules saturate linearly and `common_post` does not re-walk the whole graph.
 pub fn egg_candidate(filter: Filter) -> Option<Filter> {
     let mut expr = RecExpr::default();
     let mut seen_build = HashMap::new();
     build(&mut expr, &mut seen_build, filter)?;
 
     let rules = rules();
-    let runner = Runner::<Josh, JoshAnalysis>::default()
-        .with_expr(&expr)
+    let mut runner = Runner::<Josh, JoshAnalysis>::default()
         // Mandatory limits: e-graphs can blow up, and extraction always runs
         // (best-so-far) even when a limit is hit.
         .with_node_limit(100_000)
         .with_iter_limit(30)
-        .run(&rules);
+        .with_expr(&expr);
+
+    // Cheap-saturate to fixpoint, then factor all compose-of-chains, repeated
+    // until a round factors nothing. `Runner::run` asserts `stop_reason.is_none()`
+    // on entry (it is set when a run stops), so reset it before each re-entry; the
+    // e-graph is left consistent by `factor_all_common_post` (only adds/unions).
+    // Bounded so a pathological interaction cannot loop forever; `factor_all`'s
+    // re-fire guard also makes it idempotent, so each `true` is genuine progress.
+    runner = runner.run(&rules);
+    for _ in 0..8 {
+        if !factor_all_common_post(&mut runner.egraph) {
+            break;
+        }
+        runner.stop_reason = None;
+        runner = runner.run(&rules);
+    }
 
     let root = runner.roots[0];
-    let (_cost, best) = Extractor::new(&runner.egraph, AstSize).find_best(root);
+    let (_cost, best) = extract_best(&runner.egraph, root);
 
     let mut seen_rebuild = HashMap::new();
     rebuild(&best, &mut seen_rebuild, best.root())
