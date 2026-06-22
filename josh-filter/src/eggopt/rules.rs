@@ -43,22 +43,21 @@ use egg::{EGraph, Id, Rewrite, Subst, Var, rewrite};
 ///   applier (cons-aware); the single-element cases are the pluck/absorb rules.
 ///
 /// Now present (structural paths promoted): path decomposition
-/// (`subdir-decompose`/`prefix-decompose`, opt E6/E7) and a unidirectional
-/// `common-pre-factor` (no `distribute` inverse, so it never expands the e-graph
-/// the way the bidirectional family did). Decompose is honest and non-destructive
-/// (both forms coexist; `AstSize` picks), and it lets egg MATCH `opt` on the
-/// Prefix/Subdir conflict cases that need it (see `eggopt_cancel`). With decompose
-/// producing proper 2-element chains, `common-pre-factor` factors a shared leading
-/// element and `AstSize` picks the factored form when the shared subtree is large
-/// enough to beat the decompose cost — so egg now matches `opt` on the shared-
-/// prefix corpus case (see `corpus_gaps::workspace_common_prefix_factor`).
+/// (`subdir-decompose`/`prefix-decompose`, opt E6/E7). Decompose is honest and
+/// non-destructive (both forms coexist; `AstSize` picks), and it lets egg MATCH
+/// `opt` on the Prefix/Subdir conflict cases that need it (see `eggopt_cancel`).
 ///
-/// `common_post` (the tail analogue) is NOT a rule here: as a matched `Applier` on
-/// `(cons ?h ?tail)` it was O(N²) (the LHS matches ~every cons cell of a large
-/// compose and re-factors each suffix). It is instead a targeted pass applied
-/// directly between saturation rounds — see `eggopt::egg_candidate` and
-/// [`crate::eggopt::appliers::factor_all_common_post`]. Still absent: the
-/// variadic `distribute`/absorb inverses.
+/// `common_pre` (shared head) and `common_post` (shared tail) factoring are NOT
+/// rules here. As rules each failed: `common_post` as a matched `Applier` on
+/// `(cons ?h ?tail)` was O(N²) (the LHS matches ~every cons cell of a large
+/// compose and re-factors each suffix); `common_pre` as a pairwise rule could not
+/// factor three or more chains (its intermediate is larger than the input, so
+/// `AstSize` rejects the partial factoring and run-to-fixpoint never converges).
+/// Both are instead targeted passes applied between saturation rounds — see
+/// `eggopt::egg_candidate`, [`crate::eggopt::appliers::factor_all_common_pre`],
+/// and [`crate::eggopt::appliers::factor_all_common_post`]. Together they let egg
+/// match `opt`'s shared-prefix/shared-suffix factoring on the corpus (see
+/// `corpus_gaps`). Still absent: the variadic `distribute`/absorb inverses.
 pub(crate) fn rules() -> Vec<Rewrite<Josh, JoshAnalysis>> {
     vec![
         rewrite!("cancel-prefix-subdir";
@@ -99,21 +98,13 @@ pub(crate) fn rules() -> Vec<Rewrite<Josh, JoshAnalysis>> {
         rewrite!("chain-nop-l"; "(chaincons nop ?t)" => "?t"),
         rewrite!("chain-empty-l"; "(chaincons empty ?t)" => "empty"),
         rewrite!("chain-empty-r"; "(chaincons ?h empty)" => "empty"),
-        // common_pre factoring — a pure pattern. ?shared unifies by e-class
-        // identity across two chain heads in a Compose = opt common_pre's "first
-        // chain element equal" test (opt.rs). Run to fixpoint factors a shared
-        // leading element out of a Compose of Chains into Chain[shared,
-        // Compose[tails]] (opt.rs:648: Chain[common, Compose[rest]]). The Compose
-        // of tails is a *chain element* — the head of an inner ChainCons — NOT the
-        // chain's tail spine (which would conflate Compose's Cons with Chain's
-        // ChainCons and make rebuild bail). Unidirectional (contracting only) — no
-        // distribute inverse — so it never expands the e-graph the way the
-        // bidirectional family did.
-        rewrite!("common-pre-factor";
-            "(cons (chaincons ?shared ?t1) (cons (chaincons ?shared ?t2) ?rest))"
-            => "(chaincons ?shared (chaincons (cons ?t1 (cons ?t2 ?rest)) chainnil))"),
-        // common_post factoring is a targeted pass, not a rule — see the rule-set
-        // doc comment above and `eggopt::egg_candidate`.
+        // common_pre factoring is a targeted pass, not a rule — see the rule-set
+        // doc comment above and `eggopt::egg_candidate`. As a pairwise pattern rule
+        // it could not factor three or more chains sharing a head (its intermediate
+        // is larger than the input, so `AstSize` rejected the partial factoring);
+        // `factor_all_common_pre` factors all N shared-head chains in one O(N) walk.
+        // common_post factoring is a targeted pass for the same reason — see
+        // `eggopt::egg_candidate`.
         // Compose flatten (E1): a nested compose splices into the outer one by
         // append-via-cons, mirroring opt's recursive flatten. compose-flatten peels
         // one head element out of a nested list per fire; compose-flatten-nil drops

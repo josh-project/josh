@@ -18,10 +18,12 @@
 //! variadic rewrite) — because their guards are not expressible as patterns. Path
 //! and Message data are structural children, so path equality and message
 //! recognition are egg's unification rather than Rust conditions. Path
-//! decomposition (opt E6/E7) and a unidirectional `common_pre` factoring rule are
-//! present (structural paths promoted); together they let egg match `opt`'s
-//! shared-prefix factoring on the corpus (see `corpus_gaps`). `common_post`
-//! factoring is an Applier, not a pattern rule (see [`rules`]).
+//! decomposition (opt E6/E7) is present (structural paths promoted). `common_pre`
+//! (shared head) and `common_post` (shared tail) factoring are NOT pattern rules:
+//! each was O(N²)/non-convergent as a rule, so both are targeted passes applied
+//! between saturation rounds (see [`egg_candidate`] and [`rules`]); together they
+//! let egg match `opt`'s shared-prefix/shared-suffix factoring on the corpus (see
+//! `corpus_gaps`).
 
 mod appliers;
 mod convert;
@@ -30,7 +32,7 @@ mod rules;
 pub mod spike_conslist;
 pub mod spike_paths;
 
-use crate::eggopt::appliers::factor_all_common_post;
+use crate::eggopt::appliers::{factor_all_common_post, factor_all_common_pre, factor_all_subtract};
 use crate::eggopt::convert::{build, rebuild};
 use crate::eggopt::lang::{Josh, JoshAnalysis};
 use crate::eggopt::rules::rules;
@@ -165,12 +167,19 @@ fn topo_order(
 /// Returns `None` if any `Op` in the tree is not representable by the egg
 /// language (`build`/`rebuild` bail out).
 ///
-/// `common_post` factoring is applied as a **targeted pass** between saturation
-/// rounds, not as a matched rewrite. As a rule on `(cons ?h ?tail)` it was O(N²):
-/// that LHS matches ~every cons cell of a large compose, and the applier re-factors
-/// each suffix in O(N). The targeted [`factor_all_common_post`] factors every
-/// compose-of-chains "spine top" once, in total O(e-graph size) — so the cheap
-/// rules saturate linearly and `common_post` does not re-walk the whole graph.
+/// `common_post` (shared tail) and `common_pre` (shared head) factoring are both
+/// applied as **targeted passes** between saturation rounds, not as matched
+/// rewrites. As a rule on `(cons ?h ?tail)` each was O(N²): that LHS matches
+/// ~every cons cell of a large compose, and a matched applier re-factors each
+/// suffix in O(N) (common_post); and for common_pre the pairwise rule's
+/// intermediate is larger than its input, so `AstSize` rejects the partial
+/// factoring and run-to-fixpoint never reaches the fully-factored form (leaving
+/// multi-entry namespaces un-reduced). The targeted [`factor_all_common_pre`] and
+/// [`factor_all_common_post`] each factor every compose-of-chains "spine top" once,
+/// in total O(e-graph size) — so the cheap rules saturate linearly and neither
+/// pass re-walks the whole graph. The subtract analogue [`factor_all_subtract`]
+/// (shared head / shared Prefix tail over a `Subtract`) runs in the same loop.
+/// `Subtract` is binary so it needs no pairwise care — each factoring shrinks it.
 pub fn egg_candidate(filter: Filter) -> Option<Filter> {
     let mut expr = RecExpr::default();
     let mut seen_build = HashMap::new();
@@ -184,15 +193,21 @@ pub fn egg_candidate(filter: Filter) -> Option<Filter> {
         .with_iter_limit(30)
         .with_expr(&expr);
 
-    // Cheap-saturate to fixpoint, then factor all compose-of-chains, repeated
-    // until a round factors nothing. `Runner::run` asserts `stop_reason.is_none()`
-    // on entry (it is set when a run stops), so reset it before each re-entry; the
-    // e-graph is left consistent by `factor_all_common_post` (only adds/unions).
-    // Bounded so a pathological interaction cannot loop forever; `factor_all`'s
-    // re-fire guard also makes it idempotent, so each `true` is genuine progress.
+    // Cheap-saturate to fixpoint, then factor all compose-of-chains (shared head
+    // AND shared tail), repeated until a round factors nothing. `Runner::run`
+    // asserts `stop_reason.is_none()` on entry (it is set when a run stops), so
+    // reset it before each re-entry; the e-graph is left consistent by the passes
+    // (only adds/unions). `|` (not `||`) runs BOTH passes each round so a shared
+    // head factored by `common_pre` can have its inner composite's shared tail
+    // picked up by `common_post` in the same round. Bounded so a pathological
+    // interaction cannot loop forever; each pass's re-fire guard makes it
+    // idempotent, so a `true` is genuine progress.
     runner = runner.run(&rules);
     for _ in 0..8 {
-        if !factor_all_common_post(&mut runner.egraph) {
+        let factored = factor_all_common_pre(&mut runner.egraph)
+            | factor_all_common_post(&mut runner.egraph)
+            | factor_all_subtract(&mut runner.egraph);
+        if !factored {
             break;
         }
         runner.stop_reason = None;
