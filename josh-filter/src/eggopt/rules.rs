@@ -1,4 +1,4 @@
-use crate::eggopt::appliers::{PrefixSubdirConflict, SubtractComposeDiff};
+use crate::eggopt::appliers::{CommonPost, PrefixSubdirConflict, SubtractComposeDiff};
 use crate::eggopt::lang::{Josh, JoshAnalysis};
 use egg::{EGraph, Id, Rewrite, Subst, Var, rewrite};
 
@@ -107,17 +107,20 @@ pub(crate) fn rules() -> Vec<Rewrite<Josh, JoshAnalysis>> {
         rewrite!("common-pre-factor";
             "(cons (chaincons ?shared ?t1) (cons (chaincons ?shared ?t2) ?rest))"
             => "(chaincons ?shared (chaincons (cons ?t1 (cons ?t2 ?rest)) chainnil))"),
-        // common_post factoring — the tail analogue of common_pre: chains in a
-        // Compose sharing their LAST element merge their bodies (opt.rs:649-650 ->
-        // Chain[Compose[bodies], shared]). NOT a pattern rule here: a pairwise
-        // rule would merge two chains at a time, and run-to-fixpoint over N chains
-        // both bloats the e-graph (O(N^2) intermediate merges, the same pathology
-        // class as the dropped distribute) and can leave a malformed ChainCons
-        // (Compose cons-list in a chain-tail position) tied with the dedup form
-        // under AstSize, which extraction may pick and rebuild then rejects. It is
-        // implemented instead as a one-shot Applier (see appliers::CommonPost)
-        // that factors all N shared-tail chains in a single O(N) pass.
-
+        // common_post factoring — the tail analogue of common_pre: a Compose of
+        // chains ALL sharing the same LAST element factors to
+        // Chain[Compose[bodies], shared] (opt.rs:649-650). A one-shot Applier
+        // ([`CommonPost`]), not a pairwise pattern: run-to-fixpoint over N chains
+        // would both bloat the e-graph (O(N^2) intermediate merges, the same
+        // pathology class as the dropped distribute) and leave a malformed
+        // ChainCons (a Compose cons-list in a chain-tail slot) tied with the dedup
+        // form under AstSize. The applier factors all N shared-tail chains in one
+        // O(N) Rust pass. Semantically sound by right-distribution of sequence over
+        // compose (valid for any tail), with two sound-subset guards that keep it
+        // from mutually exploding with `common-pre-factor`: all-or-nothing (opt.rs
+        // 519-521) and Compose-tail only. See [`appliers::CommonPost`].
+        rewrite!("common-post-factor";
+            "(cons ?h ?tail)" => { CommonPost::new() }),
         // Compose flatten (E1): a nested compose splices into the outer one by
         // append-via-cons, mirroring opt's recursive flatten. compose-flatten peels
         // one head element out of a nested list per fire; compose-flatten-nil drops

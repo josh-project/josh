@@ -1,4 +1,4 @@
-use crate::eggopt::lang::{Josh, JoshAnalysis, cons_elems, cons_fold};
+use crate::eggopt::lang::{Josh, JoshAnalysis, compose_of, cons_elems};
 use egg::{Applier, EGraph, Id, PatternAst, Subst, Symbol, Var};
 use std::collections::HashSet;
 
@@ -99,21 +99,10 @@ impl Applier<Josh, JoshAnalysis> for SubtractComposeDiff {
         // cons-list. This mirrors opt's Compose normalization at construction time
         // and keeps AstSize ties out of the graph (a bare element costs less than
         // `Cons(x, Nil)`).
-        let left = compose_of(egraph, diff_a);
-        let right = compose_of(egraph, diff_b);
+        let left = compose_of(egraph, &diff_a);
+        let right = compose_of(egraph, &diff_b);
         let differenced = egraph.add(Josh::Subtract([left, right]));
         egraph.union(eclass, differenced);
         vec![egraph.find(eclass)]
-    }
-}
-
-/// Build a canonical compose operand from an element list: empty becomes the
-/// `empty` atom, a singleton becomes the element itself, otherwise a cons-list.
-/// See [`SubtractComposeDiff`] for why construction-time canonicalization matters.
-fn compose_of(egraph: &mut EGraph<Josh, JoshAnalysis>, elems: Vec<Id>) -> Id {
-    match elems.len() {
-        0 => egraph.add(Josh::Symbol(Symbol::from("empty"))),
-        1 => egraph.find(elems[0]),
-        _ => cons_fold(egraph, &elems),
     }
 }

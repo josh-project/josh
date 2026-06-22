@@ -31,6 +31,9 @@
 //!   hide egg's own scaling. We time `egg_candidate` (the ungated pipeline)
 //!   instead. The gate's soundness-vs-completeness is a separate question.
 //!
+//! Before the timed sweep a small in-process warmup is discarded, so the first
+//! measured row is not inflated by one-time egg/EGraph and allocator setup.
+//!
 //! Run release for representative numbers (edit `SIZES` to change the sweep):
 //!
 //! ```sh
@@ -46,11 +49,22 @@ use josh_filter::opt;
 use josh_filter::persist::{to_filter, to_op};
 
 /// Sizes to sweep. Edit this list to change the range.
-const SIZES: &[usize] = &[100, 200, 300, 500, 1000];
+const SIZES: &[usize] = &[100, 200, 300, 500, 2000, 5000];
 
 /// Fraction of files held back by the layered `:pin`, mirroring the benchmark's
 /// ~25 % hold probability.
 const PIN_FRACTION: usize = 4;
+
+/// Size used for the discarded in-process warmup. Moderate, so it exercises the
+/// `common_post` reduction path without adding much wall-clock before the sweep.
+const WARMUP_SIZE: usize = 200;
+
+/// Number of discarded warmup iterations. The first `egg_candidate` call in a
+/// process pays one-time costs (egg/EGraph setup, allocator caches, CPU frequency
+/// ramp) — ~200 ms vs ~10 ms warm at N=100 — so without a warmup the first measured
+/// row reads as a spurious outlier. A few iterations prime these before any row is
+/// timed.
+const WARMUP_ITERS: usize = 3;
 
 /// Build the raw (un-optimized) pin-legalized shape for `n_files`: a `Compose` of
 /// `N` chains `Chain[file_i, Compose(pinned)]` — `compose(pinned)` as the bare
@@ -105,6 +119,16 @@ fn main() {
         "{:>6}  {:>10}  {:>10}  {:>10}  {:>9}  {:>9}",
         "N", "opt (ms)", "egg (ms)", "opt/egg", "opt nodes", "egg nodes",
     );
+    // Discarded in-process warmup: prime egg/EGraph init, allocator caches, and CPU
+    // frequency ramp so the first *measured* row isn't a one-time-cost outlier. The
+    // warmup tags are distinct from the per-size `opt{n}`/`egg{n}` tags, so opt's
+    // by-OID memo is not primed for any measurement.
+    for i in 0..WARMUP_ITERS {
+        let f = build_wide_pin(WARMUP_SIZE, &format!("warmup{i}"));
+        let _ = opt::optimize(f);
+        let _ = egg_candidate(f);
+    }
+
     for &n in SIZES {
         // Distinct tags per (optimizer, size) → distinct OIDs → cold caches, and
         // identical shape across the two optimizers at a given size.

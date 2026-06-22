@@ -76,7 +76,7 @@ pub fn egg_candidate(filter: Filter) -> Option<Filter> {
         .with_expr(&expr)
         // Mandatory limits: e-graphs can blow up, and extraction always runs
         // (best-so-far) even when a limit is hit.
-        .with_node_limit(10_000)
+        .with_node_limit(100_000)
         .with_iter_limit(30)
         .run(&rules);
 

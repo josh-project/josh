@@ -166,6 +166,67 @@ pub(crate) fn cons_fold(egraph: &mut EGraph<Josh, JoshAnalysis>, elems: &[Id]) -
     tail
 }
 
+/// Walk a `ChainCons` spine from `id`, collecting canonical head `Id`s until
+/// `ChainNil`. The chain analogue of [`cons_elems`]. Returns `None` if `id`'s
+/// e-class holds neither a `ChainCons` nor a `ChainNil` (i.e. it is not a pure
+/// chain spine) — the caller then leaves it untouched.
+///
+/// Cycle-safe, for the same reason as [`cons_elems`]: `chain-flatten` can union a
+/// chain with its own tail, so a class can hold both a `ChainCons` and the
+/// `ChainNil`/tail it points at. The visited-set breaks that loop and returns the
+/// elements seen so far, which is fine for the (self-guarding) callers.
+pub(crate) fn chain_elems(egraph: &EGraph<Josh, JoshAnalysis>, start: Id) -> Option<Vec<Id>> {
+    let mut out = Vec::new();
+    let mut visited = HashSet::<Id>::new();
+    let mut id = egraph.find(start);
+    loop {
+        if !visited.insert(id) {
+            break;
+        }
+        match egraph[id].nodes.iter().find_map(|n| match n {
+            Josh::ChainCons([h, t]) => Some((*h, *t)),
+            _ => None,
+        }) {
+            Some((h, t)) => {
+                out.push(egraph.find(h));
+                id = egraph.find(t);
+            }
+            None => {
+                if egraph[id].nodes.iter().any(|n| matches!(n, Josh::ChainNil)) {
+                    break;
+                }
+                return None;
+            }
+        }
+    }
+    Some(out)
+}
+
+/// Build a `ChainCons` spine of `elems` (empty -> `ChainNil`), prepending each
+/// canonical head and adding the nodes to the e-graph. The mirror of
+/// [`chain_elems`] (and the chain analogue of [`cons_fold`]).
+pub(crate) fn chain_fold(egraph: &mut EGraph<Josh, JoshAnalysis>, elems: &[Id]) -> Id {
+    let mut tail = egraph.add(Josh::ChainNil);
+    for &h in elems.iter().rev() {
+        tail = egraph.add(Josh::ChainCons([egraph.find(h), tail]));
+    }
+    tail
+}
+
+/// Build a canonical `Compose` operand from an element list: empty becomes the
+/// `empty` atom (`Op::Empty`, the Compose identity), a singleton becomes the bare
+/// element, otherwise a `Cons`/`Nil` spine. Construction-time canonicalization
+/// keeps `AstSize` ties out of the e-graph — a bare element costs less than
+/// `Cons(x, Nil)`, so without this the extractor could pick the wrapped form and
+/// leave a redundant node. Shared by the appliers that build a `Compose`.
+pub(crate) fn compose_of(egraph: &mut EGraph<Josh, JoshAnalysis>, elems: &[Id]) -> Id {
+    match elems.len() {
+        0 => egraph.add(Josh::Symbol(Symbol::from("empty"))),
+        1 => egraph.find(elems[0]),
+        _ => cons_fold(egraph, elems),
+    }
+}
+
 /// Encode a leaf `Op` as an opaque atom symbol. Returns `None` for any `Op`
 /// variant (or payload) the egg language does not model, which makes `build`
 /// bail out and `egg_optimize` fall back to the identity filter.
