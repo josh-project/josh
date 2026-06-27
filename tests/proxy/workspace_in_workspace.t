@@ -333,6 +333,8 @@
   |   |   |   `-- 5eaa207c7aba64f4deb19a9acd060c254fb239
   |   |   |-- info
   |   |   `-- pack
+  |   |       |-- pack-13320804b802e9d71c80cb7a37ba8a1b65570969.idx
+  |   |       `-- pack-13320804b802e9d71c80cb7a37ba8a1b65570969.pack
   |   `-- refs
   |       |-- heads
   |       |-- josh
@@ -395,5 +397,5 @@
           |-- namespaces
           `-- tags
   
-  76 directories, 75 files
+  76 directories, 77 files
 
