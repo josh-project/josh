@@ -85,7 +85,9 @@ where
         };
 
         let extensions = span.extensions();
-        let fields = extensions.get::<Fields>().and_then(|fields| fields.0.as_deref());
+        let fields = extensions
+            .get::<Fields>()
+            .and_then(|fields| fields.0.as_deref());
 
         match fields {
             Some(fields) => eprintln!("[{}] {:.2?} {}", span.name(), elapsed, fields),
