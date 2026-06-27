@@ -2941,8 +2941,10 @@ version = "26.6.11"
 dependencies = [
  "anyhow",
  "chrono",
+ "clap",
  "git2",
  "josh-core",
+ "log",
  "serde",
  "serde_json",
 ]
@@ -3133,9 +3135,15 @@ dependencies = [
  "anyhow",
  "git2",
  "josh-changes",
+ "josh-core",
+ "josh-github-auth",
  "josh-github-graphql",
+ "josh-github-keyring",
  "josh-github-webhooks",
+ "reqwest 0.13.2",
+ "reqwest-middleware",
  "serde_json",
+ "tokio",
  "url",
 ]
 
