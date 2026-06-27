@@ -101,6 +101,9 @@ fn app() -> Element {
 
     let on_keydown = move |evt: dioxus::events::KeyboardEvent| {
         use dioxus::prelude::Key;
+        if !matches!(&*page.read(), Page::List) {
+            return;
+        }
         let is_nav = match evt.key() {
             Key::ArrowDown | Key::ArrowUp => true,
             Key::Character(ref c) => c == "j" || c == "k",
