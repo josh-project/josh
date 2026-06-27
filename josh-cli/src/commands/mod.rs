@@ -5,4 +5,5 @@ pub mod comment;
 pub mod link;
 pub mod push;
 pub mod run;
+pub mod scope;
 pub mod sync;
