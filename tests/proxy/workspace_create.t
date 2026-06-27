@@ -560,193 +560,58 @@ Note that ws/d/ is now present in the ws
       |-- info
       |   `-- exclude
       |-- objects
-      |   |-- 00
-      |   |   `-- 3a2970e4c23b64f915025e9adc2e6ed04bc63a
-      |   |-- 02
-      |   |   `-- 668d7af968c8eed910db7539a57b18dd62a50e
       |   |-- 04
       |   |   `-- 28323b9901ac5959af01b8686b2524c671adc1
-      |   |-- 07
-      |   |   `-- f825fbedafa02f2e5158e69bc25250113b0b64
-      |   |-- 09
-      |   |   `-- b613e901acc0b5e4279ec6732261134a06f667
-      |   |-- 0c
-      |   |   `-- d4309cc22b5903503a7196f49c24cf358a578a
-      |   |-- 10
-      |   |   `-- 8eb9a1d2082ac57860d2358d445156e35558a9
-      |   |-- 13
-      |   |   `-- 10813ea4e1d46c4c5c59bfdaf97a6de3b24c31
-      |   |-- 14
-      |   |   |-- 1a3bdf0a2739ded6e233ababff0cd490fd0c56
-      |   |   `-- da1560586adda328cca1fbf58c026d6730444f
-      |   |-- 17
-      |   |   `-- ac72002199728c133087acfa6b23009e00a52a
-      |   |-- 19
-      |   |   `-- b9637ac9437ea11d42632cd65ca2313952c32f
       |   |-- 1b
       |   |   `-- 46698f32d1d1db1eaeb34f8c9037778d65f3a9
-      |   |-- 20
-      |   |   `-- 189c97a0ef53368b7ec335baa7a1b86bd76f8e
-      |   |-- 23
-      |   |   `-- d20398ffe09015ada5794763b97c750b61bdc4
-      |   |-- 27
-      |   |   `-- d0eee16bdbe4a1ade0ebf877f97467de3b218e
-      |   |-- 2a
-      |   |   |-- 03ad0fe1720ee0afc95ba8e1bc38a35b87983f
-      |   |   |-- 3e798288165d5b090a10460984776489bcc7cc
-      |   |   `-- 6aa2a100b34d0d56e4b5f19e9bfdc2cd6f7d54
-      |   |-- 2c
-      |   |   |-- 50404f5c69295bd3d4d0cb5475be9cc2aada23
-      |   |   `-- 913262d99f8cd15ea711a89e943cd902fb87a0
-      |   |-- 2d
-      |   |   `-- 1906dd31141f2fbab6485ccd34bbd1ea440464
       |   |-- 2f
       |   |   `-- 10c52e8ac3117e818b2b8a527c03d9345104c3
-      |   |-- 30
-      |   |   `-- 48804b01e298df4a6e1bc60a1e3b2ca0b016bd
-      |   |-- 36
-      |   |   `-- 52f9baa44258d0f505314830ad37d16eafc981
-      |   |-- 39
-      |   |   `-- abfc68c47fd430cd9775fc18c9f93bc391052e
-      |   |-- 3a
-      |   |   `-- 748f0be2a5670c0c282196d3a66620e8599ee5
       |   |-- 40
       |   |   `-- c389b6b248e13f3cb88dcd79467d7396a4489e
-      |   |-- 42
-      |   |   `-- 8f5d5c5a3ce27a5d9f513c1a051a18a4266528
-      |   |-- 43
-      |   |   `-- 52611a9e7c56dfdfeadec043ced6d6ef7a5c33
-      |   |-- 46
-      |   |   `-- bc1eabe4b2029b9fcb661f0d447d8389d17337
-      |   |-- 47
-      |   |   `-- 8644b35118f1d733b14cafb04c51e5b6579243
-      |   |-- 4b
-      |   |   |-- 6c1f65548a50c9ee26e3aec66946b48e65d08f
-      |   |   `-- 825dc642cb6eb9a060e54bf8d69288fbee4904
-      |   |-- 4c
-      |   |   `-- a9fbf65ee12663ac24db4be4cab10e53d6d6e7
-      |   |-- 5b
-      |   |   `-- 560252b0c3c6abc5e0327596a49efb15e494cb
-      |   |-- 5e
-      |   |   |-- 34ec2fa3c3188874f0a6b12ddf76a167df4229
-      |   |   `-- 9213824faf1eb95d0c522329518489196374fd
-      |   |-- 60
-      |   |   `-- bd0e180735e169b5c853545d8b1272ed0fc319
-      |   |-- 64
-      |   |   `-- d1f8d32b274d8c1eeb69891931f52b6ade9417
-      |   |-- 6d
-      |   |   `-- 4b5c23a94a89c7f26266ccf635647fd4002b19
-      |   |-- 70
-      |   |   `-- eb05d32223342a549cfb00c20b1464bf1b9513
-      |   |-- 71
-      |   |   `-- fb4611471b5f67b815e54590ca24224d4f8786
       |   |-- 75
       |   |   `-- 1ecd943cf17e1530017a1db8006771d6c5c4d4
-      |   |-- 78
-      |   |   `-- 2f6261fa32f8bfec7b89f77bb5cce40c4611cb
-      |   |-- 7c
-      |   |   `-- 30b7adfa79351301a11882adf49f438ec294f8
-      |   |-- 7f
-      |   |   |-- 39c7601f2c1ca44fdc9237efa34f2887daa2b4
-      |   |   `-- c8ee5474068055f7740240dfce6fa6e38bbf4d
       |   |-- 82
-      |   |   |-- 4c0e846b41e1eb9f95d141b47bbb9ff9baef17
-      |   |   `-- 678b3bcd868634f36ad4ec719cca378028dfa4
-      |   |-- 87
-      |   |   `-- 7af85c0624835da58fe4b2fa9a259a44213acf
-      |   |-- 8c
-      |   |   |-- 4e94969f16bfec56af4b29c1a20e732401ed32
-      |   |   `-- c4bb045e98da7cf00714d91ac77c7ea7e08b63
-      |   |-- 93
-      |   |   `-- f66d258b7b4c3757e63f985b08f7daa33db64e
+      |   |   `-- 4c0e846b41e1eb9f95d141b47bbb9ff9baef17
       |   |-- 95
       |   |   `-- 19a72b0b8d581a4e859d412cfe9c2689acac53
-      |   |-- 98
-      |   |   `-- 84cc2efe368ea0aa9d912fa596b26c5d75dbee
-      |   |-- 99
-      |   |   `-- acd82fe2a9b89022d1aee5a580c123a8161f4a
-      |   |-- 9d
-      |   |   `-- e3bbb26e2b40f02ca8de195933eb620bbf0b6a
-      |   |-- 9e
-      |   |   `-- 4d2bcaee240904058a6160e84311667b409b08
-      |   |-- 9f
-      |   |   `-- 8daab1754f04fbe8aaac6fcbb44c8324df09eb
-      |   |-- a1
-      |   |   |-- 1e8a91058875f157ca1246bdc403b88e93cd94
-      |   |   |-- 269dc50ffcdc1b87664a061926bf9a072a3456
-      |   |   |-- a7760c60ac08ecdcac395823637989a4d681a6
-      |   |   `-- c31372c5de4fb705ffdcbf5a4ec5c5103231d9
-      |   |-- b1
-      |   |   `-- c3c9b731fea98c82ce8e9286e213fcb033f70d
-      |   |-- b2
-      |   |   `-- 7fe8d094037d5b5b911893496bb2ee0f40d820
-      |   |-- b7
-      |   |   `-- bb51e63095336302e4f6b0eead63cb716eb630
       |   |-- b8
       |   |   `-- 012aab20a6c6a0c2dc3b428d3578aadc9c527f
-      |   |-- b9
-      |   |   `-- 90567474f1f8af9784478614483684e88ccf4f
-      |   |-- ba
-      |   |   `-- f9dcf1394d5152de67b115f55f25e4dc0a2398
       |   |-- bc
       |   |   `-- 665856e841c4ae4a956483dc57b2ea4cc20116
-      |   |-- bf
-      |   |   `-- 7841c0db704465dda4b387d5da09694647d188
-      |   |-- c1
-      |   |   `-- 489fc8fd6ae9ac08c0168d7cabaf5645b922fa
-      |   |-- c2
-      |   |   `-- d86319b61f31a7f4f1bc89b8ea4356b60c4658
-      |   |-- d3
-      |   |   `-- d2a4d6db7addc2b087dcdb3e63785d3315c00e
       |   |-- d6
       |   |   `-- 81a08f543313f2a8bd86fab920e2271d0403d1
       |   |-- d7
-      |   |   |-- 330ea337031af43ba1cf6982a873a40b9170ac
-      |   |   `-- e36a04a3c59c966815fae6db6fe5d518a3456a
-      |   |-- d9
-      |   |   `-- a323ee316cda6f241fcc35cbd29d4a882aa45e
-      |   |-- da
-      |   |   `-- af0560e4e779353311a9039b31ea4f0f1dec37
-      |   |-- e1
-      |   |   |-- 0bf0281a70e6b19939ad6e26e10252bbebe300
-      |   |   `-- 25e6d9f8f9acca5ffd25ee3c97d09748ad2a8b
-      |   |-- e4
-      |   |   `-- a5e5c828510a51aacfdb9e38cea9440d8882ec
-      |   |-- e7
-      |   |   `-- cee3592aaac624fd48c258daa5d62d17352043
-      |   |-- e9
-      |   |   `-- 9a2c69c0fb10af8dd1524e7f976df3d898f6ac
-      |   |-- ea
-      |   |   `-- 1ae75547e348b07cb28a721a06ef6580ff67f0
-      |   |-- ec
-      |   |   `-- 4f59ca1a0ac5b2f375d4917dbba5e6aedff12a
-      |   |-- ee
-      |   |   `-- b52a9c8fe143baf970160aa4716ff5c019d8cb
-      |   |-- f0
-      |   |   `-- e6089346823559463c115a65180fef59299ae4
-      |   |-- f1
-      |   |   `-- f2c1bd855237608d4293f1ee98fee640e78405
+      |   |   `-- 330ea337031af43ba1cf6982a873a40b9170ac
       |   |-- f2
-      |   |   |-- 257977b96d2272be155d6699046148e477e9fb
-      |   |   `-- 7e0d18d976fd84da0a9e260989ecb6edaa593f
-      |   |-- f5
-      |   |   `-- d0c4d5fe3173ba8ca39fc198658487eaab8014
+      |   |   `-- 257977b96d2272be155d6699046148e477e9fb
       |   |-- f6
       |   |   |-- 3dd93419493d22aeaf6bcb5c0bec4c2701b049
       |   |   `-- 7e3cdbde0a4bc95d09a1344d2d1f163b5aa172
-      |   |-- f7
-      |   |   `-- 35d04266733d64d2f49ab23a183a5207e8961d
       |   |-- f8
       |   |   `-- 5eaa207c7aba64f4deb19a9acd060c254fb239
-      |   |-- fd
-      |   |   `-- 2bc852c86f084dd411054c9c297b05ccf76427
       |   |-- info
       |   `-- pack
+      |       |-- pack-035feff92861c255244681ddc84b90e321ec6b35.idx
+      |       |-- pack-035feff92861c255244681ddc84b90e321ec6b35.pack
+      |       |-- pack-0a5087aa14c50693a3d73b25e94466c4b21c7d30.idx
+      |       |-- pack-0a5087aa14c50693a3d73b25e94466c4b21c7d30.pack
+      |       |-- pack-132b596594e7cf7bc3af1b2c7a24fdf62d759469.idx
+      |       |-- pack-132b596594e7cf7bc3af1b2c7a24fdf62d759469.pack
+      |       |-- pack-369060c82a79aba08c50857e8818b02e9fb2578f.idx
+      |       |-- pack-369060c82a79aba08c50857e8818b02e9fb2578f.pack
+      |       |-- pack-56434dd1073324f0c25f881a1c87eff63af5c27e.idx
+      |       |-- pack-56434dd1073324f0c25f881a1c87eff63af5c27e.pack
+      |       |-- pack-7014dc333fab5e96e9d4838c01b668dbd434774b.idx
+      |       |-- pack-7014dc333fab5e96e9d4838c01b668dbd434774b.pack
+      |       |-- pack-721a5e2fcf4ed965e49124b30f161a6faead2313.idx
+      |       |-- pack-721a5e2fcf4ed965e49124b30f161a6faead2313.pack
+      |       |-- pack-ac69f084a822e26e92fcd950197630c5d06a5ddf.idx
+      |       `-- pack-ac69f084a822e26e92fcd950197630c5d06a5ddf.pack
       `-- refs
           |-- heads
           |-- namespaces
           `-- tags
   
-  152 directories, 154 files
+  84 directories, 87 files
 
 $ cat ${TESTTMP}/josh-proxy.out

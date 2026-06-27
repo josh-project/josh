@@ -134,30 +134,26 @@ Flushed credential cache
       |-- info
       |   `-- exclude
       |-- objects
-      |   |-- 0b
-      |   |   `-- 4cf6c9efbbda1eada39fa9c1d21d2525b027bb
-      |   |-- 17
-      |   |   `-- d81bc99ff2b4a426c236dc1a36f7a2d1027c7b
       |   |-- 1c
       |   |   `-- b5d64cdb55e3db2a8d6f00d596572b4cfa9d5c
-      |   |-- 1d
-      |   |   `-- 9470cf784c751ec8cc3556d50737a7de1f5262
-      |   |-- 89
-      |   |   `-- 52f96884e0ee453406177bebbf4f74a8a8d1be
       |   |-- ad
       |   |   `-- f650cd06e5434fe6deff7639b04c802d63fa5a
       |   |-- b2
       |   |   `-- 6a812a71a431e71d30949f25013ca63f8493c3
-      |   |-- d8
-      |   |   `-- 388f5880393d255b371f1ed9b801d35620017e
       |   |-- info
       |   `-- pack
+      |       |-- pack-2f3daab2c2bc0fa3c2cb94022cd73dbeb79fba8b.idx
+      |       |-- pack-2f3daab2c2bc0fa3c2cb94022cd73dbeb79fba8b.pack
+      |       |-- pack-43b004c57a05484b0057ece370e309a1528a2995.idx
+      |       |-- pack-43b004c57a05484b0057ece370e309a1528a2995.pack
+      |       |-- pack-a724713a58e1918b9032aed364764a0a4cece84b.idx
+      |       `-- pack-a724713a58e1918b9032aed364764a0a4cece84b.pack
       `-- refs
           |-- heads
           |-- namespaces
           `-- tags
   
-  44 directories, 29 files
+  39 directories, 30 files
 
   $ cat ${TESTTMP}/josh-proxy.out | grep graph_descendant_of
   [1]

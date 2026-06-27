@@ -99,26 +99,22 @@
       |-- objects
       |   |-- 0f
       |   |   `-- 17ab2c89a1278ecb6a7438e915e491884d3efb
-      |   |-- 1d
-      |   |   `-- 9470cf784c751ec8cc3556d50737a7de1f5262
-      |   |-- 1f
-      |   |   `-- 0b9d8a7b40a35bb4ff64ffc0f08369df23bc61
       |   |-- 55
       |   |   `-- 4b59f0a39f6968f0101b8a0471f8a65bc25020
       |   |-- 6b
       |   |   `-- 46faacade805991bcaea19382c9d941828ce80
-      |   |-- b5
-      |   |   `-- af4d1258141efaadc32e369f4dc4b1f6c524e4
-      |   |-- b7
-      |   |   `-- cf821182baff3432190af3ae2f1029d8e7ceb0
       |   |-- f9
       |   |   `-- 9a2dde698e6d3fc31cbeedea6d0204399f90ce
       |   |-- info
       |   `-- pack
+      |       |-- pack-a279587d75bc5b34c2c0e6a68a19e7f155e1eb54.idx
+      |       |-- pack-a279587d75bc5b34c2c0e6a68a19e7f155e1eb54.pack
+      |       |-- pack-e9cffc2f019d87d49415e5fc30cb50630fe29846.idx
+      |       `-- pack-e9cffc2f019d87d49415e5fc30cb50630fe29846.pack
       `-- refs
           |-- heads
           |-- namespaces
           `-- tags
   
-  40 directories, 25 files
+  36 directories, 25 files
 

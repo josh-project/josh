@@ -239,51 +239,36 @@ Make sure all temporary namespace got removed
       |-- info
       |   `-- exclude
       |-- objects
-      |   |-- 0b
-      |   |   `-- 4cf6c9efbbda1eada39fa9c1d21d2525b027bb
       |   |-- 11
       |   |   `-- 06a6f09b169109f5ebd17428219142c67e84b9
-      |   |-- 1d
-      |   |   `-- 9470cf784c751ec8cc3556d50737a7de1f5262
-      |   |-- 24
-      |   |   `-- 4c0b793d0e21897e97d9898256f14734726faa
-      |   |-- 2b
-      |   |   `-- b94719cad2e76eb5dbcae874a2b0e44521e802
       |   |-- 40
       |   |   `-- 3e13a101fd75090369ffc317afafcfb646c576
       |   |-- 4b
       |   |   `-- 5ffb79a1f3852443bd747a6b213bf1e4abe168
-      |   |-- 53
-      |   |   `-- c45e312d8ea6082a7b3b8e738d367bf9349c53
       |   |-- 6b
       |   |   `-- 46faacade805991bcaea19382c9d941828ce80
-      |   |-- 88
-      |   |   `-- 2b84c5d3241087bc41982a744b72b7a174c49e
-      |   |-- a2
-      |   |   `-- 8c68e091a9e9d04c154061018f168f7096caa9
-      |   |-- a3
-      |   |   `-- 065162ecee0fecc977ec04a275e10b5e15a39c
-      |   |-- a7
-      |   |   `-- 3c840b29576d95d87cfe9c39afc3853c2af820
-      |   |-- b2
-      |   |   `-- ea883bc5df63565960a38cad7a57f73ac66eaa
       |   |-- ba
-      |   |   |-- 7e17233d9f79c96cb694959eb065302acd96a6
       |   |   `-- c8af20b53d712874a32944874c66a21afa91f9
       |   |-- be
       |   |   `-- 33ab805ad4ef7ddda5b51e4a78ec0fac6b699a
       |   |-- c6
       |   |   `-- 27a2e3a6bfbb7307f522ad94fdfc8c20b92967
-      |   |-- e3
-      |   |   `-- a269743538338b0d059eda2f72976ec29220a8
       |   |-- info
       |   `-- pack
+      |       |-- pack-2f3daab2c2bc0fa3c2cb94022cd73dbeb79fba8b.idx
+      |       |-- pack-2f3daab2c2bc0fa3c2cb94022cd73dbeb79fba8b.pack
+      |       |-- pack-718676b296aa09fce4d6d811a3d7543ec8803d1e.idx
+      |       |-- pack-718676b296aa09fce4d6d811a3d7543ec8803d1e.pack
+      |       |-- pack-8ba16953737b1eddb48842059c6fea9cae77170f.idx
+      |       |-- pack-8ba16953737b1eddb48842059c6fea9cae77170f.pack
+      |       |-- pack-e64aa37e31e3b3b41104754707ae8b326ce1b30b.idx
+      |       `-- pack-e64aa37e31e3b3b41104754707ae8b326ce1b30b.pack
       `-- refs
           |-- heads
           |-- namespaces
           `-- tags
   
-  75 directories, 59 files
+  64 directories, 55 files
 
 $ cat ${TESTTMP}/josh-proxy.out
 $ cat ${TESTTMP}/josh-proxy.out | grep REPO_UPDATE

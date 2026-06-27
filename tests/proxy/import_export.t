@@ -395,45 +395,25 @@ Flushed credential cache
       |-- info
       |   `-- exclude
       |-- objects
-      |   |-- 31
-      |   |   `-- c287b0dca7d1ae668b175ba5fee1e010e5cb68
-      |   |-- 50
-      |   |   `-- f9324abab8bcfcf9ef3b86c4c9b81a258e4c8f
-      |   |-- 5d
-      |   |   `-- 98d297b3b16d5946dada2496accc9f99dc7056
-      |   |-- 6e
-      |   |   `-- 9a62b40f85b0952ea06023a8ee1fb99685e6f7
-      |   |-- 6f
-      |   |   `-- e45a9254eb9dd78951a804fa94a035a937ef0b
-      |   |-- 70
-      |   |   `-- 574c42095b00b4a0757af989a9211bd2c95c91
-      |   |-- 71
-      |   |   `-- 28ce7713fc45163e65c7ac4a9057ed1913a569
-      |   |-- 80
-      |   |   `-- 472110df082d0a921ecdcd6f0dd0021f48e019
-      |   |-- 85
-      |   |   `-- c3ce1926696ef4bdf2eff358bd83b079dcc8d4
-      |   |-- 92
-      |   |   `-- b32c39e590a35edb6c1b12dc8919da56869fe5
-      |   |-- 9c
-      |   |   `-- b7c3c14c5c084f6a6897b6e6bab231fae98ae5
-      |   |-- b1
-      |   |   `-- 5fcd0ea97c1755068288984cd9b4ec57ae02b4
-      |   |-- c4
-      |   |   `-- df336cf6578b6dac651a33fd265d92308c0e39
-      |   |-- e5
-      |   |   `-- 2c4e8d6c1f4960b92676424944ff3951f472aa
-      |   |-- ef
-      |   |   `-- 7e2202b63572aa95b06cda4f844fe8f83c2673
-      |   |-- f2
-      |   |   `-- 099eb4510f85688a21ce5fc3992ca4274a837b
-      |   |-- f9
-      |   |   `-- 97320406328b16277aca038db747cf60232267
       |   |-- info
       |   `-- pack
+      |       |-- pack-57aa405783926aecf0c4757c6c3a5705b9dcd606.idx
+      |       |-- pack-57aa405783926aecf0c4757c6c3a5705b9dcd606.pack
+      |       |-- pack-b3d0761cbb7d1687ce01bf427a8ee074404d8ad4.idx
+      |       |-- pack-b3d0761cbb7d1687ce01bf427a8ee074404d8ad4.pack
+      |       |-- pack-bd386714b9845c1d6f993b21c968c3189cb6c55f.idx
+      |       |-- pack-bd386714b9845c1d6f993b21c968c3189cb6c55f.pack
+      |       |-- pack-c3e5e7fe561eafbfd5bf726f4fe20f4e2b9966f1.idx
+      |       |-- pack-c3e5e7fe561eafbfd5bf726f4fe20f4e2b9966f1.pack
+      |       |-- pack-e32a11fa9491d13e1eef03a02a01717ffb893017.idx
+      |       |-- pack-e32a11fa9491d13e1eef03a02a01717ffb893017.pack
+      |       |-- pack-e8f089f082f050a67498a1702a9ef72c15b32be7.idx
+      |       |-- pack-e8f089f082f050a67498a1702a9ef72c15b32be7.pack
+      |       |-- pack-ed8851c038e9b9a76ee1cb84a7c6b1a23d6b4f26.idx
+      |       `-- pack-ed8851c038e9b9a76ee1cb84a7c6b1a23d6b4f26.pack
       `-- refs
           |-- heads
           |-- namespaces
           `-- tags
   
-  75 directories, 61 files
+  58 directories, 58 files

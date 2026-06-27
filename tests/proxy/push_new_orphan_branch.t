@@ -185,46 +185,33 @@ Make sure all temporary namespace got removed
       |-- info
       |   `-- exclude
       |-- objects
-      |   |-- 0b
-      |   |   `-- 4cf6c9efbbda1eada39fa9c1d21d2525b027bb
-      |   |-- 1d
-      |   |   `-- 9470cf784c751ec8cc3556d50737a7de1f5262
-      |   |-- 4b
-      |   |   `-- 825dc642cb6eb9a060e54bf8d69288fbee4904
       |   |-- 6b
       |   |   `-- 46faacade805991bcaea19382c9d941828ce80
-      |   |-- 81
-      |   |   `-- b10fb4984d20142cd275b89c91c346e536876a
       |   |-- a4
       |   |   `-- ae8248b2e96725156258b90ced9e841dfd20d1
-      |   |-- b1
-      |   |   `-- d5238086b7f07024d8ed47360e3ce161d9b288
       |   |-- b9
       |   |   `-- 60d4fb2014cdabe5caa60b6e3bf8e3f1ee5a05
-      |   |-- ba
-      |   |   `-- 7e17233d9f79c96cb694959eb065302acd96a6
       |   |-- c2
       |   |   `-- 1c9352f7526e9576892a6631e0e8cf1fccd34d
-      |   |-- c4
-      |   |   `-- 8e30c7eeafdc8b5e6a103f26367c973b2c4df9
       |   |-- c6
       |   |   `-- 27a2e3a6bfbb7307f522ad94fdfc8c20b92967
-      |   |-- cb
-      |   |   `-- b66c35294ac2d5ba60420854a3a50ca4c88887
       |   |-- d8
-      |   |   |-- 388f5880393d255b371f1ed9b801d35620017e
-      |   |   `-- 43530e8283da7185faac160347db5c70ef4e18
+      |   |   `-- 388f5880393d255b371f1ed9b801d35620017e
       |   |-- df
       |   |   `-- b06d7748772bdd407c5911c0ba02b0f5fb31a4
-      |   |-- e6
-      |   |   `-- 1d37de15923090979cf667263aefa07f78cc33
       |   |-- info
       |   `-- pack
+      |       |-- pack-2f3daab2c2bc0fa3c2cb94022cd73dbeb79fba8b.idx
+      |       |-- pack-2f3daab2c2bc0fa3c2cb94022cd73dbeb79fba8b.pack
+      |       |-- pack-c304c61c7328041fd1afafa4b6328b746cad31b1.idx
+      |       |-- pack-c304c61c7328041fd1afafa4b6328b746cad31b1.pack
+      |       |-- pack-ed1b2e1285c87d628ed4fedf2e84338a0fa698e1.idx
+      |       `-- pack-ed1b2e1285c87d628ed4fedf2e84338a0fa698e1.pack
       `-- refs
           |-- heads
           |-- namespaces
           `-- tags
   
-  57 directories, 44 files
+  48 directories, 40 files
 
 $ cat ${TESTTMP}/josh-proxy.out

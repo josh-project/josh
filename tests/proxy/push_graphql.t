@@ -111,17 +111,13 @@
       |-- info
       |   `-- exclude
       |-- objects
-      |   |-- 1d
-      |   |   `-- 9470cf784c751ec8cc3556d50737a7de1f5262
-      |   |-- 7e
-      |   |   `-- 14e7e562164fb65d8f294303e07e915b95c5fe
-      |   |-- c9
-      |   |   `-- 0121689a90787dea0aa3be06701af6c66c3e20
       |   |-- info
       |   `-- pack
+      |       |-- pack-f365fdaf48fb6dfec6ed88c79867abe37a55162b.idx
+      |       `-- pack-f365fdaf48fb6dfec6ed88c79867abe37a55162b.pack
       `-- refs
           |-- heads
           `-- tags
   
-  34 directories, 21 files
+  31 directories, 20 files
 

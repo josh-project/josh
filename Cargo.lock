@@ -3029,6 +3029,7 @@ dependencies = [
  "josh-filter",
  "josh-starlark",
  "josh-test-support",
+ "libgit2-sys",
  "log",
  "percent-encoding",
  "pest",
@@ -3038,6 +3039,7 @@ dependencies = [
  "regex",
  "rs_tracing",
  "rustc-hash",
+ "scc",
  "serde",
  "serde_json",
  "serde_yaml",
@@ -4783,12 +4785,28 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9774ba4a74de5f7b1c1451ed6cd5285a32eddb5cccb8cc655a4e50009e06477f"
 
 [[package]]
+name = "saa"
+version = "5.6.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "68f5acb362a0e75c2a963532fa7fabf13dff81626dc494df16488d30befcbea0"
+
+[[package]]
 name = "same-file"
 version = "1.0.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "93fc1dc3aaa9bfed95e02e6eadabb4baf7e3078b0bd1b4d7b6b0b68378900502"
 dependencies = [
  "winapi-util",
+]
+
+[[package]]
+name = "scc"
+version = "3.8.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "97f00241b418496a76c47eb60af2477a6086521d314f35322bec8a2ebd334751"
+dependencies = [
+ "saa",
+ "sdd",
 ]
 
 [[package]]
@@ -4847,6 +4865,15 @@ name = "scopeguard"
 version = "1.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "94143f37725109f92c262ed2cf5e59bce7498c01bcc1502d7b9afe439a4e9f49"
+
+[[package]]
+name = "sdd"
+version = "4.8.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e5f0e40a01b94e35d1dacbcfbe5bfd3d31e37d9590b2e6d86a82b0e87bd4f551"
+dependencies = [
+ "saa",
+]
 
 [[package]]
 name = "secret-vault-value"

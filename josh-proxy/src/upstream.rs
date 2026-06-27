@@ -597,6 +597,9 @@ pub fn push_head_url(
     cmd.push(&push_refspec);
 
     let mut fake_head = repo.reference(&push_temp_ref, oid, true, "push_head_url")?;
+    // The unapplied commit and its objects live in the in-memory ODB backend; the external
+    // `git push` below reads them from disk, so flush first.
+    josh_core::cache::flush_objects(repo)?;
     let (stdout, stderr, status) =
         run_git_with_auth(repo.path(), &cmd, remote_auth, Some(alternate.to_owned()))?;
     fake_head.delete()?;
