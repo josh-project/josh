@@ -1,7 +1,7 @@
 use anyhow::{Context, anyhow};
 
 use josh_changes::{PushMode, PushRef, build_to_push};
-use josh_core::git::{normalize_repo_path, spawn_git_command};
+use josh_core::git::normalize_repo_path;
 
 use crate::config::{RemoteConfig, read_remote_config};
 use crate::forge::Forge;
@@ -235,9 +235,9 @@ fn prepare_push(
 /// rather than one process per ref. This also makes `--atomic` meaningful across the whole
 /// set instead of applying to a single ref at a time.
 fn push_refs(
+    transaction: &josh_core::cache::Transaction,
     remote_name: &str,
     to_push: &[PushRef],
-    repo_path: &std::path::Path,
     url: &str,
     force: bool,
     atomic: bool,
@@ -276,7 +276,8 @@ fn push_refs(
         .collect();
     git_push_args.extend(refspecs.iter().map(String::as_str));
 
-    spawn_git_command(repo_path, &git_push_args, &[])
+    transaction
+        .spawn_git(&git_push_args, &[])
         .with_context(|| format!("Failed to push to {}", remote_name))?;
 
     eprintln!("Pushed {} ref(s) to {}", to_push.len(), remote_name);
@@ -385,9 +386,9 @@ fn orchestrate_push(
 
     // Phase 3: Execute the side effects.
     push_refs(
+        transaction,
         remote_name,
         &to_push,
-        repo.path(),
         &url,
         force,
         atomic,

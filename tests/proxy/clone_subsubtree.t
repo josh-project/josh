@@ -136,19 +136,15 @@
       |-- info
       |   `-- exclude
       |-- objects
-      |   |-- 0b
-      |   |   `-- 4cf6c9efbbda1eada39fa9c1d21d2525b027bb
-      |   |-- 55
-      |   |   `-- 279561e012bf3a8946e23cf16c909e8eb7a5f9
-      |   |-- b0
-      |   |   `-- 4a61a938114efbb60395f72e5904fc42eb123a
-      |   |-- ea
-      |   |   `-- 7beb7786b5dbadf54412f90d4e729f41f26c00
       |   |-- info
       |   `-- pack
+      |       |-- pack-442b8fb8b28a9e4db96c2918ac2b58a1f786beb1.idx
+      |       |-- pack-442b8fb8b28a9e4db96c2918ac2b58a1f786beb1.pack
+      |       |-- pack-dc6413149cc84a39b1f6795b6f032a4d391a2e9e.idx
+      |       `-- pack-dc6413149cc84a39b1f6795b6f032a4d391a2e9e.pack
       `-- refs
           |-- heads
           |-- namespaces
           `-- tags
   
-  40 directories, 25 files
+  36 directories, 25 files

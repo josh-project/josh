@@ -1,6 +1,5 @@
 pub mod filter;
 pub mod flang;
-pub mod hash;
 pub mod op;
 pub mod opt;
 pub mod persist;

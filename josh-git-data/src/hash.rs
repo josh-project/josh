@@ -1,10 +1,12 @@
 use std::hash::Hasher;
 use std::mem::size_of;
 
-/// A hasher that uses an already-uniform key directly as the hash value, avoiding
-/// double-hashing. Two key shapes are supported: the first 8 bytes of a 20-byte SHA1
-/// (e.g. an `Oid` key) via `write`, or a single pointer-sized integer (e.g. an interned
-/// `Filter` node pointer) via `write_usize`.
+/// A hasher that uses an already-uniform key directly as the hash value, avoiding double-hashing.
+///
+/// Two key shapes are supported: the first 8 bytes of a 20-byte SHA1 (e.g. a git `Oid` key) via
+/// [`write`](Hasher::write), or a single pointer-sized integer (e.g. an interned handle) via
+/// [`write_usize`](Hasher::write_usize). Anything else panics: the hasher assumes its input is
+/// already a cryptographic digest or a unique integer, so mixing it further would be wasted work.
 #[derive(Default)]
 pub struct PassthroughHasher {
     buffer: [u8; 8],
@@ -20,7 +22,7 @@ impl Hasher for PassthroughHasher {
         u64::from_le_bytes(self.buffer)
     }
 
-    // Used for interned `Filter` keys, whose hash is just the node pointer.
+    // Used for keys whose hash is the value itself, e.g. an interned pointer.
     fn write_usize(&mut self, i: usize) {
         if self.done {
             panic!("hasher data already written");

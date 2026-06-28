@@ -4,10 +4,10 @@
  */
 
 use crate::filter::Filter;
-use crate::hash::PassthroughHasher;
 use crate::op::Op;
 use crate::persist::{peel_op_ref, to_filter, to_op, to_op_ref};
 use anyhow::anyhow;
+use josh_git_data::PassthroughHasher;
 use std::cmp::Ordering;
 use std::collections::{HashMap, HashSet};
 use std::hash::BuildHasherDefault;

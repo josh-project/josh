@@ -134,7 +134,8 @@ fn handle_link_add(
             normalized_path
         );
 
-        josh_core::git::spawn_git_command(repo.path(), &["fetch", &args.url, target], &[])
+        transaction
+            .spawn_git(&["fetch", &args.url, target], &[])
             .context("Failed to execute git fetch")?;
 
         let fetched_oid = repo
@@ -240,7 +241,8 @@ fn handle_link_fetch(
 
         eprintln!("Fetching {} from {}", link_ref.commit, link_ref.remote);
 
-        josh_core::git::spawn_git_command(repo.path(), &["fetch", &link_ref.remote, &refspec], &[])
+        transaction
+            .spawn_git(&["fetch", &link_ref.remote, &refspec], &[])
             .with_context(|| {
                 format!(
                     "git fetch of {} from {} failed",
@@ -315,7 +317,8 @@ fn handle_link_update(
 
         eprintln!("Fetching {} from {}", branch, remote);
 
-        josh_core::git::spawn_git_command(repo.path(), &["fetch", &remote, &branch], &[])
+        transaction
+            .spawn_git(&["fetch", &remote, &branch], &[])
             .with_context(|| format!("git fetch failed for '{}'", path.display()))?;
 
         let new_oid = repo
@@ -419,7 +422,8 @@ fn handle_link_push(
         push_ref
     );
 
-    josh_core::git::spawn_git_command(repo.path(), &["push", &remote, &refspec], &[])
+    transaction
+        .spawn_git(&["push", &remote, &refspec], &[])
         .with_context(|| format!("Failed to push to '{}'", remote))?;
 
     Ok(())

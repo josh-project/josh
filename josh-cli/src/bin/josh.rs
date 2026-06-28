@@ -250,10 +250,17 @@ fn run_repo(cmd: &RepoCommand) -> anyhow::Result<()> {
             ),
     );
 
-    // Create transaction using the known repo path
-    let transaction = josh_core::cache::TransactionContext::new(&repo_path, cache.clone())
-        .open(None)
-        .context("Failed TransactionContext::open")?;
+    let mut ctx = josh_core::cache::TransactionContext::new(&repo_path, cache.clone());
+
+    // For compose, we don't need to flush the objects to disk;
+    // everything else gets mem odb setup with an upper flush limit
+    if matches!(cmd, RepoCommand::Compose(_)) {
+        ctx = ctx.ephemeral();
+    } else {
+        ctx = ctx.with_mem_odb_limit(josh_cli::MAX_MEM_PACK_SIZE)
+    }
+
+    let transaction = ctx.open().context("Failed TransactionContext::open")?;
 
     match cmd {
         RepoCommand::Clone(args) => handle_clone(args, &transaction),
@@ -370,30 +377,30 @@ fn handle_clone(
         args.branch.clone()
     };
 
-    spawn_git_command(
-        repo.path(),
-        &[
-            "checkout",
-            "-b",
-            &default_branch,
-            &format!("origin/{}", default_branch),
-        ],
-        &[],
-    )
-    .with_context(|| format!("Failed to checkout branch {}", default_branch))?;
+    transaction
+        .spawn_git(
+            &[
+                "checkout",
+                "-b",
+                &default_branch,
+                &format!("origin/{}", default_branch),
+            ],
+            &[],
+        )
+        .with_context(|| format!("Failed to checkout branch {}", default_branch))?;
 
     // Set up upstream tracking for the branch
-    spawn_git_command(
-        repo.path(),
-        &[
-            "branch",
-            "--set-upstream-to",
-            &format!("origin/{}", default_branch),
-            &default_branch,
-        ],
-        &[],
-    )
-    .with_context(|| format!("Failed to set upstream for branch {}", default_branch))?;
+    transaction
+        .spawn_git(
+            &[
+                "branch",
+                "--set-upstream-to",
+                &format!("origin/{}", default_branch),
+                &default_branch,
+            ],
+            &[],
+        )
+        .with_context(|| format!("Failed to set upstream for branch {}", default_branch))?;
 
     let output_dir = normalize_repo_path(repo.path());
     let output_dir = output_dir.display().to_string();
@@ -409,8 +416,6 @@ fn handle_clone(
 }
 
 fn handle_pull(args: &PullArgs, transaction: &josh_core::cache::Transaction) -> anyhow::Result<()> {
-    let repo = transaction.repo();
-
     // Create FetchArgs from PullArgs
     let fetch_args = FetchArgs {
         remote: args.remote.clone(),
@@ -433,7 +438,9 @@ fn handle_pull(args: &PullArgs, transaction: &josh_core::cache::Transaction) -> 
 
     git_args.push(&args.remote);
 
-    spawn_git_command(repo.path(), &git_args, &[]).context("git pull failed")?;
+    transaction
+        .spawn_git(&git_args, &[])
+        .context("git pull failed")?;
 
     eprintln!("Pulled from remote: {}", args.remote);
 
@@ -461,12 +468,13 @@ fn handle_fetch(
         .with_context(|| format!("Failed to read remote config for '{}'", args.remote))?;
 
     // First, fetch unfiltered refs to refs/josh/remotes/*
-    spawn_git_command(repo.path(), &["fetch", &url, &ref_spec], &[])
+    transaction
+        .spawn_git(&["fetch", &url, &ref_spec], &[])
         .context("git fetch to josh/remotes failed")?;
 
     // Warm the local cache from the remote before filtering
     let filter = filter_with_meta.peel();
-    if let Err(e) = josh_cli::commands::cache::fetch_remote_cache(repo, &url, filter) {
+    if let Err(e) = josh_cli::commands::cache::fetch_remote_cache(transaction, &url, filter) {
         eprintln!("Warning: could not fetch remote cache: {e}");
     }
 
@@ -507,13 +515,7 @@ fn handle_fetch(
         "josh remote HEAD",
     )?;
 
-    josh_cli::remote_ops::apply_josh_filtering(
-        transaction,
-        &repo_path,
-        filter,
-        &args.remote,
-        &default_branch,
-    )?;
+    josh_cli::remote_ops::apply_josh_filtering(transaction, filter, &args.remote, &default_branch)?;
 
     // Note: fetch doesn't checkout, it just updates the refs
     eprintln!("Fetched from remote: {}", args.remote);
@@ -622,13 +624,7 @@ fn handle_filter(
 
     let default_branch = josh_cli::remote_ops::resolve_default_branch(repo, &args.remote)?;
 
-    josh_cli::remote_ops::apply_josh_filtering(
-        transaction,
-        &repo_path,
-        filter,
-        &args.remote,
-        &default_branch,
-    )?;
+    josh_cli::remote_ops::apply_josh_filtering(transaction, filter, &args.remote, &default_branch)?;
 
     println!(
         "Applied filter '{}' to remote '{}'",

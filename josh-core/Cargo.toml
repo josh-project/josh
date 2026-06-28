@@ -52,6 +52,7 @@ tracing.workspace = true
 toml.workspace = true
 
 josh-filter.workspace = true
+josh-git-data.workspace = true
 josh-starlark.workspace = true
 
 [dev-dependencies]

@@ -1,7 +1,6 @@
 use anyhow::Context;
 
 use josh_core::filter::{self, Filter, flatten_chain};
-use josh_core::git::{normalize_repo_path, spawn_git_command};
 
 /// Parse the symref output from `git ls-remote --symref` to extract the default branch.
 /// Returns `(branch_name, full_ref)` e.g. `("master", "refs/remotes/origin/master")`.
@@ -116,7 +115,6 @@ pub fn step_ref_prefix(step_idx: usize, steps: &[Filter]) -> String {
 /// Then runs `git fetch {remote_name}` to expose them through the configured remote.
 pub fn apply_josh_filtering(
     transaction: &josh_core::cache::Transaction,
-    repo_path: &std::path::Path,
     filter: josh_core::filter::Filter,
     remote_name: &str,
     default_branch: &str,
@@ -182,12 +180,9 @@ pub fn apply_josh_filtering(
             .context("failed to create filtered reference")?;
     }
 
-    spawn_git_command(
-        normalize_repo_path(repo_path).as_path(),
-        &["fetch", remote_name],
-        &[],
-    )
-    .context("failed to fetch filtered refs")?;
+    transaction
+        .spawn_git(&["fetch", remote_name], &[])
+        .context("failed to fetch filtered refs")?;
 
     Ok(())
 }

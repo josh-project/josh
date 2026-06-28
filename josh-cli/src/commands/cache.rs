@@ -6,7 +6,7 @@ use josh_core::cache::{
     CACHE_VERSION, CacheStack, DistributedCacheBackend, Transaction, TransactionContext,
 };
 use josh_core::filter::{self, Filter, flatten_chain, from_tree};
-use josh_core::git::{normalize_repo_path, spawn_git_command};
+use josh_core::git::normalize_repo_path;
 
 use crate::config::{RemoteConfig, read_remote_config};
 use crate::remote_ops;
@@ -150,7 +150,8 @@ fn handle_cache_build(args: &CacheBuildArgs, transaction: &Transaction) -> anyho
         DistributedCacheBackend::new(&repo_path).context("Failed to open distributed cache")?,
     ));
     let build_transaction = TransactionContext::new(&repo_path, cache)
-        .open(None)
+        .with_mem_odb_limit(crate::MAX_MEM_PACK_SIZE)
+        .open()
         .context("Failed to open build transaction")?;
 
     // Resolve the default branch commit from backing refs.
@@ -196,7 +197,11 @@ fn handle_cache_build(args: &CacheBuildArgs, transaction: &Transaction) -> anyho
                 }
                 let filtered_ref =
                     format!("refs/josh/filtered/{}/heads/{}", prefix_path, branch_name);
-                repo.reference(&filtered_ref, filtered_oid, true, "josh cache build")
+                // `filtered_oid`'s objects are in `build_transaction`'s in-memory store, so resolve
+                // the ref through its repo, not the outer one.
+                build_transaction
+                    .repo()
+                    .reference(&filtered_ref, filtered_oid, true, "josh cache build")
                     .with_context(|| format!("failed to write filtered ref '{}'", filtered_ref))?;
                 next_commits.push((branch_name, filtered_oid));
             }
@@ -235,7 +240,8 @@ fn handle_cache_push(args: &CachePushArgs, transaction: &Transaction) -> anyhow:
         "+refs/josh/cache/{}/*:refs/josh/cache/{}/*",
         CACHE_VERSION, CACHE_VERSION
     );
-    spawn_git_command(repo.path(), &["push", &url, &cache_refspec], &[])
+    transaction
+        .spawn_git(&["push", &url, &cache_refspec], &[])
         .context("Failed to push cache refs")?;
 
     // Push filtered refs for the default branch only so that recipients have
@@ -256,7 +262,8 @@ fn handle_cache_push(args: &CachePushArgs, transaction: &Transaction) -> anyhow:
         }
 
         let filtered_refspec = format!("+{r}:{r}", r = local_ref);
-        spawn_git_command(repo.path(), &["push", &url, &filtered_refspec], &[])
+        transaction
+            .spawn_git(&["push", &url, &filtered_refspec], &[])
             .with_context(|| format!("Failed to push filtered ref for step {}", step_idx))?;
     }
 
@@ -273,7 +280,7 @@ fn handle_cache_push(args: &CachePushArgs, transaction: &Transaction) -> anyhow:
 /// - `refs/josh/cache/{VERSION}/*` is fetched; errors are surfaced to the caller.
 /// - `refs/josh/filtered/…` per-step refs are fetched best-effort (errors ignored).
 pub fn fetch_remote_cache(
-    repo: &git2::Repository,
+    transaction: &Transaction,
     url: &str,
     filter: Filter,
 ) -> anyhow::Result<()> {
@@ -281,7 +288,8 @@ pub fn fetch_remote_cache(
         "+refs/josh/cache/{v}/*:refs/josh/cache/{v}/*",
         v = CACHE_VERSION
     );
-    spawn_git_command(repo.path(), &["fetch", url, &cache_refspec], &[])
+    transaction
+        .spawn_git(&["fetch", url, &cache_refspec], &[])
         .context("Failed to fetch cache refs")?;
 
     let steps = flatten_chain(filter);
@@ -292,7 +300,7 @@ pub fn fetch_remote_cache(
             p = prefix_path
         );
         // Ignore errors: the remote may not have filtered refs for this step yet
-        let _ = spawn_git_command(repo.path(), &["fetch", url, &filtered_refspec], &[]);
+        let _ = transaction.spawn_git(&["fetch", url, &filtered_refspec], &[]);
     }
 
     Ok(())
@@ -311,7 +319,7 @@ fn handle_cache_fetch(args: &CacheFetchArgs, transaction: &Transaction) -> anyho
 
     let filter = filter_with_meta.peel();
 
-    fetch_remote_cache(repo, &url, filter)?;
+    fetch_remote_cache(transaction, &url, filter)?;
 
     eprintln!(
         "Fetched cache for remote '{}' (filter: {})",

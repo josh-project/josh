@@ -3027,6 +3027,7 @@ dependencies = [
  "indoc",
  "itertools 0.14.0",
  "josh-filter",
+ "josh-git-data",
  "josh-starlark",
  "josh-test-support",
  "log",
@@ -3093,11 +3094,21 @@ dependencies = [
  "gix-object",
  "indoc",
  "itertools 0.14.0",
+ "josh-git-data",
  "pest",
  "pest_derive",
  "regex",
  "serde_json",
  "smallvec",
+]
+
+[[package]]
+name = "josh-git-data"
+version = "26.6.11"
+dependencies = [
+ "git2",
+ "libgit2-sys",
+ "tempfile",
 ]
 
 [[package]]

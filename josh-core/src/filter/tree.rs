@@ -784,7 +784,7 @@ pub fn trigram_search<'a>(
     let mut r = trees
         .par_iter()
         .map_init(
-            || tran_context.open(None).unwrap(),
+            || tran_context.open().unwrap(),
             |transaction, (id, name)| {
                 let s = transaction.repo().find_tree(*id).unwrap();
 

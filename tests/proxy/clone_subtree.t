@@ -132,15 +132,13 @@
       |-- info
       |   `-- exclude
       |-- objects
-      |   |-- 0b
-      |   |   `-- 4cf6c9efbbda1eada39fa9c1d21d2525b027bb
-      |   |-- 1d
-      |   |   `-- 9470cf784c751ec8cc3556d50737a7de1f5262
       |   |-- info
       |   `-- pack
+      |       |-- pack-2f3daab2c2bc0fa3c2cb94022cd73dbeb79fba8b.idx
+      |       `-- pack-2f3daab2c2bc0fa3c2cb94022cd73dbeb79fba8b.pack
       `-- refs
           |-- heads
           |-- namespaces
           `-- tags
   
-  37 directories, 22 files
+  35 directories, 22 files

@@ -12,7 +12,7 @@ struct GraphQLHelper {
 
 impl GraphQLHelper {
     fn transaction_context(&self, path: impl AsRef<std::path::Path>) -> TransactionContext {
-        TransactionContext::new(path, self.cache.clone())
+        TransactionContext::new(path, self.cache.clone()).with_ref_prefix(&self.ref_prefix)
     }
 }
 
@@ -36,10 +36,7 @@ impl GraphQLHelper {
             .join(path);
 
         let path = josh_core::normalize_path(&path);
-        let transaction = if let Ok(to) = self
-            .transaction_context(&mirror_path)
-            .open(Some(&self.ref_prefix))
-        {
+        let transaction = if let Ok(to) = self.transaction_context(&mirror_path).open() {
             to.repo().odb()?.add_disk_alternate(
                 self.repo_path
                     .join("overlay")
@@ -49,8 +46,7 @@ impl GraphQLHelper {
             )?;
             to
         } else {
-            self.transaction_context(&self.repo_path)
-                .open(Some(&self.ref_prefix))?
+            self.transaction_context(&self.repo_path).open()?
         };
 
         let tree = transaction.repo().find_commit(self.commit_id)?.tree()?;
@@ -70,7 +66,7 @@ impl GraphQLHelper {
         }
 
         let (transaction, transaction_mirror) =
-            if let Ok(to) = self.transaction_context(&overlay_path).open(None) {
+            if let Ok(to) = self.transaction_context(&overlay_path).open() {
                 to.repo().odb()?.add_disk_alternate(
                     self.repo_path
                         .join("mirror")
@@ -78,11 +74,11 @@ impl GraphQLHelper {
                         .to_str()
                         .unwrap(),
                 )?;
-                (to, self.transaction_context(&mirror_path).open(None)?)
+                (to, self.transaction_context(&mirror_path).open()?)
             } else {
                 (
-                    self.transaction_context(&self.repo_path).open(None)?,
-                    self.transaction_context(&self.repo_path).open(None)?,
+                    self.transaction_context(&self.repo_path).open()?,
+                    self.transaction_context(&self.repo_path).open()?,
                 )
             };
 
@@ -182,7 +178,7 @@ pub fn render(
             }
 
             let (transaction, transaction_mirror) =
-                if let Ok(to) = TransactionContext::new(&overlay_path, cache.clone()).open(None) {
+                if let Ok(to) = TransactionContext::new(&overlay_path, cache.clone()).open() {
                     to.repo().odb()?.add_disk_alternate(
                         transaction
                             .repo()
@@ -196,12 +192,12 @@ pub fn render(
                     )?;
                     (
                         to,
-                        TransactionContext::new(repo_path, cache.clone()).open(None)?,
+                        TransactionContext::new(repo_path, cache.clone()).open()?,
                     )
                 } else {
                     (
-                        TransactionContext::new(repo_path, cache.clone()).open(None)?,
-                        TransactionContext::new(repo_path, cache.clone()).open(None)?,
+                        TransactionContext::new(repo_path, cache.clone()).open()?,
+                        TransactionContext::new(repo_path, cache.clone()).open()?,
                     )
                 };
             let (res, _errors) = juniper::execute_sync(

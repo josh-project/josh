@@ -10,6 +10,10 @@ mod shell;
 pub mod trace;
 pub mod upstream;
 
+/// Default cap (128 MiB) on a transaction's in-memory object buffer; exceeding it flushes a
+/// packfile.
+pub(crate) const MAX_MEM_PACK_SIZE: usize = 128 * 1024 * 1024;
+
 use crate::http::{IntoRetryable, RetryableError};
 use crate::upstream::RemoteAuth;
 use josh_core;

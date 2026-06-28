@@ -140,27 +140,23 @@ Make sure all temporary namespace got removed
       |-- info
       |   `-- exclude
       |-- objects
-      |   |-- 0b
-      |   |   `-- 4cf6c9efbbda1eada39fa9c1d21d2525b027bb
-      |   |-- 1d
-      |   |   `-- 9470cf784c751ec8cc3556d50737a7de1f5262
       |   |-- 6b
       |   |   `-- 46faacade805991bcaea19382c9d941828ce80
-      |   |-- 81
-      |   |   `-- b10fb4984d20142cd275b89c91c346e536876a
-      |   |-- ba
-      |   |   `-- 7e17233d9f79c96cb694959eb065302acd96a6
       |   |-- c6
       |   |   `-- 27a2e3a6bfbb7307f522ad94fdfc8c20b92967
       |   |-- d8
       |   |   `-- 388f5880393d255b371f1ed9b801d35620017e
       |   |-- info
       |   `-- pack
+      |       |-- pack-2f3daab2c2bc0fa3c2cb94022cd73dbeb79fba8b.idx
+      |       |-- pack-2f3daab2c2bc0fa3c2cb94022cd73dbeb79fba8b.pack
+      |       |-- pack-9bd28ba2926c418d23678c7b9960f5577e09896b.idx
+      |       `-- pack-9bd28ba2926c418d23678c7b9960f5577e09896b.pack
       `-- refs
           |-- heads
           |-- namespaces
           `-- tags
   
-  43 directories, 29 files
+  39 directories, 29 files
 
 $ cat ${TESTTMP}/josh-proxy.out

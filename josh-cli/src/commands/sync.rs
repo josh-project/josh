@@ -122,7 +122,8 @@ pub fn handle_sync(
                 for oid in &oid_strs {
                     fetch_args.push(oid);
                 }
-                josh_core::git::spawn_git_command(repo.path(), &fetch_args, &[])
+                transaction
+                    .spawn_git(&fetch_args, &[])
                     .with_context(|| "Failed to fetch objects from GitHub")?;
             }
 
@@ -141,10 +142,9 @@ pub fn handle_sync(
                             let refspec = format!("refs/heads/{}", target);
                             let fetch_args: Vec<&str> =
                                 vec!["fetch", &github_url, "--no-tags", &refspec];
-                            josh_core::git::spawn_git_command(repo.path(), &fetch_args, &[])
-                                .with_context(|| {
-                                    format!("Failed to fetch target branch {}", target)
-                                })?;
+                            transaction.spawn_git(&fetch_args, &[]).with_context(|| {
+                                format!("Failed to fetch target branch {}", target)
+                            })?;
                             let output = std::process::Command::new("git")
                                 .args(["rev-parse", "FETCH_HEAD"])
                                 .current_dir(repo.path())

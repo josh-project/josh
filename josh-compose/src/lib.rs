@@ -43,8 +43,6 @@ pub fn run(transaction: &josh_core::cache::Transaction, opts: RunOptions) -> any
 
     let filter_spec = opts.filter_spec.trim().to_string();
     let repo = transaction.repo();
-    // Keep temporary filter objects in memory; never write loose objects to disk.
-    let _mempack = repo.odb()?.add_new_mempack_backend(1000)?;
 
     let source_commit = filter::resolve_input(repo, &opts.input_ref)?;
 
@@ -73,7 +71,6 @@ pub fn plan_images(
 
     let filter_spec = opts.filter_spec.trim().to_string();
     let repo = transaction.repo();
-    let _mempack = repo.odb()?.add_new_mempack_backend(1000)?;
 
     let source_commit = filter::resolve_input(repo, &opts.input_ref)?;
 
@@ -98,7 +95,6 @@ pub fn plan_jobs(
 
     let filter_spec = opts.filter_spec.trim().to_string();
     let repo = transaction.repo();
-    let _mempack = repo.odb()?.add_new_mempack_backend(1000)?;
 
     let source_commit = filter::resolve_input(repo, &opts.input_ref)?;
 

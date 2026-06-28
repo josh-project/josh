@@ -12,7 +12,6 @@ use tokio::sync::mpsc;
 
 use josh_core::cache::{CacheStack, TransactionContext};
 use josh_core::filter::tree;
-use josh_core::git::spawn_git_command;
 use josh_github_webhooks::webhook_server::WebhookPayload;
 use josh_link::make_signature;
 
@@ -43,7 +42,7 @@ pub fn handle_track(
 
     let refs = crate::remote::list_refs(url)?;
 
-    spawn_git_command(repo.path(), &["fetch", url, "HEAD"], &[])?;
+    transaction.spawn_git(&["fetch", url, "HEAD"], &[])?;
 
     let fetch_head_ref = repo
         .find_reference("FETCH_HEAD")
@@ -167,7 +166,7 @@ pub fn spawn_serve_task(repo_path: PathBuf, cache: Arc<CacheStack>) -> mpsc::Sen
             match event {
                 CqEvent::Track(req) => {
                     let transaction =
-                        match TransactionContext::new(&repo_path, cache.clone()).open(None) {
+                        match TransactionContext::new(&repo_path, cache.clone()).open() {
                             Ok(t) => t,
                             Err(e) => {
                                 eprintln!("Failed to open transaction: {e:#}");
