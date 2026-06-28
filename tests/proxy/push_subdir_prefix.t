@@ -89,37 +89,27 @@
       |-- info
       |   `-- exclude
       |-- objects
-      |   |-- 0b
-      |   |   `-- 4cf6c9efbbda1eada39fa9c1d21d2525b027bb
-      |   |-- 1d
-      |   |   `-- 9470cf784c751ec8cc3556d50737a7de1f5262
-      |   |-- 32
-      |   |   `-- bc15e3ec04d5d9d2a216055ea51bafb2249877
-      |   |-- 50
-      |   |   `-- bcd696c2041bb31c0a9a1111dfa2686fc6fea6
       |   |-- 52
       |   |   `-- 2525c3e5980592ddb5eb385ac1262dc6764af3
       |   |-- 6b
       |   |   `-- 46faacade805991bcaea19382c9d941828ce80
-      |   |-- 81
-      |   |   `-- b10fb4984d20142cd275b89c91c346e536876a
-      |   |-- ba
-      |   |   `-- 7e17233d9f79c96cb694959eb065302acd96a6
       |   |-- c6
       |   |   `-- 27a2e3a6bfbb7307f522ad94fdfc8c20b92967
-      |   |-- cf
-      |   |   `-- 704ed443e7351ab990ab68c916c2428dcf9100
-      |   |-- d8
-      |   |   `-- 388f5880393d255b371f1ed9b801d35620017e
       |   |-- e6
       |   |   `-- 2cc0b3d612792395dd9ac2ca649da0e6e54620
       |   |-- info
       |   `-- pack
+      |       |-- pack-9bd28ba2926c418d23678c7b9960f5577e09896b.idx
+      |       |-- pack-9bd28ba2926c418d23678c7b9960f5577e09896b.pack
+      |       |-- pack-9fb50b1e4c13a30e0da1720d8b22f58af0535d63.idx
+      |       |-- pack-9fb50b1e4c13a30e0da1720d8b22f58af0535d63.pack
+      |       |-- pack-a724713a58e1918b9032aed364764a0a4cece84b.idx
+      |       `-- pack-a724713a58e1918b9032aed364764a0a4cece84b.pack
       `-- refs
           |-- heads
           |-- namespaces
           `-- tags
   
-  44 directories, 29 files
+  36 directories, 27 files
 
 $ cat ${TESTTMP}/josh-proxy.out | grep VIEW

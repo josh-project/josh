@@ -175,32 +175,24 @@ Make sure all temporary namespace got removed
       |   |   `-- 0e3dbefd779ec54d92286047f32d3129161c0d
       |   |-- 6b
       |   |   `-- 46faacade805991bcaea19382c9d941828ce80
-      |   |-- 72
-      |   |   `-- 7902c81346e29c4f75e0913bd62d7b85d7033f
       |   |-- 7e
       |   |   `-- 693682dba1d7af1cb1eca7c3dcc5128e3ec9c6
-      |   |-- 8a
-      |   |   `-- 778416d88308bf017cf54f0247e4780765361f
-      |   |-- a0
-      |   |   `-- 18dae3609294bc68eff023fabb96386ec483db
       |   |-- b2
       |   |   `-- dd517c55420a48cb543e0195b4751bf514b941
-      |   |-- b7
-      |   |   `-- 8fc0fe9f3bd35c8dc8aeff5189ebda0750e974
       |   |-- ec
       |   |   `-- 41aad70b4b898baf48efeb795a7753d9674152
       |   |-- ed
       |   |   `-- b2a5b9c65fae1d20c1b1fb777d1ea025456faa
-      |   |-- fd
-      |   |   `-- b894f9431a237930c7a034f3ecc16dd686b19e
       |   |-- info
       |   `-- pack
+      |       |-- pack-d787933d12fa80e0118646c0aa4a83139c02e4cb.idx
+      |       `-- pack-d787933d12fa80e0118646c0aa4a83139c02e4cb.pack
       `-- refs
           |-- heads
           |-- namespaces
           `-- tags
   
-  66 directories, 50 files
+  61 directories, 47 files
 
 $ cat ${TESTTMP}/josh-proxy.out
 $ cat ${TESTTMP}/josh-proxy.out | grep REPO_UPDATE

@@ -92,28 +92,24 @@
       |-- info
       |   `-- exclude
       |-- objects
-      |   |-- 06
-      |   |   `-- 8bef6976001fadcf131ff077eac37662ed3b7c
-      |   |-- 2e
-      |   |   `-- 310c493edb401f297aba1fc499506e4c85ca87
       |   |-- 63
       |   |   `-- 7f0347d31dad180d6fc7f6720c187b05a8754c
       |   |-- 77
       |   |   `-- d7000ec2f13c49605cd675075e1852881e4fea
       |   |-- bd
       |   |   `-- c926c483c4dfa77e84105c6967e74d8ff9bf5f
-      |   |-- be
-      |   |   `-- 911fd840d34b691403cf4e7d2a8e8bacec8d89
-      |   |-- eb
-      |   |   `-- 6a31166c5bf0dbb65c82f89130976a12533ce6
       |   |-- info
       |   `-- pack
+      |       |-- pack-a44287650558d5610fb771360d8e3ee97671557c.idx
+      |       |-- pack-a44287650558d5610fb771360d8e3ee97671557c.pack
+      |       |-- pack-e6ea08342a6fbc40312444de4552434e4dbf41a9.idx
+      |       `-- pack-e6ea08342a6fbc40312444de4552434e4dbf41a9.pack
       `-- refs
           |-- heads
           |-- namespaces
           `-- tags
   
-  39 directories, 24 files
+  35 directories, 24 files
 
 # setup without caching
   $ EXTRA_OPTS= . ${TESTDIR}/setup_test_env.sh
@@ -214,27 +210,23 @@
       |-- info
       |   `-- exclude
       |-- objects
-      |   |-- 06
-      |   |   `-- 8bef6976001fadcf131ff077eac37662ed3b7c
-      |   |-- 2e
-      |   |   `-- 310c493edb401f297aba1fc499506e4c85ca87
       |   |-- 63
       |   |   `-- 7f0347d31dad180d6fc7f6720c187b05a8754c
       |   |-- 77
       |   |   `-- d7000ec2f13c49605cd675075e1852881e4fea
       |   |-- bd
       |   |   `-- c926c483c4dfa77e84105c6967e74d8ff9bf5f
-      |   |-- be
-      |   |   `-- 911fd840d34b691403cf4e7d2a8e8bacec8d89
-      |   |-- d9
-      |   |   `-- a323ee316cda6f241fcc35cbd29d4a882aa45e
-      |   |-- eb
-      |   |   `-- 6a31166c5bf0dbb65c82f89130976a12533ce6
       |   |-- info
       |   `-- pack
+      |       |-- pack-320458e5ec491f521fae67b51436d535dc9ecb49.idx
+      |       |-- pack-320458e5ec491f521fae67b51436d535dc9ecb49.pack
+      |       |-- pack-a44287650558d5610fb771360d8e3ee97671557c.idx
+      |       |-- pack-a44287650558d5610fb771360d8e3ee97671557c.pack
+      |       |-- pack-e6ea08342a6fbc40312444de4552434e4dbf41a9.idx
+      |       `-- pack-e6ea08342a6fbc40312444de4552434e4dbf41a9.pack
       `-- refs
           |-- heads
           |-- namespaces
           `-- tags
   
-  44 directories, 29 files
+  39 directories, 30 files

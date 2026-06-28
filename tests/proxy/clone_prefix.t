@@ -121,21 +121,13 @@
       |-- info
       |   `-- exclude
       |-- objects
-      |   |-- 00
-      |   |   `-- f1db8b2e4bd1bf8337e0fe3a2ad9aeea478280
-      |   |-- 1d
-      |   |   `-- 9470cf784c751ec8cc3556d50737a7de1f5262
-      |   |-- 1f
-      |   |   `-- 0b9d8a7b40a35bb4ff64ffc0f08369df23bc61
-      |   |-- b5
-      |   |   `-- af4d1258141efaadc32e369f4dc4b1f6c524e4
-      |   |-- e9
-      |   |   `-- 67e7a8371f8e269cb1d9bb6b2fff5be29e8578
       |   |-- info
       |   `-- pack
+      |       |-- pack-99ecd3f961c673728c44c77b13523f71980ac569.idx
+      |       `-- pack-99ecd3f961c673728c44c77b13523f71980ac569.pack
       `-- refs
           |-- heads
           |-- namespaces
           `-- tags
   
-  40 directories, 25 files
+  35 directories, 22 files

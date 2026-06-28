@@ -140,10 +140,12 @@ pub fn run(
 
     const CRUFT_PACK_SIZE: usize = 1024 * 1024 * 64;
 
-    let transaction_mirror =
-        TransactionContext::new(repo_path.join("mirror"), cache.clone()).open(None)?;
-    let transaction_overlay =
-        TransactionContext::new(repo_path.join("overlay"), cache).open(None)?;
+    let transaction_mirror = TransactionContext::new(repo_path.join("mirror"), cache.clone())
+        .with_mem_odb_limit(crate::MAX_MEM_PACK_SIZE)
+        .open()?;
+    let transaction_overlay = TransactionContext::new(repo_path.join("overlay"), cache)
+        .with_mem_odb_limit(crate::MAX_MEM_PACK_SIZE)
+        .open()?;
 
     transaction_overlay
         .repo()

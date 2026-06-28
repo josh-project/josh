@@ -33,6 +33,9 @@ pub fn clear_global_caches() {
 pub struct TransactionContext {
     path: std::path::PathBuf,
     cache: std::sync::Arc<CacheStack>,
+    ref_prefix: Option<String>,
+    mem_odb_limit: Option<usize>,
+    ephemeral: bool,
 }
 
 impl TransactionContext {
@@ -40,17 +43,42 @@ impl TransactionContext {
         let repo = git2::Repository::open_from_env()?;
         let path = repo.path().to_owned();
 
-        Ok(Self { path, cache })
+        Ok(Self {
+            path,
+            cache,
+            ref_prefix: None,
+            mem_odb_limit: None,
+            ephemeral: false,
+        })
     }
 
     pub fn new(path: impl AsRef<std::path::Path>, cache: std::sync::Arc<CacheStack>) -> Self {
         Self {
             path: path.as_ref().to_path_buf(),
             cache,
+            ref_prefix: None,
+            mem_odb_limit: None,
+            ephemeral: false,
         }
     }
 
-    pub fn open(&self, ref_prefix: Option<&str>) -> anyhow::Result<Transaction> {
+    pub fn with_ref_prefix(mut self, prefix: impl AsRef<str>) -> Self {
+        self.ref_prefix = Some(prefix.as_ref().to_string());
+        self
+    }
+
+    pub fn with_mem_odb_limit(mut self, limit: usize) -> Self {
+        self.mem_odb_limit = Some(limit);
+        self
+    }
+
+    pub fn ephemeral(mut self) -> Self {
+        self.mem_odb_limit = None;
+        self.ephemeral = true;
+        self
+    }
+
+    pub fn open(&self) -> anyhow::Result<Transaction> {
         if !self.path.exists() {
             return Err(anyhow!("path does not exist"));
         }
@@ -62,7 +90,9 @@ impl TransactionContext {
                 &[] as &[&std::ffi::OsStr],
             )?,
             self.cache.clone(),
-            ref_prefix,
+            self.ref_prefix.as_deref(),
+            self.mem_odb_limit,
+            self.ephemeral,
         ))
     }
 }
@@ -90,8 +120,27 @@ struct Transaction2 {
 pub struct Transaction {
     t2: std::cell::RefCell<Transaction2>,
     repo: git2::Repository,
-    ref_prefix: String,
+    /// Per-transaction in-memory object store, flushed to a packfile when the transaction drops, at
+    /// an explicit boundary, or mid-transaction when it exceeds its size limit. Never shared with
+    /// another transaction.
+    mem_odb: std::sync::Arc<josh_git_data::MemOdb>,
+    mem_odb_limit: Option<usize>,
+    ephemeral: bool,
+    ref_prefix: Option<String>,
     filter_hook: Option<std::sync::Arc<dyn FilterHook + Send + Sync>>,
+}
+
+impl Drop for Transaction {
+    fn drop(&mut self) {
+        // Skip flushing to disk, the mem odb will be lost, as requested.
+        if self.ephemeral {
+            return;
+        }
+
+        if let Err(e) = self.mem_odb.flush(&self.repo) {
+            log::error!("failed to flush in-memory object store: {e}");
+        }
+    }
 }
 
 impl Transaction {
@@ -99,12 +148,17 @@ impl Transaction {
         repo: git2::Repository,
         cache: std::sync::Arc<CacheStack>,
         ref_prefix: Option<&str>,
+        mem_odb_limit: Option<usize>,
+        ephemeral: bool,
     ) -> Transaction {
         // Disable libgit2's strict object creation globally: josh only ever writes objects
         // whose referenced objects it has just produced or read, so the per-write existence
         // checks are pure overhead. This is a process-wide C global, set exactly once.
         static STRICT_OBJECT_CREATION_OFF: std::sync::Once = std::sync::Once::new();
         STRICT_OBJECT_CREATION_OFF.call_once(|| git2::opts::strict_object_creation(false));
+
+        let mem_odb = josh_git_data::MemOdb::new(mem_odb_limit, repo.path().to_owned());
+        mem_odb.register(&repo);
 
         log::debug!("new transaction");
 
@@ -130,7 +184,10 @@ impl Transaction {
                 nesting_level: 0,
             }),
             repo,
-            ref_prefix: ref_prefix.unwrap_or("").to_string(),
+            mem_odb,
+            mem_odb_limit,
+            ephemeral,
+            ref_prefix: ref_prefix.map(|prefix| prefix.to_owned()),
             filter_hook: None,
         }
     }
@@ -139,17 +196,36 @@ impl Transaction {
         let context = TransactionContext {
             cache: self.t2.borrow().cache.clone(),
             path: self.repo.path().to_owned(),
+            ref_prefix: self.ref_prefix.clone(),
+            mem_odb_limit: self.mem_odb_limit,
+            ephemeral: self.ephemeral,
         };
 
-        context.open(Some(&self.ref_prefix))
+        context.open()
     }
 
     pub fn repo(&self) -> &git2::Repository {
         &self.repo
     }
 
+    // TODO: remove and rework proxy git launch path to use spawn_git
+    pub fn flush_mem_odb(&self) -> anyhow::Result<()> {
+        self.mem_odb.flush(&self.repo)?;
+        Ok(())
+    }
+
+    /// Flush this transaction's in-memory objects, then run a `git` subprocess against its repo. Use
+    /// this in place of [`crate::git::spawn_git_command`] whenever a transaction is in scope: the
+    /// spawned `git` reads objects from disk and cannot see the in-memory backend, so the store must
+    /// be flushed first.
+    pub fn spawn_git(&self, args: &[&str], env: &[(&str, &str)]) -> anyhow::Result<()> {
+        self.flush_mem_odb()?;
+        crate::git::spawn_git_command(self.repo.path(), args, env)
+    }
+
     pub fn refname(&self, r: &str) -> String {
-        format!("{}{}", self.ref_prefix, r)
+        let ref_prefix = self.ref_prefix.as_deref().unwrap_or_default();
+        format!("{}{}", ref_prefix, r)
     }
 
     pub fn misses(&self) -> usize {

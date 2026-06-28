@@ -248,7 +248,7 @@ fn ultrawide_pin(c: &mut Criterion) {
             // transaction so every run does the full filtering work instead of
             // hitting memoized results.
             josh_core::reset_caches().expect("reset caches");
-            let transaction = bench.context.open(None).expect("open transaction");
+            let transaction = bench.context.open().expect("open transaction");
 
             // Optional: route object writes through an in-memory mempack backend instead
             // of the loose-file backend, to measure the ODB write-path overhead. Reads of

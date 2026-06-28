@@ -328,20 +328,19 @@ pub fn process_repo_update(repo_update: RepoUpdate) -> anyhow::Result<String> {
     );
 
     let cache = std::sync::Arc::new(CacheStack::default());
-    let transaction_ctx = TransactionContext::new(&repo_update.git_dir, cache.clone());
-    let transaction_mirror_ctx =
-        TransactionContext::new(&repo_update.mirror_git_dir, cache.clone());
 
     if let Some((refname, (old, new))) = repo_update.refs.iter().next() {
-        let transaction = transaction_ctx.open(Some(&format!(
-            "refs/josh/upstream/{}/",
-            repo_update.base_ns
-        )))?;
+        let transaction_ctx = TransactionContext::new(&repo_update.git_dir, cache.clone())
+            .with_ref_prefix(format!("refs/josh/upstream/{}/", repo_update.base_ns))
+            .with_mem_odb_limit(crate::MAX_MEM_PACK_SIZE);
 
-        let transaction_mirror = transaction_mirror_ctx.open(Some(&format!(
-            "refs/josh/upstream/{}/",
-            repo_update.base_ns
-        )))?;
+        let transaction_mirror_ctx =
+            TransactionContext::new(&repo_update.mirror_git_dir, cache.clone())
+                .with_ref_prefix(format!("refs/josh/upstream/{}/", repo_update.base_ns))
+                .with_mem_odb_limit(crate::MAX_MEM_PACK_SIZE);
+
+        let transaction = transaction_ctx.open()?;
+        let transaction_mirror = transaction_mirror_ctx.open()?;
 
         transaction.repo().odb()?.add_disk_alternate(
             transaction_mirror
@@ -509,7 +508,7 @@ pub fn process_repo_update(repo_update: RepoUpdate) -> anyhow::Result<String> {
             let force_push = !matches!(push_mode, PushMode::Normal) || push_options.force;
 
             let (text, status) = push_head_url(
-                transaction.repo(),
+                &transaction,
                 &format!("{}/objects", repo_update.mirror_git_dir),
                 push_ref.oid,
                 &push_ref.ref_name,
@@ -576,7 +575,7 @@ pub fn process_repo_update(repo_update: RepoUpdate) -> anyhow::Result<String> {
 
 #[allow(clippy::too_many_arguments)]
 pub fn push_head_url(
-    repo: &git2::Repository,
+    transaction: &josh_core::cache::Transaction,
     alternate: &str,
     oid: git2::Oid,
     refname: &str,
@@ -586,6 +585,7 @@ pub fn push_head_url(
     display_name: &str,
     force: bool,
 ) -> anyhow::Result<(String, i32)> {
+    let repo = transaction.repo();
     let push_temp_ref = format!("refs/{}", &namespace);
     let push_refspec = format!("{}:{}", &push_temp_ref, &refname);
 
@@ -597,6 +597,8 @@ pub fn push_head_url(
     cmd.push(&push_refspec);
 
     let mut fake_head = repo.reference(&push_temp_ref, oid, true, "push_head_url")?;
+    // Flush before the external `git push` below reads these objects from disk.
+    transaction.flush_mem_odb()?;
     let (stdout, stderr, status) =
         run_git_with_auth(repo.path(), &cmd, remote_auth, Some(alternate.to_owned()))?;
     fake_head.delete()?;

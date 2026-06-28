@@ -255,14 +255,24 @@ impl JoshProxyService {
         &self,
         ref_prefix: Option<&str>,
     ) -> anyhow::Result<josh_core::cache::Transaction> {
-        TransactionContext::new(self.repo_path.join("overlay"), self.cache.clone()).open(ref_prefix)
+        let mut ctx = TransactionContext::new(self.repo_path.join("overlay"), self.cache.clone())
+            .with_mem_odb_limit(crate::MAX_MEM_PACK_SIZE);
+        if let Some(ref_prefix) = ref_prefix {
+            ctx = ctx.with_ref_prefix(ref_prefix);
+        }
+        ctx.open()
     }
 
     pub fn open_mirror(
         &self,
         ref_prefix: Option<&str>,
     ) -> anyhow::Result<josh_core::cache::Transaction> {
-        TransactionContext::new(self.repo_path.join("mirror"), self.cache.clone()).open(ref_prefix)
+        let mut ctx = TransactionContext::new(self.repo_path.join("mirror"), self.cache.clone())
+            .with_mem_odb_limit(crate::MAX_MEM_PACK_SIZE);
+        if let Some(ref_prefix) = ref_prefix {
+            ctx = ctx.with_ref_prefix(ref_prefix);
+        }
+        ctx.open()
     }
 }
 
@@ -535,6 +545,9 @@ impl NamespacedRefs {
         self.transaction
             .repo()
             .reference_symbolic(&source, &target, true, "write_to_repo")?;
+
+        // Flush before the `git http-backend` subprocess serves these objects from disk.
+        self.transaction.flush_mem_odb()?;
 
         Ok(())
     }
@@ -1529,7 +1542,7 @@ async fn handle_graphql(
             };
 
             crate::upstream::push_head_url(
-                transaction.repo(),
+                &transaction,
                 serv.repo_path
                     .join("mirror")
                     .join("objects")

@@ -202,51 +202,29 @@ Flushed credential cache
       |-- info
       |   `-- exclude
       |-- objects
-      |   |-- 0b
-      |   |   `-- 4cf6c9efbbda1eada39fa9c1d21d2525b027bb
       |   |-- 1c
       |   |   `-- b5d64cdb55e3db2a8d6f00d596572b4cfa9d5c
-      |   |-- 24
-      |   |   `-- ce298ca12ec52cff187ef6638a2ba3d1c9503d
       |   |-- 26
       |   |   `-- 1fdca7dd1cc67009c11551191e84aa1ba21c20
-      |   |-- 35
-      |   |   `-- 95f38d11ec8c849f1c1a11fe676ed8dfac8145
-      |   |-- 36
-      |   |   `-- 8bfdc83325632d67cb93d96f095f0b04e4e26d
       |   |-- 37
       |   |   `-- fad4aaffb0ee24ab0ad6767701409bfbc52330
-      |   |-- 3f
-      |   |   `-- 7ab67d01db03914916161b51dbda1a4635f8d2
-      |   |-- 42
-      |   |   `-- e0161c1ad82c05895e0f2caeae95925ac5ae6a
       |   |-- 6b
       |   |   `-- 46faacade805991bcaea19382c9d941828ce80
-      |   |-- 86
-      |   |   `-- 5c34e9a2c40198324cdc2fc796827653cb11df
-      |   |-- 8a
-      |   |   `-- f523d3883c24610cf99813ea15df65eb20ea84
-      |   |-- b7
-      |   |   `-- 97411c60180287c8da2d26c325038c44fd78b0
-      |   |-- c8
-      |   |   `-- 2fc150c43f13cc56c0e9caeba01b58ec612022
-      |   |-- cd
-      |   |   `-- e160edcb6f5ed11cc6d74e64bf06679420c10c
       |   |-- da
       |   |   `-- 0d1f304c4686b5ed11c682fa9c8d1544c49b96
       |   |-- db
       |   |   `-- 184bf11ece7fbeb99395ab7676b80e7d98631a
-      |   |-- dc
-      |   |   `-- 0dbab6030c0673ece5706b067e74ca8a573397
-      |   |-- e0
-      |   |   `-- 6f0e81ff3d5f8d60ba86bf4f99b47c8aa47654
-      |   |-- e1
-      |   |   `-- 70e962d0fb4b94a491a176a7f39a6207ada3e8
       |   |-- info
       |   `-- pack
+      |       |-- pack-365bafb594d0b05b03a3c90ea320df4fe4021f9e.idx
+      |       |-- pack-365bafb594d0b05b03a3c90ea320df4fe4021f9e.pack
+      |       |-- pack-749ce45681f8e4fe8c7b114878930d43b1828c50.idx
+      |       |-- pack-749ce45681f8e4fe8c7b114878930d43b1828c50.pack
+      |       |-- pack-e314ce900fa86c59aa7128e98b5cb3ec9520949a.idx
+      |       `-- pack-e314ce900fa86c59aa7128e98b5cb3ec9520949a.pack
       `-- refs
           |-- heads
           |-- namespaces
           `-- tags
   
-  65 directories, 52 files
+  51 directories, 44 files

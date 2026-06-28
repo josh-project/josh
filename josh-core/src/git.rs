@@ -147,6 +147,8 @@ pub fn spawn_git_command(
 ) -> anyhow::Result<()> {
     log::debug!("spawn_git_command: {:?}", args);
 
+    // Does not flush any in-memory ODB; callers with a transaction in scope must use
+    // `Transaction::spawn_git` instead so the spawned `git` can see in-flight objects.
     let cwd = normalize_repo_path(repo_path);
 
     let mut command = std::process::Command::new("git");

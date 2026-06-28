@@ -110,29 +110,13 @@
       |-- info
       |   `-- exclude
       |-- objects
-      |   |-- 22
-      |   |   `-- b22885799153b100fdb3445c59c4c3f4482ed3
-      |   |-- 24
-      |   |   `-- 6b71ecf742c084ec41ba6f2c4e355ca4806ef0
-      |   |-- 5a
-      |   |   `-- 29d3ef74b34ca534513c6499e9c9011371fab4
-      |   |-- 68
-      |   |   `-- 9a59b2fad33839a7e8d6c1c02ce94095d8fe1e
-      |   |-- 85
-      |   |   `-- 352a4584261ab3b54e32aa4ddfe04e80c6800e
-      |   |-- 8e
-      |   |   `-- 9aa8ffc35bbc452f9654b834047168ce02dc48
-      |   |-- c3
-      |   |   `-- 0a8aef421831a8492d21efde601e90a742544f
-      |   |-- d9
-      |   |   `-- a323ee316cda6f241fcc35cbd29d4a882aa45e
-      |   |-- db
-      |   |   `-- dfb5702a23dd0a3502f4d6ce7287a3a4d85abe
       |   |-- info
       |   `-- pack
+      |       |-- pack-dfd9843a38e8a4c7ec7231382409474c2cbd5981.idx
+      |       `-- pack-dfd9843a38e8a4c7ec7231382409474c2cbd5981.pack
       `-- refs
           |-- heads
           |-- namespaces
           `-- tags
   
-  46 directories, 31 files
+  37 directories, 24 files

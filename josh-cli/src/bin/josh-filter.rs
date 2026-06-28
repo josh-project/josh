@@ -224,8 +224,9 @@ fn run_filter(args: Vec<String>) -> anyhow::Result<i32> {
         }
     });
 
-    let mut transaction =
-        josh_core::cache::TransactionContext::from_env(cache.clone())?.open(None)?;
+    let mut transaction = josh_core::cache::TransactionContext::from_env(cache.clone())?
+        .with_mem_odb_limit(josh_cli::MAX_MEM_PACK_SIZE)
+        .open()?;
 
     let repo_for_hook = git2::Repository::open_ext(
         transaction.repo().path(),
@@ -477,6 +478,10 @@ fn run_filter(args: Vec<String>) -> anyhow::Result<i32> {
 
     println!("{}", updated_refs[0].1);
 
+    // The queries below run in separate transactions whose stores only see on-disk objects, so
+    // flush the filtered objects out of this transaction first.
+    transaction.flush_mem_odb()?;
+
     if let Some(gql_query) = args.get_one::<String>("graphql") {
         let context = josh_graphql::context(transaction.try_clone()?, transaction.try_clone()?);
         *context.allow_refs.lock().unwrap() = true;
@@ -495,8 +500,9 @@ fn run_filter(args: Vec<String>) -> anyhow::Result<i32> {
     std::mem::drop(finish);
 
     if let Some(query) = args.get_one::<String>("query") {
-        let transaction =
-            josh_core::cache::TransactionContext::from_env(cache.clone())?.open(None)?;
+        let transaction = josh_core::cache::TransactionContext::from_env(cache.clone())?
+            .with_mem_odb_limit(josh_cli::MAX_MEM_PACK_SIZE)
+            .open()?;
         let commit_id = transaction.repo().refname_to_id(update_target)?;
 
         print!(

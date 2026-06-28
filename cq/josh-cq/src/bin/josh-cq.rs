@@ -81,7 +81,7 @@ fn open_repo(
     );
 
     let transaction = josh_core::cache::TransactionContext::new(&repo_path, cache.clone())
-        .open(None)
+        .open()
         .context("Failed TransactionContext::open")?;
 
     Ok((repo_path, cache, transaction))

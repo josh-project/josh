@@ -173,18 +173,14 @@
       |-- info
       |   `-- exclude
       |-- objects
-      |   |-- 0b
-      |   |   `-- 4cf6c9efbbda1eada39fa9c1d21d2525b027bb
-      |   |-- 1d
-      |   |   `-- 9470cf784c751ec8cc3556d50737a7de1f5262
-      |   |-- 6e
-      |   |   `-- 99e1e5ba1de7225f0d09a0b91d2e29ae15569c
       |   |-- info
       |   `-- pack
+      |       |-- pack-520761ba67cf670cd00b18237d9f65bab639d94b.idx
+      |       `-- pack-520761ba67cf670cd00b18237d9f65bab639d94b.pack
       `-- refs
           |-- heads
           |-- namespaces
           `-- tags
   
-  41 directories, 29 files
+  38 directories, 28 files
 $ cat ${TESTTMP}/josh-proxy.out | grep TAGS
