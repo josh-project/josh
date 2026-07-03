@@ -374,9 +374,35 @@ Exclude of compose should not be split out
   > EOF
 
   $ josh-filter -p --file f
-  x/g = :subtract[
-      :/a/x/g
-      :/m/bs/m2/i/tc/i1
+  :subtract[
+      :/a:[
+          a = :[
+              ::b/
+              ::j/
+          ]
+          x = :/x:[
+              ::c++666/
+              ::d/
+              ::g/
+              ::gg/
+              ::u/
+          ]
+      ]
+      :[
+          :/a:[
+              a = :[
+                  ::b/
+                  ::j/
+              ]
+              x = :/x:[
+                  ::c++666/
+                  ::d/
+                  ::gg/
+                  ::u/
+              ]
+          ]
+          p/au/bs/i1 = :/m/bs/m2/i/tc/i1
+      ]
   ]
 
   $ cat > f <<EOF
