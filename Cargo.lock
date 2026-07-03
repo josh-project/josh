@@ -3107,6 +3107,7 @@ version = "26.6.11"
 dependencies = [
  "git2",
  "libgit2-sys",
+ "log",
  "tempfile",
 ]
 

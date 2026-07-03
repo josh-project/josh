@@ -137,7 +137,7 @@ impl Drop for Transaction {
             return;
         }
 
-        if let Err(e) = self.mem_odb.flush(&self.repo) {
+        if let Err(e) = self.mem_odb.flush() {
             log::error!("failed to flush in-memory object store: {e}");
         }
     }
@@ -210,7 +210,7 @@ impl Transaction {
 
     // TODO: remove and rework proxy git launch path to use spawn_git
     pub fn flush_mem_odb(&self) -> anyhow::Result<()> {
-        self.mem_odb.flush(&self.repo)?;
+        self.mem_odb.flush()?;
         Ok(())
     }
 

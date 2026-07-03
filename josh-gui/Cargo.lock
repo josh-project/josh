@@ -487,6 +487,7 @@ dependencies = [
  "iana-time-zone",
  "js-sys",
  "num-traits",
+ "serde",
  "wasm-bindgen",
  "windows-link 0.2.1",
 ]
@@ -3167,6 +3168,7 @@ name = "josh-changes"
 version = "26.6.11"
 dependencies = [
  "anyhow",
+ "chrono",
  "git2",
  "josh-core",
  "serde",
@@ -3180,6 +3182,7 @@ dependencies = [
  "anyhow",
  "backtrace",
  "bitvec",
+ "chrono",
  "git-version",
  "git2",
  "gix-actor",
@@ -3192,17 +3195,15 @@ dependencies = [
  "indoc",
  "itertools 0.14.0",
  "josh-filter",
+ "josh-git-data",
  "josh-starlark",
- "libgit2-sys",
  "log",
  "percent-encoding",
  "pest",
  "pest_derive",
- "rayon",
  "regex",
  "rs_tracing",
  "rustc-hash 2.1.2",
- "scc",
  "serde",
  "serde_json",
  "serde_yaml",
@@ -3223,11 +3224,21 @@ dependencies = [
  "gix-object",
  "indoc",
  "itertools 0.14.0",
+ "josh-git-data",
  "pest",
  "pest_derive",
  "regex",
  "serde_json",
  "smallvec",
+]
+
+[[package]]
+name = "josh-git-data"
+version = "26.6.11"
+dependencies = [
+ "git2",
+ "libgit2-sys",
+ "log",
 ]
 
 [[package]]
@@ -5125,28 +5136,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9774ba4a74de5f7b1c1451ed6cd5285a32eddb5cccb8cc655a4e50009e06477f"
 
 [[package]]
-name = "saa"
-version = "5.6.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "68f5acb362a0e75c2a963532fa7fabf13dff81626dc494df16488d30befcbea0"
-
-[[package]]
 name = "same-file"
 version = "1.0.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "93fc1dc3aaa9bfed95e02e6eadabb4baf7e3078b0bd1b4d7b6b0b68378900502"
 dependencies = [
  "winapi-util",
-]
-
-[[package]]
-name = "scc"
-version = "3.8.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "97f00241b418496a76c47eb60af2477a6086521d314f35322bec8a2ebd334751"
-dependencies = [
- "saa",
- "sdd",
 ]
 
 [[package]]

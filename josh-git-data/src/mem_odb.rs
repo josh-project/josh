@@ -1,12 +1,18 @@
 //! A per-operation in-memory ODB store buffering the objects josh produces while filtering, instead
-//! of writing each as a loose object. Flushed to a packfile at transaction and external-git
-//! boundaries, and additionally flushed mid-transaction once the buffered object data exceeds the
+//! of writing each as a loose object. Packed to a packfile at transaction and external-git
+//! boundaries, and additionally packed mid-transaction once the buffered object data exceeds the
 //! configured size limit (so a single transaction may write several packfiles). One [`MemOdb`] per
-//! operation (not process-global), so flushes are isolated and deterministic. Access to a store is
-//! single-threaded, but it is `Send + Sync` to cross async boundaries.
+//! operation (not process-global), so flushes are isolated and deterministic.
+//!
+//! Packing itself runs on a background thread (see [`crate::flusher`]): the write path enqueues the
+//! work and keeps filtering, and a boundary flush blocks only until the pack is durable. The store's
+//! `Mutex` therefore guards concurrent access from the filter thread (writes/reads through the
+//! backend) and the flusher thread (which reads objects to pack them, then evicts them); it is
+//! `Send + Sync` so its `Arc` can cross to the flusher.
 
 use std::collections::BTreeMap;
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
 use git2::{ErrorClass, ErrorCode, ObjectType, Oid};
@@ -25,14 +31,18 @@ struct Inner {
 
 /// A per-operation in-memory object store. Create one with [`MemOdb::new`], attach it to a
 /// repository's object database with [`MemOdb::register`], and drain it to disk with
-/// [`MemOdb::flush`]. When `limit` is set, the store also drains itself from the write path as soon
-/// as the buffered data exceeds it (see [`MemOdb::flush_on_overflow`]).
+/// [`MemOdb::flush`]. When `limit` is set, the store also enqueues a background pack from the write
+/// path as soon as the buffered data exceeds it (see [`MemOdb::enqueue_chunk`]).
 pub struct MemOdb {
     inner: Mutex<Inner>,
     limit: Option<usize>,
-    /// Repository the store is registered on, re-opened for overflow flushes
-    /// (see [`MemOdb::flush_on_overflow`]).
+    /// Repository the store is registered on, re-opened by the background flusher to run the
+    /// packbuilder (a `git2::Repository` is not `Send`).
     repo_path: PathBuf,
+    /// Set while an overflow chunk is queued on or running in the background flusher, so the write
+    /// path does not pile up redundant chunk requests every time the store crosses its limit.
+    /// Cleared by the flusher once the chunk has packed and evicted.
+    chunk_in_flight: AtomicBool,
 }
 
 impl MemOdb {
@@ -47,6 +57,7 @@ impl MemOdb {
             }),
             limit,
             repo_path,
+            chunk_in_flight: AtomicBool::new(false),
         })
     }
 
@@ -73,29 +84,36 @@ impl MemOdb {
         self.limit.is_some_and(|limit| inner.size > limit)
     }
 
-    /// Drain every in-memory object into a packfile on disk and evict it from the store. Called when
-    /// the owning transaction completes (or at an explicit external-git boundary) so the on-disk
-    /// repository is left whole for any subsequent process that expects the objects on disk.
-    pub fn flush(&self, repo: &git2::Repository) -> Result<(), git2::Error> {
-        self.flush_into(repo)
+    /// Drain every in-memory object into a packfile on disk and evict it from the store, blocking
+    /// until done. Called when the owning transaction completes (or at an explicit external-git
+    /// boundary) so the on-disk repository is left whole for any subsequent process that expects the
+    /// objects on disk. Packing runs on the background flusher, behind any overflow chunks already
+    /// queued for this store, so it returns only once every buffered object is durable.
+    pub fn flush(self: &Arc<Self>) -> Result<(), git2::Error> {
+        crate::flusher::drain(self.clone())
     }
 
-    /// Flush triggered from the ODB `write` path when the store overflows its limit. The write
-    /// callback has no repository handle, and the packbuilder reads each object back through a
-    /// registered backend, so re-open the repository, register a backend sharing this store on it,
-    /// and flush through that.
-    fn flush_on_overflow(self: &Arc<Self>) -> Result<(), git2::Error> {
-        let repo = git2::Repository::open(&self.repo_path)?;
-        odb_backend::register(
-            &repo,
-            MemBackend {
-                store: self.clone(),
-            },
-        )?;
-        self.flush_into(&repo)
+    /// Enqueue a best-effort background pack of this store, called from the ODB `write` path when the
+    /// store overflows its size limit. `chunk_in_flight` collapses the burst of overflowing writes
+    /// that follow into a single queued chunk; the flusher clears it once the chunk has packed and
+    /// evicted (so `size` reflects the drain before another chunk can be enqueued).
+    fn enqueue_chunk(self: &Arc<Self>) {
+        if self.chunk_in_flight.swap(true, Ordering::AcqRel) {
+            return;
+        }
+        crate::flusher::enqueue_chunk(self.clone());
     }
 
-    fn flush_into(&self, repo: &git2::Repository) -> Result<(), git2::Error> {
+    /// Clear the [`Self::chunk_in_flight`] guard. Called by the background flusher after a chunk.
+    pub(crate) fn clear_chunk_in_flight(&self) {
+        self.chunk_in_flight.store(false, Ordering::Release);
+    }
+
+    /// Pack this store's currently-buffered objects into a packfile and evict them. Runs only on the
+    /// background flusher, which owns no repository handle (`git2::Repository` is not `Send`), so it
+    /// re-opens the repository and registers a backend sharing this store — the packbuilder reads
+    /// each object back through that backend.
+    pub(crate) fn pack_to_disk(self: &Arc<Self>) -> Result<(), git2::Error> {
         // Snapshot the oids under the lock, then release it. The objects must stay in the store
         // across the packbuilder below: `pb.write` reads each one back through the odb -> this
         // backend -> `self.inner.lock()`, so we can neither hold the lock here (self-deadlock) nor
@@ -109,11 +127,14 @@ impl MemOdb {
             inner.map.keys().copied().collect()
         };
 
+        let repo = git2::Repository::open(&self.repo_path)?;
+        self.register(&repo);
+
         // The memory-only freshen (see `odb_backend`) no longer deduplicates writes against disk,
         // so objects already present on disk may have been re-buffered into the store. Pack only the
         // genuinely-new ones — `filter_absent_on_disk` preserves the sorted oid order, so the
         // packfile (and its name) stays deterministic.
-        let to_pack = odb_backend::filter_absent_on_disk(repo, &oids);
+        let to_pack = odb_backend::filter_absent_on_disk(&repo, &oids);
         if !to_pack.is_empty() {
             let mut pb = repo.packbuilder()?;
             for oid in &to_pack {
@@ -121,14 +142,18 @@ impl MemOdb {
             }
             // `packfile_path` resolves the common object directory, so this is correct for linked
             // worktrees (whose gitdir has no `objects/` of its own) as well as normal repos.
-            pb.write(&crate::pack::packfile_path(repo), 0)?;
+            pb.write(&crate::pack::packfile_path(&repo), 0)?;
         }
 
-        // Dropping the whole map (rather than only the flushed oids) is safe because a store is
-        // never flushed with writes in flight.
+        // Evict exactly the snapshotted oids (now durable: packed just above, or already on disk).
+        // Writes that landed after the snapshot stay buffered for the next chunk or the drain, so a
+        // background chunk running concurrently with the write path never drops a live object.
         let mut inner = self.inner.lock().unwrap();
-        inner.map.clear();
-        inner.size = 0;
+        for oid in &oids {
+            if let Some((_, data)) = inner.map.remove(oid) {
+                inner.size = inner.size.saturating_sub(data.len());
+            }
+        }
         Ok(())
     }
 }
@@ -175,7 +200,7 @@ impl OdbBackend for MemBackend {
     fn write(&mut self, oid: Oid, data: Vec<u8>, kind: ObjectType) -> Result<(), git2::Error> {
         let overflow = self.store.insert(oid, kind.raw(), data.into_boxed_slice());
         if overflow {
-            self.store.flush_on_overflow()?;
+            self.store.enqueue_chunk();
         }
         Ok(())
     }
@@ -218,7 +243,7 @@ mod tests {
             assert!(repo.odb().unwrap().exists(*id));
         }
 
-        store.flush(&repo).unwrap();
+        store.flush().unwrap();
 
         // A fresh repo with no backend can only see objects that made it to disk.
         let on_disk = git2::Repository::open(dir.path()).unwrap();
@@ -228,7 +253,7 @@ mod tests {
         }
 
         // The store is drained: a second flush is a no-op.
-        store.flush(&repo).unwrap();
+        store.flush().unwrap();
     }
 
     /// A linked worktree's gitdir has no `objects/` of its own, so the flush must write into the
@@ -260,32 +285,52 @@ mod tests {
         let id = wt_repo.blob(b"worktree blob").unwrap();
 
         // Must not fail on the (nonexistent) per-worktree objects/pack directory.
-        store.flush(&wt_repo).unwrap();
+        store.flush().unwrap();
 
         // The pack landed in the common object dir, so the main repo can read the blob from disk.
         let main = git2::Repository::open(&main_path).unwrap();
         assert_eq!(main.find_blob(id).unwrap().content(), b"worktree blob");
     }
 
-    /// When `limit` is set, writing enough data to exceed it flushes the store to a packfile
-    /// mid-transaction (from inside the write path), leaving the objects on disk and the store
-    /// empty. Each further overflow writes another packfile.
+    /// When `limit` is set, writing enough data to exceed it enqueues a background pack from inside
+    /// the write path, which lands the objects on disk asynchronously (leaving the store to drain
+    /// the rest at the transaction boundary). Each further overflow enqueues another pack.
     #[test]
     fn flushes_on_overflow_during_writes() {
         let dir = tempfile::tempdir().unwrap();
         let repo = git2::Repository::init(dir.path()).unwrap();
 
-        // A 16-byte limit: each 100-byte blob overflows it, so every write flushes.
+        // A 16-byte limit: each 100-byte blob overflows it, so every write enqueues a pack.
         let store = MemOdb::new(Some(16), repo.path().to_owned());
         store.register(&repo);
 
+        // The write overflowed and enqueued a background pack; it lands on the flusher thread, so
+        // poll a fresh on-disk view until the object appears.
         let id1 = repo.blob(&b"x".repeat(100)).unwrap();
-        // The write overflowed and flushed: id1 is already on disk, and a fresh repo can read it.
-        let on_disk = git2::Repository::open(dir.path()).unwrap();
-        assert_eq!(on_disk.find_blob(id1).unwrap().content(), &b"x".repeat(100));
+        assert!(
+            wait_on_disk(dir.path(), id1),
+            "overflow pack never reached disk"
+        );
 
-        // A second object overflows again, producing a second packfile.
+        // A second object overflows again, enqueueing another pack.
         let id2 = repo.blob(&b"y".repeat(100)).unwrap();
-        assert_eq!(on_disk.find_blob(id2).unwrap().content(), &b"y".repeat(100));
+        assert!(
+            wait_on_disk(dir.path(), id2),
+            "second overflow pack never reached disk"
+        );
+    }
+
+    /// Poll a freshly-opened (backend-less) view of the repository until `id` is readable from disk,
+    /// up to ~2s. Used to observe asynchronous background packs without racing the flusher thread.
+    fn wait_on_disk(repo_path: &std::path::Path, id: Oid) -> bool {
+        for _ in 0..200 {
+            if let Ok(repo) = git2::Repository::open(repo_path) {
+                if repo.find_blob(id).is_ok() {
+                    return true;
+                }
+            }
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
+        false
     }
 }

@@ -6,6 +6,7 @@
 //! josh uses: a per-operation in-memory store that buffers filtered objects and flushes them to a
 //! packfile at transaction and external-git boundaries.
 
+mod flusher;
 pub mod hash;
 pub mod mem_odb;
 mod odb_backend;
