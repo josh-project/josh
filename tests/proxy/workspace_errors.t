@@ -145,10 +145,12 @@ No match for filters
   remote: warnings:        
   remote: No match for "::abc"        
   remote: No match for "a/b = :/b/c/*"        
-  remote: No match for "c/sub = :/sub"        
-  remote: No match for "test/sub = :/sub"        
+  remote: No match for ":/sub:prefix=sub:[        
+  remote:     :prefix=c        
+  remote:     :prefix=test        
+  remote: ]"        
   remote: No match for "test = ::test"        
-  remote: No match for "test/test = :/test:/"        
+  remote: No match for "test/test = :/test"        
   remote: No match for "::test/test/"        
   remote: REWRITE(064643c5fdf5295695d383a511e4335ea3262fce -> e972e5448a9595045a092fb5f7d82dc6797b4d23)        
   To http://localhost:8002/real_repo.git:workspace=ws.git
@@ -180,16 +182,13 @@ Flushed credential cache
             "message": "No match for \"a/b = :/b/c/*\""
           },
           {
-            "message": "No match for \"c/sub = :/sub\""
-          },
-          {
-            "message": "No match for \"test/sub = :/sub\""
+            "message": "No match for \":/sub:prefix=sub:[\n    :prefix=c\n    :prefix=test\n]\""
           },
           {
             "message": "No match for \"test = ::test\""
           },
           {
-            "message": "No match for \"test/test = :/test:/\""
+            "message": "No match for \"test/test = :/test\""
           },
           {
             "message": "No match for \"::test/test/\""

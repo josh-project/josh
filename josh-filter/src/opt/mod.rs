@@ -21,6 +21,7 @@ pub use flatten::flatten;
 pub use invert::invert;
 pub use simplify::simplify;
 
+use self::flatten::flatten_full;
 use self::step::step;
 
 type FilterHashMap = HashMap<Filter, Filter, BuildHasherDefault<PassthroughHasher>>;
@@ -29,11 +30,17 @@ type InvertHashMap = HashMap<Filter, Option<Filter>, BuildHasherDefault<Passthro
 
 static OPTIMIZED: LazyLock<std::sync::Mutex<FilterHashMap>> =
     LazyLock::new(|| std::sync::Mutex::new(HashMap::default()));
+static OPTIMIZED_FULL: LazyLock<std::sync::Mutex<FilterHashMap>> =
+    LazyLock::new(|| std::sync::Mutex::new(HashMap::default()));
 static INVERTED: LazyLock<std::sync::Mutex<InvertHashMap>> =
     LazyLock::new(|| std::sync::Mutex::new(HashMap::default()));
 static SIMPLIFIED: LazyLock<std::sync::Mutex<FilterHashMap>> =
     LazyLock::new(|| std::sync::Mutex::new(HashMap::default()));
 static FLATTENED: LazyLock<std::sync::Mutex<FilterHashMap>> =
+    LazyLock::new(|| std::sync::Mutex::new(HashMap::default()));
+// Separate cache for the `full` (skip-disabled) flatten: the two produce different results for
+// the same filter, so they must not share a memo.
+static FLATTENED_FULL: LazyLock<std::sync::Mutex<FilterHashMap>> =
     LazyLock::new(|| std::sync::Mutex::new(HashMap::default()));
 
 /*
@@ -41,12 +48,30 @@ static FLATTENED: LazyLock<std::sync::Mutex<FilterHashMap>> =
  * suitable for fast evaluation and cache reuse.
  */
 pub fn optimize(filter: Filter) -> Filter {
-    if let Some(f) = OPTIMIZED.lock().unwrap().get(&filter) {
+    optimize_impl(filter, false)
+}
+
+/*
+ * Like `optimize`, but flattens fully (`flatten_full`): distributes even the trailing Compose
+ * that `optimize` leaves alone as futile, letting `step` cancel more. For callers that want the
+ * maximally-collapsed representation and are not on a hot path (e.g. pretty printing).
+ */
+pub fn optimize_full(filter: Filter) -> Filter {
+    optimize_impl(filter, true)
+}
+
+fn optimize_impl(filter: Filter, full: bool) -> Filter {
+    let cache = if full { &OPTIMIZED_FULL } else { &OPTIMIZED };
+    if let Some(f) = cache.lock().unwrap().get(&filter) {
         return *f;
     }
     let original = filter;
 
-    let mut filter = flatten(filter);
+    let mut filter = if full {
+        flatten_full(filter)
+    } else {
+        flatten(filter)
+    };
     let result = loop {
         let pretty = simplify(filter);
         let optimized = iterate(filter);
@@ -57,7 +82,7 @@ pub fn optimize(filter: Filter) -> Filter {
         }
     };
 
-    OPTIMIZED.lock().unwrap().insert(original, result);
+    cache.lock().unwrap().insert(original, result);
     result
 }
 

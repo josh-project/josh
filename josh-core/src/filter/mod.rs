@@ -1976,7 +1976,14 @@ fn compute_splice_parents(
     let splice_parents = parent_filters
         .into_iter()
         .map(|(parent, pcw)| {
-            let f = opt::optimize(to_filter(Op::Subtract(
+            // Collapsing this Subtract as far as possible really matters here: it folds to
+            // `Empty` whenever the new filter selects no paths beyond the parent's -- not only
+            // for equivalent filters but for any change that does not expand the set, such as a
+            // rename or a removal -- and an empty result lets `apply_to_commit2` skip a whole
+            // history walk. `optimize` skips the trailing-Compose distribution, which can leave
+            // the subtract less collapsed, so use `optimize_full` here to flatten fully and give
+            // `step`'s set-difference the flat form it needs to cancel.
+            let f = opt::optimize_full(to_filter(Op::Subtract(
                 strip_pins(commit_filter.peel()),
                 strip_pins(pcw.peel()),
             )));
@@ -2419,5 +2426,105 @@ mod tests {
 
         // Clean up
         let _ = fs::remove_dir_all(&test_dir);
+    }
+
+    // Apply-based correctness oracle for the optimizer's Subtract handling: applying the
+    // optimized filter to a tree must produce the same tree as applying the unoptimized filter
+    // (`apply` is the ground-truth interpreter), and optimizing an invertible filter must keep it
+    // invertible (the workspace machinery inverts optimized filters).
+    #[test]
+    fn subtract_optimizer_apply_oracle() {
+        let td = tempfile::tempdir().unwrap();
+        let repo = git2::Repository::init_bare(td.path()).unwrap();
+
+        let mut b = git2::build::TreeUpdateBuilder::new();
+        for p in [
+            "d1/s1/f0",
+            "d1/s1/f1",
+            "d2/s2/f0",
+            "d2/s2/f1",
+            "d3/s3/f0",
+            "sub1/file1",
+            "sub1/file2",
+            "sub2/subsub/file2",
+        ] {
+            let oid = repo.blob(p.as_bytes()).unwrap();
+            b.upsert(p, oid, git2::FileMode::Blob);
+        }
+        let ws_content = ":/sub1::file1\n:/sub1::file2\n::sub2/subsub/\n";
+        for p in ["ws/workspace.josh", "ws2/workspace.josh"] {
+            let oid = repo.blob(ws_content.as_bytes()).unwrap();
+            b.upsert(p, oid, git2::FileMode::Blob);
+        }
+        let empty = repo.treebuilder(None).unwrap().write().unwrap();
+        let tree = b
+            .create_updated(&repo, &repo.find_tree(empty).unwrap())
+            .unwrap();
+        let tree = repo.find_tree(tree).unwrap();
+
+        cache::sled_load(td.path()).unwrap();
+        let cachestack = std::sync::Arc::new(
+            cache::CacheStack::new().with_backend(cache::SledCacheBackend::default()),
+        );
+        let ctx = cache::TransactionContext::new(td.path(), cachestack);
+        let t = ctx.open().unwrap();
+
+        let apply_tree = |f: Filter| -> anyhow::Result<git2::Oid> {
+            Ok(apply(&t, f, Rewrite::from_tree(tree.clone()))?.tree().id())
+        };
+
+        // The pin-legalisation subtract, built exactly like per_rev_filter.
+        let files: Vec<Filter> = ["d1/s1/f0", "d1/s1/f1", "d2/s2/f0", "d2/s2/f1", "d3/s3/f0"]
+            .iter()
+            .map(|p| Filter::new().file(p))
+            .collect();
+        let wide = josh_filter::compose(&files);
+        let pins = josh_filter::compose(&[Filter::new().file("d1/s1/f0")]);
+        let cf = wide.pin(pins);
+        let pin_sub = to_filter(Op::Subtract(
+            legalize_pin(cf.peel(), &|f| f),
+            legalize_pin(cf.peel(), &|f| to_filter(Op::Exclude(f))),
+        ));
+
+        let mut cases = vec![pin_sub];
+        for s in [
+            ":workspace=ws",
+            ":workspace=ws2",
+            ":subtract[:/sub1,::ws/]",
+            ":subtract[:[::sub1/,::sub2/],::sub1/]",
+            ":subtract[:/d1,:/d1/s1]",
+            ":subtract[:[a=:/sub1,b=:/sub2],:[a=:/sub1]]",
+        ] {
+            cases.push(parse(s).unwrap());
+        }
+        // The nested subtract the workspace history machinery builds and then inverts.
+        let contents = parse(":[:/sub1::file1,:/sub1::file2,::sub2/subsub/]").unwrap();
+        let wsj = parse(":/ws::workspace.josh").unwrap();
+        cases.push(to_filter(Op::Subtract(
+            to_filter(Op::Subtract(contents, wsj)),
+            to_filter(Op::Subdir(std::path::PathBuf::from("ws"))),
+        )));
+
+        for sub in cases {
+            let optimized = opt::optimize(sub);
+            match (apply_tree(sub), apply_tree(optimized)) {
+                (Ok(g), Ok(o)) => {
+                    assert_eq!(
+                        g, o,
+                        "optimizer changed result for {sub:?} -> {optimized:?}"
+                    )
+                }
+                (Err(ge), _) => panic!("ground-truth apply failed for {sub:?}: {ge}"),
+                (_, Err(oe)) => {
+                    panic!("optimized apply failed for {sub:?} -> {optimized:?}: {oe}")
+                }
+            }
+            if invert(sub).is_ok() {
+                assert!(
+                    invert(optimized).is_ok(),
+                    "optimize broke invertibility of {sub:?} -> {optimized:?}"
+                );
+            }
+        }
     }
 }
