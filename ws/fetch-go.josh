@@ -1,0 +1,14 @@
+:$label="go mod download"
+:#image[:+images/go-dev-local]
+:$network="host"
+
+:$cmd="cd josh-ssh-dev-server && go mod download"
+
+env = :[
+    :$GOMODCACHE="/out/go-mod-cache"
+]
+
+worktree = :[
+    ::josh-ssh-dev-server/go.mod
+    ::josh-ssh-dev-server/go.sum
+]

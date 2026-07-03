@@ -1,0 +1,3 @@
+sidecars = :[
+    :#sccache-proxy[:+ws/sccache-proxy]
+]

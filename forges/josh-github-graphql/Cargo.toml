@@ -1,0 +1,27 @@
+[package]
+edition = "2021"
+name = "josh-github-graphql"
+version = "26.6.11"
+authors = ["Josh Project authors <contact@josh-project.dev>"]
+description = "GitHub GraphQL client for Josh"
+license-file = "../../LICENSE"
+repository = "https://github.com/josh-project/josh"
+keywords = ["git", "github", "monorepo", "graphql"]
+
+[lib]
+doctest = false
+
+[dependencies]
+http.workspace = true
+git2.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+reqwest.workspace = true
+reqwest-middleware.workspace = true
+anyhow.workspace = true
+url.workspace = true
+async-trait.workspace = true
+graphql_client.workspace = true
+
+josh-github-auth.workspace = true
+josh-github-codegen-graphql.workspace = true

@@ -1,0 +1,1867 @@
+use anyhow::anyhow;
+pub use josh_core::trailers::{commit_change_meta, parse_change_meta};
+
+pub mod remote_config;
+
+/// Which `refs/josh/...` ref holds a piece of change metadata.
+///
+/// Scoped by the target branch of the change, so a single repo can host
+/// changes against multiple branches without collisions.
+///
+/// `Local { branch }` is data the user authored or discovered from their
+/// working tree, targeting `branch`.
+/// `Remote { remote, branch }` is data fetched from / posted to `remote`
+/// for changes targeting `branch`.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub enum ChangesRef {
+    Local { branch: String },
+    Remote { remote: String, branch: String },
+}
+
+impl ChangesRef {
+    pub fn ref_name(&self) -> String {
+        match self {
+            ChangesRef::Local { branch } => format!("refs/josh/changes/{}", branch),
+            ChangesRef::Remote { remote, branch } => {
+                format!("refs/josh/remotes/{}/changes/{}", remote, branch)
+            }
+        }
+    }
+
+    pub fn branch(&self) -> &str {
+        match self {
+            ChangesRef::Local { branch } => branch,
+            ChangesRef::Remote { branch, .. } => branch,
+        }
+    }
+
+    pub fn remote(&self) -> Option<&str> {
+        match self {
+            ChangesRef::Local { .. } => None,
+            ChangesRef::Remote { remote, .. } => Some(remote),
+        }
+    }
+}
+
+/// Return the current OID of the changes ref under `scope`, or `None` if the
+/// ref doesn't exist yet. Used by callers that need a single value to compare
+/// against to detect ref changes.
+pub fn read_ref_oid(repo: &git2::Repository, scope: &ChangesRef) -> Option<git2::Oid> {
+    repo.find_reference(&scope.ref_name())
+        .ok()
+        .and_then(|r| r.target())
+}
+
+/// Read `repo.head()` and return the current branch shorthand. Errors on a
+/// detached HEAD with a message asking the caller to pass an explicit branch.
+pub fn head_branch(repo: &git2::Repository) -> anyhow::Result<String> {
+    let head = repo
+        .head()
+        .map_err(|e| anyhow!("failed to read HEAD: {}", e))?;
+    if !head.is_branch() {
+        return Err(anyhow!(
+            "HEAD is detached -- pass --branch to select a target branch explicitly"
+        ));
+    }
+    head.shorthand()
+        .map(|s| s.to_string())
+        .ok_or_else(|| anyhow!("HEAD has no valid shorthand"))
+}
+
+/// Return every changes ref that currently exists, as `ChangesRef` values.
+/// `(remote, branch)` pairs are sorted for deterministic iteration; Local
+/// entries come first.
+pub fn all_changes_refs(repo: &git2::Repository) -> anyhow::Result<Vec<ChangesRef>> {
+    let mut locals: Vec<String> = Vec::new();
+    let mut remotes: Vec<(String, String)> = Vec::new();
+    for r in repo.references()? {
+        let r = r?;
+        let name = match r.name() {
+            Some(n) => n,
+            None => continue,
+        };
+        if let Some(branch) = name.strip_prefix("refs/josh/changes/") {
+            if !branch.is_empty() {
+                locals.push(branch.to_string());
+            }
+        } else if let Some(rest) = name.strip_prefix("refs/josh/remotes/") {
+            // `<remote>/changes/<branch>` -- branch may contain `/`, so split
+            // on the literal `/changes/` separator.
+            if let Some((remote, branch)) = rest.split_once("/changes/") {
+                if !remote.is_empty() && !branch.is_empty() {
+                    remotes.push((remote.to_string(), branch.to_string()));
+                }
+            }
+        }
+    }
+    locals.sort();
+    locals.dedup();
+    remotes.sort();
+    remotes.dedup();
+
+    let mut out = Vec::with_capacity(locals.len() + remotes.len());
+    for branch in locals {
+        out.push(ChangesRef::Local { branch });
+    }
+    for (remote, branch) in remotes {
+        out.push(ChangesRef::Remote { remote, branch });
+    }
+    Ok(out)
+}
+
+#[derive(Debug, Clone)]
+pub struct Change {
+    author: String,
+    id: Option<String>,
+    series: Vec<String>,
+    commit: git2::Oid,
+    base: git2::Oid,
+}
+
+impl Change {
+    pub fn new(_repo: &git2::Repository, commit: &git2::Commit) -> Self {
+        let mut change = Self {
+            author: commit.author().email().unwrap_or("").to_string(),
+            id: None,
+            series: Vec::new(),
+            commit: commit.id(),
+            base: git2::Oid::zero(),
+        };
+        let (id, series) = commit_change_meta(commit);
+        change.id = id;
+        change.series = series;
+
+        change
+    }
+
+    pub fn author(&self) -> &str {
+        &self.author
+    }
+
+    pub fn id(&self) -> Option<&str> {
+        self.id.as_deref()
+    }
+
+    pub fn series(&self) -> &[String] {
+        &self.series
+    }
+
+    pub fn commit(&self) -> git2::Oid {
+        self.commit
+    }
+
+    pub fn base(&self) -> git2::Oid {
+        self.base
+    }
+
+    pub fn set_base(&mut self, base: git2::Oid) {
+        self.base = base;
+    }
+
+    pub fn contributing(&self, repo: &git2::Repository) -> anyhow::Result<Vec<git2::Oid>> {
+        let mut walk = repo.revwalk()?;
+        walk.simplify_first_parent()?;
+        walk.set_sorting(git2::Sort::TOPOLOGICAL)?;
+        walk.push(self.commit)?;
+        if self.base != git2::Oid::zero() {
+            walk.hide(self.base)?;
+        }
+        let mut oids: Vec<git2::Oid> = walk.collect::<Result<Vec<_>, _>>()?;
+        if oids.first() == Some(&self.commit) {
+            oids.remove(0);
+        }
+        Ok(oids)
+    }
+
+    /// The change-ids this change depends on (the changes in its downstack),
+    /// restricted to `known` and excluding itself, in downstack order, deduped.
+    ///
+    /// Dependencies are matched by each contributing commit's `Change-Id`
+    /// trailer, not by commit oid: a stored change's tip is a downstack-split
+    /// commit whose oid does not appear in another change's contributing
+    /// history, so oid matching only ever links the un-split (identity) changes.
+    pub fn dependency_ids(
+        &self,
+        repo: &git2::Repository,
+        known: &std::collections::HashSet<String>,
+    ) -> anyhow::Result<Vec<String>> {
+        let mut deps = Vec::new();
+        let mut seen = std::collections::HashSet::new();
+        for oid in self.contributing(repo)? {
+            let commit = repo.find_commit(oid)?;
+            let (id, _) = commit_change_meta(&commit);
+            let id = match id {
+                Some(id) => id,
+                None => continue,
+            };
+            if Some(id.as_str()) == self.id() || !known.contains(&id) {
+                continue;
+            }
+            if seen.insert(id.clone()) {
+                deps.push(id);
+            }
+        }
+        Ok(deps)
+    }
+}
+
+pub fn encode_change_id_path(id: &str) -> String {
+    id.replace('/', "%2F")
+}
+
+fn decode_change_id_path(enc: &str) -> String {
+    enc.replace("%2F", "/")
+}
+
+/// Create a real merge commit that has the target branch tip and PR head as its two parents.
+/// The tree is the PR head's tree (no content merge needed).
+/// Author and committer are copied from the PR head commit.
+pub fn create_synthetic_merge_commit(
+    repo: &git2::Repository,
+    pr_head: &git2::Commit,
+    target_branch_tip: &git2::Commit,
+    message: &str,
+) -> anyhow::Result<git2::Oid> {
+    let tree = pr_head.tree()?;
+    let author = pr_head.author();
+    let committer = pr_head.committer();
+
+    let oid = repo.commit(
+        None,
+        &author,
+        &committer,
+        message,
+        &tree,
+        &[target_branch_tip, pr_head],
+    )?;
+
+    Ok(oid)
+}
+
+#[derive(PartialEq, Clone, Debug)]
+pub enum PushMode {
+    Normal,
+    Publish(String),
+}
+
+#[derive(Debug, Clone)]
+pub struct PushRef {
+    pub ref_name: String,
+    pub oid: git2::Oid,
+    pub change_id: String,
+}
+
+pub fn baseref_and_options(
+    refname: &str,
+    author: &str,
+) -> anyhow::Result<(String, String, Vec<String>, PushMode)> {
+    let mut split = refname.splitn(2, '%');
+    let push_to = split.next().ok_or(anyhow!("no next"))?.to_owned();
+
+    let options = if let Some(options) = split.next() {
+        options.split(',').map(|x| x.to_string()).collect()
+    } else {
+        vec![]
+    };
+
+    let mut baseref = push_to.to_owned();
+    let mut push_mode = PushMode::Normal;
+
+    if baseref.starts_with("refs/for") {
+        baseref = baseref.replacen("refs/for", "refs/heads", 1)
+    }
+    if baseref.starts_with("refs/drafts") {
+        baseref = baseref.replacen("refs/drafts", "refs/heads", 1)
+    }
+    if baseref.starts_with("refs/publish/for") {
+        push_mode = PushMode::Publish(author.to_string());
+        baseref = baseref.replacen("refs/publish/for", "refs/heads", 1)
+    }
+    Ok((baseref, push_to, options, push_mode))
+}
+
+fn split_changes(
+    repo: &git2::Repository,
+    transaction: &josh_core::cache::Transaction,
+    changes: std::collections::HashMap<git2::Oid, Change>,
+) -> anyhow::Result<Vec<Change>> {
+    if changes.values().next().map(|c| c.base) == Some(git2::Oid::zero()) {
+        return Ok(changes.into_values().collect());
+    }
+
+    changes
+        .into_values()
+        .map(|c| {
+            let filter = josh_core::filter::Filter::new().downstack(c.base);
+            let commit = repo.find_commit(c.commit)?;
+            let new_oid = josh_core::filter::apply_to_commit(filter, &commit, transaction)?;
+            let mut result = c;
+            result.commit = new_oid;
+            Ok(result)
+        })
+        .collect()
+}
+
+fn changes_to_refs(
+    repo: &git2::Repository,
+    baseref: &str,
+    change_author: &str,
+    changes: Vec<Change>,
+) -> anyhow::Result<Vec<PushRef>> {
+    if !change_author.contains('@') {
+        return Err(anyhow!(
+            "Push option 'author' needs to be set to a valid email address",
+        ));
+    };
+
+    let changes: Vec<Change> = changes
+        .into_iter()
+        .filter(|change| change.author == change_author)
+        .collect();
+
+    let mut seen = std::collections::HashSet::new();
+    for change in changes.iter() {
+        if let Some(id) = &change.id {
+            if id.contains('@') {
+                return Err(anyhow!("Change id must not contain '@'"));
+            }
+            if !seen.insert(id) {
+                return Err(anyhow!(
+                    "rejecting to push {:?} with duplicate label",
+                    change.commit
+                ));
+            }
+            seen.insert(id);
+        }
+    }
+
+    let mut refs = vec![];
+    for change in changes {
+        if let Some(change_id) = change.id {
+            let ref_name = format!(
+                "refs/heads/@changes/{}/{}/{}",
+                baseref.replacen("refs/heads/", "", 1),
+                change.author,
+                change_id,
+            );
+            let base_ref_name = ref_name.replacen("refs/heads/@changes", "refs/heads/@base", 1);
+            refs.push(PushRef {
+                ref_name,
+                oid: change.commit,
+                change_id: change_id.clone(),
+            });
+            if let Some(parent_sha) = repo.find_commit(change.commit)?.parent_ids().next() {
+                refs.push(PushRef {
+                    ref_name: base_ref_name,
+                    oid: parent_sha,
+                    change_id,
+                });
+            }
+        }
+    }
+    Ok(refs)
+}
+
+fn get_changes(
+    repo: &git2::Repository,
+    tip: git2::Oid,
+    base: git2::Oid,
+) -> anyhow::Result<std::collections::HashMap<git2::Oid, Change>> {
+    let mut walk = repo.revwalk()?;
+    walk.set_sorting(git2::Sort::REVERSE | git2::Sort::TOPOLOGICAL)?;
+    walk.simplify_first_parent()?;
+    walk.push(tip)?;
+    if base != git2::Oid::zero() {
+        walk.hide(base)?;
+    }
+
+    let mut changes = std::collections::HashMap::new();
+    for rev in walk {
+        let commit = repo.find_commit(rev?)?;
+        let mut change = Change::new(repo, &commit);
+        if change.id.is_none() {
+            continue;
+        }
+        change.base = base;
+        changes.insert(change.commit, change);
+    }
+
+    Ok(changes)
+}
+
+pub fn build_to_push(
+    repo: &git2::Repository,
+    transaction: &josh_core::cache::Transaction,
+    push_mode: &PushMode,
+    baseref: &str,
+    ref_with_options: &str,
+    oid_to_push: git2::Oid,
+    base_oid: git2::Oid,
+) -> anyhow::Result<Vec<PushRef>> {
+    match push_mode {
+        PushMode::Publish(author) => {
+            let changes = get_changes(repo, oid_to_push, base_oid)?;
+            let changes = split_changes(repo, transaction, changes)?;
+
+            let mut push_refs = changes_to_refs(repo, baseref, author, changes)?;
+
+            push_refs.push(PushRef {
+                ref_name: format!(
+                    "refs/heads/@heads/{}/{}",
+                    baseref.replacen("refs/heads/", "", 1),
+                    author,
+                ),
+                oid: oid_to_push,
+                change_id: baseref.replacen("refs/heads/", "", 1),
+            });
+
+            push_refs.sort_by(|a, b| a.ref_name.cmp(&b.ref_name));
+            Ok(push_refs)
+        }
+        PushMode::Normal => Ok(vec![PushRef {
+            ref_name: if ref_with_options.starts_with("refs/") {
+                ref_with_options.to_string()
+            } else {
+                format!("refs/heads/{}", ref_with_options)
+            },
+            oid: oid_to_push,
+            change_id: "JOSH_PUSH".to_string(),
+        }]),
+    }
+}
+
+pub fn sync_changes(
+    repo: &git2::Repository,
+    transaction: &josh_core::cache::Transaction,
+    tip: git2::Oid,
+    base: git2::Oid,
+    branch: &str,
+) -> anyhow::Result<Vec<Change>> {
+    let changes = get_changes(repo, tip, base)?;
+    let changes = split_changes(repo, transaction, changes)?;
+    let scope = ChangesRef::Local {
+        branch: branch.to_string(),
+    };
+    for c in &changes {
+        let _ = store_diff_data(repo, c, &scope);
+    }
+    Ok(changes)
+}
+
+/// Run a local-scope sync end-to-end: derive tip from HEAD, derive base from
+/// `refs/remotes/origin/<HEAD branch>`, and store discovered changes under the
+/// `ChangesRef::Local { branch }` ref.
+///
+/// The `branch` argument selects the scope ref; the HEAD branch (which may
+/// differ when a caller passes an explicit target) is used only to find the
+/// base commit.
+pub fn sync_local(
+    repo: &git2::Repository,
+    transaction: &josh_core::cache::Transaction,
+    branch: &str,
+) -> anyhow::Result<Vec<Change>> {
+    let head = repo.head()?.peel_to_commit()?;
+    let head_branch = repo.head()?.shorthand().map(|s| s.to_string());
+    let base_oid = head_branch
+        .as_ref()
+        .and_then(|b| {
+            repo.find_reference(&format!("refs/remotes/origin/{}", b))
+                .ok()
+                .and_then(|r| r.peel_to_commit().ok())
+                .map(|c| c.id())
+        })
+        .unwrap_or(git2::Oid::zero());
+    sync_changes(repo, transaction, head.id(), base_oid, branch)
+}
+
+pub fn list_changes(repo: &git2::Repository, scope: &ChangesRef) -> anyhow::Result<Vec<Change>> {
+    let tree = match repo.find_reference(&scope.ref_name()) {
+        Ok(r) => r.peel_to_tree()?,
+        Err(_) => return Ok(Vec::new()),
+    };
+
+    let diffs_tree = match tree
+        .get_name("diffs")
+        .and_then(|e| e.to_object(repo).ok())
+        .and_then(|o| o.peel_to_tree().ok())
+    {
+        Some(t) => t,
+        None => return Ok(Vec::new()),
+    };
+
+    let mut changes = Vec::new();
+    for entry in diffs_tree.iter() {
+        let change_id = decode_change_id_path(entry.name().unwrap_or(""));
+        if change_id.is_empty() {
+            continue;
+        }
+        let subtree = match entry
+            .to_object(repo)
+            .ok()
+            .and_then(|o| o.peel_to_tree().ok())
+        {
+            Some(t) => t,
+            None => continue,
+        };
+        // The subtree has a single blob named by its content hash.
+        // Read it to get tip and base OIDs.
+        let mut tip_oid = git2::Oid::zero();
+        let mut base_oid = git2::Oid::zero();
+        for se in subtree.iter() {
+            let blob = match se.to_object(repo).ok().and_then(|o| o.peel_to_blob().ok()) {
+                Some(b) => b,
+                None => continue,
+            };
+            let content = String::from_utf8_lossy(blob.content());
+            if let Some((tip_str, base_str)) = content.split_once('\n') {
+                tip_oid = git2::Oid::from_str(tip_str).unwrap_or(git2::Oid::zero());
+                base_oid = git2::Oid::from_str(base_str).unwrap_or(git2::Oid::zero());
+            }
+            break;
+        }
+        if tip_oid == git2::Oid::zero() {
+            continue;
+        }
+        let commit = match repo.find_commit(tip_oid) {
+            Ok(c) => c,
+            Err(_) => continue,
+        };
+        let mut change = Change::new(repo, &commit);
+        change.base = base_oid;
+        if change.id.is_none() {
+            change.id = Some(change_id);
+        }
+        changes.push(change);
+    }
+    Ok(changes)
+}
+
+pub fn resolve_change(
+    repo: &git2::Repository,
+    head: git2::Oid,
+    spec: &str,
+) -> anyhow::Result<Change> {
+    // Try as a full OID first.
+    if let Ok(oid) = git2::Oid::from_str(spec) {
+        if let Ok(commit) = repo.find_commit(oid) {
+            return Ok(Change::new(repo, &commit));
+        }
+    }
+
+    // Try as a revparse (branch, tag, short SHA).
+    if let Ok(obj) = repo.revparse_single(spec) {
+        if let Ok(commit) = obj.peel_to_commit() {
+            return Ok(Change::new(repo, &commit));
+        }
+    }
+
+    // Walk from head to find a commit with matching Change-Id.
+    let mut walk = repo.revwalk()?;
+    walk.simplify_first_parent()?;
+    walk.set_sorting(git2::Sort::TOPOLOGICAL)?;
+    walk.push(head)?;
+    for oid in walk {
+        let oid = oid?;
+        if let Ok(c) = repo.find_commit(oid) {
+            let (id, _) = parse_change_meta(c.message().unwrap_or(""));
+            if id.as_deref() == Some(spec) {
+                return Ok(Change::new(repo, &c));
+            }
+        }
+    }
+
+    Err(anyhow!("could not resolve '{}' to a commit", spec))
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct Location {
+    pub start_line: u32,
+    pub end_line: u32,
+    pub start_col: u32,
+    pub end_col: u32,
+}
+
+#[derive(serde::Serialize, serde::Deserialize)]
+pub struct CommentMeta {
+    pub message: String,
+    #[serde(skip)]
+    pub file: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub location: Option<Location>,
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub reply_to: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub update_of: Option<String>,
+}
+
+pub fn write_comment(
+    repo: &git2::Repository,
+    change: &Change,
+    meta: &CommentMeta,
+    author: Option<&str>,
+    timestamp: Option<&str>,
+    scope: &ChangesRef,
+) -> anyhow::Result<String> {
+    write_comment_with_commit(repo, change, meta, author, timestamp, None, scope)
+}
+
+pub fn write_comment_with_commit(
+    repo: &git2::Repository,
+    change: &Change,
+    meta: &CommentMeta,
+    author: Option<&str>,
+    timestamp: Option<&str>,
+    blob_commit_override: Option<&str>,
+    scope: &ChangesRef,
+) -> anyhow::Result<String> {
+    write_comment_inner(
+        repo,
+        change,
+        meta,
+        author,
+        timestamp,
+        blob_commit_override,
+        scope,
+        "comments",
+    )
+}
+
+/// Write a comment into the outbox subtree of a `Remote` ref. Comments here are
+/// pending posts to the remote; the cleanup runs on the next fetch when the
+/// posted comment is observed coming back from the remote.
+pub fn write_outbox_comment(
+    repo: &git2::Repository,
+    change: &Change,
+    meta: &CommentMeta,
+    author: Option<&str>,
+    timestamp: Option<&str>,
+    scope: &ChangesRef,
+) -> anyhow::Result<String> {
+    if !matches!(scope, ChangesRef::Remote { .. }) {
+        return Err(anyhow::anyhow!(
+            "write_outbox_comment requires a Remote scope (got {})",
+            scope.ref_name()
+        ));
+    }
+    write_comment_inner(
+        repo,
+        change,
+        meta,
+        author,
+        timestamp,
+        None,
+        scope,
+        "outbox/comments",
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn write_comment_inner(
+    repo: &git2::Repository,
+    change: &Change,
+    meta: &CommentMeta,
+    author: Option<&str>,
+    timestamp: Option<&str>,
+    blob_commit_override: Option<&str>,
+    scope: &ChangesRef,
+    path_prefix: &str,
+) -> anyhow::Result<String> {
+    if meta.message.trim().is_empty() {
+        return Err(anyhow::anyhow!("comment message must not be empty"));
+    }
+
+    let change_id = change
+        .id()
+        .ok_or_else(|| anyhow::anyhow!("commit {} has no Change-Id", change.commit()))?;
+
+    let content = serde_json::to_string(meta)?;
+    let content_hash =
+        git2::Oid::hash_object(git2::ObjectType::Blob, content.as_bytes())?.to_string();
+    let blob_oid = repo.blob(content.as_bytes())?;
+
+    let prefix = std::path::Path::new(path_prefix);
+    let path = if let Some(ref file) = meta.file {
+        let resolve_commit = match blob_commit_override {
+            Some(s) => git2::Oid::from_str(s)?,
+            None => change.commit(),
+        };
+        let commit = repo.find_commit(resolve_commit)?;
+        let file_blob = commit
+            .tree()?
+            .get_path(std::path::Path::new(file))?
+            .id()
+            .to_string();
+        prefix
+            .join("F")
+            .join(encode_change_id_path(&change_id))
+            .join(&file_blob)
+            .join(file)
+            .join(&content_hash)
+    } else {
+        prefix
+            .join("C")
+            .join(encode_change_id_path(&change_id))
+            .join(&content_hash)
+    };
+    write_changes_tree(repo, &path, blob_oid, author, timestamp, scope)?;
+
+    Ok(content_hash)
+}
+
+#[derive(Debug, Clone)]
+pub struct Comment {
+    pub id: String,
+    pub message: String,
+    pub file: Option<String>,
+    pub location: Option<Location>,
+    pub reply_to: Option<String>,
+    pub update_of: Option<String>,
+    pub author: Option<String>,
+    pub timestamp: Option<String>,
+    /// True when the comment was read from the `outbox/` subtree of a Remote
+    /// ref -- i.e. authored locally and not yet observed back from the remote.
+    pub pending: bool,
+}
+
+pub fn comment_author(
+    repo: &git2::Repository,
+    change: &Change,
+    comment_id: &str,
+    file: Option<&str>,
+    scope: &ChangesRef,
+) -> anyhow::Result<(String, String)> {
+    let change_id = match change.id() {
+        Some(id) => id,
+        None => return Err(anyhow!("change has no Change-Id")),
+    };
+
+    let ref_name = scope.ref_name();
+    let head = match repo.find_reference(&ref_name) {
+        Ok(r) => r.peel_to_commit()?,
+        Err(_) => return Err(anyhow!("{} not found", ref_name)),
+    };
+
+    let path = if let Some(f) = file {
+        // Find the blob_id for this comment in the current tree.
+        let head_tree = head.tree()?;
+        let cid_path = std::path::Path::new("comments")
+            .join("F")
+            .join(encode_change_id_path(change_id));
+        let mut found = None;
+        if let Some(cid_tree) = get_tree(repo, &head_tree, &cid_path) {
+            for blob_entry in cid_tree.iter() {
+                let blob_name = blob_entry.name().unwrap_or("");
+                let sub = std::path::Path::new(f).join(comment_id);
+                let full = cid_path.join(blob_name).join(&sub);
+                if head_tree.get_path(&full).is_ok() {
+                    found = Some(full);
+                    break;
+                }
+            }
+        }
+        match found {
+            Some(p) => p,
+            None => {
+                return Err(anyhow!("comment {} not found in {}", comment_id, ref_name));
+            }
+        }
+    } else {
+        std::path::Path::new("comments")
+            .join("C")
+            .join(encode_change_id_path(change_id))
+            .join(comment_id)
+    };
+
+    let mut walk = repo.revwalk()?;
+    walk.simplify_first_parent()?;
+    walk.push(head.id())?;
+
+    for oid in walk {
+        let oid = oid?;
+        let commit = repo.find_commit(oid)?;
+        let tree = commit.tree()?;
+        if let Ok(entry) = tree.get_path(&path) {
+            // Check if this blob is new (not in parent) or changed.
+            let is_new = match commit.parent(0) {
+                Ok(parent) => parent
+                    .tree()
+                    .ok()
+                    .and_then(|pt| pt.get_path(&path).ok())
+                    .map_or(true, |e| e.id() != entry.id()),
+                Err(_) => true,
+            };
+            if is_new {
+                let time = commit.time();
+                let date = format!("{}", time.seconds());
+                return Ok((commit.author().email().unwrap_or("").to_string(), date));
+            }
+        }
+    }
+
+    Err(anyhow!("comment {} not found in {}", comment_id, ref_name))
+}
+
+fn get_tree<'a>(
+    repo: &'a git2::Repository,
+    tree: &'a git2::Tree,
+    path: &std::path::Path,
+) -> Option<git2::Tree<'a>> {
+    tree.get_path(path)
+        .ok()
+        .and_then(|e| e.to_object(repo).ok())
+        .and_then(|o| o.peel_to_tree().ok())
+}
+
+fn parse_comment_blob(
+    repo: &git2::Repository,
+    entry: &git2::TreeEntry,
+    file: Option<String>,
+) -> anyhow::Result<Comment> {
+    let id = entry.name().unwrap_or("").to_string();
+    let blob = entry.to_object(repo)?.peel_to_blob()?;
+    let meta: CommentMeta = serde_json::from_slice(blob.content())?;
+    Ok(Comment {
+        id,
+        message: meta.message,
+        file,
+        location: meta.location,
+        reply_to: meta.reply_to,
+        update_of: meta.update_of,
+        author: None,
+        timestamp: None,
+        pending: false,
+    })
+}
+
+pub fn read_comments(
+    repo: &git2::Repository,
+    change_id: &str,
+    scope: &ChangesRef,
+) -> anyhow::Result<Vec<Comment>> {
+    let ref_name = scope.ref_name();
+    let tree = match repo.find_reference(&ref_name) {
+        Ok(r) => r.peel_to_tree()?,
+        Err(_) => return Ok(Vec::new()),
+    };
+
+    let mut comments = Vec::new();
+
+    // Posted/fetched: comments/{C,F}/...
+    collect_comments_at_prefix(repo, &tree, change_id, "comments", false, &mut comments)?;
+    // Pending outbox (only meaningful on Remote refs): outbox/comments/{C,F}/...
+    collect_comments_at_prefix(
+        repo,
+        &tree,
+        change_id,
+        "outbox/comments",
+        true,
+        &mut comments,
+    )?;
+
+    // Walk history once to resolve author/timestamp for all comments.
+    if let Ok(head) = repo.find_reference(&ref_name) {
+        if let Ok(head_commit) = head.peel_to_commit() {
+            let mut walk = repo.revwalk().unwrap_or_else(|_| repo.revwalk().unwrap());
+            let _ = walk.simplify_first_parent();
+            let _ = walk.push(head_commit.id());
+            'outer: for oid in walk.flatten() {
+                if let Ok(commit) = repo.find_commit(oid) {
+                    let tree = commit.tree().unwrap();
+                    let parent_tree = commit.parent(0).ok().and_then(|p| p.tree().ok());
+                    for c in &mut comments {
+                        if c.author.is_some() {
+                            continue;
+                        }
+                        let prefix = if c.pending {
+                            "outbox/comments"
+                        } else {
+                            "comments"
+                        };
+                        if c.file.is_none() {
+                            let p = std::path::Path::new(prefix)
+                                .join("C")
+                                .join(encode_change_id_path(change_id))
+                                .join(&c.id);
+                            if let Ok(entry) = tree.get_path(&p) {
+                                let is_new = parent_tree
+                                    .as_ref()
+                                    .and_then(|pt| pt.get_path(&p).ok())
+                                    .map_or(true, |e| e.id() != entry.id());
+                                if is_new {
+                                    let time = commit.time();
+                                    let ts = time.seconds().to_string();
+                                    c.author =
+                                        Some(commit.author().email().unwrap_or("").to_string());
+                                    c.timestamp = Some(ts);
+                                }
+                            }
+                        } else {
+                            let cid_path = std::path::Path::new(prefix)
+                                .join("F")
+                                .join(encode_change_id_path(change_id));
+                            if let Some(cid_tree) = get_tree(repo, &tree, &cid_path) {
+                                for blob_entry in cid_tree.iter() {
+                                    let blob_name = blob_entry.name().unwrap_or("");
+                                    let sub =
+                                        std::path::Path::new(c.file.as_ref().unwrap()).join(&c.id);
+                                    let full_path = cid_path.join(blob_name).join(&sub);
+                                    if let Ok(entry) = tree.get_path(&full_path) {
+                                        let parent_entry = parent_tree
+                                            .as_ref()
+                                            .and_then(|pt| pt.get_path(&full_path).ok());
+                                        let is_new =
+                                            parent_entry.map_or(true, |e| e.id() != entry.id());
+                                        if is_new {
+                                            let time = commit.time();
+                                            let ts = time.seconds().to_string();
+                                            c.author = Some(
+                                                commit.author().email().unwrap_or("").to_string(),
+                                            );
+                                            c.timestamp = Some(ts);
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    if comments.iter().all(|c| c.author.is_some()) {
+                        break 'outer;
+                    }
+                }
+            }
+        }
+    }
+
+    Ok(comments)
+}
+
+fn collect_comments_at_prefix(
+    repo: &git2::Repository,
+    tree: &git2::Tree,
+    change_id: &str,
+    prefix: &str,
+    pending: bool,
+    out: &mut Vec<Comment>,
+) -> anyhow::Result<()> {
+    let root = match get_tree(repo, tree, std::path::Path::new(prefix)) {
+        Some(t) => t,
+        None => return Ok(()),
+    };
+
+    // Non-file: <prefix>/C/<change_id>/
+    if let Some(cid_tree) = get_tree(
+        repo,
+        &root,
+        &std::path::Path::new("C").join(encode_change_id_path(change_id)),
+    ) {
+        for entry in cid_tree.iter() {
+            if let Ok(mut c) = parse_comment_blob(repo, &entry, None) {
+                c.pending = pending;
+                out.push(c);
+            }
+        }
+    }
+
+    // File: <prefix>/F/<change_id>/<blob_id>/<path>/<to>/<file>/<content_hash>
+    if let Some(cid_tree) = get_tree(
+        repo,
+        &root,
+        &std::path::Path::new("F").join(encode_change_id_path(change_id)),
+    ) {
+        for blob_entry in cid_tree.iter() {
+            let blob_name = blob_entry.name().unwrap_or("");
+            if let Some(blob_tree) = get_tree(repo, &cid_tree, std::path::Path::new(blob_name)) {
+                let mut found = Vec::new();
+                collect_comments_under_into(
+                    repo,
+                    &blob_tree,
+                    std::path::Path::new(""),
+                    &mut found,
+                )?;
+                for mut c in found {
+                    c.pending = pending;
+                    out.push(c);
+                }
+            }
+        }
+    }
+
+    Ok(())
+}
+
+fn collect_comments_under_into(
+    repo: &git2::Repository,
+    tree: &git2::Tree,
+    file_prefix: &std::path::Path,
+    out: &mut Vec<Comment>,
+) -> anyhow::Result<()> {
+    for entry in tree.iter() {
+        let name = entry.name().unwrap_or("");
+        match entry.kind() {
+            Some(git2::ObjectType::Tree) => {
+                let subtree = entry.to_object(repo)?.peel_to_tree()?;
+                let child_file = file_prefix.join(name);
+                collect_comments_under_into(repo, &subtree, &child_file, out)?;
+            }
+            Some(git2::ObjectType::Blob) => {
+                let file = if file_prefix.as_os_str().is_empty() {
+                    None
+                } else {
+                    Some(file_prefix.to_string_lossy().to_string())
+                };
+                out.push(parse_comment_blob(repo, &entry, file)?);
+            }
+            _ => {}
+        }
+    }
+    Ok(())
+}
+
+#[derive(Debug, Clone)]
+pub struct Revision {
+    pub commit_oid: String,
+    pub author: String,
+    pub timestamp: String,
+}
+
+pub fn read_revisions(
+    repo: &git2::Repository,
+    change: &Change,
+    scope: &ChangesRef,
+) -> anyhow::Result<Vec<Revision>> {
+    let change_id = match change.id() {
+        Some(id) => id,
+        None => return Ok(Vec::new()),
+    };
+
+    let head = match repo.find_reference(&scope.ref_name()) {
+        Ok(r) => r.peel_to_commit()?,
+        Err(_) => return Ok(Vec::new()),
+    };
+
+    let mut revs: Vec<Revision> = Vec::new();
+    let mut seen: std::collections::HashSet<String> = std::collections::HashSet::new();
+    let mut walk = repo.revwalk()?;
+    walk.simplify_first_parent()?;
+    walk.push(head.id())?;
+
+    for oid in walk {
+        let oid = oid?;
+        let commit = repo.find_commit(oid)?;
+        let tree = match commit.parent(0) {
+            Ok(p) => (p.tree().ok(), commit.tree().ok()),
+            Err(_) => (None, commit.tree().ok()),
+        };
+        let (parent_tree, cur_tree) = tree;
+        let cur_tree = match cur_tree {
+            Some(t) => t,
+            None => continue,
+        };
+
+        let diffs_tree = match cur_tree
+            .get_name("diffs")
+            .and_then(|e| e.to_object(repo).ok())
+            .and_then(|o| o.peel_to_tree().ok())
+        {
+            Some(t) => t,
+            None => continue,
+        };
+        let cid_tree = match diffs_tree
+            .get_name(&encode_change_id_path(change_id))
+            .and_then(|e| e.to_object(repo).ok())
+            .and_then(|o| o.peel_to_tree().ok())
+        {
+            Some(t) => t,
+            None => continue,
+        };
+
+        let parent_cid_tree = parent_tree.as_ref().and_then(|pt| {
+            let diffs = pt
+                .get_name("diffs")?
+                .to_object(repo)
+                .ok()?
+                .peel_to_tree()
+                .ok()?;
+            let cid = diffs
+                .get_name(&encode_change_id_path(change_id))?
+                .to_object(repo)
+                .ok()?
+                .peel_to_tree()
+                .ok()?;
+            Some(cid)
+        });
+
+        for entry in cid_tree.iter() {
+            let commit_oid = entry.name().unwrap_or("").to_string();
+            if commit_oid.is_empty() || seen.contains(&commit_oid) {
+                continue;
+            }
+            let is_new = parent_cid_tree
+                .as_ref()
+                .and_then(|pt| pt.get_name(&commit_oid))
+                .map_or(true, |e| e.id() != entry.id());
+            if !is_new {
+                continue;
+            }
+            let time = commit.time();
+            seen.insert(commit_oid.clone());
+            revs.push(Revision {
+                commit_oid,
+                author: commit.author().email().unwrap_or("").to_string(),
+                timestamp: time.seconds().to_string(),
+            });
+        }
+    }
+
+    revs.reverse();
+    Ok(revs)
+}
+
+pub fn store_diff_data(
+    repo: &git2::Repository,
+    change: &Change,
+    scope: &ChangesRef,
+) -> anyhow::Result<()> {
+    let change_id = change
+        .id()
+        .ok_or_else(|| anyhow::anyhow!("commit {} has no Change-Id", change.commit()))?;
+
+    let commit_oid_str = change.commit().to_string();
+    let base_str = change.base().to_string();
+    let content = format!("{}\n{}", commit_oid_str, base_str);
+    let blob_oid = repo.blob(content.as_bytes())?;
+
+    let mut tb = repo.treebuilder(None)?;
+    let entry_name = blob_oid.to_string();
+    tb.insert(&entry_name, blob_oid, git2::FileMode::Blob.into())?;
+    let tree_oid = tb.write()?;
+
+    let ref_name = scope.ref_name();
+    let base_tree = repo
+        .find_reference(&ref_name)
+        .ok()
+        .and_then(|r| r.peel_to_tree().ok())
+        .unwrap_or_else(|| repo.find_tree(josh_core::filter::tree::empty_id()).unwrap());
+
+    let path = std::path::Path::new("diffs").join(encode_change_id_path(&change_id));
+
+    if let Some(existing) = base_tree
+        .get_path(&path)
+        .ok()
+        .and_then(|e| e.to_object(repo).ok())
+    {
+        if existing.id() == tree_oid {
+            return Ok(());
+        }
+    }
+
+    let tree = josh_core::filter::tree::insert(repo, &base_tree, &path, tree_oid, 0o0040000)?;
+
+    let sig = repo.signature()?;
+    let prev_tip = repo
+        .find_reference(&ref_name)
+        .ok()
+        .and_then(|r| r.peel_to_commit().ok());
+
+    let source_commit = repo.find_commit(change.commit())?;
+    let anchor_sig = git2::Signature::new("JOSH", "josh@josh-project.dev", &git2::Time::new(0, 0))?;
+    let empty_tree = repo.find_tree(josh_core::filter::tree::empty_id())?;
+    let anchor_oid = repo.commit(
+        None,
+        &anchor_sig,
+        &anchor_sig,
+        "josh\n",
+        &empty_tree,
+        &[&source_commit],
+    )?;
+    let anchor_commit = repo.find_commit(anchor_oid)?;
+
+    let mut parents: Vec<&git2::Commit> = Vec::new();
+    if let Some(ref c) = prev_tip {
+        parents.push(c);
+    }
+    parents.push(&anchor_commit);
+    repo.commit(
+        Some(&ref_name),
+        &sig,
+        &sig,
+        &format!("update {}\n", ref_name),
+        &tree,
+        &parents,
+    )?;
+
+    Ok(())
+}
+
+pub fn store_pr_data(
+    repo: &git2::Repository,
+    change_id: &str,
+    json: &str,
+    scope: &ChangesRef,
+) -> anyhow::Result<()> {
+    let blob_oid = repo.blob(json.as_bytes())?;
+
+    let mut tb = repo.treebuilder(None)?;
+    tb.insert(&blob_oid.to_string(), blob_oid, git2::FileMode::Blob.into())?;
+    let tree_oid = tb.write()?;
+
+    let ref_name = scope.ref_name();
+    let base_tree = repo
+        .find_reference(&ref_name)
+        .ok()
+        .and_then(|r| r.peel_to_tree().ok())
+        .unwrap_or_else(|| repo.find_tree(josh_core::filter::tree::empty_id()).unwrap());
+
+    let path = std::path::Path::new("gh").join(encode_change_id_path(change_id));
+
+    if let Some(existing) = base_tree
+        .get_path(&path)
+        .ok()
+        .and_then(|e| e.to_object(repo).ok())
+    {
+        if existing.id() == tree_oid {
+            return Ok(());
+        }
+    }
+
+    let tree = josh_core::filter::tree::insert(repo, &base_tree, &path, tree_oid, 0o0040000)?;
+
+    let sig = repo.signature()?;
+    let prev_tip = repo
+        .find_reference(&ref_name)
+        .ok()
+        .and_then(|r| r.peel_to_commit().ok());
+    let parents: Vec<&git2::Commit> = prev_tip.iter().collect();
+    repo.commit(
+        Some(&ref_name),
+        &sig,
+        &sig,
+        &format!("update {}\n", ref_name),
+        &tree,
+        &parents,
+    )?;
+
+    Ok(())
+}
+
+/// Remove specific outbox comment entries by content hash. Used by the fetch
+/// path to drop entries whose posted counterparts have just come back from
+/// the remote. Pass the set of local content hashes whose `gh_ids` entry is
+/// known to be reflected in `comments/...` already.
+pub fn delete_outbox_comments(
+    repo: &git2::Repository,
+    change_id: &str,
+    scope: &ChangesRef,
+    content_hashes: &[String],
+) -> anyhow::Result<usize> {
+    if content_hashes.is_empty() {
+        return Ok(0);
+    }
+    let want: std::collections::HashSet<&str> = content_hashes.iter().map(|s| s.as_str()).collect();
+
+    let ref_name = scope.ref_name();
+    let mut tree = match repo.find_reference(&ref_name) {
+        Ok(r) => r.peel_to_tree()?,
+        Err(_) => return Ok(0),
+    };
+
+    let encoded = encode_change_id_path(change_id);
+    let mut paths_to_remove: Vec<std::path::PathBuf> = Vec::new();
+
+    // Non-file: outbox/comments/C/<change>/<hash>
+    let c_prefix = std::path::Path::new("outbox/comments/C").join(&encoded);
+    if let Some(c_tree) = get_tree(repo, &tree, &c_prefix) {
+        for entry in c_tree.iter() {
+            if let Some(name) = entry.name() {
+                if want.contains(name) {
+                    paths_to_remove.push(c_prefix.join(name));
+                }
+            }
+        }
+    }
+
+    // File: outbox/comments/F/<change>/<blob_id>/<path>/<to>/<file>/<hash>
+    let f_prefix = std::path::Path::new("outbox/comments/F").join(&encoded);
+    if let Some(f_tree) = get_tree(repo, &tree, &f_prefix) {
+        collect_outbox_file_paths(repo, &f_tree, &f_prefix, &want, &mut paths_to_remove)?;
+    }
+
+    if paths_to_remove.is_empty() {
+        return Ok(0);
+    }
+
+    for path in &paths_to_remove {
+        if tree.get_path(path).is_ok() {
+            tree = josh_core::filter::tree::insert(repo, &tree, path, git2::Oid::zero(), 0)?;
+        }
+    }
+
+    let sig = repo.signature()?;
+    let parent_commit = repo
+        .find_reference(&ref_name)
+        .ok()
+        .and_then(|r| r.peel_to_commit().ok());
+    let parents: Vec<&git2::Commit> = parent_commit.iter().collect();
+    repo.commit(
+        Some(&ref_name),
+        &sig,
+        &sig,
+        &format!("cleanup posted outbox comments on {}\n", ref_name),
+        &tree,
+        &parents,
+    )?;
+
+    Ok(paths_to_remove.len())
+}
+
+fn collect_outbox_file_paths(
+    repo: &git2::Repository,
+    tree: &git2::Tree,
+    cur: &std::path::Path,
+    want: &std::collections::HashSet<&str>,
+    out: &mut Vec<std::path::PathBuf>,
+) -> anyhow::Result<()> {
+    for entry in tree.iter() {
+        let name = match entry.name() {
+            Some(n) => n,
+            None => continue,
+        };
+        match entry.kind() {
+            Some(git2::ObjectType::Tree) => {
+                let subtree = entry.to_object(repo)?.peel_to_tree()?;
+                collect_outbox_file_paths(repo, &subtree, &cur.join(name), want, out)?;
+            }
+            Some(git2::ObjectType::Blob) => {
+                if want.contains(name) {
+                    out.push(cur.join(name));
+                }
+            }
+            _ => {}
+        }
+    }
+    Ok(())
+}
+
+/// Read stored GitHub PR data JSON for a change, if it exists.
+pub fn read_pr_data(
+    repo: &git2::Repository,
+    change_id: &str,
+    scope: &ChangesRef,
+) -> anyhow::Result<Option<String>> {
+    let tree = match repo.find_reference(&scope.ref_name()) {
+        Ok(r) => r.peel_to_tree()?,
+        Err(_) => return Ok(None),
+    };
+    let gh_path = std::path::Path::new("gh").join(encode_change_id_path(change_id));
+    let subtree = match get_tree(repo, &tree, &gh_path) {
+        Some(t) => t,
+        None => return Ok(None),
+    };
+    for entry in subtree.iter() {
+        if let Ok(blob) = entry.to_object(repo).and_then(|o| o.peel_to_blob()) {
+            return Ok(Some(String::from_utf8_lossy(blob.content()).to_string()));
+        }
+    }
+    Ok(None)
+}
+
+/// Delete all stored data for a change from the given changes ref.
+/// Removes entries from diffs/, comments/{C,F}/, outbox/comments/{C,F}/,
+/// gh/, and gh_ids/ subtrees.
+pub fn delete_change(
+    repo: &git2::Repository,
+    change_id: &str,
+    scope: &ChangesRef,
+) -> anyhow::Result<()> {
+    let encoded = encode_change_id_path(change_id);
+
+    let ref_name = scope.ref_name();
+    let base_tree = match repo.find_reference(&ref_name) {
+        Ok(r) => r.peel_to_tree()?,
+        Err(_) => return Ok(()),
+    };
+
+    let mut tree = base_tree;
+    for prefix in &[
+        "diffs",
+        "comments/C",
+        "comments/F",
+        "outbox/comments/C",
+        "outbox/comments/F",
+        "gh",
+        "gh_ids",
+        "votes",
+        "outbox/votes",
+        "gh_vote_ids",
+    ] {
+        let path = std::path::Path::new(prefix).join(&encoded);
+        if tree.get_path(&path).is_ok() {
+            tree = josh_core::filter::tree::insert(repo, &tree, &path, git2::Oid::zero(), 0)?;
+        }
+    }
+
+    let sig = repo.signature()?;
+    let parent_commit = repo
+        .find_reference(&ref_name)
+        .ok()
+        .and_then(|r| r.peel_to_commit().ok());
+    let parents: Vec<&git2::Commit> = parent_commit.iter().collect();
+    repo.commit(
+        Some(&ref_name),
+        &sig,
+        &sig,
+        &format!("update {}\n", ref_name),
+        &tree,
+        &parents,
+    )?;
+
+    Ok(())
+}
+
+/// Store a GitHub node ID for a local comment, marking it as posted.
+pub fn store_github_id(
+    repo: &git2::Repository,
+    change_id: &str,
+    local_hash: &str,
+    github_id: &str,
+    scope: &ChangesRef,
+) -> anyhow::Result<()> {
+    let blob_oid = repo.blob(github_id.as_bytes())?;
+    let path = std::path::Path::new("gh_ids")
+        .join(encode_change_id_path(change_id))
+        .join(local_hash);
+    write_changes_tree(repo, &path, blob_oid, None, None, scope)?;
+    Ok(())
+}
+
+/// Read all GitHub node IDs for a change's comments.
+/// Returns a map from local comment hash → GitHub node ID.
+pub fn read_github_ids(
+    repo: &git2::Repository,
+    change_id: &str,
+    scope: &ChangesRef,
+) -> anyhow::Result<std::collections::HashMap<String, String>> {
+    let tree = match repo.find_reference(&scope.ref_name()) {
+        Ok(r) => r.peel_to_tree()?,
+        Err(_) => return Ok(Default::default()),
+    };
+    let gh_ids_path = std::path::Path::new("gh_ids").join(encode_change_id_path(change_id));
+    let subtree = match get_tree(repo, &tree, &gh_ids_path) {
+        Some(t) => t,
+        None => return Ok(Default::default()),
+    };
+    let mut map = std::collections::HashMap::new();
+    for entry in subtree.iter() {
+        if let Some(name) = entry.name() {
+            if let Ok(blob) = entry.to_object(repo).and_then(|o| o.peel_to_blob()) {
+                let github_id = String::from_utf8_lossy(blob.content()).trim().to_string();
+                map.insert(name.to_string(), github_id);
+            }
+        }
+    }
+    Ok(map)
+}
+
+pub fn store_github_vote_id(
+    repo: &git2::Repository,
+    change_id: &str,
+    user: &str,
+    vote_data: &VoteData,
+    scope: &ChangesRef,
+) -> anyhow::Result<()> {
+    let json = serde_json::to_string(vote_data)?;
+    let blob_oid = repo.blob(json.as_bytes())?;
+    let path = std::path::Path::new("gh_vote_ids")
+        .join(encode_change_id_path(change_id))
+        .join(user);
+    write_changes_tree(repo, &path, blob_oid, None, None, scope)?;
+    Ok(())
+}
+
+pub fn read_github_vote_ids(
+    repo: &git2::Repository,
+    change_id: &str,
+    scope: &ChangesRef,
+) -> anyhow::Result<std::collections::HashMap<String, VoteData>> {
+    let tree = match repo.find_reference(&scope.ref_name()) {
+        Ok(r) => r.peel_to_tree()?,
+        Err(_) => return Ok(Default::default()),
+    };
+    let path = std::path::Path::new("gh_vote_ids").join(encode_change_id_path(change_id));
+    let subtree = match get_tree(repo, &tree, &path) {
+        Some(t) => t,
+        None => return Ok(Default::default()),
+    };
+    let mut map = std::collections::HashMap::new();
+    for entry in subtree.iter() {
+        if let Some(user) = entry.name() {
+            if let Ok(blob) = entry.to_object(repo).and_then(|o| o.peel_to_blob()) {
+                if let Ok(data) = serde_json::from_slice::<VoteData>(blob.content()) {
+                    map.insert(user.to_string(), data);
+                }
+            }
+        }
+    }
+    Ok(map)
+}
+
+fn parse_timestamp(s: Option<&str>) -> git2::Time {
+    let Some(s) = s else {
+        return git2::Time::new(0, 0);
+    };
+    let Ok(dt) = chrono::DateTime::parse_from_rfc3339(s) else {
+        return git2::Time::new(0, 0);
+    };
+    git2::Time::new(dt.timestamp(), dt.offset().local_minus_utc() / 60)
+}
+
+fn write_changes_tree(
+    repo: &git2::Repository,
+    path: &std::path::Path,
+    blob_oid: git2::Oid,
+    author: Option<&str>,
+    timestamp: Option<&str>,
+    scope: &ChangesRef,
+) -> anyhow::Result<()> {
+    let ref_name = scope.ref_name();
+    let base_tree = repo
+        .find_reference(&ref_name)
+        .ok()
+        .and_then(|r| r.peel_to_tree().ok())
+        .unwrap_or_else(|| repo.find_tree(josh_core::filter::tree::empty_id()).unwrap());
+
+    // Skip if the blob already exists at this path.
+    if let Some(existing) = base_tree
+        .get_path(path)
+        .ok()
+        .and_then(|e| e.to_object(repo).ok())
+    {
+        if existing.id() == blob_oid {
+            return Ok(());
+        }
+    }
+
+    let tree = josh_core::filter::tree::insert(
+        repo,
+        &base_tree,
+        path,
+        blob_oid,
+        git2::FileMode::Blob.into(),
+    )?;
+
+    let sig = match author {
+        Some(name) => {
+            let email = format!("{}@github", name);
+            let time = parse_timestamp(timestamp);
+            git2::Signature::new(name, &email, &time)?
+        }
+        None => josh_core::git::user_signature(repo)?,
+    };
+    let parent_commit = repo
+        .find_reference(&ref_name)
+        .ok()
+        .and_then(|r| r.peel_to_commit().ok());
+    let parents: Vec<&git2::Commit> = parent_commit.iter().collect();
+    repo.commit(
+        Some(&ref_name),
+        &sig,
+        &sig,
+        &format!("update {}\n", ref_name),
+        &tree,
+        &parents,
+    )?;
+    Ok(())
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct VoteData {
+    pub state: String,
+    pub sha: String,
+}
+
+pub fn vote_state_to_github_review(state: &str) -> &'static str {
+    match state {
+        "approve" => "APPROVE",
+        "discuss" => "COMMENT",
+        "revise" => "REQUEST_CHANGES",
+        _ => "COMMENT",
+    }
+}
+
+pub fn write_vote(
+    repo: &git2::Repository,
+    change: &Change,
+    state: &str,
+    author: Option<&str>,
+    timestamp: Option<&str>,
+    scope: &ChangesRef,
+) -> anyhow::Result<String> {
+    write_vote_inner(repo, change, state, author, timestamp, scope, "votes")
+}
+
+/// Write a vote into the outbox subtree of a `Remote` ref. The vote is queued
+/// for the next `sync --push` to post as a PR review, after which the
+/// `gh_vote_ids` mapping records the post and the outbox entry can be
+/// cleaned up.
+pub fn write_outbox_vote(
+    repo: &git2::Repository,
+    change: &Change,
+    state: &str,
+    author: Option<&str>,
+    timestamp: Option<&str>,
+    scope: &ChangesRef,
+) -> anyhow::Result<String> {
+    if !matches!(scope, ChangesRef::Remote { .. }) {
+        return Err(anyhow::anyhow!(
+            "write_outbox_vote requires a Remote scope (got {})",
+            scope.ref_name()
+        ));
+    }
+    write_vote_inner(
+        repo,
+        change,
+        state,
+        author,
+        timestamp,
+        scope,
+        "outbox/votes",
+    )
+}
+
+fn write_vote_inner(
+    repo: &git2::Repository,
+    change: &Change,
+    state: &str,
+    author: Option<&str>,
+    timestamp: Option<&str>,
+    scope: &ChangesRef,
+    path_prefix: &str,
+) -> anyhow::Result<String> {
+    let change_id = change
+        .id()
+        .ok_or_else(|| anyhow::anyhow!("commit {} has no Change-Id", change.commit()))?;
+
+    let json = serde_json::json!({"state": state, "sha": change.commit().to_string()});
+    let content = json.to_string();
+    let content_hash =
+        git2::Oid::hash_object(git2::ObjectType::Blob, content.as_bytes())?.to_string();
+    let blob_oid = repo.blob(content.as_bytes())?;
+
+    let mut tb = repo.treebuilder(None)?;
+    tb.insert(&blob_oid.to_string(), blob_oid, git2::FileMode::Blob.into())?;
+    let tree_oid = tb.write()?;
+
+    let user = match author {
+        Some(name) => name.to_string(),
+        None => repo.signature()?.email().unwrap_or("unknown").to_string(),
+    };
+
+    let path = std::path::Path::new(path_prefix)
+        .join(encode_change_id_path(&change_id))
+        .join(&user);
+
+    let ref_name = scope.ref_name();
+    let base_tree = repo
+        .find_reference(&ref_name)
+        .ok()
+        .and_then(|r| r.peel_to_tree().ok())
+        .unwrap_or_else(|| repo.find_tree(josh_core::filter::tree::empty_id()).unwrap());
+
+    if let Some(existing) = base_tree
+        .get_path(&path)
+        .ok()
+        .and_then(|e| e.to_object(repo).ok())
+    {
+        if existing.id() == tree_oid {
+            return Ok(content_hash);
+        }
+    }
+
+    let tree = josh_core::filter::tree::insert(repo, &base_tree, &path, tree_oid, 0o0040000)?;
+
+    let sig = match author {
+        Some(name) => {
+            let email = format!("{}@github", name);
+            let time = parse_timestamp(timestamp);
+            git2::Signature::new(name, &email, &time)?
+        }
+        None => repo.signature()?,
+    };
+    let parent_commit = repo
+        .find_reference(&ref_name)
+        .ok()
+        .and_then(|r| r.peel_to_commit().ok());
+    let parents: Vec<&git2::Commit> = parent_commit.iter().collect();
+    repo.commit(
+        Some(&ref_name),
+        &sig,
+        &sig,
+        &format!("update {}\n", ref_name),
+        &tree,
+        &parents,
+    )?;
+
+    Ok(content_hash)
+}
+
+pub fn read_vote(
+    repo: &git2::Repository,
+    change_id: &str,
+    user: Option<&str>,
+    scope: &ChangesRef,
+) -> anyhow::Result<Option<VoteData>> {
+    let tree = match repo.find_reference(&scope.ref_name()) {
+        Ok(r) => r.peel_to_tree()?,
+        Err(_) => return Ok(None),
+    };
+
+    let user = match user {
+        Some(name) => name.to_string(),
+        None => repo.signature()?.email().unwrap_or("unknown").to_string(),
+    };
+
+    let path = std::path::Path::new("votes")
+        .join(encode_change_id_path(change_id))
+        .join(&user);
+
+    let subtree = match get_tree(repo, &tree, &path) {
+        Some(t) => t,
+        None => return Ok(None),
+    };
+    for entry in subtree.iter() {
+        if let Ok(blob) = entry.to_object(repo).and_then(|o| o.peel_to_blob()) {
+            let data: VoteData = serde_json::from_slice(blob.content())?;
+            return Ok(Some(data));
+        }
+    }
+    Ok(None)
+}
+
+pub fn list_votes(
+    repo: &git2::Repository,
+    change_id: &str,
+    scope: &ChangesRef,
+) -> anyhow::Result<Vec<(String, VoteData)>> {
+    list_votes_at_prefix(repo, change_id, scope, "votes")
+}
+
+/// List votes queued in the outbox subtree of `scope` (must be Remote in
+/// practice; this just returns empty for refs that lack `outbox/votes`).
+pub fn list_outbox_votes(
+    repo: &git2::Repository,
+    change_id: &str,
+    scope: &ChangesRef,
+) -> anyhow::Result<Vec<(String, VoteData)>> {
+    list_votes_at_prefix(repo, change_id, scope, "outbox/votes")
+}
+
+fn list_votes_at_prefix(
+    repo: &git2::Repository,
+    change_id: &str,
+    scope: &ChangesRef,
+    path_prefix: &str,
+) -> anyhow::Result<Vec<(String, VoteData)>> {
+    let tree = match repo.find_reference(&scope.ref_name()) {
+        Ok(r) => r.peel_to_tree()?,
+        Err(_) => return Ok(Default::default()),
+    };
+    let path = std::path::Path::new(path_prefix).join(encode_change_id_path(change_id));
+    let subtree = match get_tree(repo, &tree, &path) {
+        Some(t) => t,
+        None => return Ok(Default::default()),
+    };
+    let mut votes = Vec::new();
+    for entry in subtree.iter() {
+        let user = match entry.name() {
+            Some(name) => name.to_string(),
+            None => continue,
+        };
+        let user_tree = match entry.to_object(repo).and_then(|o| o.peel_to_tree()) {
+            Ok(t) => t,
+            Err(_) => continue,
+        };
+        for child in user_tree.iter() {
+            if let Ok(blob) = child.to_object(repo).and_then(|o| o.peel_to_blob()) {
+                if let Ok(data) = serde_json::from_slice::<VoteData>(blob.content()) {
+                    votes.push((user.clone(), data));
+                }
+            }
+        }
+    }
+    Ok(votes)
+}
+
+/// Remove outbox vote entries whose `(state, sha)` has already been recorded
+/// in the `gh_vote_ids` map for the change. Called by `post_local_votes` after
+/// a successful push so the outbox doesn't accumulate forever.
+pub fn cleanup_posted_outbox_votes(
+    repo: &git2::Repository,
+    change_id: &str,
+    scope: &ChangesRef,
+) -> anyhow::Result<usize> {
+    if !matches!(scope, ChangesRef::Remote { .. }) {
+        return Err(anyhow::anyhow!(
+            "cleanup_posted_outbox_votes requires a Remote scope"
+        ));
+    }
+
+    let tracked = read_github_vote_ids(repo, change_id, scope)?;
+    if tracked.is_empty() {
+        return Ok(0);
+    }
+    let outbox = list_outbox_votes(repo, change_id, scope)?;
+    if outbox.is_empty() {
+        return Ok(0);
+    }
+
+    let encoded = encode_change_id_path(change_id);
+    let ref_name = scope.ref_name();
+    let mut tree = match repo.find_reference(&ref_name) {
+        Ok(r) => r.peel_to_tree()?,
+        Err(_) => return Ok(0),
+    };
+
+    let mut removed = 0usize;
+    for (user, data) in &outbox {
+        let posted = match tracked.get(user) {
+            Some(p) => p,
+            None => continue,
+        };
+        if posted.state != data.state || posted.sha != data.sha {
+            continue;
+        }
+        let path = std::path::Path::new("outbox/votes")
+            .join(&encoded)
+            .join(user);
+        if tree.get_path(&path).is_ok() {
+            tree = josh_core::filter::tree::insert(repo, &tree, &path, git2::Oid::zero(), 0)?;
+            removed += 1;
+        }
+    }
+
+    if removed == 0 {
+        return Ok(0);
+    }
+
+    let sig = repo.signature()?;
+    let parent_commit = repo
+        .find_reference(&ref_name)
+        .ok()
+        .and_then(|r| r.peel_to_commit().ok());
+    let parents: Vec<&git2::Commit> = parent_commit.iter().collect();
+    repo.commit(
+        Some(&ref_name),
+        &sig,
+        &sig,
+        &format!("cleanup posted outbox votes on {}\n", ref_name),
+        &tree,
+        &parents,
+    )?;
+
+    Ok(removed)
+}
+
+// `all_changes_refs` (defined above) remains the single place to enumerate
+// every `refs/josh/changes/*` and `refs/josh/remotes/*/changes/*` ref. Each
+// reader operates on exactly one `ChangesRef`; the CLI and GUI pick which one
+// via a uniform `--remote <name>` flag. There is no cross-ref fusion.

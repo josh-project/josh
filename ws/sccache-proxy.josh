@@ -1,0 +1,25 @@
+# The `env` vars configure the proxy itself; `inject` vars configure the build
+# container's sccache. Names must not collide between the two blocks: josh compose
+# dedupes identically-named blobs across sibling subtrees, which would silently drop
+# the colliding `inject` vars from the build container.
+
+:#image[:+images/sccache-proxy]
+:$port="3000"
+
+env = :[
+    :$PORT="3000"
+    :$UPSTREAM_ENDPOINT="https://19f2dfdd7c93980184be5e5809e8b252.r2.cloudflarestorage.com"
+]
+
+passthrough = :[
+    :$AWS_ACCESS_KEY_ID="AWS_ACCESS_KEY_ID"
+    :$AWS_SECRET_ACCESS_KEY="AWS_SECRET_ACCESS_KEY"
+]
+
+inject = :[
+    :$SCCACHE_BUCKET="josh-project-cache"
+    :$SCCACHE_ENDPOINT="http://{SIDECAR_IP}:3000"
+    :$SCCACHE_REGION="auto"
+    :$SCCACHE_S3_USE_SSL="false"
+    :$SCCACHE_S3_NO_CREDENTIALS="true"
+]

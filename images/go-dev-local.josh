@@ -1,0 +1,4 @@
+bases = :[
+    :#BASE_IMAGE[:+images/go-dev]
+]
+context = :/images/go-dev-local

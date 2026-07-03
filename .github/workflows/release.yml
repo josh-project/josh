@@ -1,0 +1,247 @@
+name: Build/publish images
+on:
+  release:
+    types: [published]
+  pull_request:
+    types: [labeled]
+  push:
+    branches:
+      - master
+jobs:
+  generate-tags:
+    runs-on: ubuntu-latest
+    outputs:
+      run_tags_set: ${{ steps.generate-tags.outputs.run_tags_set }}
+      tagged_images: ${{ steps.generate-tags.outputs.tagged_images }}
+      should_build: ${{ steps.generate-tags.outputs.should_build }}
+    steps:
+      - name: Generate list of image names and tags
+        id: generate-tags
+        shell: python
+        run: |
+          import os
+
+          dockerhub_available = "${{ secrets.DOCKERHUB_TOKEN != '' }}" == "true"
+          is_release = "${{ github.event_name }}" == "release"
+          is_master = "${{ github.event_name }}" == "push" and "${{ github.ref }}" == "refs/heads/master"
+          is_pr = "${{ github.event_name }}" == "pull_request"
+          pr_has_build_label = "${{ contains(github.event.pull_request.labels.*.name, 'build-release-container') }}" == "true"
+
+          commit_sha = "${{ github.sha }}"
+          release_tag = "${{ github.event.release.tag_name }}"
+          pr_number = "${{ github.event.pull_request.number }}"
+
+          ghcr_image_base = "ghcr.io/josh-project/josh-proxy"
+          dockerhub_image_base = "joshproject/josh-proxy"
+
+          def main():
+              images = []
+              tags = []
+
+              if is_release and dockerhub_available:
+                  images.append(dockerhub_image_base)
+
+              if is_release or is_master or (is_pr and pr_has_build_label):
+                  images.append(ghcr_image_base)
+
+              if is_release:
+                  tags.append(release_tag)
+                  tags.append("latest")
+              elif is_master:
+                  short_sha = commit_sha[:10]
+                  tags.append(f"sha-{short_sha}")
+              elif is_pr and pr_has_build_label:
+                  tags.append(f"pr-{pr_number}")
+
+              # Cross product: tags x images
+              tagged_images = [f"{image}:{tag}" for image in images for tag in tags]
+
+              # One `run.tags=<image>` line per image. Buildx appends array
+              # overrides across repeated `--set target.key=...` directives,
+              # so emitting one line per image avoids the comma-as-separator
+              # ambiguity that breaks `run.tags=img1,img2`.
+              run_tags_set = "\n".join(f"run.tags={image}" for image in images)
+
+              # Write to GITHUB_OUTPUT
+              with open(os.environ["GITHUB_OUTPUT"], "a") as f:
+                  f.write("run_tags_set<<EOF\n")
+                  f.write(run_tags_set)
+                  f.write("\nEOF\n")
+
+                  f.write("tagged_images<<EOF\n")
+                  f.write("\n".join(tagged_images))
+                  f.write("\nEOF\n")
+
+                  # Also output whether we should build at all
+                  f.write(f"should_build={'true' if tags else 'false'}\n")
+
+              # Also print for visibility in logs
+              print("Generated tagged images:")
+              for tagged_image in tagged_images:
+                  print(f"  - {tagged_image}")
+
+          main()
+  build:
+    needs: generate-tags
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: linux
+            arch: amd64
+            runner: ubuntu-latest
+          - os: linux
+            arch: arm64
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Setup BuildX
+        uses: docker/setup-buildx-action@4d04d5d9486b7bd6fa91e7baf45bbb4f8b9deedd # v4.0.0
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          fetch-depth: 0
+      - name: Login to Docker Hub
+        if: github.event_name == 'release' && env.DOCKERHUB_TOKEN != ''
+        uses: docker/login-action@4907a6ddec9925e35a0a9e82d7399ccc52663121 # v4.1.0
+        env:
+          DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
+        with:
+          username: initcrash
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+      - name: Login to GHCR
+        uses: docker/login-action@4907a6ddec9925e35a0a9e82d7399ccc52663121 # v4.1.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Get version
+        id: version
+        run: echo "version=$(git describe --tags --always --dirty=-modified)" >> $GITHUB_OUTPUT
+      - name: Generate bake set args
+        id: bake-set
+        shell: bash
+        run: |
+          fork="${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.fork }}"
+          echo "args<<EOF" >> "$GITHUB_OUTPUT"
+          echo "rust-base.cache-from=type=gha,scope=rust-base-${{ matrix.arch }}" >> "$GITHUB_OUTPUT"
+          echo "dev.cache-from=type=gha,scope=dev-${{ matrix.arch }}" >> "$GITHUB_OUTPUT"
+          echo "build.cache-from=type=gha,scope=build-${{ matrix.arch }}" >> "$GITHUB_OUTPUT"
+          echo "run.cache-from=type=gha,scope=run-${{ matrix.arch }}" >> "$GITHUB_OUTPUT"
+          if [[ "$fork" != "true" ]]; then
+            echo "rust-base.cache-to=type=gha,mode=max,scope=rust-base-${{ matrix.arch }}" >> "$GITHUB_OUTPUT"
+            echo "dev.cache-to=type=gha,mode=max,scope=dev-${{ matrix.arch }}" >> "$GITHUB_OUTPUT"
+            echo "build.cache-to=type=gha,mode=max,scope=build-${{ matrix.arch }}" >> "$GITHUB_OUTPUT"
+            echo "run.cache-to=type=gha,mode=max,scope=run-${{ matrix.arch }}" >> "$GITHUB_OUTPUT"
+          fi
+          echo "build.args.JOSH_VERSION=${{ steps.version.outputs.version }}" >> "$GITHUB_OUTPUT"
+          echo "${{ needs.generate-tags.outputs.run_tags_set }}" >> "$GITHUB_OUTPUT"
+          echo "run.output=type=image,push-by-digest=true,name-canonical=true,push=true" >> "$GITHUB_OUTPUT"
+          echo "EOF" >> "$GITHUB_OUTPUT"
+      - name: Build docker image
+        if: needs.generate-tags.outputs.should_build == 'true'
+        id: build
+        uses: docker/bake-action@6614cfa25eff9a0b2b2697efb0b6159e7680d584 # v7.2.0
+        env:
+          # Without this, bake-action embeds the full GitHub event payload in
+          # the metadata output, which exceeds env-var size limits when read
+          # by downstream steps.
+          BUILDX_METADATA_PROVENANCE: disabled
+        with:
+          targets: run
+          set: ${{ steps.bake-set.outputs.args }}
+      - name: Export digest
+        if: needs.generate-tags.outputs.should_build == 'true'
+        # Create digests directory with a file whose name matches
+        # the digest with the 'sha256:' prefix removed.
+        # The metadata is passed via env to avoid `${{ ... }}` interpolation
+        # injecting unescaped quotes from the release body into the script.
+        env:
+          BAKE_METADATA: ${{ steps.build.outputs.metadata }}
+        run: |
+          digest=$(jq -r '.run."containerimage.digest"' <<< "$BAKE_METADATA")
+          if [ -z "$digest" ] || [ "$digest" = "null" ]; then
+            echo "Failed to extract digest from bake metadata" >&2
+            exit 1
+          fi
+          mkdir -p "${RUNNER_TEMP}/digests"
+          touch "${RUNNER_TEMP}/digests/${digest#sha256:}"
+      - name: Upload digest
+        if: needs.generate-tags.outputs.should_build == 'true'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: digests-${{ matrix.os }}-${{ matrix.arch }}
+          path: ${{ runner.temp }}/digests/*
+          if-no-files-found: error
+          retention-days: 1
+
+  merge:
+    runs-on: ubuntu-latest
+    permissions:
+      packages: write
+    needs:
+      - generate-tags
+      - build
+    if: needs.generate-tags.outputs.should_build == 'true'
+    steps:
+      - name: Download digests
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          path: ${{ runner.temp }}/digests
+          pattern: digests-*
+          merge-multiple: true
+      - name: Login to Docker Hub
+        if: github.event_name == 'release' && env.DOCKERHUB_TOKEN != ''
+        uses: docker/login-action@4907a6ddec9925e35a0a9e82d7399ccc52663121 # v4.1.0
+        env:
+          DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
+        with:
+          username: initcrash
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+      - name: Login to GHCR
+        uses: docker/login-action@4907a6ddec9925e35a0a9e82d7399ccc52663121 # v4.1.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@4d04d5d9486b7bd6fa91e7baf45bbb4f8b9deedd # v4.0.0
+      - name: Create manifest lists and push tags
+        working-directory: ${{ runner.temp }}/digests
+        env:
+          TAGGED_IMAGES: ${{ needs.generate-tags.outputs.tagged_images }}
+        run: |
+          # The canonical image where digests were pushed during the build step
+          # GHCR is always used for builds (see generate-tags job)
+          canonical_image="ghcr.io/josh-project/josh-proxy"
+
+          # Build list of digest references for all architectures
+          # Each file in this directory is named after a digest (without 'sha256:' prefix)
+          digest_refs=()
+          for digest_file in *; do
+            digest_refs+=("${canonical_image}@sha256:${digest_file}")
+          done
+
+          echo "Digest references: ${digest_refs[@]}"
+
+          # Create a manifest list for each tagged image
+          # This creates the actual tags that point to multi-arch manifest lists
+          echo "${TAGGED_IMAGES}" | while IFS= read -r tagged_image; do
+            if [ -n "${tagged_image}" ]; then
+              echo "Creating manifest list for: ${tagged_image}"
+              docker buildx imagetools create -t "${tagged_image}" "${digest_refs[@]}"
+            fi
+          done
+      - name: Inspect image
+        env:
+          TAGGED_IMAGES: ${{ needs.generate-tags.outputs.tagged_images }}
+        run: |
+          # Inspect the first tagged image to verify the multi-arch manifest
+          first_image=$(echo "${TAGGED_IMAGES}" | head -n1)
+          if [ -n "${first_image}" ]; then
+            echo "Inspecting: ${first_image}"
+            docker buildx imagetools inspect "${first_image}"
+          fi
