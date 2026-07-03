@@ -50,13 +50,12 @@ impl MemOdb {
         })
     }
 
-    /// Register a backend on `repo`'s object database that reads from / writes to this store, at a
-    /// priority above the on-disk loose (2) and pack (1) backends, so writes land in memory and reads
-    /// check memory first.
+    /// Replace `repo`'s object database with a backend that reads from / writes to this store,
+    /// delegating read-side misses to the original on-disk ODB (see [`odb_backend::register`]), so
+    /// writes land in memory and reads check memory first.
     pub fn register(self: &Arc<Self>, repo: &git2::Repository) {
         let _ = odb_backend::register(
             repo,
-            1000,
             MemBackend {
                 store: self.clone(),
             },
@@ -89,7 +88,6 @@ impl MemOdb {
         let repo = git2::Repository::open(&self.repo_path)?;
         odb_backend::register(
             &repo,
-            1000,
             MemBackend {
                 store: self.clone(),
             },
@@ -111,13 +109,20 @@ impl MemOdb {
             inner.map.keys().copied().collect()
         };
 
-        let mut pb = repo.packbuilder()?;
-        for oid in &oids {
-            pb.insert_object(*oid, None)?;
+        // The memory-only freshen (see `odb_backend`) no longer deduplicates writes against disk,
+        // so objects already present on disk may have been re-buffered into the store. Pack only the
+        // genuinely-new ones — `filter_absent_on_disk` preserves the sorted oid order, so the
+        // packfile (and its name) stays deterministic.
+        let to_pack = odb_backend::filter_absent_on_disk(repo, &oids);
+        if !to_pack.is_empty() {
+            let mut pb = repo.packbuilder()?;
+            for oid in &to_pack {
+                pb.insert_object(*oid, None)?;
+            }
+            // `packfile_path` resolves the common object directory, so this is correct for linked
+            // worktrees (whose gitdir has no `objects/` of its own) as well as normal repos.
+            pb.write(&crate::pack::packfile_path(repo), 0)?;
         }
-        // `packfile_path` resolves the common object directory, so this is correct for linked
-        // worktrees (whose gitdir has no `objects/` of its own) as well as normal repos.
-        pb.write(&crate::pack::packfile_path(repo), 0)?;
 
         // Dropping the whole map (rather than only the flushed oids) is safe because a store is
         // never flushed with writes in flight.
@@ -135,8 +140,8 @@ struct MemBackend {
 }
 
 fn not_found() -> git2::Error {
-    // ErrorCode::NotFound maps to GIT_ENOTFOUND, so a miss makes libgit2 fall through to the next
-    // backend (the on-disk pack/loose backends) instead of treating it as a hard failure.
+    // ErrorCode::NotFound signals a memory miss, which the backend trampolines resolve by reading
+    // through to the delegate on-disk ODB instead of treating it as a hard failure.
     git2::Error::new(
         ErrorCode::NotFound,
         ErrorClass::Odb,
