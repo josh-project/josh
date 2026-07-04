@@ -653,12 +653,22 @@ Test :PATHS
 
 Test :INDEX
   $ FILTER_HASH=$(josh-filter -i ':INDEX')
+  ERROR: Invalid filter: ":INDEX"
+  
+  Note: use forward slash at the start of the filter if you're
+  trying to select a subdirectory:
+  
+    :/INDEX
+  
+  [1]
   $ josh-filter -p ${FILTER_HASH}
-  :INDEX
+  :/
   $ git read-tree --reset -u ${FILTER_HASH}
+  fatal: you must specify at least one tree to merge
+  [128]
   $ tree
   .
-  `-- index
+  `-- paths
   
   1 directory, 1 file
 

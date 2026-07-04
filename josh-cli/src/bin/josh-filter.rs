@@ -27,8 +27,6 @@ fn resolve_input_ref(
 fn make_app() -> clap::Command {
     let app = clap::Command::new("josh-filter");
 
-    let app = { app.arg(clap::Arg::new("search").long("search")) };
-
     app
         .arg(
             clap::Arg::new("filter")
@@ -120,11 +118,6 @@ fn make_app() -> clap::Command {
             clap::Arg::new("graphql")
                 .long("graphql")
                 .short('g'),
-        )
-        .arg(
-            clap::Arg::new("max_comp")
-                .long("max_comp")
-                .short('m'),
         )
         .arg(
             clap::Arg::new("reverse").action(clap::ArgAction::SetTrue).long("reverse").help(
@@ -382,49 +375,6 @@ fn run_filter(args: Vec<String>) -> anyhow::Result<i32> {
         }
     }
     josh_core::update_refs(&transaction, updated_refs.clone());
-
-    if let Some(searchstring) = args.get_one::<String>("search") {
-        let ifilterobj = filterobj.chain(josh_core::filter::parse(":SQUASH:INDEX")?);
-
-        let max_complexity: usize = args
-            .get_one::<String>("max_comp")
-            .unwrap_or(&"6".to_string())
-            .parse()?;
-
-        let commit = repo.revparse_single(&input_ref)?.peel_to_commit()?;
-
-        let index_commit = josh_core::filter_commit(&transaction, ifilterobj, commit.id())?;
-        let tree = repo
-            .find_commit(josh_core::filter_commit(
-                &transaction,
-                filterobj,
-                commit.id(),
-            )?)?
-            .tree()?;
-        let index_tree = repo.find_commit(index_commit)?.tree()?;
-
-        /* let start = std::time::Instant::now(); */
-        let candidates = josh_core::filter::tree::search_candidates(
-            &transaction,
-            &index_tree,
-            searchstring,
-            max_complexity,
-        )?;
-        let matches = josh_core::filter::tree::search_matches(
-            &transaction,
-            &tree,
-            searchstring,
-            &candidates,
-        )?;
-        /* let duration = start.elapsed(); */
-
-        for r in matches {
-            for l in r.1 {
-                println!("{}:{}: {}", r.0, l.0, l.1);
-            }
-        }
-        /* eprintln!("\n Search took {:?}", duration); */
-    }
 
     if reverse {
         let new = repo.revparse_single(target).unwrap().id();

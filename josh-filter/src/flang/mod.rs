@@ -242,7 +242,6 @@ pub(crate) fn spec2(op: &Op) -> String {
         Op::Empty => ":empty".to_string(),
         Op::Paths => ":PATHS".to_string(),
         Op::Invert => ":INVERT".to_string(),
-        Op::Index => ":INDEX".to_string(),
         Op::Fold => ":FOLD".to_string(),
         Op::Squash(None) => ":SQUASH".to_string(),
         Op::Squash(Some(ids)) => {

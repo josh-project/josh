@@ -130,7 +130,6 @@ pub enum Op {
 
     Hook(String),
 
-    Index,
     Invert,
 
     Blob(std::path::PathBuf, BlobContent), // Blob(dest_path, content)

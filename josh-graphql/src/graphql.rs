@@ -432,51 +432,6 @@ impl Revision {
 
         Ok(Some(warnings))
     }
-
-    fn search(
-        &self,
-        string: String,
-        max_complexity: Option<i32>,
-        context: &Context,
-    ) -> FieldResult<Option<Vec<SearchResult>>> {
-        let max_complexity = max_complexity.unwrap_or(6) as usize;
-        let transaction = context.transaction.lock().unwrap();
-        let ifilterobj = filter::parse(":SQUASH:INDEX")?;
-        let tree = transaction.repo().find_commit(self.commit_id)?.tree()?;
-
-        let x = filter::apply(&transaction, self.filter, Rewrite::from_tree(tree))?;
-        let index_tree = filter::apply(&transaction, ifilterobj, x.clone())?;
-
-        /* let start = std::time::Instant::now(); */
-        let candidates = filter::tree::search_candidates(
-            &transaction,
-            index_tree.tree(),
-            &string,
-            max_complexity,
-        )?;
-        let results = filter::tree::search_matches(&transaction, x.tree(), &string, &candidates)?;
-        /* let duration = start.elapsed(); */
-
-        let mut r = vec![];
-        for m in results {
-            let mut matches = vec![];
-            for l in m.1 {
-                matches.push(SearchMatch {
-                    line: l.0 as i32,
-                    text: l.1,
-                });
-            }
-            let path = Path {
-                path: std::path::PathBuf::from(m.0),
-                commit_id: self.commit_id,
-                filter: self.filter,
-                tree: x.tree().id(),
-            };
-            r.push(SearchResult { path, matches });
-        }
-        Ok(Some(r))
-        /* println!("\n Search took {:?}", duration); */
-    }
 }
 
 pub struct Warning {
@@ -496,37 +451,6 @@ pub struct Path {
     commit_id: git2::Oid,
     filter: filter::Filter,
     tree: git2::Oid,
-}
-
-#[derive(Clone)]
-pub struct SearchMatch {
-    line: i32,
-    text: String,
-}
-
-#[graphql_object(context = Context)]
-impl SearchMatch {
-    pub fn line(&self) -> i32 {
-        self.line
-    }
-    pub fn text(&self) -> String {
-        self.text.clone()
-    }
-}
-
-pub struct SearchResult {
-    path: Path,
-    matches: Vec<SearchMatch>,
-}
-
-#[graphql_object(context = Context)]
-impl SearchResult {
-    pub fn path(&self) -> Path {
-        self.path.clone()
-    }
-    pub fn matches(&self) -> Vec<SearchMatch> {
-        self.matches.clone()
-    }
 }
 
 pub fn linecount(repo: &git2::Repository, id: git2::Oid) -> usize {

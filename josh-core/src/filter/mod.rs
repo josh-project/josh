@@ -1443,9 +1443,6 @@ pub fn apply<'a>(
         Op::Paths => Ok(x
             .clone()
             .with_tree(tree::pathstree("", x.tree().id(), transaction)?)),
-        Op::Index => Ok(x
-            .clone()
-            .with_tree(tree::trigram_index(transaction, x.tree().clone())?)),
 
         Op::Invert => {
             Ok(x.clone()

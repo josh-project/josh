@@ -461,10 +461,6 @@ impl InMemoryBuilder {
                 let blob = self.write_blob(b"");
                 push_blob_entries(&mut entries, [("invert", blob)]);
             }
-            Op::Index => {
-                let blob = self.write_blob(b"");
-                push_blob_entries(&mut entries, [("index", blob)]);
-            }
             Op::Fold => {
                 let blob = self.write_blob(b"");
                 push_blob_entries(&mut entries, [("fold", blob)]);
@@ -669,10 +665,6 @@ fn from_tree2(repo: &git2::Repository, tree_oid: git2::Oid) -> anyhow::Result<Op
         "invert" => {
             let _ = repo.find_blob(entry.id())?;
             Ok(Op::Invert)
-        }
-        "index" => {
-            let _ = repo.find_blob(entry.id())?;
-            Ok(Op::Index)
         }
         "fold" => {
             let _ = repo.find_blob(entry.id())?;

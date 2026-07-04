@@ -61,7 +61,7 @@ pub fn sled_print_stats() -> anyhow::Result<()> {
     Ok(())
 }
 
-pub fn sled_open_josh_trees() -> anyhow::Result<(sled::Tree, sled::Tree, sled::Tree)> {
+pub fn sled_open_josh_trees() -> anyhow::Result<(sled::Tree, sled::Tree)> {
     let db = DB.lock().unwrap();
     let db = match db.as_ref() {
         Some(db) => db,
@@ -70,9 +70,8 @@ pub fn sled_open_josh_trees() -> anyhow::Result<(sled::Tree, sled::Tree, sled::T
 
     let path_tree = db.open_tree("_paths")?;
     let invert_tree = db.open_tree("_invert")?;
-    let trigram_index_tree = db.open_tree("_trigram_index")?;
 
-    Ok((path_tree, invert_tree, trigram_index_tree))
+    Ok((path_tree, invert_tree))
 }
 
 pub fn sled_load(path: &std::path::Path) -> anyhow::Result<()> {

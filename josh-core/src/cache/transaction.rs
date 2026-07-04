@@ -111,7 +111,6 @@ struct Transaction2 {
     cache: std::sync::Arc<CacheStack>,
     path_tree: sled::Tree,
     invert_tree: sled::Tree,
-    trigram_index_tree: sled::Tree,
     missing: Vec<(usize, crate::filter::Filter, git2::Oid)>,
     misses: usize,
     nesting_level: usize,
@@ -162,8 +161,7 @@ impl Transaction {
 
         log::debug!("new transaction");
 
-        let (path_tree, invert_tree, trigram_index_tree) =
-            sled_open_josh_trees().expect("failed to open transaction");
+        let (path_tree, invert_tree) = sled_open_josh_trees().expect("failed to open transaction");
 
         Transaction {
             t2: std::cell::RefCell::new(Transaction2 {
@@ -178,7 +176,6 @@ impl Transaction {
                 cache,
                 path_tree,
                 invert_tree,
-                trigram_index_tree,
                 missing: vec![],
                 misses: 0,
                 nesting_level: 0,
@@ -368,22 +365,6 @@ impl Transaction {
         let x = git2::Oid::hash_object(git2::ObjectType::Blob, s.as_bytes()).expect("hash_object");
 
         if let Some(oid) = t2.invert_tree.get(x.as_bytes()).unwrap() {
-            return Some(git2::Oid::from_bytes(&oid).unwrap());
-        }
-        None
-    }
-
-    pub fn insert_trigram_index(&self, tree: git2::Oid, result: git2::Oid) {
-        let t2 = self.t2.borrow();
-        t2.trigram_index_tree
-            .insert(tree.as_bytes(), result.as_bytes())
-            .unwrap();
-    }
-
-    pub fn get_trigram_index(&self, tree: git2::Oid) -> Option<git2::Oid> {
-        let t2 = self.t2.borrow();
-
-        if let Some(oid) = t2.trigram_index_tree.get(tree.as_bytes()).unwrap() {
             return Some(git2::Oid::from_bytes(&oid).unwrap());
         }
         None
