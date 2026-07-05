@@ -406,6 +406,14 @@ Note that this filter is only practical when used with `:hook` or `workspace.jos
 as it should apply per-revision only. Applying `:pin` for the whole history
 will result in the subtree being excluded from all revisions.
 
+`:pin` cannot be combined with history splicing, since the two have no well-defined
+combined semantics. Splicing is on by default, so a filter that uses `:pin` must set the
+`no-splice` history flag; otherwise filtering fails with an error. For example:
+
+```
+:~(history="no-splice")[:workspace=workspaces/code]
+```
+
 Refer to `pin_filter_workspace.t` and `pin_filter_hook.t` for reference.
 
 Filter order matters
