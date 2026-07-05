@@ -3,7 +3,6 @@ use anyhow::anyhow;
 
 use crate::cache::CacheStack;
 use crate::cache::TransactionContext;
-use rayon::prelude::*;
 
 pub fn pathstree<'a>(
     root: &str,
@@ -769,7 +768,7 @@ pub fn trigram_search<'a>(
         }
     }
 
-    rs_tracing::trace_scoped!("down par_iter");
+    rs_tracing::trace_scoped!("down iter");
 
     let rpath = transaction.repo().path();
 
@@ -781,33 +780,20 @@ pub fn trigram_search<'a>(
         .collect::<Vec<_>>();
 
     let tran_context = TransactionContext::new(rpath, CacheStack::default().into());
-    let mut r = trees
-        .par_iter()
-        .map_init(
-            || tran_context.open().unwrap(),
-            |transaction, (id, name)| {
-                let s = transaction.repo().find_tree(*id).unwrap();
+    let sub_transaction = tran_context.open()?;
+    for (id, name) in &trees {
+        let s = sub_transaction.repo().find_tree(*id)?;
 
-                let mut results = vec![];
-
-                trigram_search(
-                    transaction,
-                    s,
-                    &format!("{}{}{}", root, if root.is_empty() { "" } else { "/" }, name),
-                    dir_filter,
-                    file_filter,
-                    &mut results,
-                    ord,
-                )
-                .unwrap();
-                results
-            },
-        )
-        .reduce(std::vec::Vec::new, |mut r, mut b| {
-            r.append(&mut b);
-            r
-        });
-    results.append(&mut r);
+        trigram_search(
+            &sub_transaction,
+            s,
+            &format!("{}{}{}", root, if root.is_empty() { "" } else { "/" }, name),
+            dir_filter,
+            file_filter,
+            results,
+            ord,
+        )?;
+    }
     Ok(())
 }
 
