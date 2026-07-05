@@ -1970,9 +1970,9 @@ fn compute_splice_parents(
             // for equivalent filters but for any change that does not expand the set, such as a
             // rename or a removal -- and an empty result lets `apply_to_commit2` skip a whole
             // history walk. `optimize` skips the trailing-Compose distribution, which can leave
-            // the subtract less collapsed, so use `optimize_full` here to flatten fully and give
+            // the subtract less collapsed, so use `minimize` here to flatten fully and give
             // `step`'s set-difference the flat form it needs to cancel.
-            let f = opt::optimize_full(to_filter(Op::Subtract(commit_filter.peel(), pcw.peel())));
+            let f = opt::minimize(to_filter(Op::Subtract(commit_filter.peel(), pcw.peel())));
             let f = propagate_meta(f, meta);
             apply_to_commit2(f, &parent, transaction)
         })

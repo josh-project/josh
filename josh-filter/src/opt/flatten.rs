@@ -17,7 +17,7 @@ pub fn flatten(filter: Filter) -> Filter {
  * Like `flatten`, but distributes *every* Compose, including the trailing-Compose case that
  * `flatten` skips as futile (see below). Distributing a trailing Compose is normally an
  * O(N*|Z|) build+collapse round-trip that converges back to the input, so `flatten` avoids it.
- * Backs `optimize_full`, which is the maximally-collapsing counterpart of `optimize`.
+ * Backs `minimize`, which is the maximally-collapsing counterpart of `optimize`.
  */
 pub(super) fn flatten_full(filter: Filter) -> Filter {
     flatten_impl(filter, true)

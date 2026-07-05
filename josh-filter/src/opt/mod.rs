@@ -30,7 +30,7 @@ type InvertHashMap = HashMap<Filter, Option<Filter>, BuildHasherDefault<Passthro
 
 static OPTIMIZED: LazyLock<std::sync::Mutex<FilterHashMap>> =
     LazyLock::new(|| std::sync::Mutex::new(HashMap::default()));
-static OPTIMIZED_FULL: LazyLock<std::sync::Mutex<FilterHashMap>> =
+static MINIMIZED: LazyLock<std::sync::Mutex<FilterHashMap>> =
     LazyLock::new(|| std::sync::Mutex::new(HashMap::default()));
 static INVERTED: LazyLock<std::sync::Mutex<InvertHashMap>> =
     LazyLock::new(|| std::sync::Mutex::new(HashMap::default()));
@@ -56,18 +56,18 @@ pub fn optimize(filter: Filter) -> Filter {
  * that `optimize` leaves alone as futile, letting `step` cancel more. For callers that want the
  * maximally-collapsed representation and are not on a hot path (e.g. pretty printing).
  */
-pub fn optimize_full(filter: Filter) -> Filter {
+pub fn minimize(filter: Filter) -> Filter {
     optimize_impl(filter, true)
 }
 
-fn optimize_impl(filter: Filter, full: bool) -> Filter {
-    let cache = if full { &OPTIMIZED_FULL } else { &OPTIMIZED };
+fn optimize_impl(filter: Filter, minimize: bool) -> Filter {
+    let cache = if minimize { &MINIMIZED } else { &OPTIMIZED };
     if let Some(f) = cache.lock().unwrap().get(&filter) {
         return *f;
     }
     let original = filter;
 
-    let mut filter = if full {
+    let mut filter = if minimize {
         flatten_full(filter)
     } else {
         flatten(filter)

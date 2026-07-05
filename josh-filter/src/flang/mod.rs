@@ -10,8 +10,8 @@ use crate::{BlobContent, Filter, Op, RevMatch};
 /// Nested filters will be indented with additional 4 spaces per nesting level.
 pub fn pretty(filter: Filter, indent: usize) -> String {
     // Pretty printing is display-only and off any hot path, so collapse the filter as far as
-    // possible with `optimize_full` (which flattens fully, unlike the general `optimize`).
-    let filter = opt::simplify(opt::optimize_full(filter));
+    // possible with `minimize` (which flattens fully, unlike the general `optimize`).
+    let filter = opt::simplify(opt::minimize(filter));
 
     if let Op::Compose(filters) = to_op(filter)
         && indent == 0
