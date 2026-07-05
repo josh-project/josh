@@ -1960,19 +1960,8 @@ fn compute_splice_parents(
     parent_filters: Vec<(git2::Commit, Filter)>,
     meta: &std::collections::BTreeMap<String, String>,
 ) -> anyhow::Result<Option<Vec<git2::Oid>>> {
-    // `Op::Pin` is somewhat of a special category: it doesn't operate on either
-    // commit trees or the history graph, and is more of a marker for per-rev
-    // filter application process. Therefore, in the tree-level `apply`, it's an identity.
-    //
-    // This is important because we rely on the filter optimizer to properly fold
-    // `Op::Subtract`. If there are pins inside, the optimizer will not be able to collapse
-    // it, and this will trigger extra history walks in `apply_to_commit2` below.
-    //
-    // Actual work of :pin still happens in `pin_details` in `per_rev_filter`, so :pin still works.
-    fn strip_pins(f: Filter) -> Filter {
-        legalize_pin(f, &|_| to_filter(Op::Empty))
-    }
-
+    // This is only reached when history splicing is enabled, and `per_rev_filter` rejects `:pin`
+    // in that case, so the filters here are pin-free -- no pin handling is needed.
     let splice_parents = parent_filters
         .into_iter()
         .map(|(parent, pcw)| {
@@ -1983,10 +1972,7 @@ fn compute_splice_parents(
             // history walk. `optimize` skips the trailing-Compose distribution, which can leave
             // the subtract less collapsed, so use `optimize_full` here to flatten fully and give
             // `step`'s set-difference the flat form it needs to cancel.
-            let f = opt::optimize_full(to_filter(Op::Subtract(
-                strip_pins(commit_filter.peel()),
-                strip_pins(pcw.peel()),
-            )));
+            let f = opt::optimize_full(to_filter(Op::Subtract(commit_filter.peel(), pcw.peel())));
             let f = propagate_meta(f, meta);
             apply_to_commit2(f, &parent, transaction)
         })
@@ -2014,15 +2000,28 @@ fn per_rev_filter(
     let meta = filter.into_meta();
     let commit_filter = propagate_meta(commit_filter, &meta);
 
-    let splice_parents =
-        if history::history_flag(meta.get("history").map(String::as_str), "no-splice") {
-            vec![]
-        } else {
-            some_or!(
-                compute_splice_parents(transaction, commit_filter, parent_filters, &meta)?,
-                { return Ok(None) }
-            )
-        };
+    // Legalize the pins two ways up front (kept, or excluded); they differ iff the filter uses
+    // `:pin`. Splicing is on unless the "no-splice" history flag is set, and combining it with
+    // `:pin` has no well-defined semantics, so reject that rather than guess.
+    let legalized_a = legalize_pin(commit_filter.peel(), &|f| f);
+    let legalized_b = legalize_pin(commit_filter.peel(), &|f| to_filter(Op::Exclude(f)));
+    let uses_pin = legalized_a != legalized_b;
+    let no_splice = history::history_flag(meta.get("history").map(String::as_str), "no-splice");
+    if uses_pin && !no_splice {
+        return Err(anyhow!(
+            "combining :pin with history splicing is not supported; \
+             set the \"no-splice\" history flag"
+        ));
+    }
+
+    let splice_parents = if no_splice {
+        vec![]
+    } else {
+        some_or!(
+            compute_splice_parents(transaction, commit_filter, parent_filters, &meta)?,
+            { return Ok(None) }
+        )
+    };
 
     let normal_parents = commit
         .parent_ids()
@@ -2032,10 +2031,7 @@ fn per_rev_filter(
 
     // Special case: `:pin` filter needs to be aware of filtered history
     let pin_details = if let Some(&parent) = normal_parents.first() {
-        let legalized_a = legalize_pin(commit_filter.peel(), &|f| f);
-        let legalized_b = legalize_pin(commit_filter.peel(), &|f| to_filter(Op::Exclude(f)));
-
-        if legalized_a != legalized_b {
+        if uses_pin {
             let pin_subtract = apply(
                 transaction,
                 opt::optimize(to_filter(Op::Subtract(legalized_a, legalized_b))),
