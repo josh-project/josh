@@ -852,6 +852,35 @@ type ToPushSet = std::sync::Arc<
     std::sync::Mutex<std::collections::HashSet<(git2::Oid, String, Option<String>)>>,
 >;
 
+#[derive(PartialEq, Eq, Clone, Copy)]
+enum FetchRequestResult {
+    Requested,
+    AlreadyCompleted,
+}
+
+#[derive(Default)]
+pub struct FetchState {
+    inner: std::sync::Mutex<(bool, bool)>,
+}
+
+impl FetchState {
+    fn request(&self) -> FetchRequestResult {
+        let (requested, completed) = &mut *self.inner.lock().unwrap();
+        if *completed {
+            return FetchRequestResult::AlreadyCompleted;
+        }
+
+        *requested = true;
+        FetchRequestResult::Requested
+    }
+
+    pub fn complete(&self) -> bool {
+        let (requested, completed) = &mut *self.inner.lock().unwrap();
+        *completed = true;
+        *requested
+    }
+}
+
 pub struct Context {
     pub transaction: std::sync::Arc<std::sync::Mutex<cache::Transaction>>,
     pub transaction_mirror: std::sync::Arc<std::sync::Mutex<cache::Transaction>>,
@@ -859,7 +888,7 @@ pub struct Context {
         std::sync::Mutex<std::collections::HashMap<std::path::PathBuf, Vec<String>>>,
     >,
     pub to_push: ToPushSet,
-    pub allow_refs: std::sync::Mutex<bool>,
+    pub fetch_state: FetchState,
 }
 
 impl juniper::Context for Context {}
@@ -953,13 +982,10 @@ impl RevMut {
 #[graphql_object(context = Context)]
 impl RepositoryMut {
     fn rev(at: String, filter: Option<String>, context: &Context) -> FieldResult<RevMut> {
-        {
-            let mut allow_refs = context.allow_refs.lock().unwrap();
-            if !*allow_refs {
-                *allow_refs = true;
-                return Err(anyhow!("ref query not allowed").into());
-            };
+        if context.fetch_state.request() != FetchRequestResult::AlreadyCompleted {
+            return Err(anyhow!("rev(): fetch needed").into());
         }
+
         let transaction_mirror = context.transaction_mirror.lock().unwrap();
 
         // Just check that the commit exists
@@ -984,13 +1010,10 @@ impl Repository {
     }
 
     fn refs(&self, context: &Context, pattern: Option<String>) -> FieldResult<Vec<Reference>> {
-        {
-            let mut allow_refs = context.allow_refs.lock().unwrap();
-            if !*allow_refs {
-                *allow_refs = true;
-                return Err(anyhow!("ref query not allowed").into());
-            };
+        if context.fetch_state.request() != FetchRequestResult::AlreadyCompleted {
+            return Err(anyhow!("refs(): fetch needed").into());
         }
+
         let transaction_mirror = context.transaction_mirror.lock().unwrap();
         let refname = format!(
             "{}{}",
@@ -1019,20 +1042,28 @@ impl Repository {
 
         let transaction_mirror = context.transaction_mirror.lock().unwrap();
         let commit_id = {
-            let mut allow_refs = context.allow_refs.lock().unwrap();
-            let id = if let Ok(id) = git2::Oid::from_str(&at) {
-                id
-            } else if *allow_refs {
-                transaction_mirror.repo().revparse_single(&rev)?.id()
+            let oid = if let Ok(id) = git2::Oid::from_str(&at) {
+                Some((id, transaction_mirror.repo().odb()?.exists(id)))
             } else {
-                git2::Oid::zero()
+                None
             };
 
-            if !transaction_mirror.repo().odb()?.exists(id) {
-                *allow_refs = true;
-                return Err(anyhow!("ref query not allowed").into());
+            if oid.is_none() && context.fetch_state.request() == FetchRequestResult::Requested {
+                return Err(anyhow!("rev(): fetch needed").into());
             }
-            id
+
+            // If we already fetched but the requested OID is not present, that's an error
+            if let Some((oid, exists)) = oid
+                && !exists
+            {
+                return Err(anyhow!("rev(): oid {oid} not found after fetch").into());
+            }
+
+            if let Some((oid, _)) = oid {
+                oid
+            } else {
+                transaction_mirror.repo().revparse_single(&rev)?.id()
+            }
         };
 
         Ok(Revision {
@@ -1054,7 +1085,7 @@ pub fn context(transaction: cache::Transaction, transaction_mirror: cache::Trans
         transaction: std::sync::Arc::new(std::sync::Mutex::new(transaction)),
         meta_add: std::sync::Arc::new(std::sync::Mutex::new(Default::default())),
         to_push: std::sync::Arc::new(std::sync::Mutex::new(Default::default())),
-        allow_refs: std::sync::Mutex::new(false),
+        fetch_state: FetchState::default(),
     }
 }
 

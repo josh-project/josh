@@ -1474,9 +1474,8 @@ async fn handle_graphql(
         // all of them locally, so no need to fetch.
         let res = parsed.execute(&root_node, &context).await;
 
-        // The "allow_refs" flag will be set by the query handler if we need to do a fetch
-        // to complete the query.
-        if !*context.allow_refs.lock().unwrap() {
+        // Some queries will need a fetch
+        if !context.fetch_state.complete() {
             res
         } else {
             match crate::upstream::fetch_upstream(
