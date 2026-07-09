@@ -304,14 +304,125 @@ fn to_absolute_remote_url(url: &str) -> anyhow::Result<String> {
         || url.starts_with("file://")
     {
         Ok(url.to_owned())
+    } else if let Some(url) = scp_style_link_to_absolute_remote_url(url) {
+        Ok(url)
     } else {
-        // For local paths, make them absolute
-        let path = std::fs::canonicalize(url)
-            .with_context(|| format!("Failed to resolve path {}", url))?
-            .display()
-            .to_string();
+        filepath_to_absolute_remote_url(url)
+    }
+}
 
-        Ok(format!("file://{}", path))
+/// Try to convert an scp-style URL (user@host:path) to an SSH URL (ssh://user@host/path)
+//
+// This could be an scp-style SSH path, eg git@github.com:user/repo.git
+// it could also be some web path like example.com/path/foo:bar/repo.git
+// or funky file path like dir/path:with:colons/for/some/reason
+//
+// Heuristic: split on first : and verify it looks like a host:path pair.
+fn scp_style_link_to_absolute_remote_url(url: &str) -> Option<String> {
+    if let Some((host, path)) = url.split_once(':') {
+        if host.is_empty() || host.contains('/') {
+            None
+        } else {
+            let url = format!("ssh://{}/{}", host, path);
+            eprintln!(
+                "warning: scp-style path ([user@]host:path) detected; converting to ssh:// URL: {}",
+                url
+            );
+            Some(url)
+        }
+    } else {
+        None
+    }
+}
+
+fn filepath_to_absolute_remote_url(url: &str) -> anyhow::Result<String> {
+    // For local paths, make them absolute
+    let path = std::fs::canonicalize(url)
+        .with_context(|| format!("Failed to resolve path {}", url))?
+        .display()
+        .to_string();
+
+    Ok(format!("file://{}", path))
+}
+
+// Tests for to_absolute_remote_url()
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_to_absolute_remote_url_http() {
+        assert_eq!(
+            to_absolute_remote_url("http://example.com/repo.git").unwrap(),
+            "http://example.com/repo.git"
+        );
+    }
+
+    #[test]
+    fn test_to_absolute_remote_url_https() {
+        assert_eq!(
+            to_absolute_remote_url("https://example.com/repo.git").unwrap(),
+            "https://example.com/repo.git"
+        );
+    }
+
+    #[test]
+    fn test_to_absolute_remote_url_ssh() {
+        assert_eq!(
+            to_absolute_remote_url("ssh://git@example.com/repo.git").unwrap(),
+            "ssh://git@example.com/repo.git"
+        );
+    }
+
+    #[test]
+    fn test_to_absolute_remote_url_file() {
+        assert_eq!(
+            to_absolute_remote_url("file:///path/to/repo.git").unwrap(),
+            "file:///path/to/repo.git"
+        );
+    }
+
+    #[test]
+    fn test_to_absolute_remote_url_scp() {
+        assert_eq!(
+            to_absolute_remote_url("git@github.com:user/repo.git").unwrap(),
+            "ssh://git@github.com/user/repo.git"
+        );
+        assert_eq!(
+            to_absolute_remote_url("git@server.com:repo.git").unwrap(),
+            "ssh://git@server.com/repo.git"
+        );
+        assert_eq!(
+            to_absolute_remote_url("server.com:repo.git").unwrap(),
+            "ssh://server.com/repo.git"
+        );
+    }
+
+    #[test]
+    fn test_to_absolute_remote_url_scp_weird_path_but_ok() {
+        assert_eq!(
+            to_absolute_remote_url("git@github.com:").unwrap(),
+            "ssh://git@github.com/"
+        );
+        assert_eq!(
+            to_absolute_remote_url("git@server.com://path/repo").unwrap(),
+            "ssh://git@server.com///path/repo"
+        );
+    }
+
+    #[test]
+    fn test_to_absolute_remote_url_local_path() {
+        assert_eq!(
+            to_absolute_remote_url(".").unwrap(),
+            format!("file://{}", std::env::current_dir().unwrap().display())
+        );
+    }
+
+    #[test]
+    fn test_to_absolute_remote_url_unrecognized_path() {
+        // Non-existent path falls through to canonicalize, which errors
+        let result = to_absolute_remote_url("nonexistent/path/to/repo");
+        assert!(result.is_err());
     }
 }
 
