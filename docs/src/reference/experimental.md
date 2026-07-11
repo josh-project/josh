@@ -6,14 +6,22 @@ may change in future releases.
 
 ## Filters
 
-### Blob insertion **`:$path="content"`**
+### Insertion **`:$path=content`**
 
-Inserts a new file at `path` in the output tree with the given literal text as its content.
-No newline is appended automatically. The path argument follows the same quoting rules as
-other filter arguments: quote with double quotes if the path contains spaces or special
-characters.
+Inserts a git object at `path` in the output tree. The content can be given in two ways:
 
-The inverse of `:$path="content"` is `:exclude[::path]`, which removes the inserted file.
+- **Inline text** — `:$path="content"` writes a new file at `path` containing the given literal
+  text. No newline is appended automatically.
+- **By object id** — `:$path=<oid>` inserts an existing object referenced by its 40-character
+  SHA-1 hash. The object may be a **blob** (inserted as a file) or a **tree** (inserted as a
+  subtree); the kind is resolved from the repository. Referencing an object of any other kind, or
+  one that does not exist, is an error. This avoids inlining large blobs or whole subtrees as a
+  string.
+
+The path argument follows the same quoting rules as other filter arguments: quote with double
+quotes if the path contains spaces or special characters.
+
+The inverse of `:$path=content` is `:exclude[::path]`, which removes the inserted file or subtree.
 
 **Examples:**
 
@@ -23,6 +31,12 @@ The inverse of `:$path="content"` is `:exclude[::path]`, which removes the inser
 
 # Insert a file whose name contains a space
 :$"release notes.txt"="Initial release"
+
+# Insert an existing blob by its SHA
+:$added.txt=e69de29bb2d1d6434b8b29ae775ad8c2e48c5391
+
+# Insert an existing tree as a subtree at "vendored"
+:$vendored=4b825dc642cb6eb9a060e54bf8d69288fbee4904
 
 # Combine with a subdirectory filter to insert the file alongside existing content
 :[:/sub1,:$added.txt="hello world"]
