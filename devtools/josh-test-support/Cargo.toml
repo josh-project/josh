@@ -4,5 +4,9 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-tracing = "0.1"
-tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+anyhow.workspace = true
+dirs.workspace = true
+git2.workspace = true
+tempfile.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true

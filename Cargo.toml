@@ -29,6 +29,8 @@ members = [
     "deployment/josh-test-webhook-client",
     "deployment/josh-test-webhook-service",
     "deployment/josh-command-middleware",
+
+    "devtools/josh-test-support",
 ]
 
 exclude = ["josh-gui", "devtools"]
