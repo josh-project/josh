@@ -76,6 +76,15 @@ otherwise the compose uniqueness handling subtracts later groups away)
   $ git show josh/filter/many:y/b
   4 (no-eol)
 
+Apply: inserts with the same basename and content in different directories all survive
+(regression: the shared leaf blob :$f="X" must not be hoisted out of the compose, or
+the resulting :prefix compose collapses every branch but the first)
+  $ josh-filter -s ':[:$a/f="X",:$b/f="X",:$c/f="X"]' master --update refs/josh/filter/samebase 1> /dev/null
+  $ git ls-tree -r --name-only josh/filter/samebase
+  a/f
+  b/f
+  c/f
+
 Apply: blob referenced by sha is inserted at the destination path
   $ OID=$(printf 'big content' | git hash-object -w --stdin)
   $ josh-filter -s ":\$added.txt=$OID" master --update refs/josh/filter/master3 1> /dev/null
@@ -91,6 +100,11 @@ Apply: referencing a non-blob sha (a commit) fails
   [1] :[
       :/sub1
       :$added.txt="hello world"
+  ]
+  [1] :[
+      a = :$f="X"
+      b = :$f="X"
+      c = :$f="X"
   ]
   [1] :[
       x = :[
@@ -116,6 +130,11 @@ Apply: referencing a nonexistent sha fails
   [1] :[
       :/sub1
       :$added.txt="hello world"
+  ]
+  [1] :[
+      a = :$f="X"
+      b = :$f="X"
+      c = :$f="X"
   ]
   [1] :[
       x = :[

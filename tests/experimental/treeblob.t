@@ -56,6 +56,14 @@ uniqueness handling subtracts later groups away)
   x/va
   y/vb
 
+Apply: identical treeids with the same basename in different directories all survive
+(regression: the shared leaf treeid must not be hoisted out of the compose, or the
+resulting :prefix compose collapses every branch but the first)
+  $ josh-filter -s ':[:#x/v[:/sub1],:#y/v[:/sub1]]' master --update refs/josh/sametree 1> /dev/null
+  $ git ls-tree -r --name-only refs/josh/sametree
+  x/v
+  y/v
+
 Deref: path not found is treated as nop (reference is updated, path absent from output)
   $ josh-filter ':#version.txt' master --update refs/josh/noptest 1> /dev/null
   $ git rev-parse --verify refs/josh/noptest > /dev/null && echo "updated"
