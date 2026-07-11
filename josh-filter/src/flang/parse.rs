@@ -4,7 +4,7 @@ use crate::filter::Filter;
 use crate::opt;
 use crate::opt::invert;
 use crate::persist::to_filter;
-use crate::{BlobContent, LazyRef, Op, Regex, RevMatch};
+use crate::{InsertContent, LazyRef, Op, Regex, RevMatch};
 
 use anyhow::{Context, anyhow};
 use indoc::{formatdoc, indoc};
@@ -174,17 +174,17 @@ fn parse_item(pair: pest::iterators::Pair<Rule>) -> anyhow::Result<Filter> {
             let path = unquote(pair.into_inner().next().unwrap().as_str());
             Ok(parse_treederef(&path))
         }
-        Rule::filter_blob => {
-            check_experimental_features_enabled("Blob filter")?;
+        Rule::filter_insert => {
+            check_experimental_features_enabled("Insert filter")?;
             let mut inner = pair.into_inner();
             let path = Path::new(&unquote(inner.next().unwrap().as_str())).to_owned();
             let content_pair = inner.next().unwrap();
             let content = match content_pair.as_rule() {
-                Rule::string => BlobContent::Inline(unquote(content_pair.as_str())),
-                Rule::blob_oid => BlobContent::Oid(git2::Oid::from_str(content_pair.as_str())?),
+                Rule::string => InsertContent::Inline(unquote(content_pair.as_str())),
+                Rule::object_oid => InsertContent::Oid(git2::Oid::from_str(content_pair.as_str())?),
                 _ => unreachable!(),
             };
-            Ok(to_filter(Op::Blob(path, content)))
+            Ok(to_filter(Op::Insert(path, content)))
         }
         Rule::filter_presub => {
             let mut inner = pair.into_inner();

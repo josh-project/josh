@@ -132,12 +132,12 @@ fn filter_methods(builder: &mut MethodsBuilder) {
     fn peel(this: &StarlarkFilter) -> anyhow::Result<StarlarkFilter> {
         Ok(this.peel())
     }
-    fn blob(
+    fn insert(
         this: &StarlarkFilter,
         path: StringValue,
         content: StringValue,
     ) -> anyhow::Result<StarlarkFilter> {
-        this.blob(path, content)
+        this.insert(path, content)
     }
     fn treeid(
         this: &StarlarkFilter,
@@ -303,12 +303,16 @@ impl StarlarkFilter {
         }
     }
 
-    /// Create a blob at path with the given content
-    pub fn blob(&self, path: StringValue, content: StringValue) -> anyhow::Result<StarlarkFilter> {
+    /// Insert a blob at path with the given content
+    pub fn insert(
+        &self,
+        path: StringValue,
+        content: StringValue,
+    ) -> anyhow::Result<StarlarkFilter> {
         Ok(StarlarkFilter {
             filter: self
                 .filter
-                .blob(PathBuf::from(path.as_str()), content.as_str())?,
+                .insert(PathBuf::from(path.as_str()), content.as_str())?,
         })
     }
 

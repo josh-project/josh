@@ -15,17 +15,17 @@
   > # mempack backend when running with --pack. This test verifies that the
   > # starlark evaluation can access that mempack tree.
   > content = tree.file("lib/file1")
-  > filter = filter.blob("foobar", content)
+  > filter = filter.insert("foobar", content)
   > # else:
   > #     filter = filter.empty()
   > EOF
 
 Apply with --pack: starlark must see the mempack tree to return the correct filter
   $ josh-filter --pack ':!config[:/sub1::file1:prefix=lib]' . --update refs/josh/master
-  e915167514a08e5e19839b871c13ec581f7d9618
+  81d483195a6fdd7068897fc5110968952f9b9977
 
   $ git ls-tree -r refs/josh/master
-  100644 blob 2b30477c6e975a7b6e8edec18bd617a629594681\tconfig.star (esc)
+  100644 blob ab1ac8155167304e9a0463cd1d04538cb6754418\tconfig.star (esc)
   100644 blob a024003ee1acc6bf70318a46e7b6df651b9dc246\tfoobar (esc)
   100644 blob a024003ee1acc6bf70318a46e7b6df651b9dc246\tlib/file1 (esc)
 

@@ -15,7 +15,7 @@ pub use josh_filter::opt;
 pub use josh_filter::opt::invert;
 pub use josh_filter::persist::{as_tree, from_tree};
 pub use josh_filter::persist::{peel_op, to_filter, to_op, to_ops};
-pub use josh_filter::{BlobContent, Filter, LazyRef, Op, RevMatch};
+pub use josh_filter::{Filter, InsertContent, LazyRef, Op, RevMatch};
 pub use josh_filter::{as_file, pretty, spec};
 
 pub mod text;
@@ -1382,17 +1382,26 @@ pub fn apply<'a>(
                 to_filter(op.clone()).id(),
             )?))
         }
-        Op::Blob(dest_path, content) => {
-            let blob_oid = match content {
-                BlobContent::Inline(s) => repo.blob(s.as_bytes())?,
-                BlobContent::Oid(oid) => repo.find_blob(*oid)?.id(),
+        Op::Insert(dest_path, content) => {
+            let (oid, mode) = match content {
+                InsertContent::Inline(s) => (repo.blob(s.as_bytes())?, git2::FileMode::Blob.into()),
+                InsertContent::Oid(oid) => match repo.find_object(*oid, None)?.kind() {
+                    Some(git2::ObjectType::Blob) => (*oid, git2::FileMode::Blob.into()),
+                    Some(git2::ObjectType::Tree) => (*oid, git2::FileMode::Tree.into()),
+                    _ => {
+                        return Err(anyhow::anyhow!(
+                            "insert: {} is neither a blob nor a tree",
+                            oid
+                        ));
+                    }
+                },
             };
             Ok(x.clone().with_tree(tree::insert(
                 repo,
                 &tree::empty(repo),
                 &dest_path,
-                blob_oid,
-                git2::FileMode::Blob.into(),
+                oid,
+                mode,
             )?))
         }
         Op::File(dest_path, source_path) => {
@@ -1464,7 +1473,7 @@ pub fn apply<'a>(
             let oid_str = applied.tree().id().to_string();
             apply(
                 transaction,
-                to_filter(Op::Blob(path.clone(), BlobContent::Inline(oid_str))),
+                to_filter(Op::Insert(path.clone(), InsertContent::Inline(oid_str))),
                 x,
             )
         }

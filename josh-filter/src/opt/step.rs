@@ -53,18 +53,18 @@ pub(super) fn step(filter: Filter) -> Filter {
                 Op::Prefix(path.clone())
             }
         }
-        Op::Blob(dest_path, content) if dest_path.components().count() > 1 => {
+        Op::Insert(dest_path, content) if dest_path.components().count() > 1 => {
             if let (Some(dst_parent), Some(dst_name)) = (dest_path.parent(), dest_path.file_name())
             {
                 Op::Chain(vec![
-                    to_filter(Op::Blob(
+                    to_filter(Op::Insert(
                         std::path::PathBuf::from(dst_name),
                         content.clone(),
                     )),
                     to_filter(Op::Prefix(dst_parent.to_path_buf())),
                 ])
             } else {
-                Op::Blob(dest_path.clone(), content.clone())
+                Op::Insert(dest_path.clone(), content.clone())
             }
         }
         Op::File(dest_path, source_path)

@@ -98,3 +98,9 @@ Apply: referencing a nonexistent sha fails
   [3] reachable_roots
   [3] sequence_number
   [1]
+
+Apply: a tree referenced by sha is inserted as a subtree at the destination path
+  $ TREE=$(git rev-parse 'HEAD^{tree}')
+  $ josh-filter -s ":\$sub=$TREE" master --update refs/josh/filter/tree 1> /dev/null
+  $ git show josh/filter/tree:sub/sub1/file1
+  contents1
