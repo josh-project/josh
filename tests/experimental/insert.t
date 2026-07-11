@@ -29,9 +29,9 @@ The split form is stable under another round-trip
   $ josh-filter -p 'a/b = :$c.txt="hello"'
   a/b = :$c.txt="hello"
 
-Inverse renders as :exclude[::path]
+Inverse renders as :empty (insert is generative: it fabricates content and consumes no input)
   $ josh-filter --reverse -p ':$added.txt="hello world"'
-  :exclude[::added.txt]
+  :empty
 
 Apply: blob is inserted at correct path with correct content
   $ josh-filter -s ':$added.txt="hello world"' master --update refs/josh/filter/master 1> /dev/null
@@ -62,6 +62,20 @@ Apply: compose with blob inserts blob alongside other files
   @@ -0,0 +1 @@
   +contents1
 
+Apply: composing many inserts across sibling directories keeps every insert
+(regression: an insert group must invert to :empty, not a union of excludes,
+otherwise the compose uniqueness handling subtracts later groups away)
+  $ josh-filter -s ':[:$x/a="1",:$x/b="2",:$y/a="3",:$y/b="4"]' master --update refs/josh/filter/many 1> /dev/null
+  $ git ls-tree -r --name-only josh/filter/many
+  x/a
+  x/b
+  y/a
+  y/b
+  $ git show josh/filter/many:y/a
+  3 (no-eol)
+  $ git show josh/filter/many:y/b
+  4 (no-eol)
+
 Apply: blob referenced by sha is inserted at the destination path
   $ OID=$(printf 'big content' | git hash-object -w --stdin)
   $ josh-filter -s ":\$added.txt=$OID" master --update refs/josh/filter/master3 1> /dev/null
@@ -78,6 +92,16 @@ Apply: referencing a non-blob sha (a commit) fails
       :/sub1
       :$added.txt="hello world"
   ]
+  [1] :[
+      x = :[
+          :$a="1"
+          :$b="2"
+      ]
+      y = :[
+          :$a="3"
+          :$b="4"
+      ]
+  ]
   [1] :prefix=a
   [1] :prefix=b
   [3] reachable_roots
@@ -92,6 +116,16 @@ Apply: referencing a nonexistent sha fails
   [1] :[
       :/sub1
       :$added.txt="hello world"
+  ]
+  [1] :[
+      x = :[
+          :$a="1"
+          :$b="2"
+      ]
+      y = :[
+          :$a="3"
+          :$b="4"
+      ]
   ]
   [1] :prefix=a
   [1] :prefix=b

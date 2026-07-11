@@ -26,12 +26,12 @@ pub fn invert(filter: Filter) -> anyhow::Result<Filter> {
             Op::Rev(_) => Some(Op::Nop),
             Op::RegexReplace(_) => Some(Op::Nop),
             Op::Pin(_) => Some(Op::Nop),
-            Op::Insert(path, _) => {
-                Some(Op::Exclude(to_filter(Op::File(path.clone(), path.clone()))))
-            }
-            Op::TreeId(path, _) => {
-                Some(Op::Exclude(to_filter(Op::File(path.clone(), path.clone()))))
-            }
+            // Insert and TreeId are generative: they fabricate tree entries and consume no
+            // input, so their inverse is empty. Using Exclude here would break composition
+            // uniqueness handling, since composing complements (Exclude) unions back to a
+            // no-op and lets sibling groups subtract each other away.
+            Op::Insert(_, _) => Some(Op::Empty),
+            Op::TreeId(_, _) => Some(Op::Empty),
             Op::ObjectDeref(path) => Some(Op::ObjectRef(path.clone())),
             Op::ObjectRef(path) => Some(Op::ObjectDeref(path.clone())),
             _ => None,
