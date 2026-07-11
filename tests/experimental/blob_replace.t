@@ -33,13 +33,13 @@ Forward: a blob referenced by sha overwrites the pre-existing file
   $ git show josh/sha:a/b/c.txt
   from-sha (no-eol)
 
-Reverse: the multi-component blob inverts to an exclude of the destination path
+Reverse: a multi-component blob inverts to :empty (it consumes no input)
   $ josh-filter --reverse -p ':$a/b/c.txt="new"'
-  :/a/b:exclude[::c.txt]
+  :empty
 
 Reverse: the inverse does not depend on the blob content (sha form is identical)
   $ josh-filter --reverse -p ":\$a/b/c.txt=$OID"
-  :/a/b:exclude[::c.txt]
+  :empty
 
 Composing the blob with the exclude of the same blob keeps the siblings
   $ josh-filter ':[:exclude[:$a/b/c.txt="new"],:$a/b/c.txt="new"]' master --update refs/josh/keep 1> /dev/null
@@ -51,6 +51,21 @@ Composing the blob with the exclude of the same blob keeps the siblings
   new (no-eol)
   $ git show josh/keep:a/b/d.txt
   keep (no-eol)
+
+Composing the blob over a passthrough replaces the file while keeping siblings
+  $ josh-filter ':[:/,:$a/b/c.txt="new"]' master --update refs/josh/overlay 1> /dev/null
+  $ git ls-tree -r --name-only josh/overlay
+  a/b/c.txt
+  a/b/d.txt
+  top.txt
+  $ git show josh/overlay:a/b/c.txt
+  new (no-eol)
+  $ git show josh/overlay:a/b/d.txt
+  keep (no-eol)
+
+Reverse: the passthrough overlay inverts to identity (the blob contributes no input)
+  $ josh-filter --reverse -p ':[:/,:$a/b/c.txt="new"]'
+  :/
 
 Reverse: edits to the filtered tree flow back upstream, including the blob path
   $ josh-filter ':[:exclude[:$a/b/c.txt="new"],:$a/b/c.txt="new"]' master --update refs/josh/rt 1> /dev/null

@@ -44,6 +44,18 @@ Apply via stored filter: blob at path contains tree OID of subfilter result
   $ [ "$(git show refs/josh/master:version.txt)" = "$(git rev-parse master:sub1)" ] && echo "match"
   match
 
+Reverse: a treeid inverts to :empty (it fabricates a blob and consumes no input)
+  $ josh-filter --reverse -p ':#version.txt[:/sub1]'
+  :empty
+
+Apply: composing treeid groups across sibling directories keeps every entry
+(regression: an insert/treeid group must invert to :empty, otherwise the compose
+uniqueness handling subtracts later groups away)
+  $ josh-filter -s ':[:#x/va[:/sub1],:#y/vb[:/sub2]]' master --update refs/josh/manytree 1> /dev/null
+  $ git ls-tree -r --name-only refs/josh/manytree
+  x/va
+  y/vb
+
 Deref: path not found is treated as nop (reference is updated, path absent from output)
   $ josh-filter ':#version.txt' master --update refs/josh/noptest 1> /dev/null
   $ git rev-parse --verify refs/josh/noptest > /dev/null && echo "updated"
