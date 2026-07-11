@@ -1,0 +1,7 @@
+bases = :[
+    :#BUILDER_IMAGE[:+images/rust-base]
+]
+context = :[
+    :/images/prysk-test
+    ::lfs-test-server/
+]

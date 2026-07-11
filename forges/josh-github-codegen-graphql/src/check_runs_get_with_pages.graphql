@@ -1,0 +1,29 @@
+query CheckRunsGetWithPages($nodeIds: [ID!]!, $pageSize: Int!, $endCursor: String) {
+  rateLimit {
+    cost
+    limit
+    nodeCount
+    remaining
+  }
+
+  nodes(ids: $nodeIds) {
+    __typename
+
+    ... on CheckSuite {
+      checkRuns(first: $pageSize, after: $endCursor) {
+        pageInfo {
+          startCursor
+          endCursor
+          hasPreviousPage
+          hasNextPage
+        }
+
+        nodes {
+          __typename
+
+          ... _CheckRunInfo
+        }
+      }
+    }
+  }
+}

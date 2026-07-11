@@ -1,0 +1,9 @@
+fragment _RequiredStatusChecksInfo on RepositoryRule {
+  type
+  parameters {
+    __typename
+    ... on RequiredStatusChecksParameters {
+      ..._StatusChecksParams
+    }
+  }
+}

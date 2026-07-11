@@ -1,0 +1,200 @@
+[workspace]
+resolver = "2"
+members = [
+    "axum-cgi",
+    "axum-cgi-server",
+    "josh-core",
+    "josh-git-data",
+    "josh-cli",
+    "josh-filter",
+    "josh-graphql",
+    "josh-link",
+    "josh-proxy",
+    "josh-rpc",
+    "josh-ssh-shell",
+    "josh-templates",
+    "josh-starlark",
+    "cq/josh-cq",
+    "cq/josh-cq-test-components",
+    "josh-changes",
+    "josh-compose",
+
+    "forges/josh-github-changes",
+    "forges/josh-github-graphql",
+    "forges/josh-github-codegen-graphql",
+    "forges/josh-github-webhooks",
+    "forges/josh-github-auth",
+    "forges/josh-github-keyring",
+
+    "deployment/josh-test-webhook-client",
+    "deployment/josh-test-webhook-service",
+    "deployment/josh-command-middleware",
+]
+
+exclude = ["josh-gui", "devtools"]
+
+[profile.release]
+lto = "thin"
+opt-level = 3
+codegen-units = 1
+
+[workspace.dependencies]
+anyhow = "1.0"
+base64 = "0.22.1"
+defer = "0.2.1"
+env_logger = "0.11.10"
+log = "0.4.29"
+mime = "0.3"
+form_urlencoded = "1.2.2"
+futures = "0.3.32"
+gix = { version = "0.79.0", default-features = false }
+gix-actor = "^0.39"
+gix-hash = "^0.22"
+gix-object = "0.56.0"
+gix-config = "0.52.0"
+gix-submodule = "0.26.0"
+libc = "0.2.184"
+regex = "1.12.3"
+rs_tracing = { version = "1.1.0", features = ["rs_tracing"] }
+serde = { version = "1.0.228", features = ["std", "derive"] }
+serde_json = "1.0.149"
+serde_yaml = "0.9.34"
+toml = "1.1.0"
+tracing-subscriber = { version = "0.3.23", features = ["env-filter"] }
+tempfile = "3.27.0"
+hex = "0.4.3"
+secret-vault-value = "^1"
+hmac = "^0.13"
+sha2 = "^0.11"
+http = "^1"
+chrono = { version = "^0", default-features = false, features = ["serde"] }
+dirs = "6"
+jsonwebtoken = "10"
+bytes = "1.11.1"
+rand = "0.10.1"
+backon = "1.6.0"
+futures-util = "0.3.32"
+thiserror = "2.0.18"
+axum-auth = "0.8.1"
+bincode = "^2"
+tower-http = { version = "0.6", features = ["trace"] }
+proc-macro2 = "^1"
+prettyplease = "0.2.37"
+graphql_client = "^0.16"
+graphql_client_codegen = { version = "^0.16.0" }
+
+axum-cgi = { path = "axum-cgi", version = "26.6.11" }
+josh-filter = { path = "josh-filter", version = "26.6.11" }
+josh-changes = { path = "josh-changes", version = "26.6.11" }
+josh-core = { path = "josh-core", version = "26.6.11" }
+josh-git-data = { path = "josh-git-data", version = "26.6.11" }
+josh-compose = { path = "josh-compose", version = "26.6.11" }
+josh-graphql = { path = "josh-graphql", version = "26.6.11" }
+josh-link = { path = "josh-link", version = "26.6.11" }
+josh-rpc = { path = "josh-rpc", version = "26.6.11" }
+josh-starlark = { path = "josh-starlark", version = "26.6.11" }
+josh-templates = { path = "josh-templates", version = "26.6.11" }
+
+# Forges support
+josh-github-changes = { path = "forges/josh-github-changes", version = "26.6.11" }
+josh-github-graphql = { path = "forges/josh-github-graphql", version = "26.6.11" }
+josh-github-codegen-graphql = { path = "forges/josh-github-codegen-graphql", version = "26.6.11" }
+josh-github-webhooks = { path = "forges/josh-github-webhooks", version = "26.6.11" }
+josh-github-auth = { path = "forges/josh-github-auth", version = "26.6.11" }
+josh-github-keyring = { path = "forges/josh-github-keyring", version = "26.6.11" }
+
+josh-cq-test-components = { path = "cq/josh-cq-test-components", version = "26.6.11" }
+
+# Deployment
+josh-test-webhook-service = { path = "deployment/josh-test-webhook-service", version = "26.6.11" }
+josh-test-webhook-client = { path = "deployment/josh-test-webhook-client", version = "26.6.11" }
+josh-command-middleware = { path = "deployment/josh-command-middleware", version = "26.6.11" }
+
+[workspace.dependencies.git2]
+default-features = false
+features = ["vendored-libgit2"]
+version = "0.20.4"
+
+[workspace.dependencies.juniper]
+version = "0.17.1"
+default-features = false
+features = ["expose-test-schema"]
+
+[workspace.dependencies.tokio]
+version = "1.50.0"
+features = [
+    "fs",
+    "rt-multi-thread",
+    "macros",
+    "io-std",
+    "io-util",
+    "net",
+    "process",
+    "signal",
+]
+
+[workspace.dependencies.tokio-util]
+version = "0.7.18"
+features = ["compat"]
+
+[workspace.dependencies.reqwest]
+version = "^0.13"
+default-features = false
+features = ["blocking", "default-tls", "json"]
+
+[workspace.dependencies.reqwest-middleware]
+version = "^0.5"
+features = ["json"]
+
+[workspace.dependencies.tracing]
+version = "0.1.44"
+features = ["max_level_trace", "release_max_level_trace"]
+
+[workspace.dependencies.clap]
+version = "4.6.0"
+features = ["derive", "env", "help", "std", "usage"]
+default-features = false
+
+[workspace.dependencies.axum]
+version = "^0.8"
+features = ["macros"]
+
+[workspace.dependencies.tower]
+version = "0.5"
+features = ["util"]
+
+[workspace.dependencies.url]
+version = "^2"
+features = ["serde"]
+
+[workspace.dependencies.async-trait]
+version = "0.1"
+
+[workspace.dependencies.headers]
+version = "0.4"
+
+# "josh run" builds filtered workspace trees that lack .git directories,
+# causing cargo to resolve josh-* crates from crates.io instead of locally.
+# This section forces cargo to always use the local versions.
+[patch.crates-io]
+axum-cgi = { path = "axum-cgi" }
+josh-filter = { path = "josh-filter" }
+josh-changes = { path = "josh-changes" }
+josh-core = { path = "josh-core" }
+josh-git-data = { path = "josh-git-data" }
+josh-compose = { path = "josh-compose" }
+josh-graphql = { path = "josh-graphql" }
+josh-link = { path = "josh-link" }
+josh-rpc = { path = "josh-rpc" }
+josh-starlark = { path = "josh-starlark" }
+josh-templates = { path = "josh-templates" }
+josh-github-changes = { path = "forges/josh-github-changes" }
+josh-github-graphql = { path = "forges/josh-github-graphql" }
+josh-github-codegen-graphql = { path = "forges/josh-github-codegen-graphql" }
+josh-github-webhooks = { path = "forges/josh-github-webhooks" }
+josh-github-auth = { path = "forges/josh-github-auth" }
+josh-github-keyring = { path = "forges/josh-github-keyring" }
+josh-cq-test-components = { path = "cq/josh-cq-test-components" }
+josh-test-webhook-service = { path = "deployment/josh-test-webhook-service" }
+josh-test-webhook-client = { path = "deployment/josh-test-webhook-client" }
+josh-command-middleware = { path = "deployment/josh-command-middleware" }
