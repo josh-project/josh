@@ -3348,6 +3348,10 @@ dependencies = [
 name = "josh-test-support"
 version = "0.1.0"
 dependencies = [
+ "anyhow",
+ "dirs",
+ "git2",
+ "tempfile",
  "tracing",
  "tracing-subscriber",
 ]
