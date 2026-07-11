@@ -89,7 +89,22 @@ pub(super) fn common_pre(filters: &Vec<Filter>) -> Option<(Filter, Vec<Filter>)>
             return None;
         }
     }
-    c.map(|c| (c, rest))
+    let c = c?;
+    // Do not hoist a generative leaf (Insert/TreeId). Such a filter fabricates its
+    // output independently in each branch; hoisting it would turn the branches into a
+    // single shared source fed through a prefix-compose, which the compose uniqueness
+    // handling then collapses down to one branch (dropping the siblings).
+    if is_generative(c) {
+        return None;
+    }
+    Some((c, rest))
+}
+
+/// A generative filter produces tree entries out of nothing (it ignores its input), so its
+/// output is meant to appear independently in every branch of a compose rather than being
+/// treated as a single shared source that the uniqueness handling may deduplicate.
+fn is_generative(filter: Filter) -> bool {
+    matches!(to_op_ref(filter), Op::Insert(..) | Op::TreeId(..))
 }
 
 pub(super) fn common_post(filters: &Vec<Filter>) -> Option<(Filter, Vec<Filter>)> {
