@@ -1,5 +1,5 @@
 use crate::check_experimental_features_enabled;
-use crate::op::{BlobContent, LazyRef, Op, Regex};
+use crate::op::{InsertContent, LazyRef, Op, Regex};
 use crate::opt;
 use crate::persist::{self, Node, to_filter, to_op};
 use std::sync::LazyLock;
@@ -161,27 +161,29 @@ impl Filter {
 
     /// Chain a filter that inserts a blob with the given content at the specified path.
     /// Syntax: `:$path="content"` (e.g. `:$label="my label"` inserts a blob at `label` with content "my label").
-    pub fn blob(
+    pub fn insert(
         self,
         path: impl Into<std::path::PathBuf>,
         content: impl Into<String>,
     ) -> anyhow::Result<Filter> {
-        check_experimental_features_enabled("Blob filter")?;
-        Ok(self.chain(to_filter(Op::Blob(
+        check_experimental_features_enabled("Insert filter")?;
+        Ok(self.chain(to_filter(Op::Insert(
             path.into(),
-            BlobContent::Inline(content.into()),
+            InsertContent::Inline(content.into()),
         ))))
     }
 
-    /// Chain a filter that inserts an existing blob (referenced by its OID) at the specified path.
-    /// Syntax: `:$path=<sha>`. Useful for large blobs that should not be inlined as a string.
-    pub fn blob_oid(
+    /// Chain a filter that inserts an existing object (referenced by its OID) at the specified
+    /// path. Syntax: `:$path=<sha>`. The object may be a blob or a tree; the kind is resolved
+    /// from the repository at apply time. Useful for large blobs or whole subtrees that should
+    /// not be inlined as a string.
+    pub fn insert_oid(
         self,
         path: impl Into<std::path::PathBuf>,
         oid: git2::Oid,
     ) -> anyhow::Result<Filter> {
-        check_experimental_features_enabled("Blob filter")?;
-        Ok(self.chain(to_filter(Op::Blob(path.into(), BlobContent::Oid(oid)))))
+        check_experimental_features_enabled("Insert filter")?;
+        Ok(self.chain(to_filter(Op::Insert(path.into(), InsertContent::Oid(oid)))))
     }
 
     /// Chain a filter that removes the `.link.josh` marker to produce a standalone history

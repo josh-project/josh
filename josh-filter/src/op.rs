@@ -62,7 +62,7 @@ pub enum LazyRef {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
-pub enum BlobContent {
+pub enum InsertContent {
     Inline(String),
     Oid(git2::Oid),
 }
@@ -133,7 +133,7 @@ pub enum Op {
     Index,
     Invert,
 
-    Blob(std::path::PathBuf, BlobContent), // Blob(dest_path, content)
+    Insert(std::path::PathBuf, InsertContent), // Insert(dest_path, content)
     File(std::path::PathBuf, std::path::PathBuf), // File(dest_path, source_path)
     Prefix(std::path::PathBuf),
     Subdir(std::path::PathBuf),

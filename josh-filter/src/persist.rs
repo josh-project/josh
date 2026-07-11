@@ -5,7 +5,7 @@ use std::collections::HashMap;
 use std::sync::{LazyLock, OnceLock};
 
 use crate::filter::Filter;
-use crate::op::{BlobContent, LazyRef, Op, Regex, RevMatch};
+use crate::op::{InsertContent, LazyRef, Op, Regex, RevMatch};
 
 /// An interned, immutable `Op` together with its lazily-computed content OID.
 /// Nodes are leaked (`&'static`) and live for the process lifetime. A `Filter` is just a
@@ -378,15 +378,17 @@ impl InMemoryBuilder {
                 let params_tree = self.build_str_params(&[path.to_string_lossy().as_ref()]);
                 push_tree_entries(&mut entries, [("prefix", params_tree)]);
             }
-            Op::Blob(path, content) => {
+            Op::Insert(path, content) => {
                 let path = path.to_string_lossy();
                 let params_tree = match content {
-                    BlobContent::Inline(s) => self.build_str_params(&[path.as_ref(), "inline", s]),
-                    BlobContent::Oid(oid) => {
+                    InsertContent::Inline(s) => {
+                        self.build_str_params(&[path.as_ref(), "inline", s])
+                    }
+                    InsertContent::Oid(oid) => {
                         self.build_str_params(&[path.as_ref(), "oid", &oid.to_string()])
                     }
                 };
-                push_tree_entries(&mut entries, [("blob", params_tree)]);
+                push_tree_entries(&mut entries, [("insert", params_tree)]);
             }
             Op::File(dest_path, source_path) => {
                 // Store as (dest_path, source_path) to match enum order
@@ -747,23 +749,23 @@ fn from_tree2(repo: &git2::Repository, tree_oid: git2::Oid) -> anyhow::Result<Op
             let path = std::str::from_utf8(path_blob.content())?;
             Ok(Op::Prefix(std::path::PathBuf::from(path)))
         }
-        "blob" => {
+        "insert" => {
             let inner = repo.find_tree(entry.id())?;
             let path_blob =
-                repo.find_blob(inner.get_name("0").context("blob: missing path")?.id())?;
+                repo.find_blob(inner.get_name("0").context("insert: missing path")?.id())?;
             let kind_blob =
-                repo.find_blob(inner.get_name("1").context("blob: missing kind")?.id())?;
+                repo.find_blob(inner.get_name("1").context("insert: missing kind")?.id())?;
             let value_blob =
-                repo.find_blob(inner.get_name("2").context("blob: missing value")?.id())?;
+                repo.find_blob(inner.get_name("2").context("insert: missing value")?.id())?;
             let path = std::str::from_utf8(path_blob.content())?;
             let kind = std::str::from_utf8(kind_blob.content())?;
             let value = std::str::from_utf8(value_blob.content())?;
             let content = match kind {
-                "inline" => BlobContent::Inline(value.to_string()),
-                "oid" => BlobContent::Oid(git2::Oid::from_str(value)?),
-                other => return Err(anyhow::anyhow!("blob: unknown content kind {:?}", other)),
+                "inline" => InsertContent::Inline(value.to_string()),
+                "oid" => InsertContent::Oid(git2::Oid::from_str(value)?),
+                other => return Err(anyhow::anyhow!("insert: unknown content kind {:?}", other)),
             };
-            Ok(Op::Blob(std::path::PathBuf::from(path), content))
+            Ok(Op::Insert(std::path::PathBuf::from(path), content))
         }
         "file" => {
             let inner = repo.find_tree(entry.id())?;

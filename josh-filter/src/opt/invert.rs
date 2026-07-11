@@ -26,7 +26,9 @@ pub fn invert(filter: Filter) -> anyhow::Result<Filter> {
             Op::Rev(_) => Some(Op::Nop),
             Op::RegexReplace(_) => Some(Op::Nop),
             Op::Pin(_) => Some(Op::Nop),
-            Op::Blob(path, _) => Some(Op::Exclude(to_filter(Op::File(path.clone(), path.clone())))),
+            Op::Insert(path, _) => {
+                Some(Op::Exclude(to_filter(Op::File(path.clone(), path.clone()))))
+            }
             Op::TreeId(path, _) => {
                 Some(Op::Exclude(to_filter(Op::File(path.clone(), path.clone()))))
             }

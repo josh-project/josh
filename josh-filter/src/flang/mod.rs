@@ -4,7 +4,7 @@ use crate::filter::MESSAGE_MATCH_ALL_REGEX;
 use crate::filter::{reachable_roots, sequence_number};
 use crate::opt;
 use crate::persist::{to_filter, to_op, to_ops};
-use crate::{BlobContent, Filter, Op, RevMatch};
+use crate::{Filter, InsertContent, Op, RevMatch};
 
 /// Pretty print the filter on multiple lines with initial indentation level.
 /// Nested filters will be indented with additional 4 spaces per nesting level.
@@ -261,11 +261,11 @@ pub(crate) fn spec2(op: &Op) -> String {
         Op::Export => ":export".to_string(),
         Op::Unlink => ":unlink".to_string(),
         Op::Subdir(path) => format!(":/{}", parse::quote_if(&path.to_string_lossy())),
-        Op::Blob(path, content) => {
+        Op::Insert(path, content) => {
             let p = parse::quote_if(&path.to_string_lossy());
             match content {
-                BlobContent::Inline(s) => format!(":${}={}", p, parse::quote(s)),
-                BlobContent::Oid(oid) => format!(":${}={}", p, oid),
+                InsertContent::Inline(s) => format!(":${}={}", p, parse::quote(s)),
+                InsertContent::Oid(oid) => format!(":${}={}", p, oid),
             }
         }
         Op::File(dest_path, source_path) => {
