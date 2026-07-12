@@ -1,32 +1,49 @@
+//! Workspace metadata parsed from git trees.
+//!
+//! Each workspace in the build graph stores its configuration as blobs in a git tree
+//! (`label`, `output`, `cmd`, `image`/build-tree OID, sidecar specs, etc.). This
+//! module reads those blobs and constructs typed [`WorkspaceMeta`] values for the
+//! scheduler.
+
 use std::path::Path;
 
 pub use crate::OutputMode;
+pub use josh_compose_runtime::NetworkPolicy;
 
-#[derive(Debug, Clone, PartialEq)]
-pub enum NetworkMode {
-    None,
-    Host,
-    Named(String),
-}
-
+/// Specification for a sidecar service that runs alongside a workspace step.
+///
+/// Sidecars provide auxiliary services (databases, caches, mock APIs) that the step's
+/// command can reach over the network.
 pub struct SidecarSpec {
+    /// Logical name used for addressing and labeling.
     pub name: String,
+    /// Build-tree OID of the image to run.
     pub image: git2::Oid,
+    /// Static environment variables set by the workspace config.
     pub env: Vec<(String, String)>,
+    /// Environment variable names to forward from the host process (e.g. API keys, CI
+    /// tokens). The host value must be non-empty.
     pub passthrough: Vec<(String, String)>,
+    /// Template environment variables injected by the scheduler after the sidecar
+    /// starts (e.g. `{SIDECAR_IP}` is replaced with the sidecar's address).
     pub inject: Vec<(String, String)>,
     pub port: u16,
 }
 
 pub struct WorkspaceMeta {
+    /// Human-readable label (also used as a cache key component).
     pub label: String,
+    /// Whether an output artifact is created and, if so, whether it is extracted.
     pub output: OutputMode,
+    /// Command executed inside the environment. Defaults to `bash run.sh`.
     pub cmd: String,
+    /// Persistent cache key shared across runs of this workspace.
     pub cache: Option<String>,
-    pub network: NetworkMode,
-    /// Tree OID of the image workspace. None for orchestrator-only workspaces.
+    pub network: NetworkPolicy,
+    /// Tree OID of the image workspace. `None` for orchestrator-only workspaces.
     pub image: Option<git2::Oid>,
-    /// Tree OID of the files to place in the container. None for orchestrator-only workspaces.
+    /// Tree OID of the workspace files mounted into the environment at `/worktree`.
+    /// `None` for orchestrator-only workspaces.
     pub worktree: Option<git2::Oid>,
     pub sidecars: Vec<SidecarSpec>,
 }
@@ -77,6 +94,12 @@ pub fn read_blob_entries(
         .collect()
 }
 
+/// Parse a workspace's configuration from its git tree.
+///
+/// Reads blobs named `label`, `output`, `cmd`, `cache`, `network`, `image`, and
+/// optionally `worktree` (falling back to `run` for backward compatibility) from the
+/// tree. Returns `None` for `image` and `worktree` when the workspace is
+/// orchestrator-only (no image to build and no files to mount).
 pub fn read_meta(repo: &git2::Repository, ws_tree: git2::Oid) -> anyhow::Result<WorkspaceMeta> {
     let label = read_blob(repo, ws_tree, "label")
         .filter(|s| !s.is_empty())
@@ -95,8 +118,8 @@ pub fn read_meta(repo: &git2::Repository, ws_tree: git2::Oid) -> anyhow::Result<
     let cache = read_blob(repo, ws_tree, "cache").filter(|s| !s.is_empty());
 
     let network = match read_blob(repo, ws_tree, "network").as_deref() {
-        Some("host") => NetworkMode::Host,
-        _ => NetworkMode::None,
+        Some("host") => NetworkPolicy::Host,
+        _ => NetworkPolicy::None,
     };
 
     let image = read_blob(repo, ws_tree, "image")
@@ -108,6 +131,8 @@ pub fn read_meta(repo: &git2::Repository, ws_tree: git2::Oid) -> anyhow::Result<
         .transpose()?;
 
     let tree = repo.find_tree(ws_tree)?;
+    // Prefer "worktree"; fall back to "run" for backward compatibility with
+    // workspaces authored before the rename.
     let worktree = tree
         .get_path(Path::new("worktree"))
         .map(|e| e.id())
