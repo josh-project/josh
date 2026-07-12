@@ -18,6 +18,7 @@ members = [
     "cq/josh-cq-test-components",
     "josh-changes",
     "josh-compose",
+    "josh-compose-runtime",
 
     "forges/josh-github-changes",
     "forges/josh-github-graphql",
@@ -91,6 +92,7 @@ josh-changes = { path = "josh-changes", version = "26.6.11" }
 josh-core = { path = "josh-core", version = "26.6.11" }
 josh-git-data = { path = "josh-git-data", version = "26.6.11" }
 josh-compose = { path = "josh-compose", version = "26.6.11" }
+josh-compose-runtime = { path = "josh-compose-runtime", version = "26.6.11" }
 josh-graphql = { path = "josh-graphql", version = "26.6.11" }
 josh-link = { path = "josh-link", version = "26.6.11" }
 josh-rpc = { path = "josh-rpc", version = "26.6.11" }
@@ -185,6 +187,7 @@ josh-changes = { path = "josh-changes" }
 josh-core = { path = "josh-core" }
 josh-git-data = { path = "josh-git-data" }
 josh-compose = { path = "josh-compose" }
+josh-compose-runtime = { path = "josh-compose-runtime" }
 josh-graphql = { path = "josh-graphql" }
 josh-link = { path = "josh-link" }
 josh-rpc = { path = "josh-rpc" }

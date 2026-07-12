@@ -5,23 +5,27 @@ pub mod filter;
 pub mod image;
 pub mod job_cache;
 pub mod meta;
+pub mod naming;
 pub mod plan;
-pub mod podman;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum OutputMode {
-    /// No output volume is created; only success/failure is recorded.
+    /// No output artifact is created; only success/failure is recorded.
     None,
-    /// Output volume is created and its contents are copied back to the host working directory.
+    /// Output artifact is created and its contents are extracted to the host working directory.
     Workdir,
-    /// Output volume is created and kept (e.g. for use as a dependency input), but not extracted.
+    /// Output artifact is created and kept (e.g. for use as a dependency input), but not
+    /// extracted.
     Keep,
 }
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum CleanMode {
+    /// No cleanup.
     None,
+    /// Remove output artifacts, environment images, and job-cache directories.
     Clean,
+    /// Like `Clean`, but also remove persistent cache artifacts.
     CleanAll,
 }
 
@@ -37,8 +41,10 @@ pub struct RunOptions {
 pub fn run(transaction: &josh_core::cache::Transaction, opts: RunOptions) -> anyhow::Result<()> {
     josh_filter::check_experimental_features_enabled("josh run")?;
 
+    let runtime = josh_compose_runtime::PodmanRuntime::new();
+
     if opts.clean != CleanMode::None {
-        return clean::clean(opts.clean);
+        return clean::clean(opts.clean, &runtime);
     }
 
     let filter_spec = opts.filter_spec.trim().to_string();
@@ -49,8 +55,11 @@ pub fn run(transaction: &josh_core::cache::Transaction, opts: RunOptions) -> any
     let (ws_tree, _safe_name) = filter::compute_ws_tree(transaction, &filter_spec, source_commit)?;
 
     let mut attempted = std::collections::HashSet::new();
+    // Only extract output artifacts into the working tree when running against
+    // uncommitted changes (input_ref == "."). For committed refs there is no
+    // working tree to write back to.
     let extract_to_workdir = opts.input_ref == ".";
-    container::run_container(repo, ws_tree, &mut attempted, extract_to_workdir)?;
+    container::run_container(repo, ws_tree, &mut attempted, extract_to_workdir, &runtime)?;
 
     Ok(())
 }
@@ -76,7 +85,8 @@ pub fn plan_images(
 
     let (ws_tree, _safe_name) = filter::compute_ws_tree(transaction, &filter_spec, source_commit)?;
 
-    plan::collect_image_oids(repo, ws_tree, ignore_cache)
+    let runtime = josh_compose_runtime::PodmanRuntime::new();
+    plan::collect_image_oids(repo, ws_tree, ignore_cache, &runtime)
 }
 
 /// Enumerate every job hash (workspace tree OID) that a `run` with the same options
@@ -100,5 +110,6 @@ pub fn plan_jobs(
 
     let (ws_tree, _safe_name) = filter::compute_ws_tree(transaction, &filter_spec, source_commit)?;
 
-    plan::collect_job_hashes(repo, ws_tree, ignore_cache)
+    let runtime = josh_compose_runtime::PodmanRuntime::new();
+    plan::collect_job_hashes(repo, ws_tree, ignore_cache, &runtime)
 }
