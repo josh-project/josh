@@ -6,32 +6,57 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 // Tree sizes (number of files) benchmarked. Kept small in debug builds so `--test` runs stay fast.
-// The pin parameter is a compose of one `file` filter per pinned path (~10% of the tree), rebuilt for
-// every commit, so cost grows with both the pinned count and the number of commits.
+// The pin parameter is a compose of one `file` filter per currently-pinned path, rebuilt for every
+// commit, so cost grows with both the pinned-set size and the number of commits. Pin evaluation
+// scales superlinearly (~n^1.7 here: 10k ~0.7s, 100k ~36s per iteration), so 100k is the practical
+// top end -- larger trees push a full run into the hours even though the cache makes their setup
+// cheap.
 const SIZES: &[usize] = if cfg!(debug_assertions) {
     &[50, 500]
 } else {
-    &[100, 1_000, 10_000]
+    &[100, 1_000, 10_000, 100_000]
 };
 
 // Number of history commits generated on top of the initial commit. The pinned set evolves per
 // commit, so the pin parameter is rebuilt and re-applied at each of these.
 const N_COMMITS: usize = if cfg!(debug_assertions) { 5 } else { 10 };
 
-// Fraction of the tree's files that each commit changes and then pins. Pinning exactly the churned
-// set keeps the parameter at ~size/10 `file` filters (rebuilt fresh at every commit) and guarantees
-// every pinned path actually changed, so the hold has a visible effect (see the sanity gate).
-const PIN_FRACTION: f64 = 0.1;
+// Fraction of the tree's files that each commit changes ("churns"). Only churned files re-roll their
+// hold status; the pinned set is otherwise carried across commits, so it stays similar from commit to
+// commit with a few paths added or removed each time.
+const CHURN_FRACTION: f64 = 0.1;
 const CHURN_CONTENT_LEN: usize = 10;
+
+// Probability that a churned file ends up held back (pinned). Each churned file re-rolls this, so a
+// change can transition it from unpinned to pinned or vice versa, while unchurned files keep their
+// status. Mirrors the model in the `ultrawide_pin` bench.
+const PROB_UPDATE_ON_HOLD: f64 = 0.25;
 
 const PATH_COMPONENT_LENGTH: usize = 15;
 const NESTING_LEVEL: usize = 3;
 const N_PER_SUBFOLDER_MIN: usize = 10;
 const N_PER_SUBFOLDER_MAX: usize = 100;
 
+// Largest size whose setup runs the sanity gate. The gate does a full untimed `filter_commit`, which
+// costs tens of seconds at the top sizes; since the reconstruction and hook logic are
+// size-independent, verifying on the smaller cases gives the same confidence, so larger cases are
+// skipped to keep setup cheap.
+const SANITY_GATE_MAX_SIZE: usize = 10_000;
+
 // The single hook argument. The outer filter is `:hook=pin`, so `arg` in `filter_for_commit` is
 // always this string.
 const HOOK_ARG: &str = "pin";
+
+/// Expected oid of the cached bench repo's aggregate index commit. This is the cache validity key:
+/// changing any build parameter above changes a case head, which changes the index commit oid, which
+/// then fails the strict check in `provision_repo` and reports the new value to paste here. Filled in
+/// by running the bench once after a build change.
+const EXPECTED_HEAD: &str = "8deb73b572162ae4b4caf36ae52f3b2ef70e1485";
+
+/// Fixed commit timestamp fed to `josh_commit_signature()` via `JOSH_COMMIT_TIME` so the built
+/// history is reproducible. Without it the signature uses the wall clock, every run produces
+/// different head oids, and `EXPECTED_HEAD` can never be stable. The value itself is arbitrary.
+const JOSH_BENCH_COMMIT_TIME: &str = "1700000000";
 
 // Why a hook (and not a plain `:pin` filter)? `:pin`'s hold-back logic lives in `per_rev_filter`,
 // which josh only invokes for the per-revision filter sources -- `:workspace`, `:+stored`, and
@@ -65,8 +90,8 @@ struct SizeCase {
 }
 
 struct PinBench {
-    // Keeps the on-disk repository alive for the duration of the benchmark.
-    _tmp: tempfile::TempDir,
+    // Keeps the on-disk repository (and its tempdir) alive for the duration of the benchmark.
+    _repo: josh_test_support::provision_repo::ProvisionedRepo,
     // A fresh transaction is opened from this for every iteration.
     context: josh_core::cache::TransactionContext,
     cases: Vec<SizeCase>,
@@ -80,38 +105,68 @@ impl PinBench {
     fn setup() -> anyhow::Result<Self> {
         let _setup = tracing::info_span!(target: "bench", "setup").entered();
 
-        let tmp = tempfile::tempdir()?;
-        let repo = git2::Repository::init_bare(tmp.path())?;
+        // Pin commit timestamps before building so the head oids are reproducible and
+        // `EXPECTED_HEAD` stays valid across runs. Must run before the cache-miss path invokes the
+        // build callback.
+        // SAFETY: setup runs single-threaded, before any benchmark iteration.
+        unsafe {
+            std::env::set_var("JOSH_COMMIT_TIME", JOSH_BENCH_COMMIT_TIME);
+        }
 
+        // Build (or reuse from cache) the bare repo holding every size case. On a cache miss the
+        // callback builds all cases, tags each tip with a `refs/heads/case_<size>` ref, and returns
+        // an aggregate index commit whose oid is the content-addressed cache stamp checked against
+        // `EXPECTED_HEAD`.
+        let provisioned = josh_test_support::provision_repo::provision_repo(
+            "ultrawide_pin_hook",
+            &git2::Oid::from_str(EXPECTED_HEAD).expect("EXPECTED_HEAD must be a valid oid"),
+            |repo| {
+                let mut heads = vec![];
+                for &size in SIZES {
+                    let head = tracing::info_span!(target: "bench", "build_case", size)
+                        .in_scope(|| build_case(repo, size))?;
+                    heads.push(head);
+                }
+                build_index(repo, &heads)
+            },
+        )?;
+
+        // Recover the size cases and per-commit pin filters from the provisioned repo. This runs
+        // identically whether the repo was freshly built or copied from cache, so the pin filters
+        // never depend on build-time state the cache would drop. Each commit's churned set is
+        // recovered by diffing against its parent; `record_case` folds that into the evolving pinned
+        // set that the pin filters are built from.
         let mut per_commit = HashMap::new();
-
-        let cases = SIZES
-            .iter()
-            .map(|&size| {
-                tracing::info_span!(target: "bench", "build_case", size)
-                    .in_scope(|| build_case(&repo, size, &mut per_commit))
-            })
-            .collect::<anyhow::Result<Vec<_>>>()?;
+        let mut cases = vec![];
+        {
+            let repo = &provisioned.repo;
+            for &size in SIZES {
+                let head = repo.refname_to_id(&format!("refs/heads/case_{size}"))?;
+                record_case(repo, head, &mut per_commit)?;
+                cases.push(SizeCase { size, head });
+            }
+        }
 
         let hook = Arc::new(BenchPinHook { per_commit });
         let filter = josh_filter::Filter::new()
             .hook(HOOK_ARG)
             .with_meta("history", "no-splice");
 
-        josh_core::cache::sled_load(tmp.path())?;
+        josh_core::cache::sled_load(provisioned.path())?;
         let cache = std::sync::Arc::new(
             josh_core::cache::CacheStack::new()
                 .with_backend(josh_core::cache::SledCacheBackend::default()),
         );
-        let context = josh_core::cache::TransactionContext::new(tmp.path(), cache);
+        let context = josh_core::cache::TransactionContext::new(provisioned.path(), cache);
 
         // Sanity gate (untimed): confirm the filter actually holds paths back, so we never silently
         // measure a no-op pin. Because the pinned set churns, the filtered head tree must differ from
         // the raw head tree. Run through a throwaway transaction, then reset caches so nothing here
-        // warms the timed runs.
+        // warms the timed runs. Only the cases up to `SANITY_GATE_MAX_SIZE` are checked; the gate is
+        // size-independent, and a full `filter_commit` on the largest trees would dominate setup.
         {
             let transaction = context.open()?.with_filter_hook(hook.clone());
-            for case in &cases {
+            for case in cases.iter().filter(|c| c.size <= SANITY_GATE_MAX_SIZE) {
                 let filtered = josh_core::filter_commit(&transaction, filter, case.head)?;
                 let filtered_tree = transaction.repo().find_commit(filtered)?.tree()?.id();
                 let raw_tree = transaction.repo().find_commit(case.head)?.tree()?.id();
@@ -125,7 +180,7 @@ impl PinBench {
         josh_core::reset_caches()?;
 
         Ok(Self {
-            _tmp: tmp,
+            _repo: provisioned,
             context,
             cases,
             hook,
@@ -159,14 +214,11 @@ fn pin_filter(pinned: &[PathBuf]) -> josh_filter::Filter {
     josh_filter::Filter::new().pin(param)
 }
 
-/// Build a commit whose tree holds `size` files, then generate an N_COMMITS history that churns
-/// files and evolves the pinned set per commit. Each commit's pin filter is recorded in `per_commit`
-/// keyed by commit oid so the hook can serve it.
-fn build_case(
-    repo: &git2::Repository,
-    size: usize,
-    per_commit: &mut HashMap<git2::Oid, josh_filter::Filter>,
-) -> anyhow::Result<SizeCase> {
+/// Build a commit whose tree holds `size` files, then generate an N_COMMITS history that churns files
+/// per commit. The tip is tagged with `refs/heads/case_<size>` so the head is recoverable after the
+/// repo round-trips through the cache; the pinned set and per-commit pin filters are not recorded here
+/// -- they are reconstructed from tree diffs in `record_case`.
+fn build_case(repo: &git2::Repository, size: usize) -> anyhow::Result<git2::Oid> {
     use rand::RngExt;
 
     // Distribute files uniformly across nested subfolders.
@@ -197,30 +249,25 @@ fn build_case(
     let root_tree = repo.find_tree(builder.create_updated(repo, &baseline)?)?;
 
     let sig = josh_commit_signature()?;
-    // No ref update -- the commit oid is tracked directly per case.
+    // No ref update yet -- the tip ref is set once the history is complete.
     let mut head = repo.commit(None, &sig, &sig, "content", &root_tree, &[])?;
 
-    // The root commit has no parent, so `:pin` has nothing to hold; record an empty-set filter so
-    // the hook can resolve every commit in the history.
-    per_commit.insert(head, pin_filter(&[]));
-
-    // Deterministic evolving history: each commit changes a fresh random ~PIN_FRACTION of the files
-    // and pins exactly those. The pinned set differs at every commit (forcing the parameter to be
-    // rebuilt each time) and always holds paths that just changed, so the filtered head genuinely
-    // differs from the raw head.
+    // Deterministic history: each commit churns a fresh random ~CHURN_FRACTION of the files. Only the
+    // content churn is written here; the churned set is what `record_case` recovers by diffing against
+    // the parent, and the evolving pinned set is derived from it there.
     let mut rng = StdRng::seed_from_u64(1);
     for i in 0..N_COMMITS {
         let parent = repo.find_commit(head)?;
         let tree = parent.tree()?;
         let mut builder = git2::build::TreeUpdateBuilder::new();
 
-        let pinned = all_paths
+        let churned = all_paths
             .iter()
-            .filter(|_| rng.random_bool(PIN_FRACTION))
+            .filter(|_| rng.random_bool(CHURN_FRACTION))
             .cloned()
             .collect::<Vec<_>>();
 
-        for path in &pinned {
+        for path in &churned {
             let content = random_string(&mut rng, CHURN_CONTENT_LEN);
             let blob = repo.blob(content.as_bytes())?;
             builder.upsert(path, blob, git2::FileMode::Blob);
@@ -235,11 +282,127 @@ fn build_case(
             &new_tree,
             &[&parent],
         )?;
-
-        per_commit.insert(head, pin_filter(&pinned));
     }
 
-    Ok(SizeCase { size, head })
+    // Tag the tip so `record_case` can find this case's head on the cache-hit path, where the
+    // build callback never runs. Also keeps the whole history reachable through `git prune`.
+    repo.reference(
+        &format!("refs/heads/case_{size}"),
+        head,
+        true,
+        "bench case tip",
+    )?;
+
+    Ok(head)
+}
+
+/// Aggregate every case tip under one index commit. Its oid changes whenever any case head changes,
+/// making it a faithful content-addressed cache stamp for the entire repo, and it keeps all cases
+/// reachable so provision_repo's `git prune` retains the full history. It is never filtered.
+fn build_index(repo: &git2::Repository, heads: &[git2::Oid]) -> anyhow::Result<git2::Oid> {
+    let sig = josh_commit_signature()?;
+    let empty_tree = repo.find_tree(repo.treebuilder(None)?.write()?)?;
+    let parents = heads
+        .iter()
+        .map(|oid| repo.find_commit(*oid))
+        .collect::<Result<Vec<_>, _>>()?;
+    let parent_refs = parents.iter().collect::<Vec<_>>();
+    let index = repo.commit(
+        Some("refs/heads/bench-index"),
+        &sig,
+        &sig,
+        "bench index",
+        &empty_tree,
+        &parent_refs,
+    )?;
+    Ok(index)
+}
+
+/// Walk a case's linear history root-to-tip, reconstructing each commit's pin filter and recording it
+/// in `per_commit` keyed by commit oid. Each commit's churned set is recovered by diffing against its
+/// parent; every churned path then re-rolls its hold status via `holds_back`, evolving a pinned set
+/// that is carried across commits (unchurned paths keep their status). This reproduces the intended
+/// model purely from repo-derived data, so it is identical whether the repo was freshly built or
+/// copied from cache.
+fn record_case(
+    repo: &git2::Repository,
+    head: git2::Oid,
+    per_commit: &mut HashMap<git2::Oid, josh_filter::Filter>,
+) -> anyhow::Result<()> {
+    // Collect the linear history oldest-first so the pinned set can be folded forward across commits.
+    let mut chain = vec![];
+    let mut oid = head;
+    loop {
+        let commit = repo.find_commit(oid)?;
+        chain.push(oid);
+        if commit.parent_count() == 0 {
+            break;
+        }
+        oid = commit.parent_id(0)?;
+    }
+    chain.reverse();
+
+    let mut pinned = std::collections::BTreeSet::<PathBuf>::new();
+    for (commit_index, &oid) in chain.iter().enumerate() {
+        let commit = repo.find_commit(oid)?;
+
+        // Re-roll the hold status of every churned path; unchurned paths keep the status they carried
+        // over. The root commit has no parent, so its churned set is empty and the pinned set stays
+        // empty there.
+        for path in changed_paths(repo, &commit)? {
+            if holds_back(&path, commit_index) {
+                pinned.insert(path);
+            } else {
+                pinned.remove(&path);
+            }
+        }
+
+        let pins = pinned.iter().cloned().collect::<Vec<_>>();
+        per_commit.insert(oid, pin_filter(&pins));
+    }
+    Ok(())
+}
+
+/// Deterministic hold decision for a churned `path` at commit position `commit_index`: `true` (held
+/// back / pinned) with probability `PROB_UPDATE_ON_HOLD`. It is a pure function of repo-derived inputs
+/// so `record_case` reproduces the same pinned-set evolution on every run, cache hit or miss. A fixed
+/// FNV-1a hash seeds `StdRng` -- portable across platforms and Rust versions, unlike the standard
+/// library's hasher -- and folding in `commit_index` lets the same path flip pinned/unpinned as
+/// history advances.
+fn holds_back(path: &std::path::Path, commit_index: usize) -> bool {
+    use rand::RngExt;
+
+    let mut hash = 0xcbf2_9ce4_8422_2325u64; // FNV-1a 64-bit offset basis
+    for byte in path.as_os_str().as_encoded_bytes() {
+        hash ^= u64::from(*byte);
+        hash = hash.wrapping_mul(0x0000_0100_0000_01b3); // FNV-1a 64-bit prime
+    }
+    hash ^= commit_index as u64;
+
+    StdRng::seed_from_u64(hash).random_bool(PROB_UPDATE_ON_HOLD)
+}
+
+/// The paths that differ between `commit` and its first parent (empty for a parentless commit).
+fn changed_paths(repo: &git2::Repository, commit: &git2::Commit) -> anyhow::Result<Vec<PathBuf>> {
+    if commit.parent_count() == 0 {
+        return Ok(vec![]);
+    }
+    let parent_tree = commit.parent(0)?.tree()?;
+    let tree = commit.tree()?;
+    let diff = repo.diff_tree_to_tree(Some(&parent_tree), Some(&tree), None)?;
+    let mut paths = vec![];
+    diff.foreach(
+        &mut |delta, _| {
+            if let Some(path) = delta.new_file().path() {
+                paths.push(path.to_path_buf());
+            }
+            true
+        },
+        None,
+        None,
+        None,
+    )?;
+    Ok(paths)
 }
 
 fn ultrawide_pin_hook(c: &mut Criterion) {
