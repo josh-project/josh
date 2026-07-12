@@ -1,22 +1,11 @@
-A repository migrated from `git subtree`. `git subtree` merges the subtree's original history in
-unchanged, so those pre-merge commits keep their files at the repository root, while the main
-history (after the subtree merge) places the same content under a `subtree/` prefix -- a path
-mismatch across the merge. The `:rev(<=SUBTREE_TIP:prefix=subtree)` part of the filter fixes that:
-it applies the `subtree/` prefix only to the pre-merge history (commits up to SUBTREE_TIP), so
-those unchanged git-subtree commits line up with the way josh lays out the subtree and the history
-is consistent under `subtree/`.
-
-The canonical subtree filter wraps the `:rev(...)` pass in `:~(history="keep-trivial-merges")[...]`.
-A subtree-sync merge whose tree matches its first parent is newly trivial in the `:rev` pass (the
-`<=SUBTREE_TIP` parent gets prefixed to match), and the default forward elision would drop it on the
-roundtrip; keeping trivial merges through the `:rev` pass preserves it. Scoping the flag to `:rev`
-(rather than the whole chain) keeps it out of the `:/subtree` pass, so ordinary main-history merges
-that touch nothing under `subtree/` are not flooded back in as empty merges.
-
-Extract the subtree with that filter, then sync changes back and forth between the main repo and
-the extracted subtree, including feature branches that cross the subtree boundary. The roundtrip
-is stable: re-extracting the subtree after syncing back reproduces the same subtree history, and
-un-applying preserves the main repo's out-of-filter content.
+Same as subtree_prefix.t (a repository migrated from `git subtree`) but in legacy mode
+(`history="keep-trivial-merges"`). In this mode the forward filter keeps merges that are trivial
+under the filter (tree == first parent's tree) instead of eliding them, and un-applying
+reconstructs both parents' out-of-filter content faithfully rather than collapsing the merge to
+its first parent. The subtree-sync workflow below relies on that: its sync merges are trivial
+within the subtree, and the top-level feature branches (feature1/feature2) live outside the
+subtree filter, so those merges are retained and round-trip without dropping the main-repo
+content.
 
   $ git init -q 1>/dev/null
 
@@ -34,7 +23,7 @@ Initial commit of subtree branch
   $ git commit -m "add file2 (in subtree)" 1>/dev/null
   $ export SUBTREE_TIP=$(git rev-parse HEAD)
   $ export SUBTREE_FILTER=":~(history=\"keep-trivial-merges\")[:rev(<=$SUBTREE_TIP:prefix=subtree)]"
-  $ export FILTER="$SUBTREE_FILTER:/subtree"
+  $ export FILTER=":~(history=\"keep-trivial-merges\")[:rev(<=$SUBTREE_TIP:prefix=subtree):/subtree]"
 
 Artificially create a subtree merge
 (merge commit has subtree files in subfolder but has subtree commit as a parent)
@@ -96,7 +85,11 @@ Compare input and result. ^^2 is the 2nd parent of the first parent, i.e., the '
 Extract the subtree history
   $ josh-filter -s $FILTER refs/heads/master --update refs/heads/subtree
   d71429596bb87d1b8a7aa23b628f43ef7f80dbb8
-  [4] :/subtree
+  [4] :~(
+      history="keep-trivial-merges"
+  )[
+      :/subtree
+  ]
   [4] :~(
       history="keep-trivial-merges"
   )[
@@ -115,7 +108,11 @@ Work in the subtree, and sync that back.
   $ git commit -am "add even more content" 1>/dev/null
   $ josh-filter -s $FILTER refs/heads/master --update refs/heads/subtree --reverse
   103bfec17c47adbe70a95fca90caefb989b6cda6
-  [4] :/subtree
+  [4] :~(
+      history="keep-trivial-merges"
+  )[
+      :/subtree
+  ]
   [4] :~(
       history="keep-trivial-merges"
   )[
@@ -143,7 +140,11 @@ Work in the subtree, and sync that back.
 And then re-extract, which should re-construct the same subtree.
   $ josh-filter -s $FILTER refs/heads/master --update refs/heads/subtree2
   d4baf6a78a4f3966055c12821bce8a9e0933a3c7
-  [5] :/subtree
+  [5] :~(
+      history="keep-trivial-merges"
+  )[
+      :/subtree
+  ]
   [5] :~(
       history="keep-trivial-merges"
   )[
@@ -183,13 +184,9 @@ And another main tree feature off of SUBTREE_TIP
   $ git checkout master 2>/dev/null
   $ git merge feature2 --no-ff >/dev/null
 
-And finally, sync first from main to sub and then back. The `feature2` merge above (like `feature1`)
-only added main-repo content outside `subtree/`, so extracting the subtree from `master` reproduces
-exactly what `subtree-sync` already points at from the earlier sync -- josh-filter warns that the
-`--update` target is unchanged, which is expected here.
+And finally, sync first from main to sub and then back.
   $ git checkout subtree 2>/dev/null
   $ josh-filter -s $FILTER refs/heads/master --update refs/heads/subtree-sync >/dev/null
-  Warning: reference refs/heads/subtree-sync wasn't updated
   $ git merge subtree-sync --no-ff >/dev/null
 
   $ git log --graph --pretty=%s refs/heads/master
@@ -207,32 +204,54 @@ exactly what `subtree-sync` already points at from the earlier sync -- josh-filt
   | * add file2 (in subtree)
   * add file1
   $ git log --graph --pretty=%s refs/heads/subtree
-  * subfeature2
-  * subfeature1
-  * add even more content
-  * subtree edit from main repo
+  *   Merge branch 'subtree-sync' into subtree
+  |\  
+  | *   Merge branch 'feature2'
+  | |\  
+  | | * feature2
+  * | | subfeature2
+  * | | Merge branch 'subtree-sync' into subtree
+  |\| | 
+  | * |   Merge branch 'feature1'
+  | |\ \  
+  | | * | feature1
+  | | |/  
+  * | / subfeature1
+  |/ /  
+  * | add even more content
+  * | subtree edit from main repo
+  |/  
   * add file2 (in subtree)
   $ josh-filter -s $FILTER refs/heads/master --update refs/heads/subtree --reverse
-  f7f92ee197391da3f48d5a2a1d7016f97751a758
-  [9] :/subtree
+  6ac0ba56575859cfaacd5818084333e532ffc442
+  [9] :~(
+      history="keep-trivial-merges"
+  )[
+      :/subtree
+  ]
   [9] :~(
       history="keep-trivial-merges"
   )[
       :rev(<=c036f944faafb865e0585e4fa5e005afa0aeea3f:prefix=subtree)
   ]
-  [24] reachable_roots
-  [24] sequence_number
+  [30] reachable_roots
+  [30] sequence_number
 
   $ git log --graph --pretty=%H:%s refs/heads/master
-  * f7f92ee197391da3f48d5a2a1d7016f97751a758:subfeature2
-  * b03cf8be0566a3742bf3dbbef72dc828a30b391f:subfeature1
-  *   38a6d753c8b17b4c6721050befbccff012dfde85:Merge branch 'feature2'
+  *   6ac0ba56575859cfaacd5818084333e532ffc442:Merge branch 'subtree-sync' into subtree
   |\  
-  | * 221f5ceab31209c3d3b16d5b2485ea54c465eca6:feature2
-  * |   2739fb8f0b3f6d5a264fb89ea20674fe34790321:Merge branch 'feature1'
-  |\ \  
-  | * | dbfaf5dd32fc39ce3c0ebe61864406bb7e2ad113:feature1
-  | |/  
+  | *   38a6d753c8b17b4c6721050befbccff012dfde85:Merge branch 'feature2'
+  | |\  
+  | | * 221f5ceab31209c3d3b16d5b2485ea54c465eca6:feature2
+  * | | 75e90f7f1b54cc343f2f75dcdee33650654a52a6:subfeature2
+  * | | 3fa497039e5b384cb44b704e6e96f52e0ae599c9:Merge branch 'subtree-sync' into subtree
+  |\| | 
+  | * |   2739fb8f0b3f6d5a264fb89ea20674fe34790321:Merge branch 'feature1'
+  | |\ \  
+  | | * | dbfaf5dd32fc39ce3c0ebe61864406bb7e2ad113:feature1
+  | | |/  
+  * | / 59b5c1623da3f89229c6dd36f8baf2e5868d0288:subfeature1
+  |/ /  
   * | 103bfec17c47adbe70a95fca90caefb989b6cda6:add even more content
   * | 41130c5d66736545562212f820cdbfbb3d3779c4:subtree edit from main repo
   * | 0642c36d6b53f7e829531aed848e3ceff0762c64:subtree merge
@@ -240,32 +259,39 @@ exactly what `subtree-sync` already points at from the earlier sync -- josh-filt
   | * c036f944faafb865e0585e4fa5e005afa0aeea3f:add file2 (in subtree)
   * 0b4cf6c9efbbda1eada39fa9c1d21d2525b027bb:add file1
 
+  $ git ls-tree --name-only -r 3fa497039e5b384cb44b704e6e96f52e0ae599c9
+  feature1
+  file1
+  subtree/file2
+  subtree/subfeature1
+
   $ git checkout subtree
   Already on 'subtree'
 
-Create an extra file and amend the subtree tip commit to include it, then check it is also
+Create an extra file and amend the merge commit to include it, then check it is also
 taken back into the main history.
   $ echo "random stuff" > a_file
   $ git add a_file
   $ git commit --amend --no-edit
-  [subtree c57e331] subfeature2
+  [subtree bab52d5] Merge branch 'subtree-sync' into subtree
    Date: Thu Apr 7 22:13:13 2005 +0000
-   2 files changed, 2 insertions(+)
-   create mode 100644 a_file
-   create mode 100644 subfeature2
   $ git checkout master
   Switched to branch 'master'
 
   $ josh-filter -s $FILTER refs/heads/master --update refs/heads/subtree --reverse
-  b0a4107ddd6054442a8eaac89a2af0ab375607eb
-  [11] :/subtree
-  [11] :~(
+  f814033dd0148da19a3199cd3cb2d21464ce85a3
+  [13] :~(
+      history="keep-trivial-merges"
+  )[
+      :/subtree
+  ]
+  [13] :~(
       history="keep-trivial-merges"
   )[
       :rev(<=c036f944faafb865e0585e4fa5e005afa0aeea3f:prefix=subtree)
   ]
-  [28] reachable_roots
-  [28] sequence_number
+  [36] reachable_roots
+  [36] sequence_number
   $ git ls-tree --name-only -r refs/heads/master
   feature1
   feature2
@@ -276,15 +302,20 @@ taken back into the main history.
   subtree/subfeature2
 
   $ git log --graph --pretty=%H:%s refs/heads/master
-  * b0a4107ddd6054442a8eaac89a2af0ab375607eb:subfeature2
-  * b03cf8be0566a3742bf3dbbef72dc828a30b391f:subfeature1
-  *   38a6d753c8b17b4c6721050befbccff012dfde85:Merge branch 'feature2'
+  *   f814033dd0148da19a3199cd3cb2d21464ce85a3:Merge branch 'subtree-sync' into subtree
   |\  
-  | * 221f5ceab31209c3d3b16d5b2485ea54c465eca6:feature2
-  * |   2739fb8f0b3f6d5a264fb89ea20674fe34790321:Merge branch 'feature1'
-  |\ \  
-  | * | dbfaf5dd32fc39ce3c0ebe61864406bb7e2ad113:feature1
-  | |/  
+  | *   38a6d753c8b17b4c6721050befbccff012dfde85:Merge branch 'feature2'
+  | |\  
+  | | * 221f5ceab31209c3d3b16d5b2485ea54c465eca6:feature2
+  * | | 75e90f7f1b54cc343f2f75dcdee33650654a52a6:subfeature2
+  * | | 3fa497039e5b384cb44b704e6e96f52e0ae599c9:Merge branch 'subtree-sync' into subtree
+  |\| | 
+  | * |   2739fb8f0b3f6d5a264fb89ea20674fe34790321:Merge branch 'feature1'
+  | |\ \  
+  | | * | dbfaf5dd32fc39ce3c0ebe61864406bb7e2ad113:feature1
+  | | |/  
+  * | / 59b5c1623da3f89229c6dd36f8baf2e5868d0288:subfeature1
+  |/ /  
   * | 103bfec17c47adbe70a95fca90caefb989b6cda6:add even more content
   * | 41130c5d66736545562212f820cdbfbb3d3779c4:subtree edit from main repo
   * | 0642c36d6b53f7e829531aed848e3ceff0762c64:subtree merge

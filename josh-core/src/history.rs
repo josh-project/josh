@@ -611,7 +611,16 @@ pub fn unapply_filter(
             original_parents
                 .iter()
                 .map(|commit| -> anyhow::Result<_> {
-                    Ok(filter::unapply(transaction, filter, tree.clone(), commit.tree()?)?.id())
+                    // Pass the commit context so a `:rev(...)` cutoff in the filter is resolved
+                    // per commit (current vs this parent) rather than collapsed uniformly.
+                    Ok(filter::unapply(
+                        transaction,
+                        filter,
+                        tree.clone(),
+                        commit.tree()?,
+                        Some((&module_commit, *commit)),
+                    )?
+                    .id())
                 })
                 .collect()
         };
@@ -645,11 +654,14 @@ pub fn unapply_filter(
             // dealing with either a force push or a push with the "merge" option set.
             0 => {
                 tracing::debug!("unrelated history");
+                // Unrelated history has no original parent; there is no `<=SHA` baseline, so a
+                // `:rev(...)` cutoff resolves against `module_commit` on both sides.
                 filter::unapply(
                     transaction,
                     filter,
                     tree,
                     filter::tree::empty(transaction.repo()),
+                    Some((&module_commit, &module_commit)),
                 )?
             }
 
@@ -691,11 +703,14 @@ pub fn unapply_filter(
                         Some(&mergeopts),
                     )?;
                     let base_tree = merged_index.write_tree_to(transaction.repo())?;
+                    // The base is a merge of both original parents; resolve any `:rev(...)` cutoff
+                    // against the first parent (mirrors the descendant-pick preference above).
                     let tid_ours = filter::unapply(
                         transaction,
                         filter,
                         tree.clone(),
                         transaction.repo().find_tree(base_tree)?,
+                        Some((&module_commit, original_parents[0])),
                     )?
                     .id();
 
@@ -712,6 +727,7 @@ pub fn unapply_filter(
                         filter,
                         tree.clone(),
                         transaction.repo().find_tree(base_tree)?,
+                        Some((&module_commit, original_parents[0])),
                     )?
                     .id();
 

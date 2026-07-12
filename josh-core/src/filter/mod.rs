@@ -1567,6 +1567,7 @@ pub fn apply<'a>(
                     *uf,
                     x.tree().clone(),
                     target.tree()?,
+                    None,
                 )?))
             } else {
                 return Err(anyhow!("unresolved lazy ref"));
@@ -1579,13 +1580,22 @@ pub fn apply<'a>(
 }
 
 /// Calculate a tree with minimal differences from `parent_tree`
-/// such that `apply(unapply(tree, parent_tree)) == tree`
-pub fn unapply<'a>(
+/// such that `apply(unapply(tree, parent_tree)) == tree`.
+///
+/// `commits` carries the commit being reconstructed and the specific original parent whose tree is
+/// `parent_tree`. It is required to reverse commit-resolved per-commit filters (`:rev` / `:hook`),
+/// whose sub-filter is chosen from commit identity rather than the tree; callers that only ever pass
+/// tree-reversible filters pass `None`.
+pub fn unapply<'a, 'b>(
     transaction: &'a cache::Transaction,
     filter: Filter,
     tree: git2::Tree<'a>,
     parent_tree: git2::Tree<'a>,
+    commits: Option<(&'b git2::Commit<'b>, &'b git2::Commit<'b>)>,
 ) -> anyhow::Result<git2::Tree<'a>> {
+    // A `:rev(...)` filter has no static inverse (`invert` returns `Err`, like `:workspace` /
+    // `:stored` / `:starlark`), so this generic path is automatically skipped for it and it falls
+    // through to the per-commit handler / chain recursion below.
     if let Ok(inverted) = invert(filter) {
         let filtered = apply(
             transaction,
@@ -1603,11 +1613,15 @@ pub fn unapply<'a>(
         )?)?);
     }
 
-    if let Some(ws) = unapply_workspace(
+    // `peel_op` (not `to_op`) so a `:~(...)[...]` meta wrapper around e.g. `:rev(...)` is seen
+    // through: the meta options (history flags) only affect the forward direction, and the
+    // per-commit reverse handler needs the wrapped operator.
+    if let Some(ws) = unapply_per_rev_filter(
         transaction,
-        &to_op(filter),
+        &peel_op(filter),
         tree.clone(),
         parent_tree.clone(),
+        commits,
     )? {
         return Ok(ws);
     }
@@ -1620,42 +1634,131 @@ pub fn unapply<'a>(
         };
 
         if rest.is_empty() {
-            return unapply(transaction, *first, tree, parent_tree);
+            return unapply(transaction, *first, tree, parent_tree, commits);
         }
 
         let rest_chain = to_filter(Op::Chain(rest.to_vec()));
 
-        // Compute filtered_parent_tree for the first filter
-        let first_normalized = if let Ok(first_inverted) = invert(*first) {
-            invert(first_inverted)?
+        // Compute filtered_parent_tree for the first filter. `:rev`/`:hook` select their sub-filter
+        // from commit identity rather than the tree, so they cannot be applied at tree level:
+        // resolve the parent's concrete sub-filter and apply that instead. Without commit context
+        // (tree-only callers) it is unresolvable, so this is an error rather than a silent identity.
+        let first_op = peel_op(*first);
+        let filtered_parent_tree = if is_commit_resolved_filter(&first_op) {
+            let (_, parent) = commits.ok_or_else(|| {
+                anyhow!(
+                    "cannot reverse a per-commit filter (`:rev`/`:hook`) without commit context"
+                )
+            })?;
+            let parent_filter = resolve_commit_filter(transaction, &first_op, parent)?;
+            apply(
+                transaction,
+                parent_filter,
+                Rewrite::from_tree(parent_tree.clone()),
+            )?
+            .into_tree()
         } else {
-            *first
+            let first_normalized = if let Ok(first_inverted) = invert(*first) {
+                invert(first_inverted)?
+            } else {
+                *first
+            };
+            apply(
+                transaction,
+                first_normalized,
+                Rewrite::from_tree(parent_tree.clone()),
+            )?
+            .into_tree()
         };
-        let filtered_parent_tree = apply(
-            transaction,
-            first_normalized,
-            Rewrite::from_tree(parent_tree.clone()),
-        )?
-        .into_tree();
 
         // Recursively unapply: first unapply the rest, then unapply first
         return unapply(
             transaction,
             *first,
-            unapply(transaction, rest_chain, tree, filtered_parent_tree)?,
+            unapply(transaction, rest_chain, tree, filtered_parent_tree, commits)?,
             parent_tree,
+            commits,
         );
     }
 
     Err(anyhow!("filter cannot be unapplied"))
 }
 
-fn unapply_workspace<'a>(
+/// Reverse a per-commit filter (`:workspace` / `:stored` / `:starlark` / `:rev` / `:hook`), whose
+/// concrete sub-filter differs between the commit being reconstructed and its parent. `filter` is
+/// the sub-filter resolved for the commit, `original_filter` the one resolved for the specific
+/// parent whose tree is `parent_tree`. The reconstruction reproduces the out-of-filter content of
+/// `parent_tree` (strip) and overlays the reconstructed in-filter content of `tree`.
+fn reverse_strip_overlay<'a>(
+    transaction: &'a cache::Transaction,
+    filter: Filter,
+    original_filter: Filter,
+    tree: git2::Tree<'a>,
+    parent_tree: git2::Tree<'a>,
+) -> anyhow::Result<git2::Tree<'a>> {
+    let filtered = apply(
+        transaction,
+        original_filter,
+        Rewrite::from_tree(parent_tree.clone()),
+    )?;
+    let matching = apply(transaction, invert(original_filter)?, filtered.clone())?;
+    let stripped = tree::subtract(transaction, parent_tree.id(), matching.tree().id())?;
+    let x = apply(transaction, invert(filter)?, Rewrite::from_tree(tree))?;
+
+    Ok(transaction
+        .repo()
+        .find_tree(tree::overlay(transaction, x.tree().id(), stripped)?)?)
+}
+
+/// Resolve the concrete sub-filter of a per-commit filter whose selector lives in *commit identity*
+/// rather than the tree: `:rev(...)` (commit ancestry) and `:hook` (hook lookup). These mirror the
+/// forward `Op::Rev`/`Op::Hook` paths and, unlike `:workspace`/`:stored`/`:starlark`, cannot be
+/// resolved from a tree. Returns `Err` for any other op (callers only reach it for rev/hook).
+fn resolve_commit_filter(
+    transaction: &cache::Transaction,
+    op: &Op,
+    commit: &git2::Commit,
+) -> anyhow::Result<Filter> {
+    match op {
+        Op::Rev(revs) => get_rev_filter(transaction, commit, revs),
+        Op::Hook(hook) => transaction.lookup_filter_hook(hook, commit.id()),
+        _ => Err(anyhow!("not a per-commit (rev/hook) filter")),
+    }
+}
+
+/// Whether `op` is a per-commit filter whose selector lives in commit identity (`:rev` / `:hook`),
+/// so reversing it requires commit context and it cannot be applied at tree level.
+fn is_commit_resolved_filter(op: &Op) -> bool {
+    matches!(op, Op::Rev(_) | Op::Hook(_))
+}
+
+fn unapply_per_rev_filter<'a, 'b>(
     transaction: &'a cache::Transaction,
     op: &Op,
     tree: git2::Tree<'a>,
     parent_tree: git2::Tree<'a>,
+    commits: Option<(&'b git2::Commit<'b>, &'b git2::Commit<'b>)>,
 ) -> anyhow::Result<Option<git2::Tree<'a>>> {
+    if is_commit_resolved_filter(op) {
+        // `:rev`/`:hook` select their sub-filter from commit identity (mirroring the forward
+        // `Op::Rev`/`Op::Hook` paths): resolve it for the commit being reconstructed and for the
+        // specific parent whose tree is `parent_tree`. Unlike the tree-resolved per-commit filters
+        // below, this cannot be read from a tree, so without commit context it is an error rather
+        // than a silent identity.
+        let (commit, parent) = commits.ok_or_else(|| {
+            anyhow!("cannot reverse a per-commit filter (`:rev`/`:hook`) without commit context")
+        })?;
+        let filter = resolve_commit_filter(transaction, op, commit)?;
+        let original_filter = resolve_commit_filter(transaction, op, parent)?;
+        return Ok(Some(reverse_strip_overlay(
+            transaction,
+            filter,
+            original_filter,
+            tree,
+            parent_tree,
+        )?));
+    }
+
     match op {
         Op::Workspace(path) => {
             let tree = pre_process_tree(transaction.repo(), tree)?;
@@ -1671,22 +1774,13 @@ fn unapply_workspace<'a>(
             let wsj_file = root.chain(wsj_file);
             let filter = compose(&[wsj_file, compose(&[workspace, root])]);
             let original_filter = compose(&[wsj_file, compose(&[original_workspace, root])]);
-            let filtered = apply(
+            Ok(Some(reverse_strip_overlay(
                 transaction,
+                filter,
                 original_filter,
-                Rewrite::from_tree(parent_tree.clone()),
-            )?;
-            let matching = apply(transaction, invert(original_filter)?, filtered.clone())?;
-            let stripped = tree::subtract(transaction, parent_tree.id(), matching.tree().id())?;
-            let x = apply(transaction, invert(filter)?, Rewrite::from_tree(tree))?;
-
-            let result = transaction.repo().find_tree(tree::overlay(
-                transaction,
-                x.tree().id(),
-                stripped,
-            )?)?;
-
-            Ok(Some(result))
+                tree,
+                parent_tree,
+            )?))
         }
         Op::Stored(path) => {
             let stored_path = path.with_added_extension("josh");
@@ -1696,42 +1790,24 @@ fn unapply_workspace<'a>(
             let sj_file = Filter::new().file(stored_path.clone());
             let filter = compose(&[sj_file, stored]);
             let original_filter = compose(&[sj_file, original_stored]);
-            let filtered = apply(
+            Ok(Some(reverse_strip_overlay(
                 transaction,
+                filter,
                 original_filter,
-                Rewrite::from_tree(parent_tree.clone()),
-            )?;
-            let matching = apply(transaction, invert(original_filter)?, filtered.clone())?;
-            let stripped = tree::subtract(transaction, parent_tree.id(), matching.tree().id())?;
-            let x = apply(transaction, invert(filter)?, Rewrite::from_tree(tree))?;
-
-            let result = transaction.repo().find_tree(tree::overlay(
-                transaction,
-                x.tree().id(),
-                stripped,
-            )?)?;
-
-            Ok(Some(result))
+                tree,
+                parent_tree,
+            )?))
         }
         Op::Starlark(path, subfilter) => {
             let filter = get_starlark(transaction, &tree, path, *subfilter);
             let original_filter = get_starlark(transaction, &parent_tree, path, *subfilter);
-            let filtered = apply(
+            Ok(Some(reverse_strip_overlay(
                 transaction,
+                filter,
                 original_filter,
-                Rewrite::from_tree(parent_tree.clone()),
-            )?;
-            let matching = apply(transaction, invert(original_filter)?, filtered.clone())?;
-            let stripped = tree::subtract(transaction, parent_tree.id(), matching.tree().id())?;
-            let x = apply(transaction, invert(filter)?, Rewrite::from_tree(tree))?;
-
-            let result = transaction.repo().find_tree(tree::overlay(
-                transaction,
-                x.tree().id(),
-                stripped,
-            )?)?;
-
-            Ok(Some(result))
+                tree,
+                parent_tree,
+            )?))
         }
         _ => Ok(None),
     }
