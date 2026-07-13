@@ -123,7 +123,7 @@ pub struct Transaction {
     /// Per-transaction in-memory object store, flushed to a packfile when the transaction drops, at
     /// an explicit boundary, or mid-transaction when it exceeds its size limit. Never shared with
     /// another transaction.
-    mem_odb: std::sync::Arc<josh_git_data::MemOdb>,
+    mem_odb: std::sync::Arc<josh_memodb::MemOdb>,
     mem_odb_limit: Option<usize>,
     ephemeral: bool,
     ref_prefix: Option<String>,
@@ -157,7 +157,7 @@ impl Transaction {
         static STRICT_OBJECT_CREATION_OFF: std::sync::Once = std::sync::Once::new();
         STRICT_OBJECT_CREATION_OFF.call_once(|| git2::opts::strict_object_creation(false));
 
-        let mem_odb = josh_git_data::MemOdb::new(mem_odb_limit, repo.path().to_owned());
+        let mem_odb = josh_memodb::MemOdb::new(mem_odb_limit, repo.path().to_owned());
         mem_odb.register(&repo);
 
         log::debug!("new transaction");

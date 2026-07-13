@@ -4,7 +4,7 @@ members = [
     "axum-cgi",
     "axum-cgi-server",
     "josh-core",
-    "josh-git-data",
+    "josh-memodb",
     "josh-cli",
     "josh-filter",
     "josh-graphql",
@@ -87,7 +87,7 @@ axum-cgi = { path = "axum-cgi", version = "26.6.11" }
 josh-filter = { path = "josh-filter", version = "26.6.11" }
 josh-changes = { path = "josh-changes", version = "26.6.11" }
 josh-core = { path = "josh-core", version = "26.6.11" }
-josh-git-data = { path = "josh-git-data", version = "26.6.11" }
+josh-memodb = { path = "josh-memodb", version = "26.6.11" }
 josh-compose = { path = "josh-compose", version = "26.6.11" }
 josh-graphql = { path = "josh-graphql", version = "26.6.11" }
 josh-link = { path = "josh-link", version = "26.6.11" }
@@ -181,7 +181,7 @@ axum-cgi = { path = "axum-cgi" }
 josh-filter = { path = "josh-filter" }
 josh-changes = { path = "josh-changes" }
 josh-core = { path = "josh-core" }
-josh-git-data = { path = "josh-git-data" }
+josh-memodb = { path = "josh-memodb" }
 josh-compose = { path = "josh-compose" }
 josh-graphql = { path = "josh-graphql" }
 josh-link = { path = "josh-link" }
