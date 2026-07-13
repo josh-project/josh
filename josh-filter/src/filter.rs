@@ -175,7 +175,8 @@ impl Filter {
     /// Chain a filter that inserts an existing object (referenced by its OID) at the specified
     /// path. Syntax: `:$path=<sha>`. The object may be a blob or a tree; the kind is resolved
     /// from the repository at apply time. Useful for large blobs or whole subtrees that should
-    /// not be inlined as a string.
+    /// not be inlined as a string. The special path `.` replaces the whole tree with the
+    /// referenced object and therefore requires a tree OID (a blob at the root is rejected).
     pub fn insert_oid(
         self,
         path: impl Into<std::path::PathBuf>,
