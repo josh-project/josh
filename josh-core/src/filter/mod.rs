@@ -2106,10 +2106,13 @@ fn per_rev_filter(
     let meta = filter.into_meta();
     let commit_filter = propagate_meta(commit_filter, &meta);
 
-    // Legalize the pins two ways up front (kept, or excluded); they differ iff the filter uses
-    // `:pin`. Splicing is on unless the "no-splice" history flag is set, and combining it with
-    // `:pin` has no well-defined semantics, so reject that rather than guess.
-    let legalized_a = legalize_pin(commit_filter.peel(), &|f| f);
+    // Legalize the pins two ways up front (selected, or excluded); they differ iff the filter
+    // uses `:pin`. `Select` and `Exclude` are exact complements over the tree at the pin point,
+    // so the pinned region stays well-defined even when the pin argument is a generative filter
+    // (one whose output is not an in-place subset of its input). Splicing is on unless the
+    // "no-splice" history flag is set, and combining it with `:pin` has no well-defined
+    // semantics, so reject that rather than guess.
+    let legalized_a = legalize_pin(commit_filter.peel(), &|f| to_filter(Op::Select(f)));
     let legalized_b = legalize_pin(commit_filter.peel(), &|f| to_filter(Op::Exclude(f)));
     let uses_pin = legalized_a != legalized_b;
     let no_splice = history::history_flag(meta.get("history").map(String::as_str), "no-splice");
@@ -2584,7 +2587,7 @@ mod tests {
         let pins = josh_filter::compose(&[Filter::new().file("d1/s1/f0")]);
         let cf = wide.pin(pins);
         let pin_sub = to_filter(Op::Subtract(
-            legalize_pin(cf.peel(), &|f| f),
+            legalize_pin(cf.peel(), &|f| to_filter(Op::Select(f))),
             legalize_pin(cf.peel(), &|f| to_filter(Op::Exclude(f))),
         ));
 
