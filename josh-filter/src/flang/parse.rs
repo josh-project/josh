@@ -175,7 +175,6 @@ fn parse_item(pair: pest::iterators::Pair<Rule>) -> anyhow::Result<Filter> {
             Ok(parse_treederef(&path))
         }
         Rule::filter_insert => {
-            check_experimental_features_enabled("Insert filter")?;
             let mut inner = pair.into_inner();
             let path = Path::new(&unquote(inner.next().unwrap().as_str())).to_owned();
             let content_pair = inner.next().unwrap();

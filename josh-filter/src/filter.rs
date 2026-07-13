@@ -166,7 +166,6 @@ impl Filter {
         path: impl Into<std::path::PathBuf>,
         content: impl Into<String>,
     ) -> anyhow::Result<Filter> {
-        check_experimental_features_enabled("Insert filter")?;
         Ok(self.chain(to_filter(Op::Insert(
             path.into(),
             InsertContent::Inline(content.into()),
@@ -182,7 +181,6 @@ impl Filter {
         path: impl Into<std::path::PathBuf>,
         oid: git2::Oid,
     ) -> anyhow::Result<Filter> {
-        check_experimental_features_enabled("Insert filter")?;
         Ok(self.chain(to_filter(Op::Insert(path.into(), InsertContent::Oid(oid)))))
     }
 
