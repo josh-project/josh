@@ -21,6 +21,10 @@ Roundtrip: blob specified by sha renders as bare hex
   $ josh-filter -p ':$added.txt=e69de29bb2d1d6434b8b29ae775ad8c2e48c5391'
   :$added.txt=e69de29bb2d1d6434b8b29ae775ad8c2e48c5391
 
+Roundtrip: root insert renders as :$.=<hex>
+  $ josh-filter -p ':$.=e69de29bb2d1d6434b8b29ae775ad8c2e48c5391'
+  :$.=e69de29bb2d1d6434b8b29ae775ad8c2e48c5391
+
 A multi-component path is split into a leaf blob followed by a prefix
   $ josh-filter -p ':$a/b/c.txt="hello"'
   a/b = :$c.txt="hello"
@@ -157,3 +161,17 @@ Apply: a tree referenced by sha is inserted as a subtree at the destination path
   $ josh-filter -s ":\$sub=$TREE" master --update refs/josh/filter/tree 1> /dev/null
   $ git show josh/filter/tree:sub/sub1/file1
   contents1
+
+Apply: a tree referenced by sha at `.` replaces the whole output tree
+  $ TREE=$(git rev-parse 'HEAD^{tree}')
+  $ josh-filter -s ":\$.=$TREE" master --update refs/josh/filter/root 1> /dev/null
+  $ git show josh/filter/root:sub1/file1
+  contents1
+
+Apply: a blob referenced by sha at `.` is rejected (a blob cannot sit at the tree root)
+  $ OID=$(printf 'big content' | git hash-object -w --stdin)
+  $ josh-filter -s ":\$.=$OID" master --update refs/josh/filter/rootblob 2>&1 >/dev/null; echo "exit:$?"
+  *requires a tree* (glob)
+  exit:1
+  $ git rev-parse --verify -q refs/josh/filter/rootblob > /dev/null; echo "ref:$?"
+  ref:1

@@ -1383,11 +1383,13 @@ pub fn apply<'a>(
             )?))
         }
         Op::Insert(dest_path, content) => {
-            let (oid, mode) = match content {
-                InsertContent::Inline(s) => (repo.blob(s.as_bytes())?, git2::FileMode::Blob.into()),
+            let (oid, mode, is_tree) = match content {
+                InsertContent::Inline(s) => {
+                    (repo.blob(s.as_bytes())?, git2::FileMode::Blob.into(), false)
+                }
                 InsertContent::Oid(oid) => match repo.find_object(*oid, None)?.kind() {
-                    Some(git2::ObjectType::Blob) => (*oid, git2::FileMode::Blob.into()),
-                    Some(git2::ObjectType::Tree) => (*oid, git2::FileMode::Tree.into()),
+                    Some(git2::ObjectType::Blob) => (*oid, git2::FileMode::Blob.into(), false),
+                    Some(git2::ObjectType::Tree) => (*oid, git2::FileMode::Tree.into(), true),
                     _ => {
                         return Err(anyhow::anyhow!(
                             "insert: {} is neither a blob nor a tree",
@@ -1396,6 +1398,17 @@ pub fn apply<'a>(
                     }
                 },
             };
+            // `:$.=<oid>` replaces the whole output tree with the referenced object. Only a
+            // tree is valid at the root; a blob there is rejected (it would otherwise be
+            // silently dropped, since git trees cannot have a blob at their root).
+            if dest_path.as_path() == std::path::Path::new(".") {
+                if is_tree {
+                    return Ok(x.clone().with_tree(repo.find_tree(oid)?));
+                }
+                return Err(anyhow::anyhow!(
+                    "insert: `:$.=<oid>` requires a tree; a blob cannot be placed at the tree root"
+                ));
+            }
             Ok(x.clone().with_tree(tree::insert(
                 repo,
                 &tree::empty(repo),
