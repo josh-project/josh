@@ -62,6 +62,10 @@ fn pretty2(op: &Op, indent: usize, compose: bool) -> String {
             Op::Compose(filters) => ff(&filters, "exclude", indent),
             b => format!(":exclude[{}]", pretty2(&b, indent, false)),
         },
+        Op::Select(bf) => match to_op(*bf) {
+            Op::Compose(filters) => ff(&filters, "select", indent),
+            b => format!(":select[{}]", pretty2(&b, indent, false)),
+        },
         Op::Pin(filter) => match to_op(*filter) {
             Op::Compose(filters) => ff(&filters, "pin", indent),
             b => format!(":pin[{}]", pretty2(&b, indent, false)),
@@ -169,6 +173,9 @@ pub(crate) fn spec2(op: &Op) -> String {
         }
         Op::Exclude(b) => {
             format!(":exclude[{}]", spec(*b))
+        }
+        Op::Select(b) => {
+            format!(":select[{}]", spec(*b))
         }
         Op::Pin(filter) => {
             format!(":pin[{}]", spec(*filter))

@@ -205,6 +205,57 @@ pub fn subtract(
     Ok(empty_id())
 }
 
+/// Intersect two trees by path: keep every entry of `input1` whose path also exists in `input2`,
+/// carrying `input1`'s content and mode. This is the exact complement of [`subtract`] over `input1`
+/// -- `subtract` drops the shared paths, `intersect` keeps them -- so
+/// `intersect(a, b) == subtract(a, subtract(a, b))`. Computing it directly (rather than via that
+/// double subtract) matters for performance: the double subtract's outer step iterates `a`'s
+/// complement, which is nearly all of `a`, whereas this iterates only `input2`. Selecting a small
+/// set of paths out of a large tree therefore costs O(input2) instead of O(input1).
+pub fn intersect(
+    transaction: &cache::Transaction,
+    input1: git2::Oid,
+    input2: git2::Oid,
+) -> anyhow::Result<git2::Oid> {
+    let repo = transaction.repo();
+    // Identical (sub)trees intersect to themselves; an empty side leaves nothing to keep.
+    if input1 == input2 {
+        return Ok(input1);
+    }
+    if input1 == empty_id() || input2 == empty_id() {
+        return Ok(empty_id());
+    }
+
+    if let Some(cached) = transaction.get_intersect((input1, input2)) {
+        return Ok(cached);
+    }
+
+    let result = if let (Ok(tree1), Ok(tree2)) = (repo.find_tree(input1), repo.find_tree(input2)) {
+        rs_tracing::trace_scoped!("intersect fast");
+        let mut result_tree = empty(repo);
+        // Iterate the selector (`input2`) so cost tracks the selected set, not the full `input1`.
+        for entry in tree2.iter() {
+            let name = entry.name().ok_or_else(|| anyhow!("no name"))?;
+            if let Some(e1) = tree1.get_name(name) {
+                let child = intersect(transaction, e1.id(), entry.id())?;
+                if child != empty_id() && child != git2::Oid::zero() {
+                    result_tree =
+                        replace_child(repo, Path::new(name), child, e1.filemode(), &result_tree)?;
+                }
+            }
+        }
+        result_tree.id()
+    } else {
+        // At least one side is a blob at this already-name-matched path, so the path exists in both;
+        // keep `input1`'s content, matching the path-based semantics of the tree case.
+        input1
+    };
+
+    transaction.insert_intersect((input1, input2), result);
+
+    Ok(result)
+}
+
 fn replace_child<'a>(
     repo: &'a git2::Repository,
     child: &Path,

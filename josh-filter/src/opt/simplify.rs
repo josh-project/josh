@@ -67,6 +67,7 @@ pub fn simplify(filter: Filter) -> Filter {
         }
         Op::Subtract(a, b) => Op::Subtract(simplify(*a), simplify(*b)),
         Op::Exclude(b) => Op::Exclude(simplify(*b)),
+        Op::Select(b) => Op::Select(simplify(*b)),
         Op::Pin(b) => Op::Pin(simplify(*b)),
         Op::Starlark(path, sub) => Op::Starlark(path.clone(), simplify(*sub)),
         Op::TreeId(path, sub) => Op::TreeId(path.clone(), simplify(*sub)),

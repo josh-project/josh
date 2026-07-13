@@ -187,7 +187,7 @@ fn lazy_refs2(op: &Op) -> Vec<String> {
                     acc
                 })
         }
-        Op::Exclude(filter) | Op::Pin(filter) => lazy_refs(*filter),
+        Op::Exclude(filter) | Op::Select(filter) | Op::Pin(filter) => lazy_refs(*filter),
         Op::Chain(filters) => {
             let mut av = vec![];
             for filter in filters {
@@ -243,6 +243,7 @@ fn resolve_refs2(refs: &std::collections::HashMap<String, git2::Oid>, op: &Op) -
             Op::Compose(filters.iter().map(|f| resolve_refs(refs, *f)).collect())
         }
         Op::Exclude(filter) => Op::Exclude(resolve_refs(refs, *filter)),
+        Op::Select(filter) => Op::Select(resolve_refs(refs, *filter)),
         Op::Pin(filter) => Op::Pin(resolve_refs(refs, *filter)),
         Op::Chain(filters) => Op::Chain(filters.iter().map(|f| resolve_refs(refs, *f)).collect()),
         Op::Subtract(a, b) => Op::Subtract(resolve_refs(refs, *a), resolve_refs(refs, *b)),
@@ -1461,6 +1462,11 @@ pub fn apply<'a>(
                 bf,
             )?)?))
         }
+        Op::Select(b) => {
+            let bf = apply(transaction, *b, x.clone())?.tree().id();
+            let inside = tree::intersect(transaction, x.tree().id(), bf)?;
+            Ok(x.clone().with_tree(repo.find_tree(inside)?))
+        }
 
         Op::Paths => Ok(x
             .clone()
@@ -1972,6 +1978,7 @@ where
         )),
         Op::Subtract(a, b) => to_filter(Op::Subtract(legalize_pin(a, c), legalize_pin(b, c))),
         Op::Exclude(f) => to_filter(Op::Exclude(legalize_pin(f, c))),
+        Op::Select(f) => to_filter(Op::Select(legalize_pin(f, c))),
         Op::Meta(meta, f) => to_filter(Op::Meta(meta, legalize_pin(f, c))),
         Op::Pin(f) => c(f),
         _ => f,
@@ -1983,7 +1990,7 @@ fn needs_legalization(f: Filter) -> bool {
         Op::Stored(_) | Op::Starlark(_, _) => true,
         Op::Compose(filters) | Op::Chain(filters) => filters.iter().any(|&f| needs_legalization(f)),
         Op::Subtract(a, b) => needs_legalization(a) || needs_legalization(b),
-        Op::Exclude(f) | Op::Pin(f) | Op::TreeId(_, f) => needs_legalization(f),
+        Op::Exclude(f) | Op::Select(f) | Op::Pin(f) | Op::TreeId(_, f) => needs_legalization(f),
         Op::Meta(_, f) => needs_legalization(f),
         _ => false,
     }
@@ -2034,6 +2041,7 @@ fn legalize_stored(t: &cache::Transaction, f: Filter, tree: &git2::Tree) -> anyh
             legalize_stored(t, b, tree)?,
         )),
         Op::Exclude(f) => to_filter(Op::Exclude(legalize_stored(t, f, tree)?)),
+        Op::Select(f) => to_filter(Op::Select(legalize_stored(t, f, tree)?)),
         Op::Meta(meta, f) => to_filter(Op::Meta(meta, legalize_stored(t, f, tree)?)),
         Op::Pin(f) => to_filter(Op::Pin(legalize_stored(t, f, tree)?)),
         Op::Stored(path) => get_stored(t, tree, &path),

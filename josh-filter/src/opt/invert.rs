@@ -57,6 +57,7 @@ pub fn invert(filter: Filter) -> anyhow::Result<Filter> {
                     .collect::<Result<Vec<_>, _>>()?,
             ),
             Op::Exclude(filter) => Op::Exclude(invert(*filter)?),
+            Op::Select(filter) => Op::Select(invert(*filter)?),
             _ => return Err(anyhow!("no invert {:?}", filter)),
         });
 

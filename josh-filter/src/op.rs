@@ -153,6 +153,7 @@ pub enum Op {
     Chain(Vec<Filter>),
     Subtract(Filter, Filter),
     Exclude(Filter),
+    Select(Filter),
     Pin(Filter),
 
     Downstack(LazyRef),
