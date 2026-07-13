@@ -76,6 +76,10 @@ impl Filter {
         self.chain(to_filter(Op::Exclude(other)))
     }
 
+    pub fn select(self, other: Filter) -> Filter {
+        self.chain(to_filter(Op::Select(other)))
+    }
+
     /// Chain a filter that pins the result of `other`, holding back entries that
     /// would otherwise change across revisions
     pub fn pin(self, other: Filter) -> Filter {

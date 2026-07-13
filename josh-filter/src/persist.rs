@@ -52,6 +52,7 @@ fn child_filters(op: &Op) -> Vec<Filter> {
     match op {
         Op::Meta(_, f)
         | Op::Exclude(f)
+        | Op::Select(f)
         | Op::Pin(f)
         | Op::Starlark(_, f)
         | Op::TreeId(_, f)
@@ -365,6 +366,10 @@ impl InMemoryBuilder {
             Op::Exclude(b) => {
                 let params_tree = self.build_filter_params(&[*b])?;
                 push_tree_entries(&mut entries, [("exclude", params_tree)]);
+            }
+            Op::Select(b) => {
+                let params_tree = self.build_filter_params(&[*b])?;
+                push_tree_entries(&mut entries, [("select", params_tree)]);
             }
             Op::Pin(b) => {
                 let params_tree = self.build_filter_params(&[*b])?;
@@ -939,6 +944,17 @@ fn from_tree2(repo: &git2::Repository, tree_oid: git2::Oid) -> anyhow::Result<Op
                 Ok(Op::Exclude(to_filter(filter)))
             } else {
                 Err(anyhow!("exclude: expected 1 entry"))
+            }
+        }
+        "select" => {
+            let select_tree = repo.find_tree(entry.id())?;
+            if select_tree.len() == 1 {
+                let filter_tree =
+                    repo.find_tree(select_tree.get_name("0").context("select: missing 0")?.id())?;
+                let filter = from_tree2(repo, filter_tree.id())?;
+                Ok(Op::Select(to_filter(filter)))
+            } else {
+                Err(anyhow!("select: expected 1 entry"))
             }
         }
         "pin" => {

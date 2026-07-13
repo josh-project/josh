@@ -176,6 +176,9 @@ pub(super) fn step(filter: Filter) -> Filter {
         Op::Exclude(b) if *b == to_filter(Op::Nop) => Op::Empty,
         Op::Exclude(b) | Op::Pin(b) if *b == to_filter(Op::Empty) => Op::Nop,
         Op::Exclude(b) => Op::Exclude(step(*b)),
+        Op::Select(b) if *b == to_filter(Op::Empty) => Op::Empty,
+        Op::Select(b) if *b == to_filter(Op::Nop) => Op::Nop,
+        Op::Select(b) => Op::Select(step(*b)),
         Op::Pin(b) => Op::Pin(step(*b)),
         Op::Starlark(path, sub) => Op::Starlark(path.clone(), step(*sub)),
         Op::TreeId(path, sub) => Op::TreeId(path.clone(), step(*sub)),
@@ -189,6 +192,12 @@ pub(super) fn step(filter: Filter) -> Filter {
                 (Op::Message(..), Op::Message(..)) => Op::Empty,
                 (_, Op::Nop) => Op::Empty,
                 (a, Op::Empty) => a,
+                // `Select(F)` and `Exclude(F)` partition the input tree by path: one keeps exactly
+                // the paths `F` selects, the other keeps exactly the rest. Subtracting the excluded
+                // (complement) side from the selected side therefore removes nothing, leaving just
+                // `Select(F)` -- and collapsing the full `Op::Subtract` machinery (four sub-applies)
+                // down to a single `Select`.
+                (Op::Select(sa), Op::Exclude(sb)) if sa == sb => Op::Select(sa),
                 (Op::Chain(a_filters), Op::Chain(b_filters))
                     if !a_filters.is_empty()
                         && !b_filters.is_empty()

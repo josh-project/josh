@@ -94,6 +94,7 @@ fn flatten_impl(filter: Filter, full: bool) -> Filter {
         }
         Op::Subtract(a, b) => Op::Subtract(flatten_impl(*a, full), flatten_impl(*b, full)),
         Op::Exclude(b) => Op::Exclude(flatten_impl(*b, full)),
+        Op::Select(b) => Op::Select(flatten_impl(*b, full)),
         Op::Pin(b) => Op::Pin(flatten_impl(*b, full)),
         Op::Starlark(path, sub) => Op::Starlark(path.clone(), flatten_impl(*sub, full)),
         Op::TreeId(path, sub) => Op::TreeId(path.clone(), flatten_impl(*sub, full)),
