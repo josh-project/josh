@@ -43,9 +43,16 @@ const N_PER_SUBFOLDER_MAX: usize = 100;
 // skipped to keep setup cheap.
 const SANITY_GATE_MAX_SIZE: usize = 10_000;
 
-// The single hook argument. The outer filter is `:hook=pin`, so `arg` in `filter_for_commit` is
-// always this string.
-const HOOK_ARG: &str = "pin";
+// The two hook arguments, one per approach under comparison. The outer filter is `:hook=<arg>`, so
+// `arg` in `filter_for_commit` selects which per-commit pin filter to serve.
+//   - `per_path`: the pin argument is a compose of one `:file` filter per pinned path, rebuilt for
+//     every commit. Filter-engine work grows with the pinned-set size.
+//   - `one_tree`: the pin argument is a single `:$.=<oid>` insert of a precomputed tree that holds
+//     exactly the pinned paths. Pin legalization intersects by path (`Select`/`Exclude` are
+//     path-based), so this is equivalent to `per_path` while keeping the per-commit filter a single
+//     op regardless of how many paths are pinned.
+const HOOK_ARG_PER_PATH: &str = "per_path";
+const HOOK_ARG_ONE_TREE: &str = "one_tree";
 
 /// Expected oid of the cached bench repo's aggregate index commit. This is the cache validity key:
 /// changing any build parameter above changes a case head, which changes the index commit oid, which
@@ -65,7 +72,8 @@ const JOSH_BENCH_COMMIT_TIME: &str = "1700000000";
 // pin through a stored `workspace.josh`, which pays a filter parse+legalize per commit; the hook
 // serves a pre-built per-commit filter by oid instead, isolating the pin evaluation itself.
 struct BenchPinHook {
-    per_commit: HashMap<git2::Oid, josh_filter::Filter>,
+    per_path: HashMap<git2::Oid, josh_filter::Filter>,
+    one_tree: HashMap<git2::Oid, josh_filter::Filter>,
 }
 
 impl josh_core::cache::FilterHook for BenchPinHook {
@@ -74,11 +82,14 @@ impl josh_core::cache::FilterHook for BenchPinHook {
         commit_oid: git2::Oid,
         arg: &str,
     ) -> anyhow::Result<josh_filter::Filter> {
-        anyhow::ensure!(arg == HOOK_ARG, "unexpected pin hook arg: {arg}");
-        self.per_commit
-            .get(&commit_oid)
+        let map = match arg {
+            HOOK_ARG_PER_PATH => &self.per_path,
+            HOOK_ARG_ONE_TREE => &self.one_tree,
+            _ => anyhow::bail!("unexpected pin hook arg: {arg}"),
+        };
+        map.get(&commit_oid)
             .copied()
-            .ok_or_else(|| anyhow::anyhow!("no pin filter for commit {commit_oid}"))
+            .ok_or_else(|| anyhow::anyhow!("no {arg} pin filter for commit {commit_oid}"))
     }
 }
 
@@ -95,10 +106,12 @@ struct PinBench {
     // A fresh transaction is opened from this for every iteration.
     context: josh_core::cache::TransactionContext,
     cases: Vec<SizeCase>,
-    // Attached to every opened transaction so `:hook=pin` resolves per commit.
+    // Attached to every opened transaction so `:hook=<arg>` resolves per commit.
     hook: Arc<BenchPinHook>,
-    // The outer filter under benchmark: `:~(history="no-splice")[:hook=pin]`.
-    filter: josh_filter::Filter,
+    // The two outer filters under benchmark, both `:hook=<arg>` carrying the "no-splice" history
+    // flag; they differ only in the per-commit pin argument the hook serves for each arg.
+    filter_per_path: josh_filter::Filter,
+    filter_one_tree: josh_filter::Filter,
 }
 
 impl PinBench {
@@ -136,20 +149,24 @@ impl PinBench {
         // never depend on build-time state the cache would drop. Each commit's churned set is
         // recovered by diffing against its parent; `record_case` folds that into the evolving pinned
         // set that the pin filters are built from.
-        let mut per_commit = HashMap::new();
+        let mut per_path = HashMap::new();
+        let mut one_tree = HashMap::new();
         let mut cases = vec![];
         {
             let repo = &provisioned.repo;
             for &size in SIZES {
                 let head = repo.refname_to_id(&format!("refs/heads/case_{size}"))?;
-                record_case(repo, head, &mut per_commit)?;
+                record_case(repo, head, &mut per_path, &mut one_tree)?;
                 cases.push(SizeCase { size, head });
             }
         }
 
-        let hook = Arc::new(BenchPinHook { per_commit });
-        let filter = josh_filter::Filter::new()
-            .hook(HOOK_ARG)
+        let hook = Arc::new(BenchPinHook { per_path, one_tree });
+        let filter_per_path = josh_filter::Filter::new()
+            .hook(HOOK_ARG_PER_PATH)
+            .with_meta("history", "no-splice");
+        let filter_one_tree = josh_filter::Filter::new()
+            .hook(HOOK_ARG_ONE_TREE)
             .with_meta("history", "no-splice");
 
         josh_core::cache::sled_load(provisioned.path())?;
@@ -159,20 +176,29 @@ impl PinBench {
         );
         let context = josh_core::cache::TransactionContext::new(provisioned.path(), cache);
 
-        // Sanity gate (untimed): confirm the filter actually holds paths back, so we never silently
-        // measure a no-op pin. Because the pinned set churns, the filtered head tree must differ from
+        // Sanity + correctness gate (untimed): confirm the `per_path` filter actually holds paths
+        // back (so we never silently measure a no-op pin), and that the `one_tree` approach produces
+        // an identical filtered tree (so the two variants are genuinely equivalent and the timing
+        // comparison is fair). Because the pinned set churns, the filtered head tree must differ from
         // the raw head tree. Run through a throwaway transaction, then reset caches so nothing here
         // warms the timed runs. Only the cases up to `SANITY_GATE_MAX_SIZE` are checked; the gate is
         // size-independent, and a full `filter_commit` on the largest trees would dominate setup.
         {
             let transaction = context.open()?.with_filter_hook(hook.clone());
             for case in cases.iter().filter(|c| c.size <= SANITY_GATE_MAX_SIZE) {
-                let filtered = josh_core::filter_commit(&transaction, filter, case.head)?;
-                let filtered_tree = transaction.repo().find_commit(filtered)?.tree()?.id();
+                let per_path = josh_core::filter_commit(&transaction, filter_per_path, case.head)?;
+                let one_tree = josh_core::filter_commit(&transaction, filter_one_tree, case.head)?;
+                let per_path_tree = transaction.repo().find_commit(per_path)?.tree()?.id();
+                let one_tree_tree = transaction.repo().find_commit(one_tree)?.tree()?.id();
                 let raw_tree = transaction.repo().find_commit(case.head)?.tree()?.id();
                 anyhow::ensure!(
-                    filtered_tree != raw_tree,
+                    per_path_tree != raw_tree,
                     "pin had no visible effect for size {} -- benchmark would measure a no-op",
+                    case.size
+                );
+                anyhow::ensure!(
+                    per_path_tree == one_tree_tree,
+                    "per_path and one_tree pin approaches disagree for size {}",
                     case.size
                 );
             }
@@ -184,7 +210,8 @@ impl PinBench {
             context,
             cases,
             hook,
-            filter,
+            filter_per_path,
+            filter_one_tree,
         })
     }
 }
@@ -199,8 +226,9 @@ fn random_string(rng: &mut StdRng, len: usize) -> String {
         .collect()
 }
 
-/// The per-commit pin filter: pin the identity tree by a compose of one `file` filter per pinned
-/// path (an empty pin parameter when nothing is pinned).
+/// Approach A's per-commit pin filter: pin the identity tree by a compose of one `file` filter per
+/// pinned path (an empty pin parameter when nothing is pinned). The pin argument grows one op per
+/// pinned path, so filter-engine work scales with the pinned-set size.
 fn pin_filter(pinned: &[PathBuf]) -> josh_filter::Filter {
     let param = if pinned.is_empty() {
         josh_filter::Filter::new().empty()
@@ -212,6 +240,27 @@ fn pin_filter(pinned: &[PathBuf]) -> josh_filter::Filter {
         josh_filter::compose(&files)
     };
     josh_filter::Filter::new().pin(param)
+}
+
+/// Approach B's per-commit pin filter: pin the identity tree by a single `:$.=<oid>` insert of a
+/// precomputed tree holding exactly the pinned paths. Pin legalization intersects by path
+/// (`Select`/`Exclude` subtract path-by-path, independent of blob content), so only the tree's set
+/// of paths matters -- every path gets the same shared placeholder blob, and an empty tree stands in
+/// for the empty pinned set. The pin argument is one op no matter how many paths are pinned, so
+/// filter-engine work stays near-constant as the pinned set grows.
+fn pin_filter_tree(
+    repo: &git2::Repository,
+    pinned: &[PathBuf],
+) -> anyhow::Result<josh_filter::Filter> {
+    let placeholder = repo.blob(b"x")?;
+    let mut builder = git2::build::TreeUpdateBuilder::new();
+    for path in pinned {
+        builder.upsert(path, placeholder, git2::FileMode::Blob);
+    }
+    let baseline = repo.find_tree(repo.treebuilder(None)?.write()?)?;
+    let tree = builder.create_updated(repo, &baseline)?;
+    let param = josh_filter::Filter::new().insert_oid(".", tree)?;
+    Ok(josh_filter::Filter::new().pin(param))
 }
 
 /// Build a commit whose tree holds `size` files, then generate an N_COMMITS history that churns files
@@ -318,8 +367,10 @@ fn build_index(repo: &git2::Repository, heads: &[git2::Oid]) -> anyhow::Result<g
     Ok(index)
 }
 
-/// Walk a case's linear history root-to-tip, reconstructing each commit's pin filter and recording it
-/// in `per_commit` keyed by commit oid. Each commit's churned set is recovered by diffing against its
+/// Walk a case's linear history root-to-tip, reconstructing each commit's pinned set and recording
+/// both approaches' pin filters (`per_path` and `one_tree`) keyed by commit oid. The two maps hold
+/// equivalent filters for the same pinned set, differing only in how the pin argument is expressed.
+/// Each commit's churned set is recovered by diffing against its
 /// parent; every churned path then re-rolls its hold status via `holds_back`, evolving a pinned set
 /// that is carried across commits (unchurned paths keep their status). This reproduces the intended
 /// model purely from repo-derived data, so it is identical whether the repo was freshly built or
@@ -327,7 +378,8 @@ fn build_index(repo: &git2::Repository, heads: &[git2::Oid]) -> anyhow::Result<g
 fn record_case(
     repo: &git2::Repository,
     head: git2::Oid,
-    per_commit: &mut HashMap<git2::Oid, josh_filter::Filter>,
+    per_path: &mut HashMap<git2::Oid, josh_filter::Filter>,
+    one_tree: &mut HashMap<git2::Oid, josh_filter::Filter>,
 ) -> anyhow::Result<()> {
     // Collect the linear history oldest-first so the pinned set can be folded forward across commits.
     let mut chain = vec![];
@@ -358,7 +410,8 @@ fn record_case(
         }
 
         let pins = pinned.iter().cloned().collect::<Vec<_>>();
-        per_commit.insert(oid, pin_filter(&pins));
+        per_path.insert(oid, pin_filter(&pins));
+        one_tree.insert(oid, pin_filter_tree(repo, &pins)?);
     }
     Ok(())
 }
@@ -417,37 +470,46 @@ fn ultrawide_pin_hook(c: &mut Criterion) {
     for case in &bench.cases {
         group.throughput(Throughput::Elements(case.size as u64));
 
-        group.bench_function(BenchmarkId::new("per_path", case.size), |b| {
-            b.iter_with_setup_wrapper(|runner| {
-                // Per-iteration setup (untimed): start from a cold cache and a fresh transaction so
-                // every run does the full filtering work instead of hitting memoized results. The
-                // hook is re-attached because it lives on the transaction, not the context.
-                josh_core::reset_caches().expect("reset caches");
-                let transaction = bench
-                    .context
-                    .open()
-                    .expect("open transaction")
-                    .with_filter_hook(bench.hook.clone());
+        // Both approaches are benchmarked at every size so the per-path compose and the single-tree
+        // insert can be compared directly across the scaling parameter.
+        let variants = [
+            ("per_path", bench.filter_per_path),
+            ("one_tree", bench.filter_one_tree),
+        ];
 
-                // Optional: route object writes through an in-memory mempack backend to measure the
-                // ODB write-path overhead. The odb is bound first so it outlives the mempack.
-                let mempack_odb = std::env::var_os("JOSH_BENCH_MEMPACK")
-                    .map(|_| transaction.repo().odb().expect("odb"));
-                let _mempack = mempack_odb.as_ref().map(|odb| {
-                    odb.add_new_mempack_backend(1000)
-                        .expect("add mempack backend")
+        for (name, filter) in variants {
+            group.bench_function(BenchmarkId::new(name, case.size), |b| {
+                b.iter_with_setup_wrapper(|runner| {
+                    // Per-iteration setup (untimed): start from a cold cache and a fresh transaction
+                    // so every run does the full filtering work instead of hitting memoized results.
+                    // The hook is re-attached because it lives on the transaction, not the context.
+                    josh_core::reset_caches().expect("reset caches");
+                    let transaction = bench
+                        .context
+                        .open()
+                        .expect("open transaction")
+                        .with_filter_hook(bench.hook.clone());
+
+                    // Optional: route object writes through an in-memory mempack backend to measure
+                    // the ODB write-path overhead. The odb is bound first so it outlives the mempack.
+                    let mempack_odb = std::env::var_os("JOSH_BENCH_MEMPACK")
+                        .map(|_| transaction.repo().odb().expect("odb"));
+                    let _mempack = mempack_odb.as_ref().map(|odb| {
+                        odb.add_new_mempack_backend(1000)
+                            .expect("add mempack backend")
+                    });
+
+                    let iter_span = tracing::info_span!(target: "bench", "iter").entered();
+
+                    runner.run(|| {
+                        josh_core::filter_commit(&transaction, filter, case.head)
+                            .expect("filter commit")
+                    });
+
+                    drop(iter_span);
                 });
-
-                let iter_span = tracing::info_span!(target: "bench", "iter").entered();
-
-                runner.run(|| {
-                    josh_core::filter_commit(&transaction, bench.filter, case.head)
-                        .expect("filter commit")
-                });
-
-                drop(iter_span);
             });
-        });
+        }
     }
     group.finish();
 }
