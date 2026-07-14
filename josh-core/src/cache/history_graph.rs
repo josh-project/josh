@@ -25,9 +25,14 @@ pub struct HistoryGraphInfo {
     pub reachable_roots: Vec<git2::Oid>,
 }
 
-/// Backwards-compatible thin wrapper around [`collect_history_graph_info`].
+/// Returns just the sequence number for `input`.
+///
+/// Unlike [`collect_history_graph_info`], this never reads the roots blob: the
+/// sequence number is available directly from the cached hint, so callers that
+/// only compare sequence numbers avoid a per-commit `find_blob` + parse that
+/// would otherwise be discarded.
 pub fn compute_sequence_number(transaction: &Transaction, input: git2::Oid) -> anyhow::Result<u64> {
-    Ok(collect_history_graph_info(transaction, input)?.sequence_number)
+    Ok(ensure_hint_cached(transaction, input)?.0)
 }
 
 /// Computes sequence number and reachable roots for `input` in a single walk,
