@@ -326,12 +326,12 @@
       |   |   `-- 3dd93419493d22aeaf6bcb5c0bec4c2701b049
       |   |-- info
       |   `-- pack
-      |       |-- pack-4378f3c9eee002d89f697838daffcaa2c8886b64.idx
-      |       |-- pack-4378f3c9eee002d89f697838daffcaa2c8886b64.pack
       |       |-- pack-5d11ca698a761cfb0102d4d44599349077fbafb5.idx
       |       |-- pack-5d11ca698a761cfb0102d4d44599349077fbafb5.pack
       |       |-- pack-cf634696f53f4ca2e6072988b224113252440145.idx
-      |       `-- pack-cf634696f53f4ca2e6072988b224113252440145.pack
+      |       |-- pack-cf634696f53f4ca2e6072988b224113252440145.pack
+      |       |-- pack-e5529b295aa82690ce40a2abeefb9ae9bdfe2288.idx
+      |       `-- pack-e5529b295aa82690ce40a2abeefb9ae9bdfe2288.pack
       `-- refs
           |-- heads
           |-- namespaces

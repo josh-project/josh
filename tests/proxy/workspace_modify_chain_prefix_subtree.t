@@ -450,14 +450,14 @@ Note that ws/d/ is now present in the ws
       |   `-- pack
       |       |-- pack-003dec79becceac35fcf4dc6da69067da9076b43.idx
       |       |-- pack-003dec79becceac35fcf4dc6da69067da9076b43.pack
+      |       |-- pack-1ea36f2d466e060c9ea31389ae1b3cd2ef9ee1a0.idx
+      |       |-- pack-1ea36f2d466e060c9ea31389ae1b3cd2ef9ee1a0.pack
+      |       |-- pack-3bb8600225cc4139a131c5413ee7275d07ccd58a.idx
+      |       |-- pack-3bb8600225cc4139a131c5413ee7275d07ccd58a.pack
       |       |-- pack-5f43de7285cc69f6f7f779f1c22bbcc404fea509.idx
       |       |-- pack-5f43de7285cc69f6f7f779f1c22bbcc404fea509.pack
       |       |-- pack-78ce499d43b7df7a0b507140d5134ff90a058eeb.idx
-      |       |-- pack-78ce499d43b7df7a0b507140d5134ff90a058eeb.pack
-      |       |-- pack-84f244e975f0cef0625d4b0763f10884293e2c92.idx
-      |       |-- pack-84f244e975f0cef0625d4b0763f10884293e2c92.pack
-      |       |-- pack-e876a75ec76e589fce94f48879886deedaa62f4c.idx
-      |       `-- pack-e876a75ec76e589fce94f48879886deedaa62f4c.pack
+      |       `-- pack-78ce499d43b7df7a0b507140d5134ff90a058eeb.pack
       `-- refs
           |-- heads
           |-- namespaces
