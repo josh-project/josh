@@ -161,6 +161,13 @@ impl PinBench {
             }
         }
 
+        // `record_case` writes the `one_tree` pin-argument trees straight into the provisioned repo
+        // as loose objects (`provision_repo` only packs what its build callback produced). The
+        // `one_tree` filter reads those trees on every iteration, so leaving them loose makes the
+        // benchmark measure loose-ODB lookups instead of filtering. Pack them into the repo's
+        // single packfile, matching how `provision_repo` stores the rest of the history.
+        repack(provisioned.path())?;
+
         let hook = Arc::new(BenchPinHook { per_path, one_tree });
         let filter_per_path = josh_filter::Filter::new()
             .hook(HOOK_ARG_PER_PATH)
@@ -214,6 +221,20 @@ impl PinBench {
             filter_one_tree,
         })
     }
+}
+
+/// Pack every loose object in the repo at `path` into a single packfile and drop the loose copies,
+/// so the timed iterations read from the packfile rather than paying per-object loose lookups. The
+/// pin-argument trees are not reachable from any ref, so `--keep-unreachable` is required -- a plain
+/// `git repack -a -d` only packs ref-reachable objects and would leave those trees loose.
+fn repack(path: &std::path::Path) -> anyhow::Result<()> {
+    let status = std::process::Command::new("git")
+        .arg("-C")
+        .arg(path)
+        .args(["repack", "-a", "-d", "--keep-unreachable"])
+        .status()?;
+    anyhow::ensure!(status.success(), "git repack failed with status {status}");
+    Ok(())
 }
 
 fn random_string(rng: &mut StdRng, len: usize) -> String {
