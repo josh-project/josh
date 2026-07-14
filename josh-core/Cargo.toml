@@ -21,6 +21,10 @@ harness = false
 name = "ultrawide_pin_hook"
 harness = false
 
+[[bench]]
+name = "deephistory_subdir"
+harness = false
+
 [dependencies]
 backtrace = "0.3.76"
 bitvec = "1.0.1"
