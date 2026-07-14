@@ -2149,11 +2149,12 @@ fn per_rev_filter(
 
             let parent = transaction.repo().find_commit(parent)?;
 
-            let pin_overlay = tree::populate(
-                transaction,
-                tree::pathstree("", pin_subtract.tree.id(), transaction)?.id(),
-                parent.tree_id(),
-            )?;
+            // Re-content the pinned path set from the parent's filtered tree: keep exactly the
+            // parent's entries whose path is pinned. Equivalent to the older
+            // `populate(pathstree(pin_subtract), parent)` spelling of "select the pinned paths out
+            // of the previous tree", but in a single path-intersection pass.
+            let pin_overlay =
+                tree::intersect(transaction, parent.tree_id(), pin_subtract.tree.id())?;
 
             Some((pin_subtract.tree.id(), pin_overlay))
         } else {
