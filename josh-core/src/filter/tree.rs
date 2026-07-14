@@ -15,7 +15,7 @@ pub fn pathstree<'a>(
     }
 
     let tree = repo.find_tree(input)?;
-    let mut result = empty(repo);
+    let mut builder = repo.treebuilder(None)?;
 
     for entry in tree.iter() {
         let name = entry.name().ok_or_else(|| anyhow!("no name"))?;
@@ -31,13 +31,9 @@ pub fn pathstree<'a>(
             } else {
                 path_string.to_string()
             };
-            result = replace_child(
-                repo,
-                Path::new(name),
-                repo.blob(file_contents.as_bytes())?,
-                0o0100644,
-                &result,
-            )?;
+            builder
+                .insert(name, repo.blob(file_contents.as_bytes())?, 0o0100644)
+                .ok();
         }
 
         if entry.kind() == Some(git2::ObjectType::Tree) {
@@ -49,10 +45,11 @@ pub fn pathstree<'a>(
             .id();
 
             if s != empty_id() {
-                result = replace_child(repo, Path::new(name), s, 0o0040000, &result)?;
+                builder.insert(name, s, 0o0040000).ok();
             }
         }
     }
+    let result = repo.find_tree(builder.write()?)?;
     transaction.insert_paths((input, root.to_string()), result.id());
     Ok(result)
 }
@@ -66,7 +63,7 @@ pub fn regex_replace<'a>(
     let repo = transaction.repo();
 
     let tree = repo.find_tree(input)?;
-    let mut result = tree::empty(repo);
+    let mut builder = repo.treebuilder(None)?;
 
     for entry in tree.iter() {
         let name = entry.name().ok_or(anyhow!("no name"))?;
@@ -74,24 +71,20 @@ pub fn regex_replace<'a>(
             let file_contents = get_blob(repo, &tree, std::path::Path::new(&name));
             let replaced = regex.replacen(&file_contents, 0, replacement);
 
-            result = replace_child(
-                repo,
-                std::path::Path::new(name),
-                repo.blob(replaced.as_bytes())?,
-                entry.filemode(),
-                &result,
-            )?;
+            builder
+                .insert(name, repo.blob(replaced.as_bytes())?, entry.filemode())
+                .ok();
         }
 
         if entry.kind() == Some(git2::ObjectType::Tree) {
             let s = regex_replace(entry.id(), regex, replacement, transaction)?.id();
 
             if s != tree::empty_id() {
-                result = replace_child(repo, std::path::Path::new(name), s, 0o0040000, &result)?;
+                builder.insert(name, s, 0o0040000).ok();
             }
         }
     }
-    Ok(result)
+    Ok(repo.find_tree(builder.write()?)?)
 }
 
 pub fn remove_pred<'a>(
@@ -108,20 +101,14 @@ pub fn remove_pred<'a>(
     rs_tracing::trace_scoped!("remove_pred X", "root": root);
 
     let tree = repo.find_tree(input)?;
-    let mut result = empty(repo);
+    let mut builder = repo.treebuilder(None)?;
 
     for entry in tree.iter() {
         let name = entry.name().ok_or_else(|| anyhow!("INVALID_FILENAME"))?;
         let path = std::path::PathBuf::from(root).join(name);
 
         if entry.kind() == Some(git2::ObjectType::Blob) && pred(&path, true) {
-            result = replace_child(
-                repo,
-                Path::new(entry.name().ok_or_else(|| anyhow!("no name"))?),
-                entry.id(),
-                entry.filemode(),
-                &result,
-            )?;
+            builder.insert(name, entry.id(), entry.filemode()).ok();
         }
 
         if entry.kind() == Some(git2::ObjectType::Tree) {
@@ -130,12 +117,7 @@ pub fn remove_pred<'a>(
             } else {
                 remove_pred(
                     transaction,
-                    &format!(
-                        "{}{}{}",
-                        root,
-                        if root.is_empty() { "" } else { "/" },
-                        entry.name().ok_or_else(|| anyhow!("no name"))?
-                    ),
+                    &format!("{}{}{}", root, if root.is_empty() { "" } else { "/" }, name),
                     entry.id(),
                     &pred,
                     key,
@@ -144,17 +126,12 @@ pub fn remove_pred<'a>(
             };
 
             if s != empty_id() {
-                result = replace_child(
-                    repo,
-                    Path::new(entry.name().ok_or_else(|| anyhow!("no name"))?),
-                    s,
-                    0o0040000,
-                    &result,
-                )?;
+                builder.insert(name, s, 0o0040000).ok();
             }
         }
     }
 
+    let result = repo.find_tree(builder.write()?)?;
     transaction.insert_glob((input, key), result.id());
     Ok(result)
 }
@@ -181,23 +158,26 @@ pub fn subtract(
             return Ok(input1);
         }
         rs_tracing::trace_scoped!("subtract fast");
-        let mut result_tree = tree1.clone();
+        // Start from `tree1` and drop or replace each path that also appears in `tree2`.
+        let mut builder = repo.treebuilder(Some(&tree1))?;
 
         for entry in tree2.iter() {
-            if let Some(e) = tree1.get_name(entry.name().ok_or_else(|| anyhow!("no name"))?) {
-                result_tree = replace_child(
-                    repo,
-                    Path::new(entry.name().ok_or_else(|| anyhow!("no name"))?),
-                    subtract(transaction, e.id(), entry.id())?,
-                    e.filemode(),
-                    &result_tree,
-                )?;
+            let name = entry.name().ok_or_else(|| anyhow!("no name"))?;
+            if let Some(e) = tree1.get_name(name) {
+                let sub = subtract(transaction, e.id(), entry.id())?;
+                if sub == empty_id() || sub == git2::Oid::zero() {
+                    builder.remove(name).ok();
+                } else {
+                    builder.insert(name, sub, e.filemode()).ok();
+                }
             }
         }
 
-        transaction.insert_subtract((input1, input2), result_tree.id());
+        let result = builder.write()?;
 
-        return Ok(result_tree.id());
+        transaction.insert_subtract((input1, input2), result);
+
+        return Ok(result);
     }
 
     transaction.insert_subtract((input1, input2), empty_id());
@@ -232,19 +212,19 @@ pub fn intersect(
 
     let result = if let (Ok(tree1), Ok(tree2)) = (repo.find_tree(input1), repo.find_tree(input2)) {
         rs_tracing::trace_scoped!("intersect fast");
-        let mut result_tree = empty(repo);
-        // Iterate the selector (`input2`) so cost tracks the selected set, not the full `input1`.
+        // Iterate the selector (`input2`), keeping each of its paths that also exists in `tree1`
+        // with `tree1`'s content; cost tracks the size of the selected set.
+        let mut builder = repo.treebuilder(None)?;
         for entry in tree2.iter() {
             let name = entry.name().ok_or_else(|| anyhow!("no name"))?;
             if let Some(e1) = tree1.get_name(name) {
                 let child = intersect(transaction, e1.id(), entry.id())?;
                 if child != empty_id() && child != git2::Oid::zero() {
-                    result_tree =
-                        replace_child(repo, Path::new(name), child, e1.filemode(), &result_tree)?;
+                    builder.insert(name, child, e1.filemode()).ok();
                 }
             }
         }
-        result_tree.id()
+        builder.write()?
     } else {
         // At least one side is a blob at this already-name-matched path, so the path exists in both;
         // keep `input1`'s content, matching the path-based semantics of the tree case.
@@ -509,7 +489,9 @@ pub fn trigram_index<'a>(
 
     let mut files = vec![vec![]; 8];
 
-    let mut result = empty(repo);
+    // The subtree children go into this builder (written once after the loop); the per-level
+    // OWN/SUB/BLOBS index blobs are added to the resulting tree afterward.
+    let mut builder = repo.treebuilder(None)?;
 
     /* 'entry: */
     for entry in tree.iter() {
@@ -613,10 +595,12 @@ pub fn trigram_index<'a>(
             }
 
             if s.id() != empty_id() {
-                result = replace_child(repo, Path::new(name), s.id(), 0o0040000, &result)?;
+                builder.insert(name, s.id(), 0o0040000).ok();
             }
         }
     }
+
+    let mut result = repo.find_tree(builder.write()?)?;
 
     for a in 0..arrs_sub.len() {
         if arrs_own[a].iter().any(|x| *x != 0) {

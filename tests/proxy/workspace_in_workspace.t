@@ -380,6 +380,8 @@
       |   |   `-- 3dd93419493d22aeaf6bcb5c0bec4c2701b049
       |   |-- info
       |   `-- pack
+      |       |-- pack-61cee1ce849190d88cdfb51f8fd8aea0bcfd8e63.idx
+      |       |-- pack-61cee1ce849190d88cdfb51f8fd8aea0bcfd8e63.pack
       |       |-- pack-72f0031d0154ceb6432b06e392ae4f19a8cfba65.idx
       |       |-- pack-72f0031d0154ceb6432b06e392ae4f19a8cfba65.pack
       |       |-- pack-7aa46131845bcb33ada5dd9264a54f6bda553621.idx
@@ -387,9 +389,7 @@
       |       |-- pack-969240cacd518199eb056a306b470700114f2177.idx
       |       |-- pack-969240cacd518199eb056a306b470700114f2177.pack
       |       |-- pack-b0339b769beb47ea5c28c0a4f4379ab2d18a4b29.idx
-      |       |-- pack-b0339b769beb47ea5c28c0a4f4379ab2d18a4b29.pack
-      |       |-- pack-d61f3c8dbb59af6cc0c1604d99c262527ccad92e.idx
-      |       `-- pack-d61f3c8dbb59af6cc0c1604d99c262527ccad92e.pack
+      |       `-- pack-b0339b769beb47ea5c28c0a4f4379ab2d18a4b29.pack
       `-- refs
           |-- heads
           |-- namespaces

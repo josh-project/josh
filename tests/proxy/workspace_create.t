@@ -591,8 +591,6 @@ Note that ws/d/ is now present in the ws
       |   |   `-- 5eaa207c7aba64f4deb19a9acd060c254fb239
       |   |-- info
       |   `-- pack
-      |       |-- pack-035feff92861c255244681ddc84b90e321ec6b35.idx
-      |       |-- pack-035feff92861c255244681ddc84b90e321ec6b35.pack
       |       |-- pack-0a5087aa14c50693a3d73b25e94466c4b21c7d30.idx
       |       |-- pack-0a5087aa14c50693a3d73b25e94466c4b21c7d30.pack
       |       |-- pack-132b596594e7cf7bc3af1b2c7a24fdf62d759469.idx
@@ -601,12 +599,14 @@ Note that ws/d/ is now present in the ws
       |       |-- pack-369060c82a79aba08c50857e8818b02e9fb2578f.pack
       |       |-- pack-56434dd1073324f0c25f881a1c87eff63af5c27e.idx
       |       |-- pack-56434dd1073324f0c25f881a1c87eff63af5c27e.pack
-      |       |-- pack-7014dc333fab5e96e9d4838c01b668dbd434774b.idx
-      |       |-- pack-7014dc333fab5e96e9d4838c01b668dbd434774b.pack
       |       |-- pack-721a5e2fcf4ed965e49124b30f161a6faead2313.idx
       |       |-- pack-721a5e2fcf4ed965e49124b30f161a6faead2313.pack
+      |       |-- pack-78f8060245d0cbe6e14e9baffbd43827973328cd.idx
+      |       |-- pack-78f8060245d0cbe6e14e9baffbd43827973328cd.pack
       |       |-- pack-ac69f084a822e26e92fcd950197630c5d06a5ddf.idx
-      |       `-- pack-ac69f084a822e26e92fcd950197630c5d06a5ddf.pack
+      |       |-- pack-ac69f084a822e26e92fcd950197630c5d06a5ddf.pack
+      |       |-- pack-f856631ca92126724726c23f44d834967dbcc5de.idx
+      |       `-- pack-f856631ca92126724726c23f44d834967dbcc5de.pack
       `-- refs
           |-- heads
           |-- namespaces
