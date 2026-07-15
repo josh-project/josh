@@ -391,7 +391,7 @@ pub fn apply_to_commit(
             return Ok(id);
         }
 
-        let missing = transaction.get_missing();
+        let missing = transaction.get_missing()?;
 
         let max_level = missing.last().map(|(w, _, _)| *w).unwrap_or(0);
 
@@ -623,18 +623,18 @@ pub fn apply_to_commit2(
             .transpose();
         }
         Op::Downstack(LazyRef::Resolved(base)) => {
-            if let Some(oid) = transaction.get(filter, commit.id()) {
+            if let Some(oid) = transaction.get(filter, commit.id())? {
                 return Ok(Some(oid));
             }
             let new_oid = downstack(repo, transaction, commit.id(), *base)?;
-            transaction.insert(filter, commit.id(), new_oid, false);
+            transaction.insert(filter, commit.id(), new_oid, false)?;
             return Ok(Some(new_oid));
         }
         Op::Downstack(LazyRef::Lazy(_)) => {
             return Err(anyhow!("`:_=...` with unresolved base ref"));
         }
         _ => {
-            if let Some(oid) = transaction.get(filter, commit.id()) {
+            if let Some(oid) = transaction.get(filter, commit.id())? {
                 return Ok(Some(oid));
             }
             // Continue to process the filter if not cached
@@ -677,7 +677,7 @@ pub fn apply_to_commit2(
             } else {
                 if let Some(parent) = commit.parents().next() {
                     return Ok(
-                        if let Some(fparent) = transaction.get(filter, parent.id()) {
+                        if let Some(fparent) = transaction.get(filter, parent.id())? {
                             Some(history::drop_commit(
                                 commit,
                                 vec![fparent],
@@ -701,7 +701,7 @@ pub fn apply_to_commit2(
             let p: Vec<_> = commit.parent_ids().collect();
 
             if p.len() > 1 {
-                let parent = some_or!(transaction.get(filter, p[0]), {
+                let parent = some_or!(transaction.get(filter, p[0])?, {
                     return Ok(None);
                 });
 
@@ -725,7 +725,7 @@ pub fn apply_to_commit2(
                 commit
                     .parents()
                     .map(|x| transaction.get(filter, x.id()))
-                    .collect::<Option<_>>()
+                    .collect::<anyhow::Result<Option<_>>>()?
             };
 
             let mut filtered_parent_ids: Vec<git2::Oid> =
@@ -781,7 +781,7 @@ pub fn apply_to_commit2(
                 commit
                     .parents()
                     .map(|x| transaction.get(filter, x.id()))
-                    .collect::<Option<_>>()
+                    .collect::<anyhow::Result<Option<_>>>()?
             };
 
             let mut filtered_parent_ids: Vec<git2::Oid> =
@@ -792,7 +792,7 @@ pub fn apply_to_commit2(
                 if let Some(commit_str) = link_file.get_meta("commit") {
                     if let Ok(commit_oid) = git2::Oid::from_str(&commit_str) {
                         if let Some(cmt) =
-                            transaction.get(to_filter(Op::Prefix(link_path)), commit_oid)
+                            transaction.get(to_filter(Op::Prefix(link_path)), commit_oid)?
                         {
                             link_parents.push(cmt);
                         } else {
@@ -859,7 +859,7 @@ pub fn apply_to_commit2(
                 let normal_parents = commit
                     .parent_ids()
                     .map(|parent| transaction.get(filter, parent))
-                    .collect::<Option<Vec<git2::Oid>>>();
+                    .collect::<anyhow::Result<Option<Vec<git2::Oid>>>>()?;
 
                 let normal_parents = some_or!(normal_parents, { return Ok(None) });
 
@@ -910,7 +910,7 @@ pub fn apply_to_commit2(
             if let Some((redirect, _)) = resolve_workspace_redirect(repo, &commit.tree()?, ws_path)
             {
                 if let Some(r) = apply_to_commit2(redirect, commit, transaction)? {
-                    transaction.insert(filter, commit.id(), r, true);
+                    transaction.insert(filter, commit.id(), r, true)?;
                     return Ok(Some(r));
                 } else {
                     return Ok(None);
@@ -989,7 +989,7 @@ pub fn apply_to_commit2(
             let filtered_parent_ids = commit
                 .parents()
                 .map(|x| transaction.get(filter, x.id()))
-                .collect::<Option<Vec<_>>>();
+                .collect::<anyhow::Result<Option<Vec<_>>>>()?;
 
             let filtered_parent_ids = some_or!(filtered_parent_ids, { return Ok(None) });
 
@@ -1038,10 +1038,10 @@ pub fn apply_to_commit2(
                                 if commit.id() == link_commit {
                                     let unapply =
                                         to_filter(Op::Unapply(LazyRef::Resolved(parent.id()), *uf));
-                                    let r = some_or!(transaction.get(unapply, link_commit), {
+                                    let r = some_or!(transaction.get(unapply, link_commit)?, {
                                         return Ok(None);
                                     });
-                                    transaction.insert(filter, commit.id(), r, true);
+                                    transaction.insert(filter, commit.id(), r, true)?;
                                     return Ok(Some(r));
                                 }
                             }
@@ -1066,10 +1066,10 @@ pub fn apply_to_commit2(
                 let unapply = to_filter(Op::Unapply(LazyRef::Resolved(commit.id()), subdir));
                 if let Some(commit_str) = link.get_meta("commit") {
                     if let Ok(commit_oid) = git2::Oid::from_str(&commit_str) {
-                        let r = some_or!(transaction.get(unapply, commit_oid), {
+                        let r = some_or!(transaction.get(unapply, commit_oid)?, {
                             return Ok(None);
                         });
-                        transaction.insert(filter, commit.id(), r, true);
+                        transaction.insert(filter, commit.id(), r, true)?;
                         return Ok(Some(r));
                     }
                 }
@@ -1087,7 +1087,7 @@ pub fn apply_to_commit2(
         commit
             .parents()
             .map(|x| transaction.get(filter, x.id()))
-            .collect::<Option<_>>()
+            .collect::<anyhow::Result<Option<_>>>()?
     };
 
     let filtered_parent_ids = some_or!(filtered_parent_ids, { return Ok(None) });
@@ -2135,7 +2135,7 @@ fn per_rev_filter(
     let normal_parents = commit
         .parent_ids()
         .map(|parent| transaction.get(filter, parent))
-        .collect::<Option<Vec<git2::Oid>>>();
+        .collect::<anyhow::Result<Option<Vec<git2::Oid>>>>()?;
     let normal_parents = some_or!(normal_parents, { return Ok(None) });
 
     // Special case: `:pin` filter needs to be aware of filtered history

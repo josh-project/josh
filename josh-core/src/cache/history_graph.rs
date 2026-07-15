@@ -106,7 +106,7 @@ fn ensure_hint_cached(
     transaction: &Transaction,
     input: git2::Oid,
 ) -> anyhow::Result<(u64, git2::Oid)> {
-    if let Some(hint) = try_read_cached_hint(transaction, input) {
+    if let Some(hint) = try_read_cached_hint(transaction, input)? {
         return Ok(hint);
     }
 
@@ -121,11 +121,11 @@ fn ensure_hint_cached(
     let parents_hint: Option<Vec<(u64, git2::Oid)>> = parent_ids
         .iter()
         .map(|p| try_read_cached_hint(transaction, *p))
-        .collect();
+        .collect::<anyhow::Result<_>>()?;
 
     if let Some(parents_hint) = parents_hint {
         let hint = derive_from_parents(transaction.repo(), input, &parents_hint)?;
-        store_hint(transaction, input, hint);
+        store_hint(transaction, input, hint)?;
         return Ok(hint);
     }
 
@@ -137,9 +137,16 @@ fn ensure_hint_cached(
     // Hide ancestors that already have *both* pieces cached. Hiding on seq#
     // alone would skip commits with cached seq# but missing roots, leaving
     // their roots unpopulated.
+    // The callback cannot propagate errors, so treat a failed lookup as "not
+    // cached": the walk then visits the commit and the fallible body reports
+    // the same error properly.
     let mut hide = |id| {
-        transaction.known(crate::filter::sequence_number(), id)
-            && transaction.known(crate::filter::reachable_roots(), id)
+        transaction
+            .known(crate::filter::sequence_number(), id)
+            .unwrap_or(false)
+            && transaction
+                .known(crate::filter::reachable_roots(), id)
+                .unwrap_or(false)
     };
     let walk = walk.with_hide_callback(&mut hide)?;
 
@@ -149,15 +156,15 @@ fn ensure_hint_cached(
         let parents_hint: Vec<(u64, git2::Oid)> = c_commit
             .parent_ids()
             .map(|p| {
-                try_read_cached_hint(transaction, p)
+                try_read_cached_hint(transaction, p)?
                     .ok_or_else(|| anyhow!("parent {} hint missing during walk for {}", p, oid))
             })
             .collect::<anyhow::Result<Vec<_>>>()?;
         let hint = derive_from_parents(transaction.repo(), oid, &parents_hint)?;
-        store_hint(transaction, oid, hint);
+        store_hint(transaction, oid, hint)?;
     }
 
-    try_read_cached_hint(transaction, input)
+    try_read_cached_hint(transaction, input)?
         .ok_or_else(|| anyhow!("missing graph info after walk for {}", input))
 }
 
@@ -197,21 +204,33 @@ fn derive_from_parents(
     Ok((seq, roots_blob))
 }
 
-fn try_read_cached_hint(transaction: &Transaction, input: git2::Oid) -> Option<(u64, git2::Oid)> {
-    let seq = transaction.get(crate::filter::sequence_number(), input)?;
-    let roots_blob = transaction.get(crate::filter::reachable_roots(), input)?;
-    Some((u64_from_oid(seq), roots_blob))
+fn try_read_cached_hint(
+    transaction: &Transaction,
+    input: git2::Oid,
+) -> anyhow::Result<Option<(u64, git2::Oid)>> {
+    let Some(seq) = transaction.get(crate::filter::sequence_number(), input)? else {
+        return Ok(None);
+    };
+    let Some(roots_blob) = transaction.get(crate::filter::reachable_roots(), input)? else {
+        return Ok(None);
+    };
+    Ok(Some((u64_from_oid(seq), roots_blob)))
 }
 
-fn store_hint(transaction: &Transaction, input: git2::Oid, hint: (u64, git2::Oid)) {
+fn store_hint(
+    transaction: &Transaction,
+    input: git2::Oid,
+    hint: (u64, git2::Oid),
+) -> anyhow::Result<()> {
     let (seq, roots_blob) = hint;
     transaction.insert(
         crate::filter::sequence_number(),
         input,
         oid_from_u64(seq),
         true,
-    );
-    transaction.insert(crate::filter::reachable_roots(), input, roots_blob, true);
+    )?;
+    transaction.insert(crate::filter::reachable_roots(), input, roots_blob, true)?;
+    Ok(())
 }
 
 fn write_roots_blob(repo: &git2::Repository, roots: &[git2::Oid]) -> anyhow::Result<git2::Oid> {
