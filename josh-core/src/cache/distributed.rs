@@ -40,11 +40,6 @@ impl DistributedCacheBackend {
             }
             let rp = ref_path(*filter, *shard);
             let mut builder = git2::build::TreeUpdateBuilder::new();
-            builder.upsert(
-                "filter",
-                crate::filter::as_tree(&repo, *filter)?,
-                git2::FileMode::Tree.into(),
-            );
 
             for (from, to) in &mut *m {
                 let blob = repo.blob(to.to_string().as_bytes())?;
