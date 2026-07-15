@@ -10,6 +10,10 @@ const FLUSH_AFTER: usize = 1000;
 pub struct DistributedCacheBackend {
     new_entries: std::sync::Mutex<HashMap<(Filter, u64), HashMap<git2::Oid, git2::Oid>>>,
     repo: std::sync::Mutex<git2::Repository>,
+    // Filter -> persisted tree id (`as_tree`), used to name cache refs. `as_tree` resolves
+    // insert OIDs, so ref names always reference persisted, reachable filter trees even when
+    // the filter passed in still contains unresolved ones.
+    tree_ids: std::sync::Mutex<HashMap<Filter, git2::Oid>>,
 }
 
 impl Drop for DistributedCacheBackend {
@@ -26,7 +30,17 @@ impl DistributedCacheBackend {
         Ok(Self {
             repo: std::sync::Mutex::new(repo),
             new_entries: Default::default(),
+            tree_ids: Default::default(),
         })
+    }
+
+    fn tree_id(&self, repo: &git2::Repository, filter: Filter) -> anyhow::Result<git2::Oid> {
+        if let Some(oid) = self.tree_ids.lock().unwrap().get(&filter) {
+            return Ok(*oid);
+        }
+        let oid = filter::as_tree(repo, filter)?;
+        self.tree_ids.lock().unwrap().insert(filter, oid);
+        Ok(oid)
     }
 
     pub fn flush(&self, force: bool) -> anyhow::Result<()> {
@@ -38,7 +52,7 @@ impl DistributedCacheBackend {
             if !(force || m.len() >= FLUSH_AFTER) {
                 continue;
             }
-            let rp = ref_path(*filter, *shard);
+            let rp = ref_path(self.tree_id(&repo, *filter)?, *shard);
             let mut builder = git2::build::TreeUpdateBuilder::new();
 
             for (from, to) in &mut *m {
@@ -96,12 +110,10 @@ fn is_eligible(repo: &git2::Repository, oid: git2::Oid, sequence_number: u64) ->
 // To additionally limit the size of the trees the cache is also sharded by sequence
 // number in groups of 10000. Note that this does not limit the number of entries per bucket
 // as branches mean many commits share the same sequence number.
-fn ref_path(filter: Filter, shard: u64) -> String {
+fn ref_path(filter_tree_id: git2::Oid, shard: u64) -> String {
     format!(
         "refs/josh/cache/{}/{}/{}",
-        CACHE_VERSION,
-        shard,
-        filter.id(),
+        CACHE_VERSION, shard, filter_tree_id,
     )
 }
 
@@ -140,7 +152,7 @@ impl CacheBackend for DistributedCacheBackend {
 
         std::mem::drop(guard);
 
-        let rp = ref_path(filter, shard);
+        let rp = ref_path(self.tree_id(&repo, filter)?, shard);
         let tree = if let Ok(r) = repo.revparse_single(&rp) {
             r.peel_to_tree()?
         } else {

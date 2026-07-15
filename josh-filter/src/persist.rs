@@ -91,13 +91,20 @@ fn push_tree_entries(
     }
 }
 
-struct InMemoryBuilder {
+struct InMemoryBuilder<'a> {
     // Map from hash to (kind, raw bytes)
     pending_writes: HashMap<gix_hash::ObjectId, (gix_object::Kind, Vec<u8>)>,
+    /// Present when building for persistence (`as_tree`): used to resolve the object kind of
+    /// `InsertContent::Oid` so the object can be referenced as a tree entry with the correct
+    /// mode. Absent when computing `Filter::id`, which must stay repository-independent.
+    repo: Option<&'a git2::Repository>,
+    /// Persist-time tree id per node, filled by `build_persist`. Diverges from `Filter::id`
+    /// only for nodes whose subtree contains an unresolved insert OID.
+    persist_ids: HashMap<Filter, gix_hash::ObjectId>,
 }
 
-impl InMemoryBuilder {
-    fn new() -> Self {
+impl<'a> InMemoryBuilder<'a> {
+    fn new(repo: Option<&'a git2::Repository>) -> Self {
         // Add an empty blob because we use a shortcut for them below
         // in write_blob
         let mut pending_writes = HashMap::new();
@@ -106,7 +113,20 @@ impl InMemoryBuilder {
             (gix_object::Kind::Blob, Vec::new()),
         );
 
-        Self { pending_writes }
+        Self {
+            pending_writes,
+            repo,
+            persist_ids: HashMap::new(),
+        }
+    }
+
+    /// The OID a child filter is referenced by in its parent's tree: the persist-time id when
+    /// one has been computed (persist mode), otherwise the plain `Filter::id`.
+    fn node_oid(&self, filter: Filter) -> gix_hash::ObjectId {
+        self.persist_ids
+            .get(&filter)
+            .copied()
+            .unwrap_or_else(|| gix_hash::ObjectId::from_bytes_or_panic(filter.id().as_bytes()))
     }
 
     fn write_blob(&mut self, data: &[u8]) -> gix_hash::ObjectId {
@@ -149,7 +169,7 @@ impl InMemoryBuilder {
     fn build_filter_params(&mut self, params: &[Filter]) -> anyhow::Result<gix_hash::ObjectId> {
         let mut entries = Vec::new();
         for (i, filter) in params.iter().enumerate() {
-            let child = gix_hash::ObjectId::from_bytes_or_panic(filter.id().as_bytes());
+            let child = self.node_oid(*filter);
             entries.push(gix_object::tree::Entry {
                 mode: gix_object::tree::EntryKind::Tree.into(),
                 filename: BString::from(i.to_string()),
@@ -199,7 +219,7 @@ impl InMemoryBuilder {
                 }
             };
             let key_blob = self.write_blob(key.as_bytes());
-            let filter_tree = gix_hash::ObjectId::from_bytes_or_panic(filter.id().as_bytes());
+            let filter_tree = self.node_oid(*filter);
 
             let inner_entries = vec![
                 gix_object::tree::Entry {
@@ -236,7 +256,7 @@ impl InMemoryBuilder {
         filter: Filter,
     ) -> anyhow::Result<gix_hash::ObjectId> {
         let key_blob = self.write_blob(lazy_ref.to_string().as_bytes());
-        let filter_tree = gix_hash::ObjectId::from_bytes_or_panic(filter.id().as_bytes());
+        let filter_tree = self.node_oid(filter);
 
         let inner_entries = vec![
             gix_object::tree::Entry {
@@ -273,7 +293,7 @@ impl InMemoryBuilder {
         let mut outer_entries = Vec::new();
         for (i, (lazy_ref, filter)) in params.iter().enumerate() {
             let key_blob = self.write_blob(lazy_ref.to_string().as_bytes());
-            let filter_tree = gix_hash::ObjectId::from_bytes_or_panic(filter.id().as_bytes());
+            let filter_tree = self.node_oid(*filter);
 
             let inner_entries = vec![
                 gix_object::tree::Entry {
@@ -389,8 +409,44 @@ impl InMemoryBuilder {
                     InsertContent::Inline(s) => {
                         self.build_str_params(&[path.as_ref(), "inline", s])
                     }
+                    // In persist mode (repo present), resolve the object kind and reference
+                    // the object as an actual tree entry ("o") with the matching mode, so it
+                    // is reachable from the filter tree in normal git terms and gets
+                    // transferred along with it. Without a repo (`Filter::id`), the kind is
+                    // unknown and the entry mode would be a guess, so the OID is hashed as a
+                    // string; that form is never persisted (`as_tree` always has a repo).
                     InsertContent::Oid(oid) => {
-                        self.build_str_params(&[path.as_ref(), "oid", &oid.to_string()])
+                        if let Some(repo) = self.repo {
+                            let object = repo
+                                .find_object(*oid, None)
+                                .with_context(|| format!("insert: object {} not found", oid))?;
+                            let mode = match object.kind() {
+                                Some(git2::ObjectType::Blob) => gix_object::tree::EntryKind::Blob,
+                                Some(git2::ObjectType::Tree) => gix_object::tree::EntryKind::Tree,
+                                _ => {
+                                    return Err(anyhow!(
+                                        "insert: {} is neither a blob nor a tree",
+                                        oid
+                                    ));
+                                }
+                            };
+                            let path_blob = self.write_blob(path.as_bytes());
+                            let entries = vec![
+                                gix_object::tree::Entry {
+                                    mode: gix_object::tree::EntryKind::Blob.into(),
+                                    filename: BString::from("0"),
+                                    oid: path_blob,
+                                },
+                                gix_object::tree::Entry {
+                                    mode: mode.into(),
+                                    filename: BString::from("o"),
+                                    oid: gix_hash::ObjectId::from_bytes_or_panic(oid.as_bytes()),
+                                },
+                            ];
+                            self.write_tree(gix_object::Tree { entries })
+                        } else {
+                            self.build_str_params(&[path.as_ref(), "oid", &oid.to_string()])
+                        }
                     }
                 };
                 push_tree_entries(&mut entries, [("insert", params_tree)]);
@@ -515,7 +571,7 @@ impl InMemoryBuilder {
                     let value_blob = self.write_blob(value.as_bytes());
                     push_blob_entries(&mut meta_entries, [(key.as_str(), value_blob)]);
                 }
-                let filter_tree = gix_hash::ObjectId::from_bytes_or_panic(filter.id().as_bytes());
+                let filter_tree = self.node_oid(*filter);
                 push_tree_entries(&mut meta_entries, [("0", filter_tree)]);
                 let meta_tree = self.write_tree(gix_object::Tree {
                     entries: meta_entries,
@@ -553,7 +609,7 @@ pub fn to_filter(op: Op) -> Filter {
 /// `Filter::id` calls, its children's). Called only from `Filter::id`, never on the optimizer
 /// hot path.
 pub(crate) fn build_node_oid(node: &'static Node) -> git2::Oid {
-    let mut builder = InMemoryBuilder::new();
+    let mut builder = InMemoryBuilder::new(None);
     let tree_id = builder.build_op(&node.op).expect("failed to build op");
     git2::Oid::from_bytes(tree_id.as_bytes()).unwrap()
 }
@@ -571,33 +627,47 @@ pub(crate) fn sentinel(oid: git2::Oid) -> Filter {
     Filter(node)
 }
 
+impl<'a> InMemoryBuilder<'a> {
+    /// Build the persist-time tree of every node reachable from `filter`, children first, and
+    /// return the root's persist-time id. For nodes whose subtree contains no unresolved
+    /// insert OID this is just `Filter::id` (which also preserves the identity of sentinel
+    /// nodes), and the tree is only built when it is missing from the ODB. A node containing
+    /// an unresolved insert OID hashes differently once the object is referenced directly, so
+    /// it (and every ancestor) is always built to learn its persist-time id.
+    fn build_persist(
+        &mut self,
+        odb: &git2::Odb,
+        filter: Filter,
+    ) -> anyhow::Result<gix_hash::ObjectId> {
+        if let Some(oid) = self.persist_ids.get(&filter) {
+            return Ok(*oid);
+        }
+        let op = to_op_ref(filter);
+        let mut dirty = matches!(op, Op::Insert(_, InsertContent::Oid(_)));
+        for child in child_filters(op) {
+            let child_oid = self.build_persist(odb, child)?;
+            dirty |= child_oid.as_bytes() != child.id().as_bytes();
+        }
+        let oid = if dirty {
+            self.build_op(op)?
+        } else {
+            if !odb.exists(filter.id()) {
+                self.build_op(op)?;
+            }
+            gix_hash::ObjectId::from_bytes_or_panic(filter.id().as_bytes())
+        };
+        self.persist_ids.insert(filter, oid);
+        Ok(oid)
+    }
+}
+
 pub fn as_tree(repo: &git2::Repository, filter: Filter) -> anyhow::Result<git2::Oid> {
     let odb = repo.odb()?;
     let filter = crate::opt::optimize(filter);
-    let root_oid = filter.id();
 
-    // If the tree exists in the ODB it means all children must already exist as
-    // well so we can just return it.
-    if odb.exists(root_oid) {
-        return Ok(root_oid);
-    }
-
-    // Build the tree of every node reachable from `filter` into one builder. `build_op`
-    // references children by OID (via `Filter::id`), so each reachable node must be built
-    // for its own tree object to exist in the ODB.
-    let mut builder = InMemoryBuilder::new();
-    let mut seen = std::collections::HashSet::new();
-    let mut stack = vec![filter];
-    while let Some(f) = stack.pop() {
-        if !seen.insert(f.id()) {
-            continue;
-        }
-        let op = to_op_ref(f);
-        if !odb.exists(f.id()) {
-            builder.build_op(op)?;
-        }
-        stack.extend(child_filters(op));
-    }
+    let mut builder = InMemoryBuilder::new(Some(repo));
+    let root_oid = builder.build_persist(&odb, filter)?;
+    let root_oid = git2::Oid::from_bytes(root_oid.as_bytes())?;
 
     // Write all pending objects to the git2 repository
     for (oid, (kind, data)) in builder.pending_writes {
@@ -758,16 +828,23 @@ fn from_tree2(repo: &git2::Repository, tree_oid: git2::Oid) -> anyhow::Result<Op
             let inner = repo.find_tree(entry.id())?;
             let path_blob =
                 repo.find_blob(inner.get_name("0").context("insert: missing path")?.id())?;
+            let path = std::str::from_utf8(path_blob.content())?;
+            // An "o" entry references the inserted object directly (the kind is re-derived
+            // from the repository when the filter is applied or persisted again).
+            if let Some(obj_entry) = inner.get_name("o") {
+                return Ok(Op::Insert(
+                    std::path::PathBuf::from(path),
+                    InsertContent::Oid(obj_entry.id()),
+                ));
+            }
             let kind_blob =
                 repo.find_blob(inner.get_name("1").context("insert: missing kind")?.id())?;
             let value_blob =
                 repo.find_blob(inner.get_name("2").context("insert: missing value")?.id())?;
-            let path = std::str::from_utf8(path_blob.content())?;
             let kind = std::str::from_utf8(kind_blob.content())?;
             let value = std::str::from_utf8(value_blob.content())?;
             let content = match kind {
                 "inline" => InsertContent::Inline(value.to_string()),
-                "oid" => InsertContent::Oid(git2::Oid::from_str(value)?),
                 other => return Err(anyhow::anyhow!("insert: unknown content kind {:?}", other)),
             };
             Ok(Op::Insert(std::path::PathBuf::from(path), content))

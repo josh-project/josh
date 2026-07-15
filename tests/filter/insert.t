@@ -175,3 +175,24 @@ Apply: a blob referenced by sha at `.` is rejected (a blob cannot sit at the tre
   exit:1
   $ git rev-parse --verify -q refs/josh/filter/rootblob > /dev/null; echo "ref:$?"
   ref:1
+
+Persist: the filter tree references an inserted blob directly, so it is reachable
+in normal git terms (e.g. included when the filter tree is transferred)
+  $ OID=$(printf 'reachable content' | git hash-object -w --stdin)
+  $ FID=$(josh-filter -i ":\$data.txt=$OID" master)
+  $ git rev-list --objects $FID | grep -c $OID
+  1
+
+Persist: an inserted tree is referenced with tree mode, so its contents are reachable too
+  $ TREE=$(git rev-parse 'HEAD^{tree}')
+  $ FID=$(josh-filter -i ":\$sub=$TREE" master)
+  $ git rev-list --objects $FID | grep -c $TREE
+  1
+  $ git rev-list --objects $FID | grep -c $(git rev-parse 'HEAD:sub1/file1')
+  1
+
+Persist: a filter read back from its tree round-trips to the same id and spec
+  $ test "$FID" = "$(josh-filter -i $FID master)" && echo same
+  same
+  $ josh-filter -p $FID
+  :$sub=* (glob)

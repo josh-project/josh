@@ -64,6 +64,9 @@ pub enum LazyRef {
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub enum InsertContent {
     Inline(String),
+    /// An object referenced by OID. The kind (blob or tree) is resolved against a repository
+    /// when the filter is applied or persisted; `persist::as_tree` references the object as a
+    /// tree entry with the matching mode so it is reachable from the filter tree.
     Oid(git2::Oid),
 }
 
