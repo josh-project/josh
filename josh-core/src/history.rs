@@ -22,7 +22,7 @@ pub fn walk2(
 ) -> anyhow::Result<()> {
     rs_tracing::trace_scoped!("walk2","spec":filter::spec(filter), "id": input.to_string());
 
-    if transaction.known(filter, input) {
+    if transaction.known(filter, input)? {
         return Ok(());
     }
 
@@ -40,13 +40,14 @@ pub fn walk2(
         walk.push(input)?;
         walk
     };
-    let mut hide_callback = |id| transaction.known(filter, id);
+    // The callback cannot propagate errors, so treat a failed lookup as "not known": the walk
+    // then visits the commit and the fallible body reports the same error properly.
+    let mut hide_callback = |id| transaction.known(filter, id).unwrap_or(false);
     let walk = walk.with_hide_callback(&mut hide_callback)?;
 
     log::info!(
         "Walking {} commits for: {} {:?}",
-        crate::cache::compute_sequence_number(transaction, input)
-            .expect("compute_sequence_number failed"),
+        crate::cache::compute_sequence_number(transaction, input)?,
         filter::spec(filter),
         input_commit,
     );
@@ -816,7 +817,7 @@ pub fn drop_commit(
         git2::Oid::zero()
     };
 
-    transaction.insert(filter, original_commit.id(), r, false);
+    transaction.insert(filter, original_commit.id(), r, false)?;
 
     Ok(r)
 }
@@ -839,7 +840,7 @@ pub fn create_filtered_commit_with_meta(
 
     let store = is_new || original_commit.parent_ids().len() != 1;
 
-    transaction.insert(filter, original_commit.id(), r, store);
+    transaction.insert(filter, original_commit.id(), r, store)?;
 
     Ok(r)
 }

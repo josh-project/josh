@@ -466,11 +466,11 @@ impl Transaction {
         from: git2::Oid,
         to: git2::Oid,
         store: bool,
-    ) {
+    ) -> anyhow::Result<()> {
         let sequence_number = if filter != crate::filter::sequence_number()
             && filter != crate::filter::reachable_roots()
         {
-            compute_sequence_number(self, from).expect("compute_sequence_number failed")
+            compute_sequence_number(self, from)?
         } else {
             0
         };
@@ -484,46 +484,58 @@ impl Transaction {
         // random extra commits (probability 1/256) to avoid long searches for filters that reduce
         // the history length by a very large factor.
         if store || from.as_bytes()[0] == 0 {
-            t2.cache
-                .write_all(filter, from, to, sequence_number)
-                .expect("Failed to write cache");
+            t2.cache.write_all(filter, from, to, sequence_number)?;
         }
+        Ok(())
     }
 
-    pub fn get_missing(&self) -> Vec<(usize, crate::filter::Filter, git2::Oid)> {
-        let mut missing = self.t2.borrow().missing.clone();
-        missing.retain(|(_, f, i)| !self.known(*f, *i));
-        missing.sort_by_key(|(l, f, i)| (*f, *i, *l));
-        missing.dedup_by_key(|(_, f, i)| (*f, *i));
-        missing.sort();
-        self.t2.borrow_mut().missing = missing.clone();
-        missing
+    pub fn get_missing(&self) -> anyhow::Result<Vec<(usize, crate::filter::Filter, git2::Oid)>> {
+        let missing = self.t2.borrow().missing.clone();
+        let mut retained = Vec::with_capacity(missing.len());
+        for (level, f, i) in missing {
+            if !self.known(f, i)? {
+                retained.push((level, f, i));
+            }
+        }
+        retained.sort_by_key(|(l, f, i)| (*f, *i, *l));
+        retained.dedup_by_key(|(_, f, i)| (*f, *i));
+        retained.sort();
+        self.t2.borrow_mut().missing = retained.clone();
+        Ok(retained)
     }
 
-    pub fn known(&self, filter: crate::filter::Filter, from: git2::Oid) -> bool {
-        self.get2(filter, from).is_some()
+    pub fn known(&self, filter: crate::filter::Filter, from: git2::Oid) -> anyhow::Result<bool> {
+        Ok(self.get2(filter, from)?.is_some())
     }
 
-    pub fn get(&self, filter: crate::filter::Filter, from: git2::Oid) -> Option<git2::Oid> {
-        if let Some(x) = self.get2(filter, from) {
-            Some(x)
+    pub fn get(
+        &self,
+        filter: crate::filter::Filter,
+        from: git2::Oid,
+    ) -> anyhow::Result<Option<git2::Oid>> {
+        if let Some(x) = self.get2(filter, from)? {
+            Ok(Some(x))
         } else {
             let mut t2 = self.t2.borrow_mut();
             let nesting_level = t2.nesting_level;
             t2.misses += 1;
             t2.missing.push((nesting_level, filter, from));
-            None
+            Ok(None)
         }
     }
 
-    fn get2(&self, filter: crate::filter::Filter, from: git2::Oid) -> Option<git2::Oid> {
+    fn get2(
+        &self,
+        filter: crate::filter::Filter,
+        from: git2::Oid,
+    ) -> anyhow::Result<Option<git2::Oid>> {
         if filter.is_nop() {
-            return Some(from);
+            return Ok(Some(from));
         }
         let sequence_number = if filter != crate::filter::sequence_number()
             && filter != crate::filter::reachable_roots()
         {
-            compute_sequence_number(self, from).expect("compute_sequence_number failed")
+            compute_sequence_number(self, from)?
         } else {
             0
         };
@@ -531,29 +543,26 @@ impl Transaction {
         if let Some(m) = t2.commit_map.get(&filter.id())
             && let Some(oid) = m.get(&from).cloned()
         {
-            return Some(oid);
+            return Ok(Some(oid));
         }
 
-        let oid = t2
-            .cache
-            .read_propagate(filter, from, sequence_number)
-            .expect("Failed to read from cache backend");
+        let oid = t2.cache.read_propagate(filter, from, sequence_number)?;
 
         if let Some(oid) = oid {
             if oid == git2::Oid::zero() {
-                return Some(oid);
+                return Ok(Some(oid));
             }
             if filter == crate::filter::sequence_number() {
-                return Some(oid);
+                return Ok(Some(oid));
             }
 
-            if self.repo.odb().unwrap().exists(oid) {
+            if self.repo.odb()?.exists(oid) {
                 // Only report an object as cached if it exists in the object database.
                 // This forces a rebuild in case the object was garbage collected.
-                return Some(oid);
+                return Ok(Some(oid));
             }
         }
 
-        None
+        Ok(None)
     }
 }
