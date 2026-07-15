@@ -14,7 +14,7 @@ smallvec = "1.15.1"
 pest = "2.8.6"
 pest_derive = "2.8.6"
 indoc = "2.0.7"
-itertools = "0.14.0"
+itertools = "0.15.0"
 
 anyhow.workspace = true
 git2.workspace = true
