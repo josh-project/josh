@@ -1,5 +1,7 @@
 ![Just One Single History](/splash.jpg)
 
+[![CodSpeed](https://img.shields.io/endpoint?url=https://codspeed.io/badge.json)](https://app.codspeed.io/josh-project/josh?utm_source=badge)
+
 Josh – “Just One Single History” – is a collection of tools and services together composing
 a platform for scaling out distributed development and collaboration with Git.
 

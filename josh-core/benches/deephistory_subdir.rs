@@ -1,4 +1,4 @@
-use criterion::{BenchmarkId, Criterion, Throughput, criterion_group, criterion_main};
+use criterion::{BatchSize, BenchmarkId, Criterion, Throughput, criterion_group, criterion_main};
 use josh_core::filter::Filter;
 use josh_core::git::josh_commit_signature;
 use rand::prelude::*;
@@ -255,21 +255,24 @@ fn deephistory_subdir(c: &mut Criterion) {
     for case in &bench.cases {
         group.throughput(Throughput::Elements(case.n_commits as u64));
         group.bench_function(BenchmarkId::from_parameter(case.n_commits), |b| {
-            b.iter_with_setup_wrapper(|runner| {
+            b.iter_batched(
                 // Per-iteration setup (untimed): start from a cold cache and a fresh transaction so
                 // every run does the full filtering work instead of hitting memoized results.
-                josh_core::reset_caches().expect("reset caches");
-                let transaction = bench.context.open().expect("open transaction");
-
-                let iter_span = tracing::info_span!(target: "bench", "iter").entered();
-
-                runner.run(|| {
+                || {
+                    josh_core::reset_caches().expect("reset caches");
+                    let transaction = bench.context.open().expect("open transaction");
+                    let iter_span = tracing::info_span!(target: "bench", "iter").entered();
+                    (transaction, iter_span)
+                },
+                // Timed: filter the case head. The setup guards are returned so they are dropped
+                // untimed after the measured section.
+                |(transaction, iter_span)| {
                     josh_core::filter_commit(&transaction, bench.filter, case.head)
-                        .expect("filter commit")
-                });
-
-                drop(iter_span);
-            });
+                        .expect("filter commit");
+                    (transaction, iter_span)
+                },
+                BatchSize::PerIteration,
+            );
         });
     }
     group.finish();

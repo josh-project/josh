@@ -1,4 +1,4 @@
-use criterion::{Criterion, criterion_group, criterion_main};
+use criterion::{BatchSize, Criterion, criterion_group, criterion_main};
 use josh_core::git::josh_commit_signature;
 use rand::prelude::*;
 use std::cell::RefCell;
@@ -276,33 +276,43 @@ fn ultrawide_pin(c: &mut Criterion) {
     let bench = PinBench::setup().expect("set up benchmark");
 
     c.bench_function("ultrawide_filter_pin", |b| {
-        b.iter_with_setup_wrapper(|runner| {
+        b.iter_batched(
             // Per-iteration setup (untimed): start from a cold cache and a fresh
             // transaction so every run does the full filtering work instead of
             // hitting memoized results.
-            josh_core::reset_caches().expect("reset caches");
-            let transaction = bench.context.open().expect("open transaction");
+            || {
+                josh_core::reset_caches().expect("reset caches");
+                bench.context.open().expect("open transaction")
+            },
+            // Timed: filter the head commit. The transaction is returned so it is
+            // dropped untimed after the measured section.
+            |transaction| {
+                // Optional: route object writes through an in-memory mempack backend instead
+                // of the loose-file backend, to measure the ODB write-path overhead. Reads of
+                // the pre-built history fall through to the lower-priority loose backend. The
+                // odb is bound first so it outlives the borrowed mempack handle. The mempack
+                // handle borrows the transaction, so it is kept in this scope rather than returned.
+                let mempack_odb = std::env::var_os("JOSH_BENCH_MEMPACK")
+                    .map(|_| transaction.repo().odb().expect("odb"));
+                let _mempack = mempack_odb.as_ref().map(|odb| {
+                    odb.add_new_mempack_backend(1000)
+                        .expect("add mempack backend")
+                });
 
-            // Optional: route object writes through an in-memory mempack backend instead
-            // of the loose-file backend, to measure the ODB write-path overhead. Reads of
-            // the pre-built history fall through to the lower-priority loose backend. The
-            // odb is bound first so it outlives the borrowed mempack handle.
-            let mempack_odb = std::env::var_os("JOSH_BENCH_MEMPACK")
-                .map(|_| transaction.repo().odb().expect("odb"));
-            let _mempack = mempack_odb.as_ref().map(|odb| {
-                odb.add_new_mempack_backend(1000)
-                    .expect("add mempack backend")
-            });
+                let iter_span = tracing::info_span!(target: "bench", "iter").entered();
 
-            let iter_span = tracing::info_span!(target: "bench", "iter").entered();
-
-            runner.run(|| {
                 josh_core::filter_commit(&transaction, bench.filter, bench.head)
-                    .expect("filter commit")
-            });
+                    .expect("filter commit");
 
-            drop(iter_span);
-        });
+                drop(iter_span);
+                // Release the mempack borrows so the transaction can be handed back to the harness
+                // and dropped untimed.
+                drop(_mempack);
+                drop(mempack_odb);
+                transaction
+            },
+            BatchSize::PerIteration,
+        );
     });
 }
 
