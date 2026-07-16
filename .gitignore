@@ -7,3 +7,6 @@ docs/_build
 .idea
 .claude
 .josh
+**/.DS_Store
+**/.pixi
+**/__pycache__
