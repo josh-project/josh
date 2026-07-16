@@ -1,4 +1,4 @@
-use criterion::{BenchmarkId, Criterion, Throughput, criterion_group, criterion_main};
+use criterion::{BatchSize, BenchmarkId, Criterion, Throughput, criterion_group, criterion_main};
 use josh_core::filter::Filter;
 use josh_core::git::josh_commit_signature;
 use rand::prelude::*;
@@ -278,16 +278,22 @@ fn deephistory_subdir_sparse(c: &mut Criterion) {
     for case in &bench.cases {
         group.throughput(Throughput::Elements(case.n_commits as u64));
         group.bench_function(BenchmarkId::from_parameter(case.n_commits), |b| {
-            b.iter_with_setup_wrapper(|runner| {
+            b.iter_batched(
                 // Per-iteration setup (untimed): cold cache and a fresh transaction so every run does
                 // the full filtering work instead of hitting memoized results.
-                josh_core::reset_caches().expect("reset caches");
-                let transaction = bench.context.open().expect("open transaction");
-                runner.run(|| {
+                || {
+                    josh_core::reset_caches().expect("reset caches");
+                    bench.context.open().expect("open transaction")
+                },
+                // Timed: filter the case head. The transaction is returned so it is dropped untimed
+                // after the measured section.
+                |transaction| {
                     josh_core::filter_commit(&transaction, bench.filter, case.head)
-                        .expect("filter commit")
-                });
-            });
+                        .expect("filter commit");
+                    transaction
+                },
+                BatchSize::PerIteration,
+            );
         });
     }
     group.finish();

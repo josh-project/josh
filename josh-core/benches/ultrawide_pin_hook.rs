@@ -1,4 +1,4 @@
-use criterion::{BenchmarkId, Criterion, Throughput, criterion_group, criterion_main};
+use criterion::{BatchSize, BenchmarkId, Criterion, Throughput, criterion_group, criterion_main};
 use josh_core::git::josh_commit_signature;
 use rand::prelude::*;
 use std::collections::HashMap;
@@ -500,35 +500,46 @@ fn ultrawide_pin_hook(c: &mut Criterion) {
 
         for (name, filter) in variants {
             group.bench_function(BenchmarkId::new(name, case.size), |b| {
-                b.iter_with_setup_wrapper(|runner| {
+                b.iter_batched(
                     // Per-iteration setup (untimed): start from a cold cache and a fresh transaction
                     // so every run does the full filtering work instead of hitting memoized results.
                     // The hook is re-attached because it lives on the transaction, not the context.
-                    josh_core::reset_caches().expect("reset caches");
-                    let transaction = bench
-                        .context
-                        .open()
-                        .expect("open transaction")
-                        .with_filter_hook(bench.hook.clone());
+                    || {
+                        josh_core::reset_caches().expect("reset caches");
+                        bench
+                            .context
+                            .open()
+                            .expect("open transaction")
+                            .with_filter_hook(bench.hook.clone())
+                    },
+                    // Timed: filter the case head. The transaction is returned so it is dropped
+                    // untimed after the measured section.
+                    |transaction| {
+                        // Optional: route object writes through an in-memory mempack backend to
+                        // measure the ODB write-path overhead. The odb is bound first so it
+                        // outlives the mempack. The mempack handle borrows the transaction, so it
+                        // is kept in this scope rather than returned.
+                        let mempack_odb = std::env::var_os("JOSH_BENCH_MEMPACK")
+                            .map(|_| transaction.repo().odb().expect("odb"));
+                        let _mempack = mempack_odb.as_ref().map(|odb| {
+                            odb.add_new_mempack_backend(1000)
+                                .expect("add mempack backend")
+                        });
 
-                    // Optional: route object writes through an in-memory mempack backend to measure
-                    // the ODB write-path overhead. The odb is bound first so it outlives the mempack.
-                    let mempack_odb = std::env::var_os("JOSH_BENCH_MEMPACK")
-                        .map(|_| transaction.repo().odb().expect("odb"));
-                    let _mempack = mempack_odb.as_ref().map(|odb| {
-                        odb.add_new_mempack_backend(1000)
-                            .expect("add mempack backend")
-                    });
+                        let iter_span = tracing::info_span!(target: "bench", "iter").entered();
 
-                    let iter_span = tracing::info_span!(target: "bench", "iter").entered();
-
-                    runner.run(|| {
                         josh_core::filter_commit(&transaction, filter, case.head)
-                            .expect("filter commit")
-                    });
+                            .expect("filter commit");
 
-                    drop(iter_span);
-                });
+                        drop(iter_span);
+                        // Release the mempack borrows so the transaction can be handed back to the
+                        // harness and dropped untimed.
+                        drop(_mempack);
+                        drop(mempack_odb);
+                        transaction
+                    },
+                    BatchSize::PerIteration,
+                );
             });
         }
     }

@@ -68,6 +68,6 @@ josh-starlark.workspace = true
 
 [dev-dependencies]
 rand = "0.10.1"
-criterion2 = { version = "3.0.3" }
+criterion = { version = "5.0.1", package = "codspeed-criterion-compat" }
 tempfile.workspace = true
 josh-test-support = { path = "../devtools/josh-test-support" }
