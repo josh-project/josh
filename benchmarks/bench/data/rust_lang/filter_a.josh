@@ -1,0 +1,4 @@
+core = :/src/libcore
+alloc = :/src/liballoc
+std = :/src/libstd:exclude[::sys]
+rustc_ast = :/src/libsyntax

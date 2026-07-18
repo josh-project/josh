@@ -1,0 +1,40 @@
+# Per-era bench.josh stored-filter partitions for the rust-lang/rust injection benchmark.
+#
+# The benchmark injects a bench.josh stored filter into rust-lang's real history
+# as if the repo had been developed with josh from the start. The file's content
+# depends on the era a commit falls in; each [[era]] below applies from its
+# `commit` (inclusive) until the next era's commit. The last era applies through HEAD.
+#
+# `filter` names a byte-exact *.josh file in this directory holding the bench.josh
+# content for that era; inject it verbatim (or git hash-object -w it to pre-create
+# the blob). Order is OLDEST first. All four contents were validated against
+# josh-filter: each materializes to exactly {alloc, core, rustc_ast, std} with
+# std's platform sys/ subtree excluded.
+
+[[era]]
+id = "A"
+commit = "87115fd001440652291c509a77bda74fa511dab0"
+date = "2014-05-07"
+note = "libstd facade reorg; core crate reborn at src/libcore. Valid through the 2020-02-29 rustc_ast rename."
+filter = "filter_a.josh"
+
+[[era]]
+id = "B"
+commit = "e94d3b70cb495df83230cff9ef5bb00f235883e4"
+date = "2020-02-29"
+note = "rustc_ast: libsyntax -> librustc_ast (verified 1:1 rename). Valid through the std-libs move."
+filter = "filter_b.josh"
+
+[[era]]
+id = "C"
+commit = "2c31b45ae878b821975c4ebd94cc1e49f6073fd0"
+date = "2020-07-27"
+note = "std libs -> library/. rustc_ast still at src/librustc_ast. Note: committer-date is 2020-07-27 (author-date 2020-06-11); the sys exclude path becomes ::src/sys because the std tree gains an inner src/."
+filter = "filter_c.josh"
+
+[[era]]
+id = "D"
+commit = "9e5f7d5631b8f4009ac1c693e585d4b7108d4275"
+date = "2020-08-30"
+note = "compiler -> compiler/. rustc_ast moves to compiler/rustc_ast. Valid through HEAD."
+filter = "filter_d.josh"
