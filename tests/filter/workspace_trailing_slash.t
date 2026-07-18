@@ -46,6 +46,19 @@
   $ git commit -m "add trailing slash" 1> /dev/null
 
   $ josh-filter -s :workspace=ws master --update refs/josh/master
+  [*Z WARN  josh_core::filter] failed to parse filter file "ws/workspace.josh", ignoring it: Invalid workspace: (glob)
+      ----
+       --> 2:1
+        |
+      2 | c/ = :/sub1
+        | ^---
+        |
+        = expected EOI, filter_spec, or file_entry
+      
+      a/b = :/sub2
+      c/ = :/sub1
+      
+      ----
   c3efa54c6c3c37888c4a9a729f9161afd9741ca7
   [2] :[
       c = :/sub1

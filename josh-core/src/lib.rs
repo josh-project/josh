@@ -176,6 +176,8 @@ pub fn filter_commit(
         obj.peel_to_commit()?
     };
 
+    filter::warn_fallbacks_for_tree(original_commit.tree_id());
+
     let filter_commit = if let Some(s) = transaction.get_ref(filterobj, oid) {
         s
     } else {

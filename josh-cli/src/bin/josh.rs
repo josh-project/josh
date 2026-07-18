@@ -195,7 +195,12 @@ pub struct FilterArgs {
 }
 
 fn main() {
-    env_logger::init();
+    // Show warnings from josh_core::filter by default (e.g. filters silently degrading to
+    // :empty), while still letting RUST_LOG override the filter entirely.
+    env_logger::Builder::from_env(
+        env_logger::Env::default().default_filter_or("error,josh_core::filter=warn"),
+    )
+    .init();
     let cli = Cli::parse();
 
     let result = match &cli.command {

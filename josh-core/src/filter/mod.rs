@@ -26,11 +26,25 @@ static WORKSPACES: LazyLock<std::sync::Mutex<std::collections::HashMap<git2::Oid
 static ANCESTORS: LazyLock<
     std::sync::Mutex<std::collections::HashMap<git2::Oid, std::collections::HashSet<git2::Oid>>>,
 > = LazyLock::new(Default::default);
+static WARNED_SCRIPTS: LazyLock<std::sync::Mutex<std::collections::HashSet<git2::Oid>>> =
+    LazyLock::new(Default::default);
+static WARN_TREES: LazyLock<std::sync::Mutex<std::collections::HashSet<git2::Oid>>> =
+    LazyLock::new(Default::default);
+
+/// Mark `tree_id` as the root tree of an explicitly requested commit. Filter file failures that
+/// degrade the filter to `:empty` are logged at warn level only when they occur in one of these
+/// trees; the same breakage in other (historical) trees is logged at trace level, so filtering a
+/// full history does not warn about breakage that is already fixed in the requested commit.
+pub fn warn_fallbacks_for_tree(tree_id: git2::Oid) {
+    WARN_TREES.lock().unwrap().insert(tree_id);
+}
 
 /// Clear the process-global workspace and ancestor caches.
 pub fn clear_caches() {
     WORKSPACES.lock().unwrap().clear();
     ANCESTORS.lock().unwrap().clear();
+    WARNED_SCRIPTS.lock().unwrap().clear();
+    WARN_TREES.lock().unwrap().clear();
 }
 
 // MESSAGE_MATCH_ALL_REGEX is now in josh-filter
@@ -463,9 +477,27 @@ fn get_starlark<'a>(
 ) -> Filter {
     let star_path = path.with_added_extension("star");
     let script = tree::get_blob(transaction.repo(), tree, &star_path);
+    // Warn only when the failing script is part of an explicitly requested tree (see
+    // warn_fallbacks_for_tree), and only once per unique script blob, so filtering a long
+    // history does not warn about breakage in commits other than the requested ones.
+    let script_id = tree
+        .get_path(&star_path)
+        .map(|entry| entry.id())
+        .unwrap_or_else(|_| git2::Oid::zero());
+    let warn_here = WARN_TREES.lock().unwrap().contains(&tree.id());
+    let first_failure = |e: &dyn std::fmt::Display, what: &str| {
+        if warn_here && WARNED_SCRIPTS.lock().unwrap().insert(script_id) {
+            tracing::warn!("{} for {:?}, ignoring filter: {}", what, star_path, e);
+        } else {
+            tracing::trace!("{} for {:?}, ignoring filter: {}", what, star_path, e);
+        }
+    };
     let filtered_tree = match apply(transaction, subfilter, Rewrite::from_tree(tree.clone())) {
         Ok(rw) => rw.into_tree(),
-        Err(_) => return to_filter(Op::Empty),
+        Err(e) => {
+            first_failure(&e, "subfilter apply failed");
+            return to_filter(Op::Empty);
+        }
     };
     match josh_starlark::evaluate(&script, filtered_tree.id(), transaction.repo()) {
         Ok(f) => {
@@ -473,7 +505,7 @@ fn get_starlark<'a>(
             compose(&[star_file, subfilter, f])
         }
         Err(e) => {
-            tracing::trace!("starlark evaluation failed: {}", e);
+            first_failure(&e, "starlark evaluation failed");
             to_filter(Op::Empty)
         }
     }
@@ -494,12 +526,27 @@ fn get_filter<'a>(
     if let Some(f) = WORKSPACES.lock().unwrap().get(&ws_id) {
         *f
     } else {
-        let f = parse(&ws_blob).unwrap_or_else(|_| to_filter(Op::Empty));
-        let f = legalize_stored(transaction, f, tree).unwrap_or_else(|_| to_filter(Op::Empty));
+        let f = parse(&ws_blob).unwrap_or_else(|e| {
+            tracing::warn!(
+                "failed to parse filter file {:?}, ignoring it: {}",
+                ws_path,
+                e
+            );
+            to_filter(Op::Empty)
+        });
+        let f = legalize_stored(transaction, f, tree).unwrap_or_else(|e| {
+            tracing::warn!(
+                "failed to legalize stored filter file {:?}, ignoring it: {}",
+                ws_path,
+                e
+            );
+            to_filter(Op::Empty)
+        });
 
         let f = if invert(f).is_ok() {
             f
         } else {
+            tracing::warn!("filter file {:?} is not invertible, ignoring it", ws_path);
             to_filter(Op::Empty)
         };
         WORKSPACES.lock().unwrap().insert(ws_id, f);

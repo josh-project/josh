@@ -7,7 +7,7 @@ mod transaction;
 
 /// Schema version for on-disk cache structures. Bump when the layout of the
 /// sled trees or distributed cache refs changes incompatibly.
-pub const CACHE_VERSION: u64 = 28;
+pub const CACHE_VERSION: u64 = 29;
 
 pub use backend::CacheBackend;
 pub use distributed::DistributedCacheBackend;
