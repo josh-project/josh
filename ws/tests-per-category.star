@@ -33,13 +33,13 @@ def generate_test_nodes():
         ]).prefix("inputs")
 
         metadata = compose([
-            filter.blob("label", category),
-            filter.blob("output", "workdir"),
+            filter.insert("label", category),
+            filter.insert("output", "workdir"),
             filter.treeid("image", filter.stored("images/prysk-test-local")),
         ])
 
         if is_experimental:
-            env = filter.blob("JOSH_EXPERIMENTAL_FEATURES", "1").prefix("env")
+            env = filter.insert("JOSH_EXPERIMENTAL_FEATURES", "1").prefix("env")
             test_node = compose([metadata, inputs, worktree, env])
         else:
             test_node = compose([metadata, inputs, worktree])
