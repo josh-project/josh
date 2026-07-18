@@ -1,6 +1,6 @@
 [package]
 name = "axum-cgi-server"
-version = "26.6.11"
+version = "26.7.19"
 edition = "2024"
 license-file = "../axum-cgi/LICENSE"
 repository = "https://github.com/josh-project/josh"
