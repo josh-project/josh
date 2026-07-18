@@ -1,6 +1,6 @@
 [package]
 name = "josh-github-codegen-graphql"
-version = "26.6.11"
+version = "26.7.19"
 edition = "2021"
 authors = ["Josh Project authors <contact@josh-project.dev>"]
 description = "GitHub GraphQL codegen for Josh"
