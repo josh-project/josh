@@ -55,7 +55,6 @@ gix-config = "0.52.0"
 gix-submodule = "0.26.0"
 libc = "0.2.184"
 regex = "1.12.3"
-rs_tracing = { version = "1.1.0", features = ["rs_tracing"] }
 serde = { version = "1.0.228", features = ["std", "derive"] }
 serde_json = "1.0.149"
 serde_yaml = "0.9.34"

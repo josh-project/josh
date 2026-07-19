@@ -278,12 +278,9 @@ pub fn trigram_search<'a>(
     results: &mut Vec<String>,
     ord: usize,
 ) -> anyhow::Result<()> {
-    rs_tracing::trace_scoped!("trigram_search", "ord": ord, "root": root);
     let repo = transaction.repo();
 
     let hd = {
-        rs_tracing::trace_scoped!("get blob own");
-
         if let Some(blob) = tree
             .get_name(&format!("OWN{}", ord))
             .map(|x| repo.find_blob(x.id()))
@@ -297,7 +294,6 @@ pub fn trigram_search<'a>(
     };
 
     let dmatch = if !hd.is_empty() {
-        rs_tracing::trace_scoped!("dmatch own");
         let mut dmatch = true;
         for (a, b) in dir_filter.iter().zip(hd.iter()) {
             if a & b != *a {
@@ -311,7 +307,6 @@ pub fn trigram_search<'a>(
     };
 
     if dmatch {
-        rs_tracing::trace_scoped!("search blobs");
         let b = get_blob(repo, &tree, Path::new(&format!("BLOBS{}", ord)));
 
         let mut filename = None;
@@ -348,15 +343,12 @@ pub fn trigram_search<'a>(
     }
 
     let hd = {
-        rs_tracing::trace_scoped!("get blob sub");
-
         if let Some(blob) = tree
             .get_name(&format!("SUB{}", ord))
             .map(|x| repo.find_blob(x.id()))
         {
             let blob = blob?;
             let b = unsafe { std::str::from_utf8_unchecked(blob.content()) };
-            rs_tracing::trace_scoped!("hex decode sub");
             hex::decode(b.lines().collect::<Vec<_>>().join(""))?
         } else {
             return Ok(());
@@ -364,16 +356,12 @@ pub fn trigram_search<'a>(
     };
 
     {
-        rs_tracing::trace_scoped!("dmatch sub");
-
         for (a, b) in dir_filter.iter().zip(hd.iter()) {
             if a & b != *a {
                 return Ok(());
             }
         }
     }
-
-    rs_tracing::trace_scoped!("down iter");
 
     let rpath = transaction.repo().path();
 

@@ -55,7 +55,6 @@ gix-hash.workspace = true
 hex.workspace = true
 log.workspace = true
 regex.workspace = true
-rs_tracing.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 serde_yaml.workspace = true

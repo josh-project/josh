@@ -95,7 +95,6 @@ pub fn remove_pred<'a>(
     if let Some(cached) = transaction.get_glob((input, key)) {
         return Ok(repo.find_tree(cached)?);
     }
-    rs_tracing::trace_scoped!("remove_pred X", "root": root);
 
     let tree = repo.find_tree(input)?;
     let mut builder = repo.treebuilder(None)?;
@@ -154,7 +153,6 @@ pub fn subtract(
         if input2 == empty_id() {
             return Ok(input1);
         }
-        rs_tracing::trace_scoped!("subtract fast");
         // Start from `tree1` and drop or replace each path that also appears in `tree2`.
         let mut builder = repo.treebuilder(Some(&tree1))?;
 
@@ -208,7 +206,6 @@ pub fn intersect(
     }
 
     let result = if let (Ok(tree1), Ok(tree2)) = (repo.find_tree(input1), repo.find_tree(input2)) {
-        rs_tracing::trace_scoped!("intersect fast");
         // Iterate the selector (`input2`), keeping each of its paths that also exists in `tree1`
         // with `tree1`'s content; cost tracks the size of the selected set.
         let mut builder = repo.treebuilder(None)?;
@@ -283,7 +280,6 @@ pub fn diff_paths(
     input2: git2::Oid,
     root: &str,
 ) -> anyhow::Result<Vec<(String, i32)>> {
-    rs_tracing::trace_scoped!("diff_paths");
     if input1 == input2 {
         return Ok(vec![]);
     }
@@ -389,15 +385,9 @@ pub fn overlay(
     }
 
     if let (Ok(tree1), Ok(tree2)) = (repo.find_tree(input1), repo.find_tree(input2)) {
-        rs_tracing::trace_begin!( "overlay",
-            "overlay_a": format!("{}", input1),
-            "overlay_b": format!("{}", input2),
-            "overlay_ab": format!("{} - {}", input1, input2));
         let mut builder = repo.treebuilder(Some(&tree1))?;
 
-        let mut i = 0;
         for entry in tree2.iter() {
-            i += 1;
             let (id, mode) =
                 if let Some(e) = tree1.get_name(entry.name().ok_or_else(|| anyhow!("no name"))?) {
                     (overlay(transaction, e.id(), entry.id())?, e.filemode())
@@ -413,7 +403,6 @@ pub fn overlay(
         }
 
         let rid = builder.write()?;
-        rs_tracing::trace_end!( "overlay", "count":i);
 
         transaction.insert_overlay((input1, input2), rid);
         return Ok(rid);
@@ -516,8 +505,6 @@ pub fn populate(
     paths: git2::Oid,
     content: git2::Oid,
 ) -> anyhow::Result<git2::Oid> {
-    rs_tracing::trace_scoped!("repopulate");
-
     if let Some(cached) = transaction.get_populate((paths, content)) {
         return Ok(cached);
     }
@@ -556,7 +543,6 @@ pub fn compose_fast(
     transaction: &cache::Transaction,
     trees: Vec<git2::Oid>,
 ) -> anyhow::Result<git2::Tree<'_>> {
-    rs_tracing::trace_scoped!("compose_fast");
     let repo = transaction.repo();
     let mut result = empty_id();
     for tree in trees {
@@ -570,7 +556,6 @@ pub fn compose<'a>(
     transaction: &'a cache::Transaction,
     trees: Vec<(&Filter, git2::Tree<'a>)>,
 ) -> anyhow::Result<git2::Tree<'a>> {
-    rs_tracing::trace_scoped!("compose");
     let repo = transaction.repo();
     let mut result = empty(repo);
     let mut taken = empty(repo);
