@@ -23,7 +23,7 @@
   [3] :INDEX
   [3] reachable_roots
   [3] sequence_number
-  [6] _trigram_index
+  [8] _trigram_index
 
   $ josh-filter :/ --search "Another"
   sub1/file2:1: Another document with more 
