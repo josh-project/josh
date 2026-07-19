@@ -448,13 +448,14 @@ impl Revision {
         let index_tree = filter::apply(&transaction, ifilterobj, x.clone())?;
 
         /* let start = std::time::Instant::now(); */
-        let candidates = filter::tree::search_candidates(
+        let candidates = filter::trigram::search_candidates(
             &transaction,
             index_tree.tree(),
             &string,
             max_complexity,
         )?;
-        let results = filter::tree::search_matches(&transaction, x.tree(), &string, &candidates)?;
+        let results =
+            filter::trigram::search_matches(&transaction, x.tree(), &string, &candidates)?;
         /* let duration = start.elapsed(); */
 
         let mut r = vec![];
