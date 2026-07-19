@@ -21,6 +21,10 @@ use josh_core::git::{normalize_repo_path, spawn_git_command};
     long_about = None,
 )]
 pub struct Cli {
+    /// Disable the distributed filter cache (don't read, write or fetch it)
+    #[arg(long = "no-distributed-cache", action = clap::ArgAction::SetFalse, global = true)]
+    pub distributed_cache: bool,
+
     /// Subcommand to run
     #[command(subcommand)]
     pub command: Command,
@@ -200,7 +204,7 @@ fn main() {
 
     let result = match &cli.command {
         Command::Standalone(cmd) => run_standalone(cmd),
-        Command::Repo(cmd) => run_repo(cmd),
+        Command::Repo(cmd) => run_repo(cmd, cli.distributed_cache),
     };
 
     if let Err(e) = result {
@@ -220,7 +224,7 @@ fn run_standalone(cmd: &StandaloneCommand) -> anyhow::Result<()> {
     }
 }
 
-fn run_repo(cmd: &RepoCommand) -> anyhow::Result<()> {
+fn run_repo(cmd: &RepoCommand, distributed_cache: bool) -> anyhow::Result<()> {
     // For clone, do the initial repo setup before creating transaction
     let repo_path = if let RepoCommand::Clone(args) = cmd {
         // For clone, we're not in a git repo initially, so clone first and use that path
@@ -241,14 +245,15 @@ fn run_repo(cmd: &RepoCommand) -> anyhow::Result<()> {
 
     josh_core::cache::sled_load(&git_common_dir).context("Failed to load sled cache")?;
 
-    let cache = std::sync::Arc::new(
-        josh_core::cache::CacheStack::new()
-            .with_backend(josh_core::cache::SledCacheBackend::default())
-            .with_backend(
-                josh_core::cache::DistributedCacheBackend::new(&git_common_dir)
-                    .context("Failed to create DistributedCacheBackend")?,
-            ),
-    );
+    let mut cache_stack = josh_core::cache::CacheStack::new()
+        .with_backend(josh_core::cache::SledCacheBackend::default());
+    if distributed_cache {
+        cache_stack = cache_stack.with_backend(
+            josh_core::cache::DistributedCacheBackend::new(&git_common_dir)
+                .context("Failed to create DistributedCacheBackend")?,
+        );
+    }
+    let cache = std::sync::Arc::new(cache_stack);
 
     let mut ctx = josh_core::cache::TransactionContext::new(&repo_path, cache.clone());
 
@@ -263,9 +268,9 @@ fn run_repo(cmd: &RepoCommand) -> anyhow::Result<()> {
     let transaction = ctx.open().context("Failed TransactionContext::open")?;
 
     match cmd {
-        RepoCommand::Clone(args) => handle_clone(args, &transaction),
-        RepoCommand::Fetch(args) => handle_fetch(args, &transaction),
-        RepoCommand::Pull(args) => handle_pull(args, &transaction),
+        RepoCommand::Clone(args) => handle_clone(args, &transaction, distributed_cache),
+        RepoCommand::Fetch(args) => handle_fetch(args, &transaction, distributed_cache),
+        RepoCommand::Pull(args) => handle_pull(args, &transaction, distributed_cache),
         RepoCommand::Push(args) => josh_cli::commands::push::handle_push(args, &transaction),
         RepoCommand::Changes(args) => match &args.command {
             ChangesCommand::Publish(publish_args) => {
@@ -277,6 +282,7 @@ fn run_repo(cmd: &RepoCommand) -> anyhow::Result<()> {
                         rref: "HEAD".to_string(),
                     },
                     &transaction,
+                    distributed_cache,
                 )
             }
             ChangesCommand::List(list_args) => {
@@ -342,6 +348,7 @@ fn clone_repo(args: &CloneArgs) -> anyhow::Result<std::path::PathBuf> {
 fn handle_clone(
     args: &CloneArgs,
     transaction: &josh_core::cache::Transaction,
+    distributed_cache: bool,
 ) -> anyhow::Result<()> {
     let repo = transaction.repo();
 
@@ -352,7 +359,7 @@ fn handle_clone(
     };
 
     // Use handle_fetch to do the actual fetching and filtering
-    handle_fetch(&fetch_args, transaction)?;
+    handle_fetch(&fetch_args, transaction, distributed_cache)?;
 
     // Get the default branch name from the remote HEAD symref
     let default_branch = if args.branch == "HEAD" {
@@ -415,7 +422,11 @@ fn handle_clone(
     Ok(())
 }
 
-fn handle_pull(args: &PullArgs, transaction: &josh_core::cache::Transaction) -> anyhow::Result<()> {
+fn handle_pull(
+    args: &PullArgs,
+    transaction: &josh_core::cache::Transaction,
+    distributed_cache: bool,
+) -> anyhow::Result<()> {
     // Create FetchArgs from PullArgs
     let fetch_args = FetchArgs {
         remote: args.remote.clone(),
@@ -423,7 +434,7 @@ fn handle_pull(args: &PullArgs, transaction: &josh_core::cache::Transaction) -> 
     };
 
     // Use handle_fetch to do the actual fetching and filtering
-    handle_fetch(&fetch_args, transaction)?;
+    handle_fetch(&fetch_args, transaction, distributed_cache)?;
 
     // Now use actual git pull to integrate the changes
     let mut git_args = vec!["pull"];
@@ -454,6 +465,7 @@ fn try_parse_symref(remote: &str, output: &str) -> Option<(String, String)> {
 fn handle_fetch(
     args: &FetchArgs,
     transaction: &josh_core::cache::Transaction,
+    distributed_cache: bool,
 ) -> anyhow::Result<()> {
     let repo = transaction.repo();
     let repo_path = normalize_repo_path(repo.path());
@@ -470,8 +482,10 @@ fn handle_fetch(
         .context("git fetch to josh/remotes failed")?;
 
     // Warm the local cache from the remote before filtering
-    if let Err(e) = josh_cli::commands::cache::fetch_remote_cache(transaction, &url, filter) {
-        eprintln!("Warning: could not fetch remote cache: {e}");
+    if distributed_cache {
+        if let Err(e) = josh_cli::commands::cache::fetch_remote_cache(transaction, &url, filter) {
+            eprintln!("Warning: could not fetch remote cache: {e}");
+        }
     }
 
     // Set up remote HEAD reference using git ls-remote

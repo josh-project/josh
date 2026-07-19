@@ -188,3 +188,24 @@ A fresh clone with the same filter can fetch that cache
   refs/josh/filtered/24ccd8d89e1e9751b3e5ae070b6435989121c346/heads/master
 
   $ cd ${TESTTMP}
+
+With --no-distributed-cache, fetch neither pulls nor creates any distributed cache refs
+
+  $ git init -q local7 1>/dev/null
+  $ cd local7
+  $ josh remote add origin ${TESTTMP}/remote/libs :/sub1
+  Added remote 'origin' with filter ':/sub1'
+
+  $ josh --no-distributed-cache fetch 2>/dev/null
+
+  $ git for-each-ref --format='%(refname)' 'refs/josh/cache/' | wc -l | tr -d ' '
+  0
+
+A regular fetch in the same repo does fetch the distributed cache refs
+
+  $ josh fetch 2>/dev/null
+
+  $ git for-each-ref --format='%(refname)' 'refs/josh/cache/' | wc -l | tr -d ' '
+  3
+
+  $ cd ${TESTTMP}
