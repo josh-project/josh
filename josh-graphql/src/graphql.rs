@@ -444,14 +444,14 @@ impl Revision {
         let index_tree = filter::apply(&transaction, ifilterobj, x.clone())?;
 
         /* let start = std::time::Instant::now(); */
-        let candidates = filter::trigram::search_candidates(
-            &transaction,
+        let candidates = josh_search::search_candidates(
+            transaction.repo(),
             index_tree.tree(),
             &string,
             max_complexity,
         )?;
         let results =
-            filter::trigram::search_matches(&transaction, x.tree(), &string, &candidates)?;
+            josh_search::search_matches(transaction.repo(), x.tree(), &string, &candidates)?;
         /* let duration = start.elapsed(); */
 
         let mut r = vec![];

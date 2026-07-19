@@ -21,6 +21,7 @@ toml.workspace = true
 tracing.workspace = true
 
 josh-core.workspace = true
+josh-search.workspace = true
 
 [dependencies.chrono]
 default-features = false

@@ -31,6 +31,7 @@ josh-changes.workspace = true
 josh-core.workspace = true
 josh-compose.workspace = true
 josh-compose-podman.workspace = true
+josh-search.workspace = true
 josh-github-auth.workspace = true
 josh-github-keyring.workspace = true
 josh-github-graphql.workspace = true
