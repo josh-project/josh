@@ -21,5 +21,6 @@ worktree = :[
         ::**/build.rs
         ::**/benches/
         ::josh-core/benches/
+        ::josh-search/benches/
     ]:replace("(?s).+":"")
 ]
