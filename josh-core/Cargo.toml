@@ -67,6 +67,7 @@ toml.workspace = true
 
 josh-filter.workspace = true
 josh-memodb.workspace = true
+josh-search.workspace = true
 josh-starlark.workspace = true
 
 [dev-dependencies]

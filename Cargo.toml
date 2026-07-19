@@ -11,6 +11,7 @@ members = [
     "josh-link",
     "josh-proxy",
     "josh-rpc",
+    "josh-search",
     "josh-ssh-shell",
     "josh-templates",
     "josh-starlark",
@@ -91,6 +92,7 @@ josh-compose = { path = "josh-compose", version = "26.7.19" }
 josh-graphql = { path = "josh-graphql", version = "26.7.19" }
 josh-link = { path = "josh-link", version = "26.7.19" }
 josh-rpc = { path = "josh-rpc", version = "26.7.19" }
+josh-search = { path = "josh-search", version = "26.7.19" }
 josh-starlark = { path = "josh-starlark", version = "26.7.19" }
 josh-templates = { path = "josh-templates", version = "26.7.19" }
 
