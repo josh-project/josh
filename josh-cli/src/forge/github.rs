@@ -6,6 +6,8 @@ use josh_github_auth::middleware::GithubAuthMiddleware;
 use josh_github_graphql::connection::GithubApiConnection;
 use josh_github_graphql::request::GITHUB_GRAPHQL_API_URL;
 
+use crate::cli_eprintln as eprintln;
+
 /// Login to GitHub using device flow and store the token.
 pub async fn login() -> anyhow::Result<()> {
     let flow = DeviceAuthFlow::new(APP_CLIENT_ID);
@@ -77,7 +79,8 @@ pub async fn make_api_connection() -> Option<GithubApiConnection> {
 
 pub fn api_connection_hint() -> String {
     format!(
-        "Couldn't create API connection; log in to GitHub with 'josh auth login github', or set {} environment variable",
+        "Couldn't create API connection; log in to GitHub with \
+         'josh auth login github', or set {} environment variable",
         GITHUB_USER_TOKEN_ENV
     )
 }

@@ -107,5 +107,4 @@ Reject path: `--merge` against a non-existent destination ref with no
 
   $ josh push central HEAD:refs/heads/other --merge
   Error: --merge requires --base=<ref> or an existing destination ref
-  --merge requires --base=<ref> or an existing destination ref
   [1]

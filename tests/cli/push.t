@@ -102,6 +102,6 @@ reverse filtering. Without --base the unfiltered base would be zero;
   $ cd ${TESTTMP}/filtered
   $ josh push origin HEAD:refs/heads/other --base=does-not-exist
   Error: Failed to resolve --base ref (looked up 'refs/josh/remotes/origin/does-not-exist')
-  Failed to resolve --base ref (looked up 'refs/josh/remotes/origin/does-not-exist')
-  * (glob)
+  Caused by:
+    * (glob)
   [1]

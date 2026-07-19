@@ -193,15 +193,15 @@
 # Test error case - empty path
   $ josh link add "" ../remote.git
   Error: Path cannot be empty
-  Path cannot be empty
   [1]
 
 # Test error case - not in a git repository
   $ cd ..
   $ josh link add test ../remote.git
   Error: Not in a git repository
-  Not in a git repository
-  could not find repository at '.'; class=Repository (6); code=NotFound (-3)
+  Caused by:
+    could not find repository at '.'; class=Repository (6); code=NotFound (-3)
+  Hint: Run this command inside a Git working tree.
   [1]
 
   $ cd test-repo
@@ -217,7 +217,7 @@
   $ josh link --help
   Manage josh links (like `josh remote` but for links)
   
-  Usage: josh link <COMMAND>
+  Usage: josh link [OPTIONS] <COMMAND>
   
   Commands:
     add     Add a link with optional filter and target branch
@@ -227,7 +227,13 @@
     help    Print this message or the help of the given subcommand(s)
   
   Options:
-    -h, --help  Print help
+        --output <OUTPUT>  Output format; JSON schemas are versioned and stable [env: JOSH_OUTPUT=] [default: human] [possible values: human, json, jsonl]
+        --pretty           Pretty-print --output json instead of emitting one compact line
+    -q, --quiet            Suppress diagnostics and omit messages from machine output
+        --color <COLOR>    Control color in Josh and child Git processes [env: JOSH_COLOR=] [default: auto] [possible values: auto, always, never]
+        --no-progress      Disable progress displays and capture child process output
+        --non-interactive  Disable prompts, browser launches, and credential input [env: JOSH_NON_INTERACTIVE=]
+    -h, --help             Print help
 
   $ josh link add --help
   Add a link with optional filter and target branch
@@ -240,8 +246,14 @@
     [FILTER]  Optional filter to apply to the linked repository
   
   Options:
+        --output <OUTPUT>  Output format; JSON schemas are versioned and stable [env: JOSH_OUTPUT=] [default: human] [possible values: human, json, jsonl]
+        --pretty           Pretty-print --output json instead of emitting one compact line
         --target <TARGET>  Target branch to link (defaults to HEAD)
         --mode <MODE>      Link mode: embedded, snapshot, or pointer (defaults to snapshot) [default: snapshot]
+    -q, --quiet            Suppress diagnostics and omit messages from machine output
+        --color <COLOR>    Control color in Josh and child Git processes [env: JOSH_COLOR=] [default: auto] [possible values: auto, always, never]
+        --no-progress      Disable progress displays and capture child process output
+        --non-interactive  Disable prompts, browser launches, and credential input [env: JOSH_NON_INTERACTIVE=]
     -h, --help             Print help
 
 # Test josh link fetch command
@@ -318,7 +330,6 @@
 # Test error case - path that doesn't exist
   $ josh link update :/nonexistent
   Error: No .link.josh files found
-  No .link.josh files found
   [1]
 
 # Test error case - no link files found

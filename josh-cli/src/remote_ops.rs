@@ -21,11 +21,14 @@ pub fn get_head_branch(
     repo_path: &std::path::Path,
     remote_name: &str,
 ) -> anyhow::Result<String> {
-    let output = std::process::Command::new("git")
+    let mut command = std::process::Command::new("git");
+    command
         .args(["ls-remote", "--symref", url, "HEAD"])
-        .current_dir(repo_path)
-        .output()
-        .context("Failed to run git ls-remote")?;
+        .current_dir(repo_path);
+    if crate::output::is_non_interactive() {
+        command.env("GIT_TERMINAL_PROMPT", "0");
+    }
+    let output = command.output().context("Failed to run git ls-remote")?;
 
     if output.status.success() {
         let text = String::from_utf8(output.stdout).context("Invalid ls-remote output")?;

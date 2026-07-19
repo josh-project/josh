@@ -5,6 +5,7 @@ use josh_core::git::normalize_repo_path;
 use crate::config::read_remote_config;
 use crate::forge::Forge;
 use crate::forge::github;
+use crate::{cli_eprintln as eprintln, cli_println as println};
 use serde_json;
 
 /// Arguments for `josh changes sync`.

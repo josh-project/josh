@@ -56,16 +56,20 @@ for any subproject within the repo.
 
 Today, the Josh project ships two major components:
 
-* _josh CLI_: local tool that enables working with partial projections of Git repos. See
-  <a href="https://josh-project.github.io/josh/guide/gettingstarted.html">CLI getting started guide</a>.
+* _josh CLI_: local tool that enables working with partial projections of Git repos. See the
+  [CLI getting started guide](https://josh-project.github.io/josh/guide/gettingstarted.html).
+  Agents can install its bundled skill with `josh agent skill install` and use compact,
+  versioned output via `josh --output json --quiet`.
 * _josh-proxy_: Git HTTP and SSH proxy that provides on-the-fly transformation of history
-  for multiple users with shared cache, as well as GraphQL APIs. See
-  <a href="https://josh-project.github.io/josh/reference/proxy.html">proxy documentation</a>.
+  for multiple users with shared cache, as well as GraphQL APIs. See the
+  [proxy documentation](https://josh-project.github.io/josh/reference/proxy.html).
 
 Apart from the links above, there are a couple of core concepts that Josh relies on:
 
-* **Filters**: a way of describing the desired repository transformation: https://josh-project.github.io/josh/reference/filters.html
-* **Workspaces**: persisted, versioned filters https://josh-project.github.io/josh/guide/workspaces.html
+* **Filters**: a way of describing the desired repository transformation. See the
+  [filter reference](https://josh-project.github.io/josh/reference/filters.html).
+* **Workspaces**: persisted, versioned filters. See the
+  [workspace guide](https://josh-project.github.io/josh/guide/workspaces.html).
 
 ## FAQ
 

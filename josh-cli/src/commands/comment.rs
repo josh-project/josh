@@ -1,3 +1,5 @@
+use crate::cli_println as println;
+
 /// Arguments for `josh changes comment`.
 #[derive(Debug, clap::Parser)]
 pub struct CommentArgs {
@@ -128,20 +130,33 @@ pub fn handle_comment(
         None => josh_changes::head_branch(repo)?,
     };
 
-    match &args.remote {
+    let scope = match &args.remote {
         Some(remote) => {
             let scope = josh_changes::ChangesRef::Remote {
                 remote: remote.clone(),
-                branch,
+                branch: branch.clone(),
             };
             josh_changes::write_outbox_comment(repo, &change, &meta, None, None, &scope)?;
             println!("Comment queued in outbox for remote '{}'.", remote);
+            format!("remote:{remote}")
         }
         None => {
-            let scope = josh_changes::ChangesRef::Local { branch };
+            let scope = josh_changes::ChangesRef::Local {
+                branch: branch.clone(),
+            };
             josh_changes::write_comment(repo, &change, &meta, None, None, &scope)?;
             println!("Comment saved (private to local ref).");
+            "local".to_string()
         }
-    }
+    };
+    crate::output::set_data_value(serde_json::json!({
+        "change": args.change,
+        "branch": branch,
+        "scope": scope,
+        "message": args.message,
+        "file": meta.file,
+        "reply_to": args.reply_to,
+        "update_of": args.update_of,
+    }));
     Ok(())
 }

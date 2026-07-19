@@ -8,6 +8,7 @@ use josh_core::cache::{
 use josh_core::filter::{self, Filter, flatten_chain, from_tree};
 use josh_core::git::normalize_repo_path;
 
+use crate::cli_eprintln as eprintln;
 use crate::config::{RemoteConfig, read_remote_config};
 use crate::remote_ops;
 
@@ -216,6 +217,12 @@ fn handle_cache_build(args: &CacheBuildArgs, transaction: &Transaction) -> anyho
         default_branch,
         args.remote
     );
+    crate::output::set_data_value(serde_json::json!({
+        "action": "build",
+        "remote": args.remote,
+        "branch": default_branch,
+        "filters": all_step_lists.len(),
+    }));
     Ok(())
 }
 
@@ -272,6 +279,11 @@ fn handle_cache_push(args: &CachePushArgs, transaction: &Transaction) -> anyhow:
         args.remote,
         &filter.id().to_string()[..8]
     );
+    crate::output::set_data_value(serde_json::json!({
+        "action": "push",
+        "remote": args.remote,
+        "filter_id": filter.id().to_string(),
+    }));
     Ok(())
 }
 
@@ -326,5 +338,10 @@ fn handle_cache_fetch(args: &CacheFetchArgs, transaction: &Transaction) -> anyho
         args.remote,
         &filter.id().to_string()[..8]
     );
+    crate::output::set_data_value(serde_json::json!({
+        "action": "fetch",
+        "remote": args.remote,
+        "filter_id": filter.id().to_string(),
+    }));
     Ok(())
 }

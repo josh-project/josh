@@ -1,6 +1,7 @@
 use anyhow::Context;
 use clap::Subcommand;
 
+use crate::cli_println as println;
 use crate::forge::Forge;
 
 #[derive(Debug, clap::Parser)]
@@ -28,21 +29,43 @@ pub struct ForgeArgs {
 }
 
 pub fn handle_auth(args: &AuthArgs) -> anyhow::Result<()> {
-    match &args.command {
-        AuthCommand::Login(forge_args) => match forge_args.forge {
-            Forge::Github => {
-                let rt =
-                    tokio::runtime::Runtime::new().context("failed to create tokio runtime")?;
-                rt.block_on(crate::forge::github::login())
+    let (action, forge) = match &args.command {
+        AuthCommand::Login(forge_args) => {
+            if crate::output::is_non_interactive() {
+                anyhow::bail!(
+                    "GitHub device login is interactive; run without --non-interactive or \
+                     configure the GH_TOKEN environment variable"
+                );
             }
-        },
-        AuthCommand::Logout(forge_args) => match forge_args.forge {
-            Forge::Github => crate::forge::github::logout(),
-        },
-        AuthCommand::Debug(forge_args) => match forge_args.forge {
-            Forge::Github => handle_debug_github_auth(),
-        },
-    }
+            match forge_args.forge {
+                Forge::Github => {
+                    let rt =
+                        tokio::runtime::Runtime::new().context("failed to create tokio runtime")?;
+                    rt.block_on(crate::forge::github::login())?;
+                }
+            }
+            ("login", forge_args.forge)
+        }
+        AuthCommand::Logout(forge_args) => {
+            match forge_args.forge {
+                Forge::Github => crate::forge::github::logout()?,
+            }
+            println!("Logged out from {}.", forge_args.forge);
+            ("logout", forge_args.forge)
+        }
+        AuthCommand::Debug(forge_args) => {
+            match forge_args.forge {
+                Forge::Github => handle_debug_github_auth()?,
+            }
+            ("debug", forge_args.forge)
+        }
+    };
+    crate::output::set_data_value(serde_json::json!({
+        "action": action,
+        "forge": forge.to_string(),
+        "success": true,
+    }));
+    Ok(())
 }
 
 fn handle_debug_github_auth() -> anyhow::Result<()> {

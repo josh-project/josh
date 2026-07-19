@@ -52,8 +52,8 @@
   hint: See the 'Note about fast-forwards' in 'git push --help' for details.
   
   Error: Failed to push to '../docs_repo.git'
-  Failed to push to '../docs_repo.git'
-  Command exited with code 1: git push ../docs_repo.git 449200237526b58cb91be2743ee8fef1ac989a01:refs/heads/master
+  Caused by:
+    Command exited with code 1: git push ../docs_repo.git 449200237526b58cb91be2743ee8fef1ac989a01:refs/heads/master
   [1]
 
 # Force push overwrites the remote branch

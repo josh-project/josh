@@ -66,8 +66,9 @@ Test josh filter with non-existent remote
 
   $ josh filter nonexistent 2>&1 | sed "s|Failed to read remote config file: .*|Failed to read remote config file: *|"
   Error: Failed to read remote config for 'nonexistent'
-  Failed to read remote config for 'nonexistent'
-  Remote 'nonexistent' not found in new format (*/josh/remotes/nonexistent.josh) or legacy git config (josh-remote.nonexistent) (glob)
+  Caused by:
+    Remote 'nonexistent' not found in new format (*/josh/remotes/nonexistent.josh) or legacy git config (josh-remote.nonexistent) (glob)
+  Hint: Run 'josh remote list' to see configured remotes.
 
   $ cd ..
 

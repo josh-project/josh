@@ -34,7 +34,6 @@ Test migration from legacy git config to new file format
   $ josh filter origin
   Applying filter ':/sub1' to remote 'origin'
   Error: Could not resolve default branch from 'refs/remotes/origin/HEAD'. Has the remote been fetched?
-  Could not resolve default branch from 'refs/remotes/origin/HEAD'. Has the remote been fetched?
   [1]
 
   $ cat .git/josh/remotes/origin.josh | sed "s|file://.*/remote/libs|file://\${TESTTMP}/remote/libs|"

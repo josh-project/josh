@@ -3,6 +3,7 @@ use anyhow::{Context, anyhow};
 use josh_changes::{PushMode, PushRef, build_to_push};
 use josh_core::git::normalize_repo_path;
 
+use crate::cli_eprintln as eprintln;
 use crate::config::{RemoteConfig, read_remote_config};
 use crate::forge::Forge;
 
@@ -397,6 +398,20 @@ fn orchestrate_push(
 
     create_prs(&pr_infos, &url, dry_run)?;
 
+    crate::output::set_data_value(serde_json::json!({
+        "remote": remote_name,
+        "dry_run": dry_run,
+        "force": force,
+        "atomic": atomic,
+        "refs": to_push
+            .iter()
+            .map(|push_ref| serde_json::json!({
+                "oid": push_ref.oid.to_string(),
+                "destination": push_ref.ref_name,
+            }))
+            .collect::<Vec<_>>(),
+        "pull_requests": pr_infos.len(),
+    }));
     Ok(())
 }
 

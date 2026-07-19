@@ -1,3 +1,5 @@
+use std::io::Write;
+
 use anyhow::{Context, anyhow};
 
 use crate::forge::Forge;
@@ -20,6 +22,69 @@ fn remotes_dir(repo_path: &std::path::Path) -> anyhow::Result<std::path::PathBuf
         .with_context(|| format!("Failed to open repository at {}", repo_path.display()))?;
 
     Ok(repo.commondir().join("josh").join("remotes"))
+}
+
+pub fn remote_config_path(
+    repo_path: &std::path::Path,
+    remote_name: &str,
+) -> anyhow::Result<std::path::PathBuf> {
+    Ok(remotes_dir(repo_path)?.join(format!("{remote_name}.josh")))
+}
+
+pub fn list_remote_names(repo_path: &std::path::Path) -> anyhow::Result<Vec<String>> {
+    let directory = remotes_dir(repo_path)?;
+    let mut names = Vec::new();
+    let entries = match std::fs::read_dir(&directory) {
+        Ok(entries) => Some(entries),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => None,
+        Err(error) => return Err(error.into()),
+    };
+
+    if let Some(entries) = entries {
+        for entry in entries {
+            let entry = entry?;
+            if !entry.file_type()?.is_file() {
+                continue;
+            }
+            let path = entry.path();
+            if path.extension().and_then(|value| value.to_str()) != Some("josh") {
+                continue;
+            }
+            if let Some(name) = path.file_stem().and_then(|value| value.to_str()) {
+                names.push(name.to_string());
+            }
+        }
+    }
+    let repo = git2::Repository::open(repo_path).context("Failed to open repository")?;
+    let config = repo.config().context("Failed to read Git configuration")?;
+    if let Ok(entries) = config.entries(Some("josh-remote.*.url")) {
+        entries.for_each(|entry| {
+            if let Some(name) = entry
+                .name()
+                .and_then(|name| name.strip_prefix("josh-remote."))
+                .and_then(|name| name.strip_suffix(".url"))
+            {
+                names.push(name.to_string());
+            }
+        })?;
+    }
+
+    names.sort();
+    names.dedup();
+    Ok(names)
+}
+
+pub fn remove_remote_config(repo_path: &std::path::Path, remote_name: &str) -> anyhow::Result<()> {
+    let path = remote_config_path(repo_path, remote_name)?;
+    std::fs::remove_file(&path)
+        .with_context(|| format!("Failed to remove remote config '{}'", path.display()))?;
+
+    let repo = git2::Repository::open(repo_path).context("Failed to open repository")?;
+    let mut config = repo.config().context("Failed to read Git configuration")?;
+    for key in ["url", "filter", "fetch"] {
+        let _ = config.remove(&format!("josh-remote.{remote_name}.{key}"));
+    }
+    Ok(())
 }
 
 pub fn migrate_legacy_config(
@@ -132,6 +197,36 @@ pub fn read_remote_config(
     })
 }
 
+fn atomic_write(path: &std::path::Path, content: &str) -> anyhow::Result<()> {
+    let parent = path.parent().context("Remote config path has no parent")?;
+    let name = path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .context("Remote config path is not valid UTF-8")?;
+    let nonce = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)?
+        .as_nanos();
+    let temporary = parent.join(format!(".{name}.tmp-{}-{nonce}", std::process::id()));
+    let result = (|| -> anyhow::Result<()> {
+        let mut file = std::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&temporary)?;
+        file.write_all(content.as_bytes())?;
+        file.sync_all()?;
+        #[cfg(windows)]
+        if path.exists() {
+            std::fs::remove_file(path)?;
+        }
+        std::fs::rename(&temporary, path)?;
+        Ok(())
+    })();
+    if result.is_err() {
+        let _ = std::fs::remove_file(&temporary);
+    }
+    result
+}
+
 /// Write remote configuration to .git/josh/remotes/<name>.josh file
 pub fn write_remote_config(
     repo_path: &std::path::Path,
@@ -167,7 +262,7 @@ pub fn write_remote_config(
 
     // Write to file
     let remote_file = remotes_dir.join(format!("{}.josh", remote_name));
-    std::fs::write(&remote_file, content).with_context(|| {
+    atomic_write(&remote_file, &content).with_context(|| {
         format!(
             "Failed to write remote config file: {}",
             remote_file.display()

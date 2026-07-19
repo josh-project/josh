@@ -1,5 +1,7 @@
 use josh_compose::{CleanMode, RunOptions};
 
+use crate::cli_println as println;
+
 #[derive(Debug, clap::Parser)]
 pub struct ComposeArgs {
     #[command(subcommand)]
@@ -37,7 +39,8 @@ pub struct RunArgs {
     #[arg(long = "clean-all")]
     pub clean_all: bool,
 
-    /// Git revision to use as input: "." (working tree), "+" (index), or any rev (e.g. "HEAD", "HEAD~1", "main")
+    /// Git revision to use as input: "." (working tree), "+" (index), or any rev
+    /// (e.g. "HEAD", "HEAD~1", "main")
     #[arg(default_value = ".")]
     pub reference: String,
 
@@ -63,9 +66,20 @@ pub fn handle_run(
         RunOptions {
             filter_spec: args.filter.clone(),
             input_ref: args.reference.clone(),
-            clean,
+            clean: clean.clone(),
         },
-    )
+    )?;
+    crate::output::set_data_value(serde_json::json!({
+        "reference": args.reference,
+        "filter": args.filter,
+        "clean": match clean {
+            CleanMode::None => "none",
+            CleanMode::Clean => "clean",
+            CleanMode::CleanAll => "clean-all",
+        },
+        "completed": true,
+    }));
+    Ok(())
 }
 
 #[derive(Debug, clap::Parser)]
@@ -74,7 +88,8 @@ pub struct ListImagesArgs {
     #[arg(long = "all")]
     pub all: bool,
 
-    /// Git revision to use as input: "." (working tree), "+" (index), or any rev (e.g. "HEAD", "HEAD~1", "main")
+    /// Git revision to use as input: "." (working tree), "+" (index), or any rev
+    /// (e.g. "HEAD", "HEAD~1", "main")
     #[arg(default_value = ".")]
     pub reference: String,
 
@@ -97,9 +112,14 @@ pub fn handle_list_images(
         args.all,
     )?;
 
-    for oid in oids {
-        println!("ws_image_{oid}");
+    let images = oids
+        .into_iter()
+        .map(|oid| format!("ws_image_{oid}"))
+        .collect::<Vec<_>>();
+    for image in &images {
+        println!("{image}");
     }
+    crate::output::set_data_value(serde_json::json!({ "images": images }));
     Ok(())
 }
 
@@ -109,7 +129,8 @@ pub struct ListJobsArgs {
     #[arg(long = "all")]
     pub all: bool,
 
-    /// Git revision to use as input: "." (working tree), "+" (index), or any rev (e.g. "HEAD", "HEAD~1", "main")
+    /// Git revision to use as input: "." (working tree), "+" (index), or any rev
+    /// (e.g. "HEAD", "HEAD~1", "main")
     #[arg(default_value = ".")]
     pub reference: String,
 
@@ -132,8 +153,13 @@ pub fn handle_list_jobs(
         args.all,
     )?;
 
-    for oid in oids {
-        println!("{oid}");
+    let jobs = oids
+        .into_iter()
+        .map(|oid| oid.to_string())
+        .collect::<Vec<_>>();
+    for job in &jobs {
+        println!("{job}");
     }
+    crate::output::set_data_value(serde_json::json!({ "jobs": jobs }));
     Ok(())
 }

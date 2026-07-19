@@ -78,8 +78,8 @@
   for your current branch, you must specify a branch on the command line.
   
   Error: git pull failed
-  git pull failed
-  Command exited with code 1: git pull remote2
+  Caused by:
+    Command exited with code 1: git pull remote2
   [1]
 
   $ tree

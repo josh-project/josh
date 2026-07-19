@@ -1,3 +1,5 @@
+use crate::cli_println as println;
+
 /// Arguments for `josh changes list`.
 #[derive(Debug, clap::Parser)]
 pub struct ListArgs {
@@ -22,11 +24,16 @@ pub fn handle_list(
     let changes = josh_changes::list_changes_in_scopes(repo, &scopes)?;
 
     if changes.is_empty() {
+        crate::output::set_data_value(serde_json::json!({
+            "branch": branch,
+            "changes": [],
+        }));
         println!("No local changes found for branch '{}'.", branch);
         return Ok(());
     }
 
     println!("Changes targeting '{}':\n", branch);
+    let mut output_changes = Vec::new();
 
     for change in &changes {
         let commit = repo.find_commit(change.commit())?;
@@ -42,11 +49,16 @@ pub fn handle_list(
         println!("{} {}{} ({})", id, subject, series, change.author());
 
         let contributing = change.contributing(repo)?;
+        let mut output_commits = Vec::new();
         for oid in &contributing {
             if let Ok(c) = repo.find_commit(*oid) {
                 let c_subject = c.message().unwrap_or("").lines().next().unwrap_or("");
                 let c_short = &oid.to_string()[..8];
                 println!("  {}  {}", c_short, c_subject);
+                output_commits.push(serde_json::json!({
+                    "oid": oid.to_string(),
+                    "subject": c_subject,
+                }));
             }
         }
 
@@ -56,6 +68,7 @@ pub fn handle_list(
                 josh_changes::read_comments_in_scopes(repo, cid, &scopes).unwrap_or_default()
             })
             .unwrap_or_default();
+        let mut output_comments = Vec::new();
         if !comments.is_empty() {
             println!();
             for c in &comments {
@@ -66,16 +79,46 @@ pub fn handle_list(
                     .as_ref()
                     .map(|l| format!(":{}", l.start_line))
                     .unwrap_or_default();
-                print!("    {} {}", cid, c.message.lines().next().unwrap_or(""));
-                if !file.is_empty() {
-                    print!(" ({}{})", file, line);
-                }
-                println!();
+                let location = if file.is_empty() {
+                    String::new()
+                } else {
+                    format!(" ({}{})", file, line)
+                };
+                println!(
+                    "    {} {}{}",
+                    cid,
+                    c.message.lines().next().unwrap_or(""),
+                    location
+                );
+                output_comments.push(serde_json::json!({
+                    "id": c.id,
+                    "message": c.message,
+                    "file": c.file,
+                    "location": c.location.as_ref().map(|location| serde_json::json!({
+                        "start_line": location.start_line,
+                        "end_line": location.end_line,
+                        "start_column": location.start_col,
+                        "end_column": location.end_col,
+                    })),
+                }));
             }
         }
 
+        output_changes.push(serde_json::json!({
+            "id": change.id(),
+            "subject": subject,
+            "series": change.series(),
+            "author": change.author(),
+            "commit": change.commit().to_string(),
+            "contributing_commits": output_commits,
+            "comments": output_comments,
+        }));
         println!();
     }
 
+    crate::output::set_data_value(serde_json::json!({
+        "branch": branch,
+        "changes": output_changes,
+    }));
     Ok(())
 }

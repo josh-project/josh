@@ -28,7 +28,19 @@ each application only want to see the code that's relevant to them.
 
 ## Creating a workspace
 
-Clone the monorepo scoped to `application1` using the `:workspace=` filter:
+When you already have the monorepo checked out, create and preview a workspace directly:
+
+```shell
+josh workspace create application1
+josh workspace validate application1
+josh workspace checkout application1 ../application1-preview
+```
+
+`checkout` uses the working tree by default, so the preview includes the newly created, uncommitted
+`workspace.josh`. It creates a detached local worktree and does not change the current checkout.
+
+To create the workspace as a bidirectional checkout against a remote, clone the monorepo scoped to
+`application1` using the `:workspace=` filter:
 
 ```shell
 josh clone https://github.com/myorg/monorepo.git :workspace=application1 ./application1
@@ -53,6 +65,12 @@ Since `application1` depends on `library1`, create `workspace.josh` with:
 
 ```
 modules/lib1 = :/library1
+```
+
+Alternatively, from a full monorepo checkout, create the same definition without editing the file:
+
+```shell
+josh workspace create application1 --force --map modules/lib1=:/library1
 ```
 
 Commit the file:

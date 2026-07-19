@@ -2,6 +2,8 @@ use anyhow::{Context, anyhow};
 
 use josh_link::make_signature;
 
+use crate::cli_eprintln as eprintln;
+
 #[derive(Debug, clap::Parser)]
 pub struct LinkArgs {
     /// Link subcommand
@@ -176,6 +178,16 @@ fn handle_link_add(
         normalized_path, args.url, filter, target, args.mode
     );
     eprintln!("Created branch: {}", branch_name);
+    crate::output::set_data_value(serde_json::json!({
+        "action": "add",
+        "path": normalized_path,
+        "url": args.url,
+        "filter": filter,
+        "target": target,
+        "mode": args.mode,
+        "commit": commit_oid.to_string(),
+        "branch": branch_name,
+    }));
 
     Ok(())
 }
@@ -210,6 +222,12 @@ fn handle_link_fetch(
 
     if link_refs.is_empty() {
         eprintln!("No .link.josh references found in history");
+        crate::output::set_data_value(serde_json::json!({
+            "action": "fetch",
+            "fetched": 0,
+            "skipped": 0,
+            "references": 0,
+        }));
         return Ok(());
     }
 
@@ -257,6 +275,12 @@ fn handle_link_fetch(
         "Done: fetched {}, skipped {} (already present)",
         fetched, skipped
     );
+    crate::output::set_data_value(serde_json::json!({
+        "action": "fetch",
+        "fetched": fetched,
+        "skipped": skipped,
+        "references": link_refs.len(),
+    }));
 
     Ok(())
 }
@@ -341,6 +365,12 @@ fn handle_link_update(
     )?
     else {
         eprintln!("All {} link file(s) already up to date", link_files.len());
+        crate::output::set_data_value(serde_json::json!({
+            "action": "update",
+            "updated": 0,
+            "links": link_files.len(),
+            "up_to_date": true,
+        }));
         return Ok(());
     };
 
@@ -355,6 +385,14 @@ fn handle_link_update(
 
     eprintln!("Updated {} link file(s)", link_files.len());
     eprintln!("Updated branch: {}", branch_name);
+    crate::output::set_data_value(serde_json::json!({
+        "action": "update",
+        "updated": link_files.len(),
+        "links": link_files.len(),
+        "up_to_date": false,
+        "branch": branch_name,
+        "commit": result.filtered_commit.to_string(),
+    }));
 
     Ok(())
 }
@@ -425,6 +463,14 @@ fn handle_link_push(
     transaction
         .spawn_git(&["push", &remote, &refspec], &[])
         .with_context(|| format!("Failed to push to '{}'", remote))?;
+    crate::output::set_data_value(serde_json::json!({
+        "action": "push",
+        "path": normalized_path,
+        "remote": remote,
+        "target": push_ref,
+        "commit": exported_commit.to_string(),
+        "force": args.force,
+    }));
 
     Ok(())
 }

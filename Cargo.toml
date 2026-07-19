@@ -151,8 +151,11 @@ features = ["max_level_trace", "release_max_level_trace"]
 
 [workspace.dependencies.clap]
 version = "4.6.0"
-features = ["derive", "env", "help", "std", "usage"]
+features = ["derive", "env", "error-context", "help", "std", "suggestions", "usage"]
 default-features = false
+
+[workspace.dependencies.clap_complete]
+version = "4.6.0"
 
 [workspace.dependencies.axum]
 version = "^0.8"

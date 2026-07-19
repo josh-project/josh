@@ -2,6 +2,39 @@ use anyhow::{Context, anyhow};
 use std::io::IsTerminal;
 use std::path::PathBuf;
 use std::process::Stdio;
+use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[repr(u8)]
+pub enum CommandColor {
+    Auto = 0,
+    Always = 1,
+    Never = 2,
+}
+
+static MACHINE_OUTPUT: AtomicBool = AtomicBool::new(false);
+static QUIET_OUTPUT: AtomicBool = AtomicBool::new(false);
+static NO_PROGRESS: AtomicBool = AtomicBool::new(false);
+static NON_INTERACTIVE: AtomicBool = AtomicBool::new(false);
+static COMMAND_COLOR: AtomicU8 = AtomicU8::new(CommandColor::Auto as u8);
+
+/// Configure how Git subprocesses interact with the terminal.
+///
+/// The CLI calls this once after parsing its global output options. Atomic storage keeps the
+/// core independent from the CLI and also makes repeated configuration safe in tests.
+pub fn configure_command_output(
+    machine: bool,
+    quiet: bool,
+    no_progress: bool,
+    non_interactive: bool,
+    color: CommandColor,
+) {
+    MACHINE_OUTPUT.store(machine, Ordering::Relaxed);
+    QUIET_OUTPUT.store(quiet, Ordering::Relaxed);
+    NO_PROGRESS.store(no_progress, Ordering::Relaxed);
+    NON_INTERACTIVE.store(non_interactive, Ordering::Relaxed);
+    COMMAND_COLOR.store(color as u8, Ordering::Relaxed);
+}
 
 /// Resolve the `input_ref` argument to a commit OID.
 ///
@@ -151,18 +184,48 @@ pub fn spawn_git_command(
     // `Transaction::spawn_git` instead so the spawned `git` can see in-flight objects.
     let cwd = normalize_repo_path(repo_path);
 
+    let machine = MACHINE_OUTPUT.load(Ordering::Relaxed);
+    let quiet = QUIET_OUTPUT.load(Ordering::Relaxed);
+    let no_progress = NO_PROGRESS.load(Ordering::Relaxed);
+    let non_interactive = NON_INTERACTIVE.load(Ordering::Relaxed);
+    let color = COMMAND_COLOR.load(Ordering::Relaxed);
+
     let mut command = std::process::Command::new("git");
-    command.current_dir(cwd).args(args);
+    command.current_dir(cwd);
 
     for (key, value) in env {
         command.env(key, value);
     }
+    if non_interactive {
+        command
+            .env("GIT_TERMINAL_PROMPT", "0")
+            .env("GCM_INTERACTIVE", "never");
+    }
+    match color {
+        value if value == CommandColor::Always as u8 => {
+            command
+                .args(["-c", "color.ui=always"])
+                .env("CLICOLOR_FORCE", "1");
+        }
+        value if value == CommandColor::Never as u8 => {
+            command
+                .args(["-c", "color.ui=false"])
+                .env("NO_COLOR", "1")
+                .env("TERM", "dumb");
+        }
+        _ => {}
+    }
+    command.args(args);
 
-    // Check if we're in a TTY environment
-    let is_tty = std::io::stdin().is_terminal() && std::io::stdout().is_terminal();
+    // Machine mode always captures child output so stdout remains a valid JSON document.
+    let is_tty = std::io::stdin().is_terminal()
+        && std::io::stdout().is_terminal()
+        && !machine
+        && !quiet
+        && !no_progress;
+    let mut captured_stderr = String::new();
 
     let status = if is_tty {
-        // In TTY: inherit stdio so users can see progress
         command
             .stdin(Stdio::inherit())
             .stdout(Stdio::inherit())
@@ -170,7 +233,6 @@ pub fn spawn_git_command(
 
         command.status()?.code()
     } else {
-        // Not in TTY: capture output and print stderr (for tests, CI, etc.)
         let output = command
             .stdin(Stdio::null())
             .stdout(Stdio::piped())
@@ -178,16 +240,17 @@ pub fn spawn_git_command(
             .output()
             .context("failed to execute git command")?;
 
-        // Print stderr if there's any output
         if !output.stderr.is_empty() {
             let output_str = String::from_utf8_lossy(&output.stderr);
-            let output_str = if let Ok(testtmp) = std::env::var("TESTTMP") {
+            captured_stderr = if let Ok(testtmp) = std::env::var("TESTTMP") {
                 output_str.replace(&testtmp, "${TESTTMP}")
             } else {
                 output_str.to_string()
             };
 
-            eprintln!("{}", output_str);
+            if !machine && !quiet && !no_progress {
+                eprintln!("{}", captured_stderr);
+            }
         }
 
         output.status.code()
@@ -197,11 +260,12 @@ pub fn spawn_git_command(
         0 => Ok(()),
         code => {
             let command = args.join(" ");
-            Err(anyhow!(
-                "Command exited with code {}: git {}",
-                code,
-                command
-            ))
+            let error = anyhow!("Command exited with code {}: git {}", code, command);
+            if (machine || quiet || no_progress) && !captured_stderr.trim().is_empty() {
+                Err(anyhow!(captured_stderr.trim().to_string()).context(error.to_string()))
+            } else {
+                Err(error)
+            }
         }
     }
 }
