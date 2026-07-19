@@ -29,12 +29,13 @@ RUST_REVISION = "234c31cd674e11703f15d290cba7ff81dfe8b4b8"
 # keeping it one commit makes SHA-exact verification possible. Pinned to
 # master as of 2026-07-19, which includes the fix for the CLI dropping
 # semantic meta args ("Apply semantic meta args of remote filters in the josh
-# CLI") -- older commits fail the CLI pass's SHA-exact verification.
+# CLI") -- older commits fail the CLI pass's SHA-exact verification -- and the
+# global --no-distributed-cache flag the cli-nodc pass needs.
 # Override with SYNC_JOSH_COMMIT (a full commit SHA) to benchmark another josh
 # version; filtered-history and manifest caches are keyed by it, so runs with
 # different versions do not mix.
 JOSH_COMMIT = os.environ.get(
-    "SYNC_JOSH_COMMIT", "d7649b7e1ad59537b7b2ed131e5bfb974fe0c5b4"
+    "SYNC_JOSH_COMMIT", "eb9f86385cb5f49c39b0a16584c6fb65c1be8ab6"
 )
 
 # Served under this path so proxy URLs match production shape

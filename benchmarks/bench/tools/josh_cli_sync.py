@@ -35,7 +35,8 @@ def _git(repo: Path, args: str) -> str:
 
 
 def setup_cli_remote(
-    josh: Path, work: Path, upstream_url: str, filter_spec: str, remote: str = "upstream"
+    josh: str | Path, work: Path, upstream_url: str, filter_spec: str,
+    remote: str = "upstream",
 ) -> None:
     """Configure the josh remote for the upstream mirror in the work clone."""
     run(
@@ -45,7 +46,7 @@ def setup_cli_remote(
 
 
 def replay_pull_cli(
-    josh: Path, work: Path, upstream: Path, ev: dict, branch: str
+    josh: str | Path, work: Path, upstream: Path, ev: dict, branch: str
 ) -> tuple[float, str]:
     """Replay a pull with the josh CLI; return (elapsed, verification status).
 
@@ -82,7 +83,7 @@ def replay_pull_cli(
 
 
 def replay_push_cli(
-    josh: Path, work: Path, upstream: Path, ev: dict, branch: str
+    josh: str | Path, work: Path, upstream: Path, ev: dict, branch: str
 ) -> tuple[float, str]:
     """Replay a push with the josh CLI; return (elapsed, verification status)."""
     _git(upstream, f"update-ref refs/heads/{branch} {ev['base_rust_sha']}")
