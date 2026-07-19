@@ -149,3 +149,42 @@ After fetching, both sets of intermediate refs should be present locally
   2
 
   $ cd ${TESTTMP}
+
+Semantic meta args section: the cache must be keyed on the filter including its
+semantic args (history=...), not the peeled filter
+
+  $ git init -q local5 1>/dev/null
+  $ cd local5
+  $ josh remote add origin ${TESTTMP}/remote/libs ':~(history="keep-trivial-merges")[:/sub1]'
+  Added remote 'origin' with filter ':~(history="keep-trivial-merges")[:/sub1]'
+
+  $ josh fetch 2>/dev/null
+
+  $ josh cache build
+  Built cache for 1 filter(s) on branch 'master' for remote 'origin'
+
+The filtered ref is keyed by the meta-carrying filter id, distinct from the
+plain :/sub1 id (bf567e0f...)
+
+  $ git for-each-ref --format='%(refname)' 'refs/josh/filtered/'
+  refs/josh/filtered/24ccd8d89e1e9751b3e5ae070b6435989121c346/heads/master
+
+  $ josh cache push 2>/dev/null
+
+  $ git ls-remote ${TESTTMP}/remote/libs 'refs/josh/filtered/*' | wc -l | tr -d ' '
+  3
+
+A fresh clone with the same filter can fetch that cache
+
+  $ cd ${TESTTMP}
+  $ git init -q local6 1>/dev/null
+  $ cd local6
+  $ josh remote add origin ${TESTTMP}/remote/libs ':~(history="keep-trivial-merges")[:/sub1]'
+  Added remote 'origin' with filter ':~(history="keep-trivial-merges")[:/sub1]'
+
+  $ josh cache fetch 2>/dev/null
+
+  $ git for-each-ref --format='%(refname)' 'refs/josh/filtered/'
+  refs/josh/filtered/24ccd8d89e1e9751b3e5ae070b6435989121c346/heads/master
+
+  $ cd ${TESTTMP}

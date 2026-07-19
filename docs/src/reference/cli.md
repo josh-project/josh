@@ -170,6 +170,12 @@ josh remote add <name> <url> <filter> [options]
 josh remote add backend https://github.com/myorg/monorepo.git :/services/backend
 ```
 
+The filter may carry semantic meta args, e.g.
+`:~(history="keep-trivial-merges")[:/services/backend]`; they are applied whenever the
+remote's filter is used (fetch, push, cache). The meta keys `url`, `fetch` and `forge` are
+reserved: the remote config stores its transport settings under these keys, so
+`josh remote add` rejects a filter that sets one of them.
+
 ---
 
 ## josh filter

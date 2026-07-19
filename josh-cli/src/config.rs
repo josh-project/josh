@@ -2,11 +2,25 @@ use anyhow::{Context, anyhow};
 
 use crate::forge::Forge;
 
+/// Meta keys that configure the remote itself rather than the filter semantics.
+pub const TRANSPORT_META_KEYS: &[&str] = &["url", "fetch", "forge"];
+
 pub struct RemoteConfig {
     pub url: String,
     pub ref_spec: String,
     pub filter_with_meta: josh_core::filter::Filter,
     pub forge: Option<Forge>,
+}
+
+impl RemoteConfig {
+    /// The filter to apply: transport keys (`url`, `fetch`, `forge`) stripped,
+    /// semantic meta args (`history`, `gpgsig`, ...) retained. Semantic args
+    /// change the filtered history, so dropping them (via `peel()`) would
+    /// produce SHAs that diverge from what josh-proxy/josh-filter compute for
+    /// the same filter spec.
+    pub fn semantic_filter(&self) -> josh_core::filter::Filter {
+        self.filter_with_meta.without_meta_keys(TRANSPORT_META_KEYS)
+    }
 }
 
 /// Resolve the directory holding josh remote config files.
@@ -154,6 +168,17 @@ pub fn write_remote_config(
     // Parse the filter
     let filter_obj = josh_core::filter::parse(filter)
         .with_context(|| format!("Failed to parse filter '{}'", filter))?;
+
+    // The transport keys are owned by the remote config; a user filter that
+    // sets one of them would be silently overwritten below.
+    for key in TRANSPORT_META_KEYS {
+        if filter_obj.get_meta(key).is_some() {
+            return Err(anyhow!(
+                "Filter must not set reserved meta key '{}': it is owned by the remote config",
+                key
+            ));
+        }
+    }
 
     // Wrap the filter with metadata
     let mut filter_with_meta = filter_obj.with_meta("url", url).with_meta("fetch", fetch);
