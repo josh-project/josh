@@ -15,13 +15,12 @@ harness = false
 
 [dependencies]
 anyhow.workspace = true
-bitvec = "1.0.1"
 git2.workspace = true
-hex.workspace = true
 
 [dev-dependencies]
 criterion2 = { version = "3.0.3" }
 rand = "0.10.1"
+tempfile.workspace = true
 tracing.workspace = true
 josh-core.workspace = true
 josh-test-support = { path = "../devtools/josh-test-support" }

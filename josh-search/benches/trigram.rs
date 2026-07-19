@@ -29,11 +29,11 @@ const LEAF_FILES: usize = 25;
 const LEAVES_PER_TOP: usize = 16;
 
 // File content: WORDS_PER_FILE words (8 per line, ~2 KB per file) sampled with a skewed
-// distribution from a fixed vocabulary of VOCAB_SIZE lowercase words. The bounded vocabulary is
-// load-bearing: a file is stored at ordinal `a` of the index only if its trigram bloom filter
-// fits within `4^(3+a)/2` set bytes, and uniformly random text saturates every ordinal below
-// MAX_ORD, making files unfindable. ~1-2k distinct trigrams per file lands files around ord 3-5.
-// The rare-needle candidate gate in `setup` is the tripwire if these constants degenerate.
+// distribution from a fixed vocabulary of VOCAB_SIZE lowercase words. The bounded vocabulary
+// (originally required by the bloom indexer's saturation ceiling) is kept unchanged so results
+// stay comparable with the pre-rework baseline; ~1-2k distinct trigrams per file is also a
+// realistic density for source code. The rare-needle candidate gate in `setup` is the tripwire
+// if these constants degenerate.
 const WORDS_PER_FILE: usize = 300;
 const WORDS_PER_LINE: usize = 8;
 const VOCAB_SIZE: usize = 512;
@@ -42,9 +42,6 @@ const VOCAB_SIZE: usize = 512;
 // ~CHURN_FRACTION of the files (at least one).
 const K_CHURN: usize = if cfg!(debug_assertions) { 3 } else { 20 };
 const CHURN_FRACTION: f64 = 0.01;
-
-// Search depth, matching the default of `josh-filter --search` (`max_comp`).
-const MAX_ORD: usize = 6;
 
 // Needles for the search group, planted keyed on file index (not revision) so churn commits
 // preserve them: NEEDLE_RARE in exactly one file, NEEDLE_COMMON in every COMMON_EVERY-th file,
@@ -129,10 +126,10 @@ fn vocabulary() -> Vec<String> {
 fn file_content(vocab: &[String], n_files: usize, i: usize, revision: usize) -> String {
     let mut rng = StdRng::seed_from_u64(((i as u64) << 8) | revision as u64);
 
-    // Needles go at the very start of the file: the per-file bloom filter is emitted in chunks
-    // as it saturates, and the current search misses a needle whose trigrams straddle a chunk
-    // boundary. Planting needles in the first chunk keeps the correctness gates exact instead of
-    // depending on where chunk boundaries happen to fall.
+    // Needles go at the very start of the file. Historical: the bloom indexer emitted per-file
+    // filters in chunks and missed needles whose trigrams straddled a chunk boundary, so the
+    // fixture planted them in the first chunk. The exact index has no such failure mode, but the
+    // placement is kept so the content stays byte-identical to the pre-rework baseline.
     let mut lines = vec![];
     if i == n_files / 2 {
         lines.push(format!("marker {} end", NEEDLE_RARE));
@@ -273,15 +270,15 @@ fn recover_chain(repo: &git2::Repository, n_files: usize) -> anyhow::Result<Vec<
     Ok(chain)
 }
 
-/// End-to-end search exactly as `josh-filter --search` performs it: bloom-filtered candidate
-/// selection over the index tree, then exact matching over the source tree.
+/// End-to-end search exactly as `josh-filter --search` performs it: candidate selection over
+/// the index tree, then exact matching over the source tree.
 fn search(
     repo: &git2::Repository,
     index_tree: &git2::Tree,
     source_tree: &git2::Tree,
     needle: &str,
 ) -> anyhow::Result<(Vec<String>, Vec<(String, Vec<(usize, String)>)>)> {
-    let candidates = josh_search::search_candidates(repo, index_tree, needle, MAX_ORD)?;
+    let candidates = josh_search::search_candidates(repo, index_tree, source_tree, needle)?;
     let matches = josh_search::search_matches(repo, source_tree, needle, &candidates)?;
     Ok((candidates, matches))
 }
@@ -343,9 +340,9 @@ impl TrigramBench {
             transaction.flush_mem_odb()?;
 
             // Gate: the rare needle is found in exactly its planted file, with a tight
-            // candidate set. A blown-up candidate list means the bloom filters have degenerated
-            // (e.g. per-file trigram saturation pushed files past MAX_ORD) and the search
-            // numbers would be meaningless.
+            // candidate set. A blown-up candidate list means candidate selection has
+            // degenerated and the search numbers would be meaningless. (The bound is kept at
+            // the pre-rework value of 5; the exact index should always produce exactly 1.)
             let rare_path = path_for(n_files / 2).to_string_lossy().into_owned();
             let (candidates, matches) = search(repo, &index_tree, &tip_tree, NEEDLE_RARE)?;
             anyhow::ensure!(
@@ -354,7 +351,7 @@ impl TrigramBench {
             );
             anyhow::ensure!(
                 candidates.len() <= 5,
-                "rare needle produced {} candidates -- bloom filters degenerated",
+                "rare needle produced {} candidates -- candidate selection degenerated",
                 candidates.len()
             );
 
@@ -487,9 +484,7 @@ fn trigram_benches(c: &mut Criterion) {
     // End-to-end search over the pre-built index: candidate selection plus exact matching, for a
     // needle in one file, in every COMMON_EVERY-th file, and in none. Search has no result
     // memoization and reads only git objects, so the cache reset is for uniformity with the
-    // other groups, not correctness. Note that `trigram_search` currently opens a fresh
-    // repository handle per directory per ordinal; pre-rework numbers are expected to be
-    // dominated by that.
+    // other groups, not correctness.
     let mut group = c.benchmark_group("trigram_search");
     group.sample_size(10);
     for case in &bench.cases {

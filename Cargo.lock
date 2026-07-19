@@ -3398,13 +3398,12 @@ name = "josh-search"
 version = "26.7.19"
 dependencies = [
  "anyhow",
- "bitvec",
  "criterion2",
  "git2",
- "hex",
  "josh-core",
  "josh-test-support",
  "rand 0.10.1",
+ "tempfile",
  "tracing",
 ]
 

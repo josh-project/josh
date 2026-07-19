@@ -1530,16 +1530,6 @@
                         "ofType": null
                       }
                     }
-                  },
-                  {
-                    "defaultValue": null,
-                    "description": null,
-                    "name": "maxComplexity",
-                    "type": {
-                      "kind": "SCALAR",
-                      "name": "Int",
-                      "ofType": null
-                    }
                   }
                 ],
                 "deprecationReason": null,
