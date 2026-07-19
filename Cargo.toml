@@ -54,6 +54,7 @@ gix-object = "0.56.0"
 gix-config = "0.52.0"
 gix-submodule = "0.26.0"
 libc = "0.2.184"
+lru = "0.18.1"
 regex = "1.12.3"
 serde = { version = "1.0.228", features = ["std", "derive"] }
 serde_json = "1.0.149"

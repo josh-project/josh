@@ -11,7 +11,7 @@ version = "26.7.19"
 
 [dependencies]
 sha2 = "0.11.0"
-lru = "0.16.3"
+lru.workspace = true
 axum = { version = "^0.8", features = ["macros"] }
 axum-extra = { version = "^0.12", features = ["typed-header", "erased-json"] }
 tower-http = { version = "0.6", features = ["trace"] }

@@ -10,6 +10,7 @@ mod flusher;
 pub mod hash;
 pub mod mem_odb;
 mod odb_backend;
+pub mod odb_cache;
 pub mod pack;
 
 pub use hash::PassthroughHasher;

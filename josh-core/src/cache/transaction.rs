@@ -152,11 +152,18 @@ impl Transaction {
         mem_odb_limit: Option<usize>,
         ephemeral: bool,
     ) -> Transaction {
-        // Disable libgit2's strict object creation globally: josh only ever writes objects
-        // whose referenced objects it has just produced or read, so the per-write existence
-        // checks are pure overhead. This is a process-wide C global, set exactly once.
-        static STRICT_OBJECT_CREATION_OFF: std::sync::Once = std::sync::Once::new();
-        STRICT_OBJECT_CREATION_OFF.call_once(|| git2::opts::strict_object_creation(false));
+        static GIT2_SET_GLOBAL_OPTS: std::sync::Once = std::sync::Once::new();
+        GIT2_SET_GLOBAL_OPTS.call_once(|| {
+            // Disable libgit2's strict object creation globally: josh only ever writes objects
+            // whose referenced objects it has just produced or read, so the per-write existence
+            // checks are pure overhead. This is a process-wide C global, set exactly once.
+            git2::opts::strict_object_creation(false);
+
+            // Disable libgit2's parsed object cache. The cache has a limited size,
+            // and the way the eviction mechanism works when eviction is needed
+            // creates frequent cache misses.
+            git2::opts::enable_caching(false);
+        });
 
         let mem_odb = josh_memodb::MemOdb::new(mem_odb_limit, repo.path().to_owned());
         mem_odb.register(&repo);

@@ -22,6 +22,7 @@
 use std::ffi::{c_int, c_void};
 use std::ptr;
 
+use crate::odb_cache::{CacheObjectData, ObjectCache};
 use git2::{ErrorCode, ObjectType, Oid};
 use libgit2_sys as raw;
 
@@ -48,6 +49,7 @@ pub trait OdbBackend {
 struct RawOdbBackend {
     raw: raw::git_odb_backend,
     obj: Box<dyn OdbBackend>,
+    cache: ObjectCache,
     /// The repository's original on-disk ODB (loose + pack), kept as an owned reference so read-side
     /// callbacks can delegate to it on a memory miss. Released in [`backend_free`].
     delegate: *mut raw::git_odb,
@@ -68,8 +70,8 @@ impl RawOdbBackend {
         oid: *const raw::git_oid,
     ) -> c_int {
         let (wrapper, roid) = unsafe { (RawOdbBackend::from_raw(backend), oid_from_raw(oid)) };
-        match wrapper.obj.read(roid) {
-            Ok((data, kind)) => unsafe {
+        if let Some((kind, data)) = wrapper.cache.load(unsafe { *oid }) {
+            unsafe {
                 let len = data.len();
                 let buf = raw::git_odb_backend_data_alloc(backend, len);
                 if buf.is_null() {
@@ -78,32 +80,75 @@ impl RawOdbBackend {
                 ptr::copy_nonoverlapping(data.as_ptr(), buf as *mut u8, len);
                 *data_p = buf;
                 *len_p = len;
-                *kind_p = kind.raw();
+                *kind_p = kind;
+                return raw::GIT_OK;
+            }
+        }
+
+        match wrapper.obj.read(roid) {
+            Ok((data, kind)) => {
+                let kind_raw = kind.raw();
+                let len = data.len();
+
+                // Copy into libgit2's buffer first (unavoidable: libgit2 owns that allocation),
+                // then hand the bytes we already own to the cache.
+                unsafe {
+                    let buf = raw::git_odb_backend_data_alloc(backend, len);
+                    if buf.is_null() {
+                        return raw::GIT_ERROR;
+                    }
+                    ptr::copy_nonoverlapping(data.as_ptr(), buf as *mut u8, len);
+                    *data_p = buf;
+                    *len_p = len;
+                    *kind_p = kind_raw;
+                }
+
+                // `into_boxed_slice` is zero-copy here — `data` came from a clone,
+                // so its capacity equals its length.
+                debug_assert_eq!(data.capacity(), data.len());
+                wrapper
+                    .cache
+                    .store(unsafe { *oid }, kind_raw, CacheObjectData::Allocated(data));
                 raw::GIT_OK
-            },
-            Err(err) if is_not_found(&err) && !wrapper.delegate.is_null() => unsafe {
+            }
+            Err(err) if is_not_found(&err) && !wrapper.delegate.is_null() => {
                 // Memory miss: read through to the original on-disk ODB and copy its bytes into a
                 // backend-owned buffer (libgit2 frees `*data_p` via the backend's allocator).
-                let mut obj: *mut raw::git_odb_object = ptr::null_mut();
-                let rc = raw::git_odb_read(&mut obj, wrapper.delegate, oid);
-                if rc != 0 {
-                    return rc;
-                }
-                let src = raw::git_odb_object_data(obj) as *const u8;
-                let len = raw::git_odb_object_size(obj);
-                let kind = raw::git_odb_object_type(obj);
-                let buf = raw::git_odb_backend_data_alloc(backend, len);
-                if buf.is_null() {
+                let obj = unsafe {
+                    let mut obj: *mut raw::git_odb_object = ptr::null_mut();
+                    let rc = raw::git_odb_read(&mut obj, wrapper.delegate, oid);
+                    if rc != 0 {
+                        return rc;
+                    }
+                    obj
+                };
+
+                let (src, len, kind) = unsafe {
+                    let src = raw::git_odb_object_data(obj) as *const u8;
+                    let len = raw::git_odb_object_size(obj);
+                    let kind = raw::git_odb_object_type(obj);
+                    (src, len, kind)
+                };
+
+                let data_slice = unsafe { std::slice::from_raw_parts(src, len) };
+                wrapper
+                    .cache
+                    .store(unsafe { *oid }, kind, CacheObjectData::Ref(data_slice));
+
+                unsafe {
+                    let buf = raw::git_odb_backend_data_alloc(backend, len);
+                    if buf.is_null() {
+                        raw::git_odb_object_free(obj);
+                        return raw::GIT_ERROR;
+                    }
+                    ptr::copy_nonoverlapping(src, buf as *mut u8, len);
+                    *data_p = buf;
+                    *len_p = len;
+                    *kind_p = kind;
                     raw::git_odb_object_free(obj);
-                    return raw::GIT_ERROR;
+                    raw::GIT_OK
                 }
-                ptr::copy_nonoverlapping(src, buf as *mut u8, len);
-                *data_p = buf;
-                *len_p = len;
-                *kind_p = kind;
-                raw::git_odb_object_free(obj);
-                raw::GIT_OK
-            },
+            }
             Err(err) => err.raw_code(),
         }
     }
@@ -262,6 +307,7 @@ fn new(
     };
     let wrapper = RawOdbBackend {
         raw: backend,
+        cache: ObjectCache::default(),
         obj: Box::new(callee),
         delegate,
     };
