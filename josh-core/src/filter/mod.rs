@@ -20,6 +20,7 @@ pub use josh_filter::{as_file, pretty, spec};
 
 pub mod text;
 pub mod tree;
+pub mod trigram;
 
 static WORKSPACES: LazyLock<std::sync::Mutex<std::collections::HashMap<git2::Oid, Filter>>> =
     LazyLock::new(Default::default);
@@ -1473,7 +1474,7 @@ pub fn apply<'a>(
             .with_tree(tree::pathstree("", x.tree().id(), transaction)?)),
         Op::Index => Ok(x
             .clone()
-            .with_tree(tree::trigram_index(transaction, x.tree().clone())?)),
+            .with_tree(trigram::trigram_index(transaction, x.tree().clone())?)),
 
         Op::Invert => {
             Ok(x.clone()

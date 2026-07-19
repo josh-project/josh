@@ -404,13 +404,13 @@ fn run_filter(args: Vec<String>) -> anyhow::Result<i32> {
         let index_tree = repo.find_commit(index_commit)?.tree()?;
 
         /* let start = std::time::Instant::now(); */
-        let candidates = josh_core::filter::tree::search_candidates(
+        let candidates = josh_core::filter::trigram::search_candidates(
             &transaction,
             &index_tree,
             searchstring,
             max_complexity,
         )?;
-        let matches = josh_core::filter::tree::search_matches(
+        let matches = josh_core::filter::trigram::search_matches(
             &transaction,
             &tree,
             searchstring,
