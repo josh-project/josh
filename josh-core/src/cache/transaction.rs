@@ -1,4 +1,5 @@
-use super::history_graph::compute_sequence_number;
+use super::backend::HistoryGraphHint;
+use super::history_graph::compute_history_hint;
 use super::sled::sled_open_josh_trees;
 use super::stack::CacheStack;
 use anyhow::anyhow;
@@ -467,12 +468,15 @@ impl Transaction {
         to: git2::Oid,
         store: bool,
     ) -> anyhow::Result<()> {
-        let sequence_number = if filter != crate::filter::sequence_number()
+        let hint = if filter != crate::filter::sequence_number()
             && filter != crate::filter::reachable_roots()
         {
-            compute_sequence_number(self, from)?
+            compute_history_hint(self, from)?
         } else {
-            0
+            HistoryGraphHint {
+                sequence_number: 0,
+                parent_count: 1,
+            }
         };
         let mut t2 = self.t2.borrow_mut();
         t2.commit_map
@@ -484,7 +488,7 @@ impl Transaction {
         // random extra commits (probability 1/256) to avoid long searches for filters that reduce
         // the history length by a very large factor.
         if store || from.as_bytes()[0] == 0 {
-            t2.cache.write_all(filter, from, to, sequence_number)?;
+            t2.cache.write_all(filter, from, to, hint)?;
         }
         Ok(())
     }
@@ -532,12 +536,15 @@ impl Transaction {
         if filter.is_nop() {
             return Ok(Some(from));
         }
-        let sequence_number = if filter != crate::filter::sequence_number()
+        let hint = if filter != crate::filter::sequence_number()
             && filter != crate::filter::reachable_roots()
         {
-            compute_sequence_number(self, from)?
+            compute_history_hint(self, from)?
         } else {
-            0
+            HistoryGraphHint {
+                sequence_number: 0,
+                parent_count: 1,
+            }
         };
         let t2 = self.t2.borrow_mut();
         if let Some(m) = t2.commit_map.get(&filter.id())
@@ -546,7 +553,7 @@ impl Transaction {
             return Ok(Some(oid));
         }
 
-        let oid = t2.cache.read_propagate(filter, from, sequence_number)?;
+        let oid = t2.cache.read_propagate(filter, from, hint)?;
 
         if let Some(oid) = oid {
             if oid == git2::Oid::zero() {

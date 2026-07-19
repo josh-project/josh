@@ -1,4 +1,4 @@
-use super::backend::CacheBackend;
+use super::backend::{CacheBackend, HistoryGraphHint};
 use super::sled::SledCacheBackend;
 use crate::filter;
 
@@ -33,10 +33,10 @@ impl CacheStack {
         filter: filter::Filter,
         from: git2::Oid,
         to: git2::Oid,
-        sequence_number: u64,
+        hint: HistoryGraphHint,
     ) -> anyhow::Result<()> {
         for backend in &self.backends {
-            backend.write(filter, from, to, sequence_number)?;
+            backend.write(filter, from, to, hint)?;
         }
 
         Ok(())
@@ -52,19 +52,17 @@ impl CacheStack {
         &self,
         filter: filter::Filter,
         from: git2::Oid,
-        sequence_number: u64,
+        hint: HistoryGraphHint,
     ) -> anyhow::Result<Option<git2::Oid>> {
         let values = self
             .backends
             .iter()
             .enumerate()
-            .find_map(
-                |(index, backend)| match backend.read(filter, from, sequence_number) {
-                    Ok(None) => None,
-                    Ok(Some(oid)) => Some(Ok((index, oid))),
-                    Err(e) => Some(Err(e)),
-                },
-            );
+            .find_map(|(index, backend)| match backend.read(filter, from, hint) {
+                Ok(None) => None,
+                Ok(Some(oid)) => Some(Ok((index, oid))),
+                Err(e) => Some(Err(e)),
+            });
 
         let (index, oid) = match values {
             // None of the backends had the value
@@ -78,7 +76,7 @@ impl CacheStack {
         self.backends
             .iter()
             .take(index)
-            .try_for_each(|backend| backend.write(filter, from, oid, sequence_number))?;
+            .try_for_each(|backend| backend.write(filter, from, oid, hint))?;
 
         Ok(Some(oid))
     }
