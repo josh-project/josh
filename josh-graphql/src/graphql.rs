@@ -101,7 +101,6 @@ impl Revision {
     }
 
     fn hash(&self, context: &Context) -> FieldResult<String> {
-        rs_tracing::trace_scoped!("hash");
         let transaction = context.transaction.lock().unwrap();
         let commit = transaction.repo().find_commit(self.commit_id)?;
         let filter_commit = filter::apply_to_commit(self.filter, &commit, &transaction)?;
@@ -223,7 +222,6 @@ impl Revision {
         offset: Option<i32>,
         context: &Context,
     ) -> FieldResult<Vec<Revision>> {
-        rs_tracing::trace_scoped!("history");
         let limit = limit.unwrap_or(1) as usize;
         let offset = offset.unwrap_or(0) as usize;
         let transaction = context.transaction.lock().unwrap();
@@ -241,7 +239,6 @@ impl Revision {
 
         let mut contained_in = self.commit_id;
         let mut ids = {
-            rs_tracing::trace_scoped!("walk");
             walk.skip(offset)
                 .take(limit)
                 .map(|id| id.unwrap_or(git2::Oid::zero()))
@@ -249,7 +246,6 @@ impl Revision {
         };
 
         {
-            rs_tracing::trace_scoped!("walk");
             for i in 0..ids.len() {
                 let orig =
                     history::find_original(&transaction, self.filter, contained_in, ids[i], true)?;
@@ -677,8 +673,8 @@ impl Path {
     ) -> FieldResult<Document> {
         self.internal_serialize(context, |transaction, id| {
             let blob = transaction.repo().find_blob(id)?;
-            let value =
-                str_to_value(std::str::from_utf8(blob.content())?).unwrap_or_else(|_| json!({}));
+            let value = str_to_value(std::str::from_utf8(blob.content())?)
+                .unwrap_or_else(|_| serde_json::json!({}));
             Ok(Document { id, value })
         })
     }
@@ -759,7 +755,7 @@ impl Document {
         if let Some(pointer) = pointer {
             self.value
                 .pointer(&pointer)
-                .unwrap_or(&json!({}))
+                .unwrap_or(&serde_json::json!({}))
                 .to_owned()
         } else {
             self.value.clone()

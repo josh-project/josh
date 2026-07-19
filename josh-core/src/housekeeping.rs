@@ -212,7 +212,7 @@ pub fn get_info(
         commit
             .parent_ids()
             .map(|x| {
-                json!({
+                serde_json::json!({
                     "commit": x.to_string(),
                     "tree": transaction.repo().find_commit(x)
                         .map(|c| { c.tree_id() })
@@ -224,20 +224,20 @@ pub fn get_info(
     };
 
     let t = if let Ok(filtered) = transaction.repo().find_commit(filtered) {
-        json!({
+        serde_json::json!({
             "commit": filtered.id().to_string(),
             "tree": filtered.tree_id().to_string(),
             "parents": parent_ids(&filtered),
         })
     } else {
-        json!({
+        serde_json::json!({
             "commit": git2::Oid::zero().to_string(),
             "tree": git2::Oid::zero().to_string(),
-            "parents": json!([]),
+            "parents": serde_json::json!([]),
         })
     };
 
-    let s = json!({
+    let s = serde_json::json!({
         "commit": commit.id().to_string(),
         "tree": commit.tree_id().to_string(),
         "parents": parent_ids(&commit),

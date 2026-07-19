@@ -1,8 +1,5 @@
 #![warn(unused_extern_crates)]
 
-#[macro_use]
-extern crate rs_tracing;
-
 use anyhow::Context;
 use std::fs::read_to_string;
 use std::io::Write;
@@ -72,12 +69,6 @@ fn make_app() -> clap::Command {
                 .action(clap::ArgAction::SetTrue)
                 .help("Populate the cache with probable filters")
                 .short('d'),
-        )
-        .arg(
-            clap::Arg::new("trace")
-                .action(clap::ArgAction::SetTrue)
-                .help("Write a trace in chrome tracing format")
-                .short('t'),
         )
         .arg(
             clap::Arg::new("print-filter")
@@ -179,10 +170,6 @@ impl josh_core::cache::FilterHook for GitNotesFilterHook {
 
 fn run_filter(args: Vec<String>) -> anyhow::Result<i32> {
     let args = make_app().get_matches_from(args);
-
-    if args.get_flag("trace") {
-        rs_tracing::open_trace_file!(".").unwrap();
-    }
 
     if args.get_flag("version") {
         println!("Version: {}", josh_core::VERSION);
@@ -320,9 +307,6 @@ fn run_filter(args: Vec<String>) -> anyhow::Result<i32> {
     };
 
     let finish = defer::defer(|| {
-        if args.get_flag("trace") {
-            rs_tracing::close_trace_file!();
-        }
         if args.get_flag("cache-stats") {
             josh_core::cache::sled_print_stats().expect("failed to collect cache stats");
         }

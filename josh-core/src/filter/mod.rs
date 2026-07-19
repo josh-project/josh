@@ -642,8 +642,6 @@ pub fn apply_to_commit2(
         }
     };
 
-    rs_tracing::trace_scoped!("apply_to_commit", "spec": spec(filter), "commit": commit.id().to_string());
-
     let rewrite_data = match &op {
         Op::Squash(Some(ids)) => {
             if let Some(sq) = ids.get(&LazyRef::Resolved(commit.id())) {
@@ -923,7 +921,6 @@ pub fn apply_to_commit2(
             let parent_filters = commit
                 .parents()
                 .map(|parent| {
-                    rs_tracing::trace_scoped!("parent", "id": parent.id().to_string());
                     let pcw = get_workspace(
                         transaction,
                         &parent.tree().unwrap_or_else(|_| tree::empty(repo)),
@@ -941,7 +938,6 @@ pub fn apply_to_commit2(
             let parent_filters = commit
                 .parents()
                 .map(|parent| {
-                    rs_tracing::trace_scoped!("parent", "id": parent.id().to_string());
                     let pcs = get_stored(
                         transaction,
                         &parent.tree().unwrap_or_else(|_| tree::empty(repo)),
@@ -960,7 +956,6 @@ pub fn apply_to_commit2(
             let parent_filters = commit
                 .parents()
                 .map(|parent| {
-                    rs_tracing::trace_scoped!("parent", "id": parent.id().to_string());
                     let pcs = get_starlark(
                         transaction,
                         &parent.tree().unwrap_or_else(|_| tree::empty(repo)),
@@ -1084,7 +1079,6 @@ pub fn apply_to_commit2(
     let tree_data = rewrite_data;
 
     let filtered_parent_ids = {
-        rs_tracing::trace_scoped!("filtered_parent_ids", "n": commit.parent_ids().len());
         commit
             .parents()
             .map(|x| transaction.get(filter, x.id()))

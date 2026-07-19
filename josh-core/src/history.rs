@@ -20,8 +20,6 @@ pub fn walk2(
     input: git2::Oid,
     transaction: &cache::Transaction,
 ) -> anyhow::Result<()> {
-    rs_tracing::trace_scoped!("walk2","spec":filter::spec(filter), "id": input.to_string());
-
     if transaction.known(filter, input)? {
         return Ok(());
     }

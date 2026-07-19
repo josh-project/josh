@@ -14,9 +14,6 @@ macro_rules! ok_or {
     };
 }
 
-#[macro_use]
-extern crate rs_tracing;
-
 pub mod cache;
 pub mod filter;
 pub mod git;
@@ -194,7 +191,6 @@ pub fn filter_refs(
     filterobj: filter::Filter,
     refs: &[(String, git2::Oid)],
 ) -> (Vec<(String, git2::Oid)>, Vec<(String, anyhow::Error)>) {
-    rs_tracing::trace_scoped!("filter_refs", "spec": filter::spec(filterobj));
     let s = tracing::Span::current();
     let _e = s.enter();
     let mut updated = vec![];
