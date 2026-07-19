@@ -3031,6 +3031,7 @@ dependencies = [
  "josh-github-keyring",
  "josh-graphql",
  "josh-link",
+ "josh-search",
  "josh-templates",
  "juniper",
  "log",
@@ -3107,6 +3108,7 @@ dependencies = [
  "itertools 0.14.0",
  "josh-filter",
  "josh-memodb",
+ "josh-search",
  "josh-starlark",
  "josh-test-support",
  "log",
@@ -3289,6 +3291,7 @@ dependencies = [
  "chrono",
  "git2",
  "josh-core",
+ "josh-search",
  "juniper",
  "regex",
  "serde_json",
@@ -3376,6 +3379,16 @@ dependencies = [
  "libc",
  "serde",
  "tokio",
+]
+
+[[package]]
+name = "josh-search"
+version = "26.7.19"
+dependencies = [
+ "anyhow",
+ "bitvec",
+ "git2",
+ "hex",
 ]
 
 [[package]]

@@ -1,12 +1,63 @@
-use super::tree::{empty_id, get_blob, insert};
-use super::*;
-use crate::cache::CacheStack;
-use crate::cache::TransactionContext;
+//! Trigram based code search index for git repositories.
+//!
+//! The index of a tree is itself a git tree, holding per-directory bloom filters over the
+//! trigrams of the directory's files (`OWN<n>`), of all descendant files (`SUB<n>`), and
+//! per-file filter chunks (`BLOBS<n>`) at 8 saturation ordinals. Searching walks the index tree,
+//! pruning directories whose filters cannot contain the search string's trigrams, and returns
+//! candidate file paths for exact verification.
+//!
+//! This crate is independent of the josh filter machinery: it operates on plain [`git2`] objects
+//! and memoizes tree-to-index mappings through the [`IndexCache`] trait the caller provides.
 
 use anyhow::anyhow;
-use std::path::Path;
 
 const FILE_FILTER_SIZE: usize = 64;
+
+/// Memoization of tree oid -> index tree oid mappings, provided by the caller.
+///
+/// [`trigram_index`] consults this per (sub)tree, which is what makes indexing incremental: when
+/// a new commit is indexed, unchanged subtrees hit the cache and reuse their index.
+pub trait IndexCache {
+    fn get_index(&self, tree: git2::Oid) -> Option<git2::Oid>;
+    fn set_index(&self, tree: git2::Oid, index: git2::Oid);
+}
+
+fn empty_tree_id() -> git2::Oid {
+    git2::Oid::from_str("4b825dc642cb6eb9a060e54bf8d69288fbee4904").unwrap()
+}
+
+/// Read the blob at `name` in `tree` as text, or "" if it is absent, binary or not UTF-8.
+fn get_blob(repo: &git2::Repository, tree: &git2::Tree, name: &str) -> String {
+    let Some(entry) = tree.get_name(name) else {
+        return "".to_owned();
+    };
+
+    let Ok(blob) = repo.find_blob(entry.id()) else {
+        return "".to_owned();
+    };
+
+    if blob.is_binary() {
+        return "".to_owned();
+    }
+
+    let Ok(content) = std::str::from_utf8(blob.content()) else {
+        return "".to_owned();
+    };
+
+    content.to_owned()
+}
+
+/// Insert a blob entry into the root of `tree`, returning the new tree.
+fn insert_blob<'a>(
+    repo: &'a git2::Repository,
+    tree: &git2::Tree,
+    name: &str,
+    blob: git2::Oid,
+) -> anyhow::Result<git2::Tree<'a>> {
+    let mut builder = repo.treebuilder(Some(tree))?;
+    builder.insert(name, blob, 0o0100644)?;
+    Ok(repo.find_tree(builder.write()?)?)
+}
 
 #[allow(clippy::many_single_char_names)]
 fn hash_bits(s: &str, size: usize) -> [usize; 3] {
@@ -46,11 +97,11 @@ pub fn make_dir_trigram_filter(searchstring: &str, size: usize, bits: &[usize]) 
 }
 
 pub fn trigram_index<'a>(
-    transaction: &'a cache::Transaction,
+    repo: &'a git2::Repository,
+    cache: &dyn IndexCache,
     tree: git2::Tree<'a>,
 ) -> anyhow::Result<git2::Tree<'a>> {
-    let repo = transaction.repo();
-    if let Some(cached) = transaction.get_trigram_index(tree.id()) {
+    if let Some(cached) = cache.get_index(tree.id()) {
         return Ok(repo.find_tree(cached)?);
     }
 
@@ -67,7 +118,7 @@ pub fn trigram_index<'a>(
     for entry in tree.iter() {
         let name = entry.name().ok_or_else(|| anyhow!("no name"))?;
         if entry.kind() == Some(git2::ObjectType::Blob) {
-            let b = get_blob(repo, &tree, Path::new(name));
+            let b = get_blob(repo, &tree, name);
 
             let mut file_chunks = vec![name.to_string()];
 
@@ -144,10 +195,10 @@ pub fn trigram_index<'a>(
         }
 
         if entry.kind() == Some(git2::ObjectType::Tree) {
-            let s = trigram_index(transaction, transaction.repo().find_tree(entry.id())?)?;
+            let s = trigram_index(repo, cache, repo.find_tree(entry.id())?)?;
 
             for (a, arr_sub) in arrs_sub.iter_mut().enumerate() {
-                let b = get_blob(repo, &s, Path::new(&format!("OWN{}", a)));
+                let b = get_blob(repo, &s, &format!("OWN{}", a));
                 let hd = hex::decode(b.lines().collect::<Vec<_>>().join(""))?;
                 let new_size = std::cmp::max(hd.len(), arr_sub.len());
                 arr_sub.resize(new_size, 0);
@@ -155,7 +206,7 @@ pub fn trigram_index<'a>(
                     *a |= b;
                 }
 
-                let b = get_blob(repo, &s, Path::new(&format!("SUB{}", a)));
+                let b = get_blob(repo, &s, &format!("SUB{}", a));
                 let hd = hex::decode(b.lines().collect::<Vec<_>>().join(""))?;
                 let new_size = std::cmp::max(hd.len(), arr_sub.len());
                 arr_sub.resize(new_size, 0);
@@ -164,7 +215,7 @@ pub fn trigram_index<'a>(
                 }
             }
 
-            if s.id() != empty_id() {
+            if s.id() != empty_tree_id() {
                 builder.insert(name, s.id(), 0o0040000).ok();
             }
         }
@@ -174,10 +225,10 @@ pub fn trigram_index<'a>(
 
     for a in 0..arrs_sub.len() {
         if arrs_own[a].iter().any(|x| *x != 0) {
-            result = insert(
+            result = insert_blob(
                 repo,
                 &result,
-                Path::new(&format!("OWN{}", a)),
+                &format!("OWN{}", a),
                 repo.blob(
                     arrs_own[a]
                         .chunks(64)
@@ -186,15 +237,14 @@ pub fn trigram_index<'a>(
                         .join("\n")
                         .as_bytes(),
                 )?,
-                0o0100644,
             )
             .unwrap();
         }
         if arrs_sub[a].iter().any(|x| *x != 0) {
-            result = insert(
+            result = insert_blob(
                 repo,
                 &result,
-                Path::new(&format!("SUB{}", a)),
+                &format!("SUB{}", a),
                 repo.blob(
                     arrs_sub[a]
                         .chunks(64)
@@ -203,27 +253,25 @@ pub fn trigram_index<'a>(
                         .join("\n")
                         .as_bytes(),
                 )?,
-                0o0100644,
             )
             .unwrap();
         }
         if !files[a].is_empty() {
-            result = insert(
+            result = insert_blob(
                 repo,
                 &result,
-                Path::new(&format!("BLOBS{}", a)),
+                &format!("BLOBS{}", a),
                 repo.blob(files[a].join("\n").as_bytes())?,
-                0o0100644,
             )
             .unwrap();
         }
     }
-    transaction.insert_trigram_index(tree.id(), result.id());
+    cache.set_index(tree.id(), result.id());
     Ok(result)
 }
 
 pub fn search_candidates(
-    transaction: &cache::Transaction,
+    repo: &git2::Repository,
     tree: &git2::Tree,
     searchstring: &str,
     max_ord: usize,
@@ -235,7 +283,7 @@ pub fn search_candidates(
     for ord in 0..max_ord {
         let dir_filter_size = usize::pow(4, 3 + ord as u32);
         let df = make_dir_trigram_filter(searchstring, dir_filter_size, &[0, 1, 2]);
-        trigram_search(transaction, tree.clone(), "", &df, &ff, &mut results, ord)?;
+        trigram_search(repo, tree.clone(), "", &df, &ff, &mut results, ord)?;
     }
     Ok(results)
 }
@@ -243,7 +291,7 @@ pub fn search_candidates(
 type SearchMatchesResult = Vec<(String, Vec<(usize, String)>)>;
 
 pub fn search_matches(
-    transaction: &cache::Transaction,
+    repo: &git2::Repository,
     tree: &git2::Tree,
     searchstring: &str,
     candidates: &Vec<String>,
@@ -251,7 +299,7 @@ pub fn search_matches(
     let mut results = vec![];
 
     for c in candidates {
-        let b = get_blob(transaction.repo(), tree, Path::new(&c));
+        let b = get_blob_path(repo, tree, std::path::Path::new(&c));
 
         let mut bresults = vec![];
 
@@ -269,8 +317,29 @@ pub fn search_matches(
     Ok(results)
 }
 
+/// Like [`get_blob`], but for a (possibly nested) path instead of a root entry name.
+fn get_blob_path(repo: &git2::Repository, tree: &git2::Tree, path: &std::path::Path) -> String {
+    let Ok(entry) = tree.get_path(path) else {
+        return "".to_owned();
+    };
+
+    let Ok(blob) = repo.find_blob(entry.id()) else {
+        return "".to_owned();
+    };
+
+    if blob.is_binary() {
+        return "".to_owned();
+    }
+
+    let Ok(content) = std::str::from_utf8(blob.content()) else {
+        return "".to_owned();
+    };
+
+    content.to_owned()
+}
+
 pub fn trigram_search<'a>(
-    transaction: &'a cache::Transaction,
+    repo: &'a git2::Repository,
     tree: git2::Tree<'a>,
     root: &str,
     dir_filter: &[u8],
@@ -278,8 +347,6 @@ pub fn trigram_search<'a>(
     results: &mut Vec<String>,
     ord: usize,
 ) -> anyhow::Result<()> {
-    let repo = transaction.repo();
-
     let hd = {
         if let Some(blob) = tree
             .get_name(&format!("OWN{}", ord))
@@ -307,7 +374,7 @@ pub fn trigram_search<'a>(
     };
 
     if dmatch {
-        let b = get_blob(repo, &tree, Path::new(&format!("BLOBS{}", ord)));
+        let b = get_blob(repo, &tree, &format!("BLOBS{}", ord));
 
         let mut filename = None;
         let mut skip = false;
@@ -363,8 +430,6 @@ pub fn trigram_search<'a>(
         }
     }
 
-    let rpath = transaction.repo().path();
-
     let trees = tree
         .iter()
         .filter(|x| x.kind() == Some(git2::ObjectType::Tree))
@@ -372,13 +437,15 @@ pub fn trigram_search<'a>(
         .map(|x| (x.id(), x.name().unwrap().to_string()))
         .collect::<Vec<_>>();
 
-    let tran_context = TransactionContext::new(rpath, CacheStack::default().into());
-    let sub_transaction = tran_context.open()?;
+    // A fresh repository handle per directory, mirroring the sub-transaction the pre-crate-move
+    // implementation opened here. This keeps the performance profile of the recursion unchanged
+    // until the indexer rework addresses it deliberately.
+    let sub_repo = git2::Repository::open(repo.path())?;
     for (id, name) in &trees {
-        let s = sub_transaction.repo().find_tree(*id)?;
+        let s = sub_repo.find_tree(*id)?;
 
         trigram_search(
-            &sub_transaction,
+            &sub_repo,
             s,
             &format!("{}{}{}", root, if root.is_empty() { "" } else { "/" }, name),
             dir_filter,
