@@ -327,15 +327,10 @@ fn orchestrate_push(
 
     let remote_name = remote.unwrap_or("origin");
 
-    let RemoteConfig {
-        url,
-        filter_with_meta,
-        forge,
-        ..
-    } = read_remote_config(&repo_path, remote_name)
+    let config = read_remote_config(&repo_path, remote_name)
         .with_context(|| format!("Failed to read remote config for '{}'", remote_name))?;
-
-    let filter = filter_with_meta.peel();
+    let filter = config.semantic_filter();
+    let RemoteConfig { url, forge, .. } = config;
 
     let refspecs = if refspecs_arg.is_empty() {
         let head = repo.head().context("Failed to get HEAD")?;

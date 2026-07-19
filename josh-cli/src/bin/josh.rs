@@ -459,13 +459,10 @@ fn handle_fetch(
     let repo_path = normalize_repo_path(repo.path());
 
     // Read the remote configuration from .git/josh/remotes/<name>.josh
-    let RemoteConfig {
-        url,
-        ref_spec,
-        filter_with_meta,
-        ..
-    } = read_remote_config(&repo_path, &args.remote)
+    let config = read_remote_config(&repo_path, &args.remote)
         .with_context(|| format!("Failed to read remote config for '{}'", args.remote))?;
+    let filter = config.semantic_filter();
+    let RemoteConfig { url, ref_spec, .. } = config;
 
     // First, fetch unfiltered refs to refs/josh/remotes/*
     transaction
@@ -473,7 +470,6 @@ fn handle_fetch(
         .context("git fetch to josh/remotes failed")?;
 
     // Warm the local cache from the remote before filtering
-    let filter = filter_with_meta.peel();
     if let Err(e) = josh_cli::commands::cache::fetch_remote_cache(transaction, &url, filter) {
         eprintln!("Warning: could not fetch remote cache: {e}");
     }
@@ -609,12 +605,10 @@ fn handle_filter(
     let repo = transaction.repo();
     let repo_path = normalize_repo_path(repo.path());
 
-    let RemoteConfig {
-        filter_with_meta, ..
-    } = read_remote_config(&repo_path, &args.remote)
+    let config = read_remote_config(&repo_path, &args.remote)
         .with_context(|| format!("Failed to read remote config for '{}'", args.remote))?;
 
-    let filter = filter_with_meta.peel();
+    let filter = config.semantic_filter();
     let filter_str = josh_core::filter::spec(filter);
 
     println!(

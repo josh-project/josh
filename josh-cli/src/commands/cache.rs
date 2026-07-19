@@ -128,7 +128,7 @@ fn handle_cache_build(args: &CacheBuildArgs, transaction: &Transaction) -> anyho
 
     // Add the config filter as fallback if not already discovered.
     if let Ok(config) = read_remote_config(&repo_path, &args.remote) {
-        let config_filter = config.filter_with_meta.peel();
+        let config_filter = config.semantic_filter();
         let config_steps = flatten_chain(config_filter);
         let config_prefix = remote_ops::step_ref_prefix(config_steps.len() - 1, &config_steps);
         if !full_chains.contains(&config_prefix) {
@@ -223,14 +223,10 @@ fn handle_cache_push(args: &CachePushArgs, transaction: &Transaction) -> anyhow:
     let repo = transaction.repo();
     let repo_path = normalize_repo_path(repo.path());
 
-    let RemoteConfig {
-        url,
-        filter_with_meta,
-        ..
-    } = read_remote_config(&repo_path, &args.remote)
+    let config = read_remote_config(&repo_path, &args.remote)
         .with_context(|| format!("Failed to read remote config for '{}'", args.remote))?;
-
-    let filter = filter_with_meta.peel();
+    let filter = config.semantic_filter();
+    let RemoteConfig { url, .. } = config;
     let steps = flatten_chain(filter);
 
     let default_branch = remote_ops::resolve_default_branch(repo, &args.remote)?;
@@ -310,14 +306,10 @@ fn handle_cache_fetch(args: &CacheFetchArgs, transaction: &Transaction) -> anyho
     let repo = transaction.repo();
     let repo_path = normalize_repo_path(repo.path());
 
-    let RemoteConfig {
-        url,
-        filter_with_meta,
-        ..
-    } = read_remote_config(&repo_path, &args.remote)
+    let config = read_remote_config(&repo_path, &args.remote)
         .with_context(|| format!("Failed to read remote config for '{}'", args.remote))?;
-
-    let filter = filter_with_meta.peel();
+    let filter = config.semantic_filter();
+    let RemoteConfig { url, .. } = config;
 
     fetch_remote_cache(transaction, &url, filter)?;
 

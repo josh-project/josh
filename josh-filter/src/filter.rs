@@ -323,6 +323,23 @@ impl Filter {
             _ => *self,
         }
     }
+
+    /// Remove the given keys from this filter's outermost Meta wrapper, keeping
+    /// all other metadata in place. If no metadata remains the Meta wrapper is
+    /// dropped entirely. Metadata nested deeper inside the filter is untouched.
+    pub fn without_meta_keys(self, keys: &[&str]) -> Filter {
+        match to_op(self) {
+            Op::Meta(mut meta, inner_filter) => {
+                meta.retain(|k, _| !keys.contains(&k.as_str()));
+                if meta.is_empty() {
+                    inner_filter
+                } else {
+                    to_filter(Op::Meta(meta, inner_filter))
+                }
+            }
+            _ => self,
+        }
+    }
 }
 
 impl std::fmt::Debug for Filter {
