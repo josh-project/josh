@@ -217,7 +217,7 @@
   $ josh link --help
   Manage josh links (like `josh remote` but for links)
   
-  Usage: josh link <COMMAND>
+  Usage: josh link [OPTIONS] <COMMAND>
   
   Commands:
     add     Add a link with optional filter and target branch
@@ -227,7 +227,8 @@
     help    Print this message or the help of the given subcommand(s)
   
   Options:
-    -h, --help  Print help
+        --no-distributed-cache  Disable the distributed filter cache (don't read, write or fetch it)
+    -h, --help                  Print help
 
   $ josh link add --help
   Add a link with optional filter and target branch
@@ -240,9 +241,10 @@
     [FILTER]  Optional filter to apply to the linked repository
   
   Options:
-        --target <TARGET>  Target branch to link (defaults to HEAD)
-        --mode <MODE>      Link mode: embedded, snapshot, or pointer (defaults to snapshot) [default: snapshot]
-    -h, --help             Print help
+        --no-distributed-cache  Disable the distributed filter cache (don't read, write or fetch it)
+        --target <TARGET>       Target branch to link (defaults to HEAD)
+        --mode <MODE>           Link mode: embedded, snapshot, or pointer (defaults to snapshot) [default: snapshot]
+    -h, --help                  Print help
 
 # Test josh link fetch command
 # First, create a link file directly in the master branch for testing
