@@ -2799,9 +2799,7 @@ dependencies = [
 
 [[package]]
 name = "glob"
-version = "0.3.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0cc23270f6e1808e30a928bdc84dea0b9b4136a8bc82338574f23baf47bbd280"
+version = "0.3.4"
 
 [[package]]
 name = "global-hotkey"
@@ -3630,7 +3628,7 @@ dependencies = [
 
 [[package]]
 name = "josh-changes"
-version = "26.6.11"
+version = "26.7.28"
 dependencies = [
  "anyhow",
  "chrono",
@@ -3644,7 +3642,7 @@ dependencies = [
 
 [[package]]
 name = "josh-command-middleware"
-version = "26.6.11"
+version = "26.7.28"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -3654,7 +3652,7 @@ dependencies = [
 
 [[package]]
 name = "josh-core"
-version = "26.6.11"
+version = "26.7.28"
 dependencies = [
  "anyhow",
  "backtrace",
@@ -3672,14 +3670,15 @@ dependencies = [
  "indoc",
  "itertools 0.14.0",
  "josh-filter",
- "josh-git-data",
+ "josh-gix-ext",
+ "josh-memodb",
+ "josh-search",
  "josh-starlark",
  "log",
  "percent-encoding",
  "pest",
  "pest_derive",
  "regex",
- "rs_tracing",
  "rustc-hash 2.1.2",
  "serde",
  "serde_json",
@@ -3693,15 +3692,17 @@ dependencies = [
 
 [[package]]
 name = "josh-filter"
-version = "26.6.11"
+version = "26.7.28"
 dependencies = [
  "anyhow",
  "git2",
  "gix-hash",
  "gix-object",
+ "glob",
  "indoc",
  "itertools 0.14.0",
- "josh-git-data",
+ "josh-gix-ext",
+ "josh-memodb",
  "pest",
  "pest_derive",
  "regex",
@@ -3710,17 +3711,8 @@ dependencies = [
 ]
 
 [[package]]
-name = "josh-git-data"
-version = "26.6.11"
-dependencies = [
- "git2",
- "libgit2-sys",
- "log",
-]
-
-[[package]]
 name = "josh-github-auth"
-version = "26.6.11"
+version = "26.7.28"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -3743,7 +3735,7 @@ dependencies = [
 
 [[package]]
 name = "josh-github-changes"
-version = "26.6.11"
+version = "26.7.28"
 dependencies = [
  "anyhow",
  "git2",
@@ -3762,7 +3754,7 @@ dependencies = [
 
 [[package]]
 name = "josh-github-codegen-graphql"
-version = "26.6.11"
+version = "26.7.28"
 dependencies = [
  "anyhow",
  "chrono",
@@ -3778,7 +3770,7 @@ dependencies = [
 
 [[package]]
 name = "josh-github-graphql"
-version = "26.6.11"
+version = "26.7.28"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -3796,7 +3788,7 @@ dependencies = [
 
 [[package]]
 name = "josh-github-keyring"
-version = "26.6.11"
+version = "26.7.28"
 dependencies = [
  "anyhow",
  "chrono",
@@ -3809,7 +3801,7 @@ dependencies = [
 
 [[package]]
 name = "josh-github-webhooks"
-version = "26.6.11"
+version = "26.7.28"
 dependencies = [
  "axum",
  "chrono",
@@ -3822,6 +3814,16 @@ dependencies = [
  "serde_json",
  "sha2 0.11.0",
  "tracing",
+]
+
+[[package]]
+name = "josh-gix-ext"
+version = "26.7.28"
+dependencies = [
+ "anyhow",
+ "git2",
+ "gix-hash",
+ "gix-object",
 ]
 
 [[package]]
@@ -3841,8 +3843,27 @@ dependencies = [
 ]
 
 [[package]]
+name = "josh-memodb"
+version = "26.7.28"
+dependencies = [
+ "git2",
+ "libgit2-sys",
+ "log",
+]
+
+[[package]]
+name = "josh-search"
+version = "26.7.28"
+dependencies = [
+ "anyhow",
+ "bitvec",
+ "git2",
+ "hex",
+]
+
+[[package]]
 name = "josh-starlark"
-version = "26.6.11"
+version = "26.7.28"
 dependencies = [
  "allocative",
  "anyhow",
@@ -5787,16 +5808,6 @@ dependencies = [
  "libc",
  "untrusted",
  "windows-sys 0.52.0",
-]
-
-[[package]]
-name = "rs_tracing"
-version = "1.1.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e3b121670da627e1c0110e7972c9db150dd7f8704dc073cce32c3db9cb7861e0"
-dependencies = [
- "serde",
- "serde_json",
 ]
 
 [[package]]
