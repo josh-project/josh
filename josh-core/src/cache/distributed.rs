@@ -1,5 +1,5 @@
 use super::CACHE_VERSION;
-use super::backend::CacheBackend;
+use super::backend::{CacheBackend, HistoryGraphHint};
 use crate::filter;
 use crate::filter::Filter;
 use std::collections::HashMap;
@@ -97,14 +97,10 @@ impl DistributedCacheBackend {
 // The sparse cache is mostly only used for initial "cold starts" or longer "catch up".
 // For incremental filtering it's fine re-filter commits and rely on the local "dense" cache.
 // We store entries for 1% of all commits, and additionally all merges and orphans.
-fn is_eligible(repo: &git2::Repository, oid: git2::Oid, sequence_number: u64) -> bool {
-    let parent_count = if let Ok(c) = repo.find_commit(oid) {
-        c.parent_ids().count()
-    } else {
-        return false;
-    };
-
-    sequence_number % 100 == 0 || parent_count != 1
+// The parent count comes from the cached history-graph hint, so this check never
+// reads the commit from the ODB.
+fn is_eligible(hint: HistoryGraphHint) -> bool {
+    hint.sequence_number % 100 == 0 || hint.parent_count != 1
 }
 
 // To additionally limit the size of the trees the cache is also sharded by sequence
@@ -130,20 +126,20 @@ impl CacheBackend for DistributedCacheBackend {
         &self,
         filter: Filter,
         from: git2::Oid,
-        sequence_number: u64,
+        hint: HistoryGraphHint,
     ) -> anyhow::Result<Option<git2::Oid>> {
         if filter == filter::sequence_number() || filter == filter::reachable_roots() {
             return Ok(None);
         }
-        let repo = self.repo.lock().unwrap();
-        if !is_eligible(&repo, from, sequence_number) {
+        if !is_eligible(hint) {
             return Ok(None);
         }
+        let repo = self.repo.lock().unwrap();
 
         let guard = self.new_entries.lock().unwrap();
 
         // See if this is one of the newly added entries first
-        let shard = sequence_number / 10000;
+        let shard = hint.sequence_number / 10000;
         if let Some(shard_map) = guard.get(&(filter, shard))
             && let Some(to) = shard_map.get(&from)
         {
@@ -178,18 +174,16 @@ impl CacheBackend for DistributedCacheBackend {
         filter: Filter,
         from: git2::Oid,
         to: git2::Oid,
-        sequence_number: u64,
+        hint: HistoryGraphHint,
     ) -> anyhow::Result<()> {
         if filter == filter::sequence_number() || filter == filter::reachable_roots() {
             return Ok(());
         }
-
-        let repo = self.repo.lock().unwrap();
-        if !is_eligible(&repo, from, sequence_number) {
+        if !is_eligible(hint) {
             return Ok(());
         }
 
-        let shard = sequence_number / 10000;
+        let shard = hint.sequence_number / 10000;
 
         let mut guard = self.new_entries.lock().unwrap();
 
@@ -202,7 +196,6 @@ impl CacheBackend for DistributedCacheBackend {
         }
 
         std::mem::drop(guard);
-        std::mem::drop(repo);
 
         self.flush(false)?;
 

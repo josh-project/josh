@@ -56,7 +56,7 @@ This is a regression test for that problem.
   .
   |-- josh
   |   `-- cache
-  |       `-- 29
+  |       `-- 30
   |           `-- sled
   |               |-- blobs
   |               |-- conf
