@@ -3,6 +3,8 @@ name: codspeed
 on:
   push:
     branches: [ master ]
+  # `pull_request` is required for CodSpeed to report performance changes on PRs.
+  pull_request:
   # `workflow_dispatch` allows CodSpeed to trigger backtest performance
   # analysis in order to generate initial data.
   workflow_dispatch:
