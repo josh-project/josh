@@ -283,7 +283,10 @@ fn deephistory_subdir_distributed(c: &mut Criterion) {
             b.iter_batched(
                 // Per-iteration setup (untimed): cold caches and a fresh transaction so every run does
                 // the full filtering work through a cold distributed cache. The cache stack mirrors the
-                // `josh` CLI default: a sled backend plus a distributed backend.
+                // `josh` CLI default: a sled backend plus a distributed backend. The
+                // distributed backend is opened writable (the `josh cache build` mode) so the
+                // bench keeps covering the write/buffering path; the read-only session default
+                // only does less.
                 || {
                     josh_core::reset_caches().expect("reset caches");
                     clear_cache_refs(&bench.repo.repo).expect("clear cache refs");
@@ -291,7 +294,7 @@ fn deephistory_subdir_distributed(c: &mut Criterion) {
                         josh_core::cache::CacheStack::new()
                             .with_backend(josh_core::cache::SledCacheBackend::default())
                             .with_backend(
-                                josh_core::cache::DistributedCacheBackend::new(&path)
+                                josh_core::cache::DistributedCacheBackend::writable(&path)
                                     .expect("open distributed cache"),
                             ),
                     );

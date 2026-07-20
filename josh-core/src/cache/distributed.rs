@@ -12,6 +12,12 @@ const FLUSH_AFTER: usize = 1000;
 pub struct DistributedCacheBackend {
     new_entries: std::sync::Mutex<HashMap<(Filter, u64), HashMap<git2::Oid, git2::Oid>>>,
     repo: std::sync::Mutex<git2::Repository>,
+    // Whether this backend accepts writes. The default ([`Self::new`]) is read-only: regular
+    // sessions consume the fetched cache but should not each grow the shard chains with a
+    // commit, pack and ref update for the few entries they produce -- the local sled cache
+    // covers those. Only intentional producers (`josh cache build`) open the backend
+    // [`Self::writable`].
+    writable: bool,
     // In-memory object store registered on `repo`, so the trees and commits produced by
     // `flush` are buffered and packed instead of being written synchronously as loose objects.
     mem_odb: std::sync::Arc<josh_memodb::MemOdb>,
@@ -35,13 +41,26 @@ impl Drop for DistributedCacheBackend {
 }
 
 impl DistributedCacheBackend {
+    /// Open the backend read-only: cache refs are consulted, but writes are ignored.
     pub fn new(repo_path: impl AsRef<std::path::Path>) -> anyhow::Result<Self> {
+        Self::open(repo_path, false)
+    }
+
+    /// Open the backend for producing the cache: writes are buffered, flushed in the
+    /// background once shards reach [`FLUSH_AFTER`], and everything left is persisted when the
+    /// backend drops.
+    pub fn writable(repo_path: impl AsRef<std::path::Path>) -> anyhow::Result<Self> {
+        Self::open(repo_path, true)
+    }
+
+    fn open(repo_path: impl AsRef<std::path::Path>, writable: bool) -> anyhow::Result<Self> {
         let repo = git2::Repository::open(repo_path.as_ref())?;
         let mem_odb = josh_memodb::MemOdb::new(None, repo.path().to_owned());
         mem_odb.register(&repo);
         Ok(Self {
             repo: std::sync::Mutex::new(repo),
             mem_odb,
+            writable,
             new_entries: Default::default(),
             pending_refs: Default::default(),
             tree_ids: Default::default(),
@@ -245,6 +264,9 @@ impl CacheBackend for DistributedCacheBackend {
         to: git2::Oid,
         hint: HistoryGraphHint,
     ) -> anyhow::Result<()> {
+        if !self.writable {
+            return Ok(());
+        }
         if filter == filter::sequence_number() || filter == filter::reachable_roots() {
             return Ok(());
         }
