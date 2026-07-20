@@ -10,7 +10,7 @@ const FLUSH_AFTER: usize = 1000;
 pub struct DistributedCacheBackend {
     new_entries: std::sync::Mutex<HashMap<(Filter, u64), HashMap<git2::Oid, git2::Oid>>>,
     repo: std::sync::Mutex<git2::Repository>,
-    // In-memory object store registered on `repo`, so the blobs, trees and commits produced by
+    // In-memory object store registered on `repo`, so the trees and commits produced by
     // `flush` are buffered and drained to a single packfile per flush instead of being written
     // synchronously as loose objects.
     mem_odb: std::sync::Arc<josh_memodb::MemOdb>,
@@ -55,7 +55,7 @@ impl DistributedCacheBackend {
 
         let mut guard = self.new_entries.lock().unwrap();
 
-        // The blobs, trees and commits below are buffered in `mem_odb`, so the ref updates are
+        // The trees and commits below are buffered in `mem_odb`, so the ref updates are
         // deferred until the store has been drained to a packfile: a ref on disk must never
         // point to objects that only exist in memory.
         let mut ref_updates = Vec::new();
@@ -67,9 +67,19 @@ impl DistributedCacheBackend {
             let rp = ref_path(self.tree_id(&repo, *filter)?, *shard);
             let mut builder = git2::build::TreeUpdateBuilder::new();
 
+            // Each entry is a gitlink: the tree entry stores the target oid directly, and git
+            // never requires a gitlink target to be present, so no blob objects are needed and
+            // push/fetch never tries to transfer the filtered commits the entries point to.
+            // `Oid::zero()` ("filters to nothing") cannot be a gitlink -- null oids are invalid
+            // in tree entries -- so it is encoded as a blob entry pointing at the empty blob;
+            // the entry mode disambiguates on read.
             for (from, to) in &mut *m {
-                let blob = repo.blob(to.to_string().as_bytes())?;
-                builder.upsert(fanout(*from), blob, git2::FileMode::Blob.into());
+                if *to == git2::Oid::zero() {
+                    let blob = repo.blob(&[])?;
+                    builder.upsert(fanout(*from), blob, git2::FileMode::Blob.into());
+                } else {
+                    builder.upsert(fanout(*from), *to, git2::FileMode::Commit.into());
+                }
             }
             let tree = if let Ok(r) = repo.revparse_single(&rp) {
                 r.peel_to_tree()?
@@ -136,12 +146,16 @@ fn ref_path(filter_tree_id: git2::Oid, shard: u64) -> String {
     )
 }
 
+// Two fanout levels (~1M buckets) keep per-flush cost proportional to the flush size: subtrees
+// stay near-singleton even for shards with tens of thousands of entries, so a flush never
+// rewrites subtrees that grow with the accumulated shard. A single 2-hex level goes quadratic on
+// dense shards for exactly that reason, while a third level only adds one more tree write per
+// entry without making any subtree meaningfully smaller.
 fn fanout(commit: git2::Oid) -> std::path::PathBuf {
     let commit = commit.to_string();
     std::path::Path::new(&commit[..2])
         .join(&commit[2..5])
-        .join(&commit[5..9])
-        .join(commit)
+        .join(&commit[5..])
 }
 
 impl CacheBackend for DistributedCacheBackend {
@@ -179,14 +193,17 @@ impl CacheBackend for DistributedCacheBackend {
         };
 
         if let Ok(e) = tree.get_path(&fanout(from)) {
-            let blob = repo.find_blob(e.id())?;
-            let s = std::str::from_utf8(blob.content())?.to_owned();
             log::debug!(
                 "DistributedCacheBackend: HIT {:?} {}",
                 from,
                 filter::spec(filter)
             );
-            return Ok(Some(git2::Oid::from_str(&s)?));
+            // Gitlink entries carry the target oid directly; any other mode is the empty-blob
+            // encoding of `Oid::zero()` (see `flush`).
+            if e.filemode() == i32::from(git2::FileMode::Commit) {
+                return Ok(Some(e.id()));
+            }
+            return Ok(Some(git2::Oid::zero()));
         } else {
             return Ok(None);
         };
