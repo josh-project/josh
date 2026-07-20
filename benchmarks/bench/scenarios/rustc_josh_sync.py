@@ -12,6 +12,9 @@ mirror, once per tool:
 - ``cli``: the josh CLI in the subtree checkout talking directly to the
   unfiltered upstream -- ``josh fetch`` transfers the raw history and filters
   locally, ``josh push`` reverse-filters locally.
+- ``cli-nodc``: same as ``cli`` but with ``--no-distributed-cache``, which
+  drops the DistributedCacheBackend from the cache stack and skips fetching
+  the remote josh cache before filtering.
 
 Per subtree and tool the replay starts cold (fresh proxy cache / fresh work
 repo, so the first event -- always a pull -- pays the full-history cost) and
@@ -21,10 +24,12 @@ josh.rust-lang.org for the proxy and of a long-lived checkout for the CLI.
 Environment knobs:
 - ``SYNC_REPLAY_DEPTH``: historical syncs per subtree per direction (default 10)
 - ``SYNC_SUBTREES``: comma-separated subset of subtrees for quick runs
-- ``SYNC_TOOLS``: comma-separated subset of {proxy, cli} (default both)
+- ``SYNC_TOOLS``: comma-separated subset of {proxy, cli, cli-nodc}
+  (default all)
 - ``SYNC_JOSH_COMMIT``: josh version to benchmark (see config.py)
 """
 
+import functools
 import json
 import os
 import statistics
@@ -55,13 +60,13 @@ from bench.proxy import GitHttpServer, JoshProxy
 from bench.tools.josh_cli_sync import replay_pull_cli, replay_push_cli, setup_cli_remote
 from bench.tools.josh_proxy_sync import SyncSample, replay_pull, replay_push
 
-TOOLS = ("proxy", "cli")
+TOOLS = ("proxy", "cli", "cli-nodc")
 
-# Chart series, ordered so adjacent bars compare the two tools.
+# Chart series, ordered so adjacent bars compare the tools.
 SERIES = [
-    "proxy pull (cold)", "cli pull (cold)",
-    "proxy pull (warm)", "cli pull (warm)",
-    "proxy push (warm)", "cli push (warm)",
+    "proxy pull (cold)", "cli pull (cold)", "cli-nodc pull (cold)",
+    "proxy pull (warm)", "cli pull (warm)", "cli-nodc pull (warm)",
+    "proxy push (warm)", "cli push (warm)", "cli-nodc push (warm)",
 ]
 
 
@@ -93,22 +98,29 @@ def _replay_proxy(binaries, serve_root, upstream, work, manifest, name, work_dir
     return samples
 
 
-def _replay_cli(binaries, serve_root, upstream, work, manifest, name, work_dir):
+def _replay_cli(
+    binaries, serve_root, upstream, work, manifest, name, work_dir,
+    tool="cli", josh_args="",
+):
     samples = []
-    josh = binaries["josh"]
-    with GitHttpServer(binaries, serve_root, work_dir / "logs" / f"{name}-cli") as gitd:
+    # The runner interpolates `josh` into shell commands, so global flags can
+    # ride along with the binary path.
+    josh = f"{binaries['josh']} {josh_args}".strip()
+    with GitHttpServer(
+        binaries, serve_root, work_dir / "logs" / f"{name}-{tool}"
+    ) as gitd:
         setup_cli_remote(josh, work, gitd.url(UPSTREAM_REPO), manifest["filter"])
         for i, ev in enumerate(manifest["events"]):
             if ev["kind"] == "pull":
                 # One advancing pull branch per subtree, like a real upstream.
                 elapsed, verified = replay_pull_cli(
-                    josh, work, upstream, ev, branch=f"sync-cli-{name}"
+                    josh, work, upstream, ev, branch=f"sync-{tool}-{name}"
                 )
             else:
                 elapsed, verified = replay_push_cli(
-                    josh, work, upstream, ev, branch=f"bench-cli-{name}-{i}"
+                    josh, work, upstream, ev, branch=f"bench-{tool}-{name}-{i}"
                 )
-            samples.append(("cli", i, ev, elapsed, verified))
+            samples.append((tool, i, ev, elapsed, verified))
     return samples
 
 
@@ -134,7 +146,13 @@ def run() -> list[SyncSample]:
 
     work_dir = TARGET_DIR / "work" / "rustc_josh_sync"
     serve_root, upstream = prepare_upstream(source, work_dir)
-    replayers = {"proxy": _replay_proxy, "cli": _replay_cli}
+    replayers = {
+        "proxy": _replay_proxy,
+        "cli": _replay_cli,
+        "cli-nodc": functools.partial(
+            _replay_cli, tool="cli-nodc", josh_args="--no-distributed-cache"
+        ),
+    }
 
     samples: list[SyncSample] = []
     for name in names:
