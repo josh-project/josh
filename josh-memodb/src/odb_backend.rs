@@ -21,6 +21,7 @@
 
 use std::ffi::{c_int, c_void};
 use std::ptr;
+use std::sync::Arc;
 
 use crate::odb_cache::{CacheObjectData, ObjectCache};
 use git2::{ErrorCode, ObjectType, Oid};
@@ -34,9 +35,9 @@ use libgit2_sys as raw;
 /// forwards to the on-disk delegate. Any other error code propagates and aborts the lookup.
 pub trait OdbBackend {
     fn read_header(&self, oid: Oid) -> Result<(usize, ObjectType), git2::Error>;
-    fn read(&self, oid: Oid) -> Result<(Vec<u8>, ObjectType), git2::Error>;
+    fn read(&self, oid: Oid) -> Result<(Arc<[u8]>, ObjectType), git2::Error>;
     /// A duplicate (content-addressed) `oid` may be treated as a no-op.
-    fn write(&mut self, oid: Oid, data: Vec<u8>, kind: ObjectType) -> Result<(), git2::Error>;
+    fn write(&mut self, oid: Oid, data: &[u8], kind: ObjectType) -> Result<(), git2::Error>;
     fn exists(&self, oid: Oid) -> bool;
     /// Resolve an abbreviated object id to its full [`Oid`], if this backend holds a unique match.
     fn exists_prefix(&self, oid: Oid, oid_len: usize) -> Option<Oid>;
@@ -97,18 +98,18 @@ impl RawOdbBackend {
                     if buf.is_null() {
                         return raw::GIT_ERROR;
                     }
-                    ptr::copy_nonoverlapping(data.as_ptr(), buf as *mut u8, len);
+                    ptr::copy_nonoverlapping(data.as_ref().as_ptr(), buf as *mut u8, len);
                     *data_p = buf;
                     *len_p = len;
                     *kind_p = kind_raw;
                 }
 
-                // `into_boxed_slice` is zero-copy here — `data` came from a clone,
-                // so its capacity equals its length.
-                debug_assert_eq!(data.capacity(), data.len());
+                // `data` is an `Arc<[u8]>` shared with the in-memory store, so moving it into the
+                // cache is a refcount bump — mem_odb and the cache back the same allocation.
                 wrapper
                     .cache
                     .store(unsafe { *oid }, kind_raw, CacheObjectData::Allocated(data));
+
                 raw::GIT_OK
             }
             Err(err) if is_not_found(&err) && !wrapper.delegate.is_null() => {
@@ -185,7 +186,7 @@ impl RawOdbBackend {
             Some(kind) => kind,
             None => return raw::GIT_ERROR,
         };
-        let data = unsafe { std::slice::from_raw_parts(data as *const u8, len) }.to_vec();
+        let data = unsafe { std::slice::from_raw_parts(data as *const u8, len) };
         match wrapper.obj.write(oid, data, kind) {
             Ok(()) => raw::GIT_OK,
             Err(err) => err.raw_code(),
@@ -418,7 +419,7 @@ mod tests {
 
     /// A minimal in-memory backend used to exercise the trampolines end-to-end through libgit2.
     struct MapBackend {
-        data: std::collections::HashMap<Oid, (Vec<u8>, ObjectType)>,
+        data: std::collections::HashMap<Oid, (Arc<[u8]>, ObjectType)>,
     }
 
     impl OdbBackend for MapBackend {
@@ -426,12 +427,17 @@ mod tests {
             self.read(oid).map(|(data, kind)| (data.len(), kind))
         }
 
-        fn read(&self, oid: Oid) -> Result<(Vec<u8>, ObjectType), git2::Error> {
-            self.data.get(&oid).cloned().ok_or_else(not_found)
+        fn read(&self, oid: Oid) -> Result<(Arc<[u8]>, ObjectType), git2::Error> {
+            self.data
+                .get(&oid)
+                .map(|(data, kind)| (data.clone(), *kind))
+                .ok_or_else(not_found)
         }
 
-        fn write(&mut self, oid: Oid, data: Vec<u8>, kind: ObjectType) -> Result<(), git2::Error> {
-            self.data.insert(oid, (data, kind));
+        fn write(&mut self, oid: Oid, data: &[u8], kind: ObjectType) -> Result<(), git2::Error> {
+            self.data
+                .entry(oid)
+                .or_insert_with(|| (Arc::from(data), kind));
             Ok(())
         }
 

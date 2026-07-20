@@ -20,7 +20,7 @@ use libgit2_sys as raw;
 
 use crate::odb_backend::{self, OdbBackend};
 
-type ObjectMap = BTreeMap<Oid, (raw::git_object_t, Box<[u8]>)>;
+type ObjectMap = BTreeMap<Oid, (raw::git_object_t, Arc<[u8]>)>;
 
 /// The buffered objects plus a running total of their data size, guarded by one lock so that an
 /// insert and the overflow check following it are observed atomically.
@@ -75,11 +75,19 @@ impl MemOdb {
 
     /// Buffer `oid` (a no-op for a content-addressed duplicate) and return whether the store has now
     /// exceeded its size limit, so the caller can flush.
-    fn insert(&self, oid: Oid, kind: raw::git_object_t, data: Box<[u8]>) -> bool {
+    fn insert(&self, oid: Oid, kind: raw::git_object_t, data: &[u8]) -> bool {
+        use std::collections::btree_map::Entry;
+
         let len = data.len();
         let mut inner = self.inner.lock().unwrap();
-        if inner.map.insert(oid, (kind, data)).is_none() {
-            inner.size += len;
+        match inner.map.entry(oid) {
+            // Vacant: copy the borrowed bytes into the store. Occupied is a content-addressed
+            // duplicate (a no-op), so the allocation is gated behind the existence check.
+            Entry::Vacant(entry) => {
+                entry.insert((kind, Arc::from(data)));
+                inner.size += len;
+            }
+            Entry::Occupied(_) => {}
         }
         self.limit.is_some_and(|limit| inner.size > limit)
     }
@@ -186,19 +194,19 @@ impl OdbBackend for MemBackend {
             .ok_or_else(not_found)
     }
 
-    fn read(&self, oid: Oid) -> Result<(Vec<u8>, ObjectType), git2::Error> {
+    fn read(&self, oid: Oid) -> Result<(Arc<[u8]>, ObjectType), git2::Error> {
         self.store
             .inner
             .lock()
             .unwrap()
             .map
             .get(&oid)
-            .map(|(kind, data)| (data.to_vec(), raw_to_kind(*kind)))
+            .map(|(kind, data)| (data.clone(), raw_to_kind(*kind)))
             .ok_or_else(not_found)
     }
 
-    fn write(&mut self, oid: Oid, data: Vec<u8>, kind: ObjectType) -> Result<(), git2::Error> {
-        let overflow = self.store.insert(oid, kind.raw(), data.into_boxed_slice());
+    fn write(&mut self, oid: Oid, data: &[u8], kind: ObjectType) -> Result<(), git2::Error> {
+        let overflow = self.store.insert(oid, kind.raw(), data);
         if overflow {
             self.store.enqueue_chunk();
         }

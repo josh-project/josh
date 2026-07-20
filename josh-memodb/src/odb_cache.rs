@@ -1,6 +1,7 @@
 use crate::PassthroughHasher;
 use libgit2_sys as raw;
 use std::hash::{BuildHasherDefault, Hasher};
+use std::sync::Arc;
 
 // In context of josh, most often per transaction
 const OBJECT_CACHE_SIZE: usize = 300 * 1024 * 1024;
@@ -34,7 +35,7 @@ impl std::hash::Hash for ObjectCacheKey {
 pub struct ObjectCache {
     data: lru::LruCache<
         ObjectCacheKey,
-        (raw::git_object_t, Box<[u8]>),
+        (raw::git_object_t, Arc<[u8]>),
         BuildHasherDefault<PassthroughHasher>,
     >,
     size: usize,
@@ -54,7 +55,7 @@ impl Default for ObjectCache {
 }
 
 pub enum CacheObjectData<'a> {
-    Allocated(Vec<u8>),
+    Allocated(Arc<[u8]>),
     Ref(&'a [u8]),
 }
 
@@ -84,8 +85,8 @@ impl ObjectCache {
             self.size += len + KEY_SIZE;
 
             let data = match data {
-                CacheObjectData::Allocated(data) => data.into_boxed_slice(),
-                CacheObjectData::Ref(data) => data.into(),
+                CacheObjectData::Allocated(data) => data,
+                CacheObjectData::Ref(data) => Arc::from(data),
             };
 
             (kind, data)
