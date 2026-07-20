@@ -10,6 +10,10 @@ const FLUSH_AFTER: usize = 1000;
 pub struct DistributedCacheBackend {
     new_entries: std::sync::Mutex<HashMap<(Filter, u64), HashMap<git2::Oid, git2::Oid>>>,
     repo: std::sync::Mutex<git2::Repository>,
+    // In-memory object store registered on `repo`, so the blobs, trees and commits produced by
+    // `flush` are buffered and drained to a single packfile per flush instead of being written
+    // synchronously as loose objects.
+    mem_odb: std::sync::Arc<josh_memodb::MemOdb>,
     // Filter -> persisted tree id (`as_tree`), used to name cache refs. `as_tree` resolves
     // insert OIDs, so ref names always reference persisted, reachable filter trees even when
     // the filter passed in still contains unresolved ones.
@@ -27,8 +31,11 @@ impl Drop for DistributedCacheBackend {
 impl DistributedCacheBackend {
     pub fn new(repo_path: impl AsRef<std::path::Path>) -> anyhow::Result<Self> {
         let repo = git2::Repository::open(repo_path.as_ref())?;
+        let mem_odb = josh_memodb::MemOdb::new(None, repo.path().to_owned());
+        mem_odb.register(&repo);
         Ok(Self {
             repo: std::sync::Mutex::new(repo),
+            mem_odb,
             new_entries: Default::default(),
             tree_ids: Default::default(),
         })
@@ -47,6 +54,11 @@ impl DistributedCacheBackend {
         let repo = self.repo.lock().unwrap();
 
         let mut guard = self.new_entries.lock().unwrap();
+
+        // The blobs, trees and commits below are buffered in `mem_odb`, so the ref updates are
+        // deferred until the store has been drained to a packfile: a ref on disk must never
+        // point to objects that only exist in memory.
+        let mut ref_updates = Vec::new();
 
         for ((filter, shard), m) in guard.iter_mut() {
             if !(force || m.len() >= FLUSH_AFTER) {
@@ -74,8 +86,8 @@ impl DistributedCacheBackend {
             };
             let parent_refs = parents.iter().collect::<Vec<_>>();
 
-            let _ = repo.commit(
-                Some(&rp),
+            let commit = repo.commit(
+                None,
                 &signature,
                 &signature,
                 "cache",
@@ -84,6 +96,17 @@ impl DistributedCacheBackend {
             )?;
             log::info!("CACHE flush {} {}", m.len(), rp);
             m.clear();
+            ref_updates.push((rp, commit));
+        }
+
+        if ref_updates.is_empty() {
+            return Ok(());
+        }
+
+        self.mem_odb.flush()?;
+
+        for (rp, commit) in ref_updates {
+            repo.reference(&rp, commit, true, "cache")?;
         }
 
         Ok(())
