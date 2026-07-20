@@ -3,6 +3,8 @@ name: codspeed
 on:
   push:
     branches: [ master ]
+  # `pull_request` is required for CodSpeed to report performance changes on PRs.
+  pull_request:
   # `workflow_dispatch` allows CodSpeed to trigger backtest performance
   # analysis in order to generate initial data.
   workflow_dispatch:
@@ -30,8 +32,19 @@ jobs:
       - name: Install cargo-codspeed
         run: cargo install cargo-codspeed --locked
 
+      # `ultrawide_pin_hook` is intentionally excluded from CI: its largest
+      # tree sizes cost tens of seconds per iteration, so a full walltime run
+      # overruns the macro runner's time limit. Only the built benchmarks are
+      # run, so leaving it out of the build here also leaves it out of the run.
+      # It stays buildable and runnable locally
+      # (`cargo codspeed build -p josh-core --bench ultrawide_pin_hook`).
       - name: Build the benchmarks
-        run: cargo codspeed build -p josh-core
+        run: >-
+          cargo codspeed build -p josh-core
+          --bench ultrawide_parse
+          --bench ultrawide_pin
+          --bench deephistory_subdir
+          --bench deephistory_subdir_sparse
 
       - name: Run the benchmarks
         uses: CodSpeedHQ/action@f99becdce5e5d51fd556489ebef684f4ecfd6286 # v4.18.5
