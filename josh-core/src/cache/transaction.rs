@@ -35,6 +35,7 @@ pub struct TransactionContext {
     cache: std::sync::Arc<CacheStack>,
     ref_prefix: Option<String>,
     mem_odb_limit: Option<usize>,
+    mem_cache_limit: Option<usize>,
     ephemeral: bool,
 }
 
@@ -48,6 +49,7 @@ impl TransactionContext {
             cache,
             ref_prefix: None,
             mem_odb_limit: None,
+            mem_cache_limit: None,
             ephemeral: false,
         })
     }
@@ -58,6 +60,7 @@ impl TransactionContext {
             cache,
             ref_prefix: None,
             mem_odb_limit: None,
+            mem_cache_limit: None,
             ephemeral: false,
         }
     }
@@ -69,6 +72,13 @@ impl TransactionContext {
 
     pub fn with_mem_odb_limit(mut self, limit: usize) -> Self {
         self.mem_odb_limit = Some(limit);
+        self
+    }
+
+    /// Set a byte bound for the per-transaction read-side object cache (the in-memory LRU that sits
+    /// in front of the on-disk ODB). Unset, the cache uses josh-memodb's built-in default.
+    pub fn with_mem_cache_limit(mut self, limit: usize) -> Self {
+        self.mem_cache_limit = Some(limit);
         self
     }
 
@@ -92,6 +102,7 @@ impl TransactionContext {
             self.cache.clone(),
             self.ref_prefix.as_deref(),
             self.mem_odb_limit,
+            self.mem_cache_limit,
             self.ephemeral,
         ))
     }
@@ -126,6 +137,7 @@ pub struct Transaction {
     /// another transaction.
     mem_odb: std::sync::Arc<josh_memodb::MemOdb>,
     mem_odb_limit: Option<usize>,
+    mem_cache_limit: Option<usize>,
     ephemeral: bool,
     ref_prefix: Option<String>,
     filter_hook: Option<std::sync::Arc<dyn FilterHook + Send + Sync>>,
@@ -150,6 +162,7 @@ impl Transaction {
         cache: std::sync::Arc<CacheStack>,
         ref_prefix: Option<&str>,
         mem_odb_limit: Option<usize>,
+        mem_cache_limit: Option<usize>,
         ephemeral: bool,
     ) -> Transaction {
         static GIT2_SET_GLOBAL_OPTS: std::sync::Once = std::sync::Once::new();
@@ -165,7 +178,8 @@ impl Transaction {
             git2::opts::enable_caching(false);
         });
 
-        let mem_odb = josh_memodb::MemOdb::new(mem_odb_limit, repo.path().to_owned());
+        let mem_odb =
+            josh_memodb::MemOdb::new(mem_odb_limit, mem_cache_limit, repo.path().to_owned());
         mem_odb.register(&repo);
 
         log::debug!("new transaction");
@@ -195,6 +209,7 @@ impl Transaction {
             repo,
             mem_odb,
             mem_odb_limit,
+            mem_cache_limit,
             ephemeral,
             ref_prefix: ref_prefix.map(|prefix| prefix.to_owned()),
             filter_hook: None,
@@ -207,6 +222,7 @@ impl Transaction {
             path: self.repo.path().to_owned(),
             ref_prefix: self.ref_prefix.clone(),
             mem_odb_limit: self.mem_odb_limit,
+            mem_cache_limit: self.mem_cache_limit,
             ephemeral: self.ephemeral,
         };
 

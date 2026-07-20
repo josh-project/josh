@@ -4,7 +4,7 @@ use std::hash::{BuildHasherDefault, Hasher};
 use std::sync::Arc;
 
 // In context of josh, most often per transaction
-const OBJECT_CACHE_SIZE: usize = 300 * 1024 * 1024;
+const DEFAULT_OBJECT_CACHE_SIZE: usize = 300 * 1024 * 1024;
 
 #[derive(Clone, Copy)]
 struct ObjectCacheKey(raw::git_oid);
@@ -44,12 +44,20 @@ pub struct ObjectCache {
 
 impl Default for ObjectCache {
     fn default() -> Self {
+        Self::new(None)
+    }
+}
+
+impl ObjectCache {
+    /// Build a cache bounded to `limit` bytes of object data (`None` falls back to
+    /// [`DEFAULT_OBJECT_CACHE_SIZE`]).
+    pub fn new(limit: Option<usize>) -> Self {
         ObjectCache {
             data: lru::LruCache::unbounded_with_hasher(
                 BuildHasherDefault::<PassthroughHasher>::new(),
             ),
             size: 0,
-            target_size: OBJECT_CACHE_SIZE,
+            target_size: limit.unwrap_or(DEFAULT_OBJECT_CACHE_SIZE),
         }
     }
 }

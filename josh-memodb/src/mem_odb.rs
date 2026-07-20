@@ -36,6 +36,10 @@ struct Inner {
 pub struct MemOdb {
     inner: Mutex<Inner>,
     limit: Option<usize>,
+    /// Byte bound for the per-backend read-side object cache (`None` falls back to the cache's
+    /// default). Captured here so every registration of this store — including the background
+    /// flusher's re-open in [`MemOdb::pack_to_disk`] — installs the same sized cache.
+    cache_limit: Option<usize>,
     /// Repository the store is registered on, re-opened by the background flusher to run the
     /// packbuilder (a `git2::Repository` is not `Send`).
     repo_path: PathBuf,
@@ -49,13 +53,20 @@ impl MemOdb {
     /// Create an empty store. Returned as an [`Arc`] because the store is shared between the owning
     /// transaction and the libgit2 backend registered on its repository. `limit` bounds the total
     /// buffered object data: once exceeded the store flushes itself to a packfile (`None` = unbounded).
-    pub fn new(limit: Option<usize>, repo_path: PathBuf) -> Arc<MemOdb> {
+    /// `cache_limit` bounds the per-backend read-side object cache (`None` falls back to the cache's
+    /// default).
+    pub fn new(
+        limit: Option<usize>,
+        cache_limit: Option<usize>,
+        repo_path: PathBuf,
+    ) -> Arc<MemOdb> {
         Arc::new(MemOdb {
             inner: Mutex::new(Inner {
                 map: Default::default(),
                 size: 0,
             }),
             limit,
+            cache_limit,
             repo_path,
             chunk_in_flight: AtomicBool::new(false),
         })
@@ -70,6 +81,7 @@ impl MemOdb {
             MemBackend {
                 store: self.clone(),
             },
+            self.cache_limit,
         );
     }
 
@@ -239,7 +251,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let repo = git2::Repository::init(dir.path()).unwrap();
 
-        let store = MemOdb::new(None, repo.path().to_owned());
+        let store = MemOdb::new(None, None, repo.path().to_owned());
         store.register(&repo);
 
         let ids: Vec<Oid> = (0..4)
@@ -288,7 +300,7 @@ mod tests {
         // The worktree's gitdir differs from its common dir (the main gitdir).
         assert_ne!(wt_repo.path(), wt_repo.commondir());
 
-        let store = MemOdb::new(None, wt_repo.path().to_owned());
+        let store = MemOdb::new(None, None, wt_repo.path().to_owned());
         store.register(&wt_repo);
         let id = wt_repo.blob(b"worktree blob").unwrap();
 
@@ -309,7 +321,7 @@ mod tests {
         let repo = git2::Repository::init(dir.path()).unwrap();
 
         // A 16-byte limit: each 100-byte blob overflows it, so every write enqueues a pack.
-        let store = MemOdb::new(Some(16), repo.path().to_owned());
+        let store = MemOdb::new(Some(16), None, repo.path().to_owned());
         store.register(&repo);
 
         // The write overflowed and enqueued a background pack; it lands on the flusher thread, so

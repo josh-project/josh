@@ -286,6 +286,7 @@ unsafe fn oid_from_raw(oid: *const raw::git_oid) -> Oid {
 fn new(
     odb: *mut raw::git_odb,
     delegate: *mut raw::git_odb,
+    cache_limit: Option<usize>,
     callee: impl OdbBackend + 'static,
 ) -> *mut raw::git_odb_backend {
     let backend = raw::git_odb_backend {
@@ -308,7 +309,7 @@ fn new(
     };
     let wrapper = RawOdbBackend {
         raw: backend,
-        cache: ObjectCache::default(),
+        cache: ObjectCache::new(cache_limit),
         obj: Box::new(callee),
         delegate,
     };
@@ -325,7 +326,11 @@ fn new(
 /// git2 does not expose the raw `git_repository` pointer, so it is read out of the single-field
 /// `Repository` newtype. This is sound only while josh pins `git2` exactly; re-verify the layout on
 /// every upgrade.
-pub fn register<B>(repo: &git2::Repository, backend: B) -> Result<(), git2::Error>
+pub fn register<B>(
+    repo: &git2::Repository,
+    backend: B,
+    cache_limit: Option<usize>,
+) -> Result<(), git2::Error>
 where
     B: OdbBackend + 'static,
 {
@@ -345,7 +350,7 @@ where
             return Err(git2::Error::last_error(raw::GIT_ERROR));
         }
 
-        let backend = self::new(new, old, backend);
+        let backend = self::new(new, old, cache_limit, backend);
         if raw::git_odb_add_backend(new, backend, 1000) != raw::GIT_OK {
             // The backend was not adopted by `new`; reclaim it. Its Drop does not touch the raw
             // `delegate` pointer, so free `old` explicitly.
@@ -472,7 +477,7 @@ mod tests {
         let backend = MapBackend {
             data: std::collections::HashMap::new(),
         };
-        register(&repo, backend).unwrap();
+        register(&repo, backend, None).unwrap();
 
         let payload = b"hello, in-memory odb";
         let id = repo.blob(payload).unwrap();
