@@ -93,6 +93,14 @@ impl MemOdb {
         crate::flusher::drain(self.clone())
     }
 
+    /// Start packing the store's current contents in the background without blocking. Best-effort:
+    /// durability is only guaranteed by a subsequent [`MemOdb::flush`], which the FIFO flusher
+    /// serializes behind any queued chunk. Use this when the caller wants packing to overlap its
+    /// ongoing work and has a later drain point as the durability barrier.
+    pub fn pack_in_background(self: &Arc<Self>) {
+        self.enqueue_chunk();
+    }
+
     /// Enqueue a best-effort background pack of this store, called from the ODB `write` path when the
     /// store overflows its size limit. `chunk_in_flight` collapses the burst of overflowing writes
     /// that follow into a single queued chunk; the flusher clears it once the chunk has packed and

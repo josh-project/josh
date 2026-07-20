@@ -4,16 +4,22 @@ use crate::filter;
 use crate::filter::Filter;
 use std::collections::HashMap;
 
-// Only flush shards after they gained enough new entries
+// Only flush shards after they gained enough new entries. Mid-run flushes enqueue their pack
+// work on the background flusher, so a low threshold starts that work early and overlaps it
+// with filtering, leaving little for the final forced flush -- which drains sequentially.
 const FLUSH_AFTER: usize = 1000;
 
 pub struct DistributedCacheBackend {
     new_entries: std::sync::Mutex<HashMap<(Filter, u64), HashMap<git2::Oid, git2::Oid>>>,
     repo: std::sync::Mutex<git2::Repository>,
     // In-memory object store registered on `repo`, so the trees and commits produced by
-    // `flush` are buffered and drained to a single packfile per flush instead of being written
-    // synchronously as loose objects.
+    // `flush` are buffered and packed instead of being written synchronously as loose objects.
     mem_odb: std::sync::Arc<josh_memodb::MemOdb>,
+    // Shard commits built by non-forced flushes, keyed by ref name. Their objects may still be
+    // in `mem_odb` only, so the refs are published exclusively by a forced flush, after a drain
+    // has made every buffered object durable: a ref on disk must never point to objects that
+    // only exist in memory.
+    pending_refs: std::sync::Mutex<HashMap<String, git2::Oid>>,
     // Filter -> persisted tree id (`as_tree`), used to name cache refs. `as_tree` resolves
     // insert OIDs, so ref names always reference persisted, reachable filter trees even when
     // the filter passed in still contains unresolved ones.
@@ -37,6 +43,7 @@ impl DistributedCacheBackend {
             repo: std::sync::Mutex::new(repo),
             mem_odb,
             new_entries: Default::default(),
+            pending_refs: Default::default(),
             tree_ids: Default::default(),
         })
     }
@@ -54,14 +61,12 @@ impl DistributedCacheBackend {
         let repo = self.repo.lock().unwrap();
 
         let mut guard = self.new_entries.lock().unwrap();
+        let mut pending = self.pending_refs.lock().unwrap();
 
-        // The trees and commits below are buffered in `mem_odb`, so the ref updates are
-        // deferred until the store has been drained to a packfile: a ref on disk must never
-        // point to objects that only exist in memory.
-        let mut ref_updates = Vec::new();
+        let mut built_any = false;
 
         for ((filter, shard), m) in guard.iter_mut() {
-            if !(force || m.len() >= FLUSH_AFTER) {
+            if m.is_empty() || !(force || m.len() >= FLUSH_AFTER) {
                 continue;
             }
             let rp = ref_path(self.tree_id(&repo, *filter)?, *shard);
@@ -81,20 +86,25 @@ impl DistributedCacheBackend {
                     builder.upsert(fanout(*from), *to, git2::FileMode::Commit.into());
                 }
             }
-            let tree = if let Ok(r) = repo.revparse_single(&rp) {
-                r.peel_to_tree()?
+
+            // Base the update on the newest unpublished commit for this ref when one exists:
+            // basing on the published tip would drop the entries of earlier unpublished
+            // batches.
+            let base = if let Some(oid) = pending.get(&rp) {
+                Some(repo.find_commit(*oid)?)
+            } else if let Ok(r) = repo.revparse_single(&rp) {
+                Some(r.peel_to_commit()?)
             } else {
-                crate::filter::tree::empty(&repo)
+                None
+            };
+            let tree = match &base {
+                Some(commit) => commit.tree()?,
+                None => crate::filter::tree::empty(&repo),
             };
             let updated = builder.create_updated(&repo, &tree)?;
 
             let signature = crate::git::josh_commit_signature()?;
-            let parents = if let Ok(r) = repo.revparse_single(&rp) {
-                vec![r.peel_to_commit()?]
-            } else {
-                vec![]
-            };
-            let parent_refs = parents.iter().collect::<Vec<_>>();
+            let parent_refs = base.iter().collect::<Vec<_>>();
 
             let commit = repo.commit(
                 None,
@@ -106,16 +116,29 @@ impl DistributedCacheBackend {
             )?;
             log::info!("CACHE flush {} {}", m.len(), rp);
             m.clear();
-            ref_updates.push((rp, commit));
+            pending.insert(rp, commit);
+            built_any = true;
         }
 
-        if ref_updates.is_empty() {
+        if !force {
+            // Start packing the new objects without blocking the caller; the refs stay
+            // unpublished until a forced flush has drained the store.
+            if built_any {
+                self.mem_odb.pack_in_background();
+            }
             return Ok(());
         }
 
+        if pending.is_empty() {
+            return Ok(());
+        }
+
+        // Make every buffered object durable, then publish. The drain queues behind any
+        // background chunk still in flight, so it returns only once all pending commits are
+        // fully on disk.
         self.mem_odb.flush()?;
 
-        for (rp, commit) in ref_updates {
+        for (rp, commit) in pending.drain() {
             repo.reference(&rp, commit, true, "cache")?;
         }
 
@@ -186,11 +209,17 @@ impl CacheBackend for DistributedCacheBackend {
         std::mem::drop(guard);
 
         let rp = ref_path(self.tree_id(&repo, filter)?, shard);
-        let tree = if let Ok(r) = repo.revparse_single(&rp) {
+        // Flushed-but-unpublished entries live in a pending commit (see `flush`), not behind
+        // the ref yet; prefer it so in-process reads keep seeing everything ever flushed.
+        let pending = self.pending_refs.lock().unwrap();
+        let tree = if let Some(oid) = pending.get(&rp) {
+            repo.find_commit(*oid)?.tree()?
+        } else if let Ok(r) = repo.revparse_single(&rp) {
             r.peel_to_tree()?
         } else {
             return Ok(None);
         };
+        std::mem::drop(pending);
 
         if let Ok(e) = tree.get_path(&fanout(from)) {
             log::debug!(
