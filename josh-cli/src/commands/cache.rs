@@ -145,10 +145,14 @@ fn handle_cache_build(args: &CacheBuildArgs, transaction: &Transaction) -> anyho
 
     // Build a transaction that has ONLY the DistributedCacheBackend — no Sled.
     // This ensures every filter operation writes a new entry to the distributed
-    // cache even if Sled already has a result for that commit.
-    let cache = std::sync::Arc::new(CacheStack::new().with_backend(
-        DistributedCacheBackend::new(&repo_path).context("Failed to open distributed cache")?,
-    ));
+    // cache even if Sled already has a result for that commit. Building is the
+    // intentional cache-producing step, so the backend is opened writable.
+    let cache = std::sync::Arc::new(
+        CacheStack::new().with_backend(
+            DistributedCacheBackend::writable(&repo_path)
+                .context("Failed to open distributed cache")?,
+        ),
+    );
     let build_transaction = TransactionContext::new(&repo_path, cache)
         .with_mem_odb_limit(crate::MAX_MEM_PACK_SIZE)
         .open()
