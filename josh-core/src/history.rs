@@ -262,7 +262,7 @@ pub fn find_original(
 pub fn rewrite_commit(
     repo: &git2::Repository,
     base: &git2::Commit,
-    parents: &[&git2::Commit],
+    parents: &[git2::Oid],
     rewrite_data: filter::Rewrite,
     gpgsig: GpgsigMode,
 ) -> anyhow::Result<git2::Oid> {
@@ -278,7 +278,7 @@ pub fn rewrite_commit(
     let tree_id = BString::from(rewrite_data.tree().id().to_string());
     let parent_ids = parents
         .iter()
-        .map(|p| BString::from(p.id().to_string()))
+        .map(|p| BString::from(p.to_string()))
         .collect::<Vec<_>>();
 
     let mut author = None;
@@ -757,10 +757,12 @@ pub fn unapply_filter(
 
         let apply = filter::Rewrite::from_tree(new_tree.clone());
 
+        let original_parent_oids: Vec<git2::Oid> =
+            original_parents.iter().map(|c| c.id()).collect();
         ret = rewrite_commit(
             transaction.repo(),
             &module_commit,
-            &original_parents,
+            &original_parent_oids,
             apply,
             GpgsigMode::Preserve,
         )?;
@@ -781,21 +783,21 @@ pub fn unapply_filter(
     Ok(ret)
 }
 
-fn select_parent_commits<'a>(
-    original_commit: &'a git2::Commit,
+fn select_parent_commits(
+    original_commit: &git2::Commit,
     filtered_tree_id: git2::Oid,
-    filtered_parent_commits: Vec<&'a git2::Commit>,
-) -> Vec<&'a git2::Commit<'a>> {
-    let affects_filtered = filtered_parent_commits
+    filtered_parents: &[(git2::Oid, git2::Oid)],
+) -> Vec<git2::Oid> {
+    let affects_filtered = filtered_parents
         .iter()
-        .any(|x| filtered_tree_id != x.tree_id());
+        .any(|(_, tree_id)| filtered_tree_id != *tree_id);
 
     let all_diffs_empty = original_commit
         .parents()
         .all(|x| x.tree_id() == original_commit.tree_id());
 
     if affects_filtered || all_diffs_empty {
-        filtered_parent_commits
+        filtered_parents.iter().map(|(id, _)| *id).collect()
     } else {
         vec![]
     }
@@ -868,17 +870,18 @@ fn create_filtered_commit2<'a>(
     options: BTreeMap<String, String>,
 ) -> anyhow::Result<(git2::Oid, bool)> {
     let repo = transaction.repo();
-    let filtered_parent_commits: Result<Vec<_>, _> = filtered_parent_ids
+    // (id, tree_id) for each non-zero filtered parent. The tree id comes from a per-transaction
+    // memo populated when josh writes each filtered commit (see the insert below), so parents
+    // produced earlier in this same walk are not re-parsed from the odb just to read their tree.
+    let mut filtered_parents: Vec<(git2::Oid, git2::Oid)> = filtered_parent_ids
         .iter()
         .filter(|x| **x != git2::Oid::zero())
-        .map(|x| repo.find_commit(*x))
-        .collect();
+        .map(|x| Ok((*x, filtered_parent_tree_id(transaction, *x)?)))
+        .collect::<anyhow::Result<_>>()?;
 
-    let mut filtered_parent_commits = filtered_parent_commits?;
-
-    if filtered_parent_commits
+    if filtered_parents
         .iter()
-        .any(|x| x.tree_id() == filter::tree::empty_id())
+        .any(|(_, tree_id)| *tree_id == filter::tree::empty_id())
     {
         // An "initial merge" is a merge whose parents have no common ancestor.
         // Cheaper than `repo.merge_base_many(...).is_err()`: ask whether the
@@ -887,20 +890,20 @@ fn create_filtered_commit2<'a>(
             && !cache::parents_share_root(transaction, &filtered_parent_ids)?;
 
         if is_initial_merge {
-            filtered_parent_commits.retain(|x| x.tree_id() != filter::tree::empty_id());
+            filtered_parents.retain(|(_, tree_id)| *tree_id != filter::tree::empty_id());
         }
     }
 
     if history_flag(options.get("history").map(String::as_str), "linear") {
-        filtered_parent_commits.truncate(1);
+        filtered_parents.truncate(1);
     }
 
     if !history_flag(
         options.get("history").map(String::as_str),
         "keep-trivial-merges",
     ) {
-        if filtered_parent_commits.len() > 1 {
-            let is_trivial_merge = filtered_parent_commits[0].tree_id() == rewrite_data.tree().id();
+        if filtered_parents.len() > 1 {
+            let is_trivial_merge = filtered_parents[0].1 == rewrite_data.tree().id();
             let was_trivial_merge = original_commit
                 .parents()
                 .next()
@@ -908,23 +911,20 @@ fn create_filtered_commit2<'a>(
 
             if is_trivial_merge && !was_trivial_merge {
                 // Returning the parent id here means the commit is dropped from the output history
-                return Ok((filtered_parent_commits[0].id(), false));
+                return Ok((filtered_parents[0].0, false));
             }
         }
     }
 
-    let selected_filtered_parent_commits: Vec<&_> = select_parent_commits(
-        original_commit,
-        rewrite_data.tree().id(),
-        filtered_parent_commits.iter().collect(),
-    );
+    let selected_filtered_parent_ids: Vec<git2::Oid> =
+        select_parent_commits(original_commit, rewrite_data.tree().id(), &filtered_parents);
 
-    if selected_filtered_parent_commits.is_empty()
+    if selected_filtered_parent_ids.is_empty()
         && !(original_commit.parents().len() == 0 && is_empty_root(repo, &original_commit.tree()?))
     {
-        if !filtered_parent_commits.is_empty() {
+        if !filtered_parents.is_empty() {
             // Returning the parent id here means the commit is dropped from the output history
-            return Ok((filtered_parent_commits[0].id(), false));
+            return Ok((filtered_parents[0].0, false));
         }
         if rewrite_data.tree().id() == filter::tree::empty_id() {
             return Ok((git2::Oid::zero(), false));
@@ -937,16 +937,34 @@ fn create_filtered_commit2<'a>(
         _ => GpgsigMode::Preserve,
     };
 
-    Ok((
-        rewrite_commit(
-            repo,
-            original_commit,
-            &selected_filtered_parent_commits,
-            rewrite_data,
-            gpgsig,
-        )?,
-        true,
-    ))
+    let new_tree_id = rewrite_data.tree().id();
+    let new_oid = rewrite_commit(
+        repo,
+        original_commit,
+        &selected_filtered_parent_ids,
+        rewrite_data,
+        gpgsig,
+    )?;
+    // Record the freshly written commit's tree so the next commit in this walk (usually its child)
+    // reads its parent's tree from the slot instead of re-parsing the commit from the odb.
+    transaction.set_last_written_commit(new_oid, new_tree_id);
+    Ok((new_oid, true))
+}
+
+/// Tree id of a filtered parent. A history walk writes a commit immediately before processing its
+/// child, so the parent is almost always the last commit josh wrote and its tree is served from the
+/// transaction's single-slot cache; anything else (merge parents, non-linear order) falls back to
+/// parsing the commit from the odb.
+fn filtered_parent_tree_id(
+    transaction: &cache::Transaction,
+    oid: git2::Oid,
+) -> anyhow::Result<git2::Oid> {
+    if let Some((last, tree_id)) = transaction.last_written_commit() {
+        if last == oid {
+            return Ok(tree_id);
+        }
+    }
+    Ok(transaction.repo().find_commit(oid)?.tree_id())
 }
 
 fn is_empty_root(repo: &git2::Repository, tree: &git2::Tree) -> bool {
