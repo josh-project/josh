@@ -22,8 +22,8 @@ jobs:
           - nightly
           - 1.85.0 # MSRV of test dependencies
         os:
-          - macos-13 # x86 MacOS
-          - macos-15 # Arm MacOS
+          - macos-26
+          - macos-26-intel
           - windows-2025
           - ubuntu-24.04
         include:
