@@ -134,8 +134,7 @@ fn ensure_hint_cached(
         return Err(anyhow!("ensure_hint_cached: input does not exist"));
     }
 
-    let commit = transaction.repo().find_commit(input)?;
-    let parent_ids: Vec<git2::Oid> = commit.parent_ids().collect();
+    let parent_ids = read_parent_ids(transaction.repo(), input)?;
 
     // Fast path: every parent already has both pieces cached.
     let parents_hint: Option<Vec<(u64, git2::Oid)>> = parent_ids
@@ -172,9 +171,8 @@ fn ensure_hint_cached(
 
     for c in walk {
         let oid = c?;
-        let c_commit = transaction.repo().find_commit(oid)?;
-        let parents_hint: Vec<(u64, git2::Oid)> = c_commit
-            .parent_ids()
+        let parents_hint: Vec<(u64, git2::Oid)> = read_parent_ids(transaction.repo(), oid)?
+            .into_iter()
             .map(|p| {
                 try_read_cached_hint(transaction, p)?
                     .map(|(seq, _, blob)| (seq, blob))
@@ -258,6 +256,19 @@ fn store_hint(
     )?;
     transaction.insert(crate::filter::reachable_roots(), input, roots_blob, true)?;
     Ok(())
+}
+
+/// Reads a commit's parent OIDs directly from the raw ODB bytes, parsing only
+/// the parent lines via `gix_object::CommitRefIter`. This avoids the libgit2
+/// commit parse cache entirely, since the walk only ever needs the parent ids.
+fn read_parent_ids(repo: &git2::Repository, oid: git2::Oid) -> anyhow::Result<Vec<git2::Oid>> {
+    let odb = repo.odb()?;
+    let odb_commit = odb.read(oid)?;
+    debug_assert_eq!(odb_commit.kind(), git2::ObjectType::Commit);
+    gix_object::CommitRefIter::from_bytes(odb_commit.data())
+        .parent_ids()
+        .map(|p| Ok(git2::Oid::from_bytes(p.as_bytes())?))
+        .collect()
 }
 
 fn write_roots_blob(repo: &git2::Repository, roots: &[git2::Oid]) -> anyhow::Result<git2::Oid> {
