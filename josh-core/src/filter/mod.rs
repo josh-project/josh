@@ -722,8 +722,8 @@ pub fn apply_to_commit2(
             check_experimental_features_enabled("export filter")?;
             let filtered_parent_ids = {
                 commit
-                    .parents()
-                    .map(|x| transaction.get(filter, x.id()))
+                    .parent_ids()
+                    .map(|x| transaction.get(filter, x))
                     .collect::<anyhow::Result<Option<_>>>()?
             };
 
@@ -778,8 +778,8 @@ pub fn apply_to_commit2(
 
             let filtered_parent_ids = {
                 commit
-                    .parents()
-                    .map(|x| transaction.get(filter, x.id()))
+                    .parent_ids()
+                    .map(|x| transaction.get(filter, x))
                     .collect::<anyhow::Result<Option<_>>>()?
             };
 
@@ -983,8 +983,8 @@ pub fn apply_to_commit2(
         }
         Op::Fold => {
             let filtered_parent_ids = commit
-                .parents()
-                .map(|x| transaction.get(filter, x.id()))
+                .parent_ids()
+                .map(|x| transaction.get(filter, x))
                 .collect::<anyhow::Result<Option<Vec<_>>>>()?;
 
             let filtered_parent_ids = some_or!(filtered_parent_ids, { return Ok(None) });
@@ -1080,8 +1080,8 @@ pub fn apply_to_commit2(
 
     let filtered_parent_ids = {
         commit
-            .parents()
-            .map(|x| transaction.get(filter, x.id()))
+            .parent_ids()
+            .map(|x| transaction.get(filter, x))
             .collect::<anyhow::Result<Option<_>>>()?
     };
 

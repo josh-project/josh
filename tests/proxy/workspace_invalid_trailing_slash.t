@@ -266,10 +266,10 @@ Flushed credential cache
       |   `-- pack
       |       |-- pack-6094f48eea5b3933a6584a6925dac03cf644f01e.idx
       |       |-- pack-6094f48eea5b3933a6584a6925dac03cf644f01e.pack
+      |       |-- pack-7118fd5d4e16516ded4435a0e2ebddbde19ded1b.idx
+      |       |-- pack-7118fd5d4e16516ded4435a0e2ebddbde19ded1b.pack
       |       |-- pack-721a5e2fcf4ed965e49124b30f161a6faead2313.idx
       |       |-- pack-721a5e2fcf4ed965e49124b30f161a6faead2313.pack
-      |       |-- pack-90b662d3c4386bdd60eaa36cc1699fa799a7dd30.idx
-      |       |-- pack-90b662d3c4386bdd60eaa36cc1699fa799a7dd30.pack
       |       |-- pack-9f918747f4ae3e54ccf603a1e77dd40c584aa821.idx
       |       `-- pack-9f918747f4ae3e54ccf603a1e77dd40c584aa821.pack
       `-- refs

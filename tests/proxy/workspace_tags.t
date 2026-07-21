@@ -348,8 +348,6 @@
       |   |   `-- 3dd93419493d22aeaf6bcb5c0bec4c2701b049
       |   |-- info
       |   `-- pack
-      |       |-- pack-4ee5410a0d07448774a9d777901482c58c903f84.idx
-      |       |-- pack-4ee5410a0d07448774a9d777901482c58c903f84.pack
       |       |-- pack-61cee1ce849190d88cdfb51f8fd8aea0bcfd8e63.idx
       |       |-- pack-61cee1ce849190d88cdfb51f8fd8aea0bcfd8e63.pack
       |       |-- pack-72f0031d0154ceb6432b06e392ae4f19a8cfba65.idx
@@ -361,6 +359,6 @@
           |-- namespaces
           `-- tags
   
-  67 directories, 64 files
+  67 directories, 62 files
 
 $ cat ${TESTTMP}/josh-proxy.out
