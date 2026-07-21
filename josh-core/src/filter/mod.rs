@@ -2249,7 +2249,7 @@ pub fn downstack(
         let new_oid = history::rewrite_commit(
             repo,
             intermediate,
-            &[&current_base],
+            &[current_base.id()],
             Rewrite::from_tree(new_tree),
             history::GpgsigMode::Preserve,
         )?;
@@ -2270,7 +2270,7 @@ pub fn downstack(
     let new_oid = history::rewrite_commit(
         repo,
         &change_commit,
-        &[&current_base],
+        &[current_base.id()],
         Rewrite::from_tree(new_tree),
         history::GpgsigMode::Preserve,
     )?;

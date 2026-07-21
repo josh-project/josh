@@ -109,6 +109,7 @@ struct Transaction2 {
     legalize_map: HashMap<(crate::filter::Filter, git2::Oid), crate::filter::Filter>,
     downstack_deps_map: HashMap<git2::Oid, std::collections::HashSet<crate::filter::DownstackDep>>,
     merge_trees_map: HashMap<(git2::Oid, git2::Oid, git2::Oid), git2::Oid>,
+    commit_tree_id_map: HashMap<git2::Oid, git2::Oid>,
 
     cache: std::sync::Arc<CacheStack>,
     path_tree: sled::Tree,
@@ -178,6 +179,7 @@ impl Transaction {
                 legalize_map: HashMap::new(),
                 downstack_deps_map: HashMap::new(),
                 merge_trees_map: HashMap::new(),
+                commit_tree_id_map: HashMap::new(),
                 cache,
                 path_tree,
                 invert_tree,
@@ -319,6 +321,18 @@ impl Transaction {
     pub fn get_overlay(&self, from: (git2::Oid, git2::Oid)) -> Option<git2::Oid> {
         let t2 = self.t2.borrow_mut();
         t2.overlay_map.get(&from).cloned()
+    }
+
+    /// Remember the (filtered) tree id of a commit josh wrote in this transaction, so later lookups
+    /// that only need a parent commit's tree do not have to re-parse the commit from the odb.
+    pub fn insert_commit_tree_id(&self, commit: git2::Oid, tree: git2::Oid) {
+        let mut t2 = self.t2.borrow_mut();
+        t2.commit_tree_id_map.insert(commit, tree);
+    }
+
+    pub fn get_commit_tree_id(&self, commit: git2::Oid) -> Option<git2::Oid> {
+        let t2 = self.t2.borrow();
+        t2.commit_tree_id_map.get(&commit).cloned()
     }
 
     pub fn insert_legalize(
