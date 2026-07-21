@@ -33,12 +33,7 @@ jobs:
     steps:
     - name: Checkout repository
       uses: actions/checkout@v6
-
-    - name: Update rust
-      run: |
-        rustup default ${{ matrix.channel }}
-        rustup update --no-self-update
-
+    - run: rustup default ${{ matrix.channel }} && rustup update --no-self-update
     - run: cargo test --all
 
   clippy:
@@ -59,16 +54,21 @@ jobs:
   msrv:
     name: Check building with the MSRV
     runs-on: ubuntu-24.04
+    env:
+      RUSTFLAGS: "" # No need to check warnings on old MSRV, clear `-Dwarnings`
     steps:
     - name: Checkout repository
       uses: actions/checkout@v6
-
-    - name: Update rust
-      run: |
-        rustup default 1.63.0
-        rustup update --no-self-update
-
-    - run: cargo build
+    - run: |
+        msrv="$(
+          cargo metadata --format-version 1 |
+          jq -r --arg CRATE_NAME glob '.packages | map(select((.name == $CRATE_NAME) and (.id | startswith("path+file")))) | first | .rust_version'
+        )"
+        echo "MSRV: $msrv"
+        echo "MSRV=$msrv" >> "$GITHUB_ENV"
+    - name: Install Rust
+      run: rustup update "$MSRV" --no-self-update && rustup default "$MSRV"
+    - run: cargo build -p glob
 
   rustfmt:
     name: Rustfmt
