@@ -1,0 +1,25 @@
+[book]
+authors = ["Christian Schilling", "Louis-Marie Givel"]
+language = "en_001"
+src = "src"
+title = "Just One Single History"
+
+[build]
+extra-watch-dirs = ["po"]
+
+[preprocessor.mermaid]
+command = "mdbook-mermaid"
+
+[preprocessor.gettext]
+after = ["links"]
+
+[output.html]
+additional-css = [
+    "css/lang-picker.css",
+]
+additional-js = [
+    "mermaid.min.js",
+    "mermaid-init.js",
+    "js/plausible.js",
+    "js/lang-picker.js",
+]

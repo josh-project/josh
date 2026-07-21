@@ -1,0 +1,18 @@
+[package]
+name = "josh-gui"
+version = "0.1.0"
+edition = "2024"
+resolver = "2"
+authors = ["Josh Project authors <contact@josh-project.dev>"]
+description = "Josh GUI (Dioxus desktop)"
+license-file = "../LICENSE"
+repository = "https://github.com/josh-project/josh"
+publish = false
+
+[dependencies]
+anyhow = "1.0"
+chrono = "^0"
+dioxus = { version = "0.7", features = ["desktop"] }
+serde_json = "1.0"
+josh-changes = { path = "../josh-changes" }
+git2 = { version = "0.20.4", default-features = false, features = ["vendored-libgit2"] }

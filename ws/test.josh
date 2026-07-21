@@ -1,0 +1,26 @@
+:$label="test suite"
+:$output="none"
+inputs = :[
+    :#cargo-test-run[:+ws/cargo-test-run]
+    :#fmt[
+        :$label="cargo fmt"
+        :#image[:+images/rust-dev-local]
+        :$cmd="cargo fmt -- --check"
+
+        worktree = :[
+            ::Cargo.toml
+            ::Cargo.lock
+            ::rust-toolchain.toml
+            ::rustfmt.toml
+            ::axum-cgi/
+            ::axum-cgi-server/
+            ::hyper-reverse-proxy/
+            ::josh-*/**/*
+            ::cq/
+            ::forges/
+            ::deployment/
+            ::devtools/josh-test-support/
+        ]
+    ]
+    :!ws/tests-per-category[::tests/]:exclude[:[::tests/]]
+]

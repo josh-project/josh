@@ -1,0 +1,20 @@
+[package]
+name = "axum-cgi-server"
+version = "26.7.19"
+edition = "2024"
+license-file = "../axum-cgi/LICENSE"
+repository = "https://github.com/josh-project/josh"
+description = "CGI server utilities for axum"
+
+[dependencies]
+axum-extra = { version = "^0.12", features = ["typed-header"] }
+http = "1.4.0"
+rand = { version = "0.10.1", features = ["std"] }
+
+axum.workspace = true
+axum-cgi.workspace = true
+clap.workspace = true
+reqwest.workspace = true
+tokio.workspace = true
+anyhow.workspace = true
+url.workspace = true

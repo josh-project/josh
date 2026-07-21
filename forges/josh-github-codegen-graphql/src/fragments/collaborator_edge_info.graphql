@@ -1,0 +1,6 @@
+fragment _CollaboratorEdgeInfo on RepositoryCollaboratorEdge {
+  permission
+  node {
+    login
+  }
+}

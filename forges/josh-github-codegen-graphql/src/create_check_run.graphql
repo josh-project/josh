@@ -1,0 +1,7 @@
+mutation CreateCheckRun($input: CreateCheckRunInput!){
+  createCheckRun(input: $input) {
+    checkRun {
+      id
+    }
+  }
+}

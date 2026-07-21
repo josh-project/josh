@@ -1,0 +1,40 @@
+name: codspeed
+
+on:
+  push:
+    branches: [ master ]
+  # `workflow_dispatch` allows CodSpeed to trigger backtest performance
+  # analysis in order to generate initial data.
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+
+permissions:
+  contents: read
+  id-token: write # for OpenID Connect authentication with CodSpeed
+
+jobs:
+  benchmarks:
+    # Walltime measurement needs CodSpeed's bare-metal macro runners; the
+    # shared GitHub runners are too noisy for wall-clock timing.
+    runs-on: codspeed-macro
+    name: Run benchmarks
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
+
+      - name: Install cargo-codspeed
+        run: cargo install cargo-codspeed --locked
+
+      - name: Build the benchmarks
+        run: cargo codspeed build -p josh-core
+
+      - name: Run the benchmarks
+        uses: CodSpeedHQ/action@f99becdce5e5d51fd556489ebef684f4ecfd6286 # v4.18.5
+        with:
+          mode: walltime
+          run: cargo codspeed run -p josh-core

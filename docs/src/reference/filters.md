@@ -1,0 +1,481 @@
+
+# History filtering
+
+Josh transforms commits by applying filters to them. As any
+commit in git represents not just a single state of the file system but also its entire
+history, applying a filter to a commit produces an entirely new history.
+The result of a filter is a normal git commit and therefore can be filtered again,
+making filters chainable.
+
+## Syntax
+
+Filters always begin with a colon and can be chained:
+
+    :filter1:filter2
+
+When used as part of an URL filters cannot contain white space or newlines. When read from a file
+however white space can be inserted between filters (not after the leading colon).
+Additionally newlines can be used instead of ``,`` inside of composition filters.
+
+Some filters take arguments, and arguments can optionally be quoted using double quotes,
+if special characters used by the filter language need to be used (like `:` or space):
+
+    :filter=argument1,"argument2"
+
+## Filter options **`:~(key1="value1",key2="value2")[:filter]`**
+
+The `:~(...)[]` syntax allows you to provide filter options (metadata) that affect how the filter
+is applied. The options are specified as key-value pairs in parentheses, followed by the actual
+filter in square brackets.
+
+**Syntax:**
+```
+:~(option1="value1",option2="value2")[:filter]
+```
+
+Multiple options can be specified by separating them with commas. Option values must be quoted
+using double quotes.
+
+**Example:**
+```
+:~(key1="value1",key2="value2")[:/sub1]
+```
+
+This applies the `:/sub1` filter with the specified options attached as metadata.
+
+### History option
+
+The `history` option controls how the commit history is processed during filtering.
+It affects both how commits are walked and how merge commits are handled in the output history.
+
+The value is a comma-separated list of flags, so multiple behaviours can be combined in a
+single option — for example `history="linear,no-splice"`.
+
+**Available flags:**
+
+- **`linear`** - Produces a linear history by converting merge commits into regular commits,
+  creating a linear chain of commits in the output history.
+
+  **Example:**
+  ```
+  :~(history="linear")[:/sub1]
+  ```
+
+- **`keep-trivial-merges`** - Prevents dropping trivial merge commits that would
+  normally be pruned from the output history.
+
+  Normally, Josh will drop merge commits from the filtered history if their filtered tree is
+  identical to the first parent's tree. Setting this flag preserves these commits in the
+  output history.
+
+  **Example:**
+  ```
+  :~(history="keep-trivial-merges")[::file1]
+  ```
+
+  **Note for users of older versions:** In older versions of Josh, `"keep-trivial-merges"` was the
+  default behavior. If you're upgrading from an older version and need to recreate the same history
+  structure, you should explicitly set `history="keep-trivial-merges"` in your filter options.
+
+- **`no-splice`** - Disables the synthetic merges that Josh normally inserts when a filter
+  change causes new paths to become visible.
+
+  When a commit's filtered tree picks up entries because the *filter* changed (not the source
+  tree), Josh by default adds synthetic merge parents that splice in the prior history of those
+  newly-visible paths, so the filtered DAG doesn't look like those paths sprang from nowhere.
+  Setting this flag suppresses those synthetic parents — the filtered commit keeps only its
+  ordinary parents.
+
+  **Example:**
+  ```
+  :~(history="no-splice")[:workspace=ws]
+  ```
+
+### Gpgsig option
+
+The `gpgsig` option controls how PGP/GPG signature headers (`gpgsig`) in commit objects are
+handled during filtering.
+
+By default Josh preserves the `gpgsig` header byte-for-byte. This keeps the commit hash stable
+across round-trips but makes the signature invalid (since the tree and parent references change).
+
+**Available values:**
+
+- **`gpgsig="remove"`** - Strips the `gpgsig` header from every filtered commit.
+  Equivalent to the `:unsign` shorthand filter.
+
+  **Example:**
+  ```
+  :~(gpgsig="remove")[:/sub1]
+  ```
+
+- **`gpgsig="norm-lf"`** - Normalizes `\r\n` line endings to `\n` inside the `gpgsig` header
+  before writing the filtered commit.
+
+  The standard git commit object format uses `\n` line endings throughout, including inside
+  `gpgsig` headers. Some signing tools or forges write `\r\n` instead, which is technically
+  non-standard but valid as far as git is concerned — git treats the header value as opaque bytes.
+  Josh preserves whichever line endings are present in the original commit.
+
+  An older version of Josh accidentally normalized `\r\n` to `\n` during filtering. This option
+  restores that behavior and is intended **only** for deployments that need to reproduce a history
+  produced by the old version — both variants represent the same logical content but produce
+  different commit hashes, causing history to diverge.
+
+  **Example:**
+  ```
+  :~(gpgsig="norm-lf")[:/sub1]
+  ```
+
+## Available filters
+
+### Subdirectory **`:/a`**
+Take only the selected subdirectory from the input and make it the root
+of the filtered tree.
+Note that ``:/a/b`` and ``:/a:/b`` are equivalent ways to get the same result.
+
+### Directory **`::a/`**
+A shorthand for the commonly occurring filter combination ``:/a:prefix=a``.
+
+### File **`::a`** or **`::destination=source`**
+Produces a tree with only the specified file.
+
+When using a single argument (`::a`), the file is placed at the same full path as in the source tree.
+When using the `destination=source` syntax (`::destination=source`), the file is renamed from `source` to `destination` in the filtered tree.
+
+Examples:
+- `::file.txt` - Selects `file.txt` and places it at `file.txt`
+- `::src/file.txt` - Selects `src/file.txt` and places it at `src/file.txt`
+- `::renamed.txt=src/original.txt` - Selects `src/original.txt` and places it at `renamed.txt`
+- `::subdir/file.txt=src/file.txt` - Selects `src/file.txt` and places it at `subdir/file.txt`
+
+Note that `::a/b` is equivalent to `::a/::b`.
+Pattern filters (with `*`) cannot be combined with the `destination=source` syntax.
+
+### Prefix **`:prefix=a`**
+Take the input tree and place it into subdirectory ``a``.
+Note that ``:prefix=a/b`` and ``:prefix=b:prefix=a`` are equivalent.
+
+### Insertion **`:$path=content`**
+
+Inserts a git object at `path` in the output tree. The content can be given in two ways:
+
+- **Inline text** — `:$path="content"` writes a new file at `path` containing the given literal
+  text. No newline is appended automatically.
+- **By object id** — `:$path=<oid>` inserts an existing object referenced by its 40-character
+  SHA-1 hash. The object may be a **blob** (inserted as a file) or a **tree** (inserted as a
+  subtree); the kind is resolved from the repository. Referencing an object of any other kind, or
+  one that does not exist, is an error. This avoids inlining large blobs or whole subtrees as a
+  string.
+
+The path argument follows the same quoting rules as other filter arguments: quote with double
+quotes if the path contains spaces or special characters.
+
+Insertion is generative: it fabricates tree entries and consumes no input, so its inverse is
+`:empty`.
+
+**Examples:**
+
+```
+# Insert a file named "VERSION" containing "1.0" at the root
+:$VERSION="1.0"
+
+# Insert a file whose name contains a space
+:$"release notes.txt"="Initial release"
+
+# Insert an existing blob by its SHA
+:$added.txt=e69de29bb2d1d6434b8b29ae775ad8c2e48c5391
+
+# Insert an existing tree as a subtree at "vendored"
+:$vendored=4b825dc642cb6eb9a060e54bf8d69288fbee4904
+
+# Combine with a subdirectory filter to insert the file alongside existing content
+:[:/sub1,:$added.txt="hello world"]
+```
+
+### Composition **`:[:filter1,:filter2,...,:filterN]`**
+Compose a tree by overlaying the outputs of ``:filter1`` ... ``:filterN`` on top of each other.
+It is guaranteed that each file will only appear at most once in the output. The first filter
+that consumes a file is the one deciding it's mapped location. Therefore the order in which
+filters are composed matters.
+
+Inside of a composition ``x=:filter`` can be used as an alternative spelling for
+``:filter:prefix=x``.
+
+### Exclusion **`:exclude[:filter]`**
+Remove all paths present in the *output* of ``:filter`` from the input tree.
+It should generally be avoided to use any filters that change paths and instead only
+use filters that select paths without altering them.
+
+### Invert **`:invert[:filter]`**
+A shorthand syntax that applies the inverse of the composed filter. The inverse of a filter is
+a filter that undoes the transformation. For example, the inverse of ``:/sub1`` (subdirectory)
+is ``:prefix=sub1`` (prefix), and vice versa.
+
+**Example:**
+```
+:invert[:/sub1]
+```
+This is equivalent to ``:prefix=sub1``, which takes the input tree and places it into
+the ``sub1`` subdirectory.
+
+Multiple filters can be provided in the compose:
+```
+:invert[:/sub1,:/sub2]
+```
+This inverts the composition of ``:/sub1`` and ``:/sub2``.
+
+### Scope **`:<X>[..]`**
+A shorthand syntax that expands to ``:X:[..]:invert[:X]``, where:
+- ``:X`` is a filter (without built-in compose)
+- ``:[..]`` is a compose filter (like in ``:exclude``)
+
+This filter first applies ``:X`` to scope the input, then applies the compose filter ``:[..]``,
+and finally inverts ``:X`` to restore the original scope. This is useful when you want to
+apply a composition filter within a specific scope and then restore the original structure.
+
+**Example:**
+```
+:<:/sub1>[::file1,::file2]
+```
+This is equivalent to ``:/sub1:[::file1,::file2]:invert[:/sub1]``, which:
+1. Selects the ``sub1`` subdirectory (applies ``:/sub1``)
+2. Applies the composition filter to select ``file1`` and ``file2`` (applies ``:[::file1,::file2]``)
+3. Restores the original scope by inverting the subdirectory selection (applies ``:invert[:/sub1]``)
+
+### Stored **`:+path/to/file`**
+Looks for a file with a ``.josh`` extension at the specified path and applies the filter defined in that file.
+The path argument should be provided *without* the ``.josh`` extension, as it will be automatically appended.
+
+For example, ``:+st/config`` will look for a file at ``st/config.josh`` and apply the filter defined in that file.
+The resulting tree will contain the contents specified by the filter in the ``.josh`` file.
+
+Stored filters apply from the root of the repository, making them useful for configuration files that define
+filters to be applied at the repository root level.
+
+### Workspace **`:workspace=a`**
+Like stored filters, but with an additional "base" component that first selects the specified directory
+(called the "workspace root") before applying the filter from the ``workspace.josh`` file inside it.
+
+The workspace filter is equivalent to ``:/a`` combined with applying a stored filter, where the filter is read
+from ``workspace.josh`` within the selected directory. The resulting tree will contain the contents of the
+workspace root as well as additional files specified in the ``workspace.josh`` file.
+(see [Workspaces](./workspace.md))
+
+### Text replacement **`:replace("regex_0":"replacement_0",...,"regex_N":"replacement_N")`**
+Applies the supplied regular expressions to every file in the input tree.
+
+### Signature removal **`:unsign`**
+The default behaviour of Josh is to copy, if it exists, the signature of the original commit in
+the filtered commit. This makes the signature invalid, but allows a perfect round-trip: josh will be
+able to recreate the original commit from the filtered one.
+
+This behaviour might not be desirable, and this filter drops the signatures from the history.
+It is a shorthand for `:~(gpgsig="remove")[:/]`. See the [gpgsig option](#gpgsig-option) for
+additional gpgsig-related options.
+
+## Pattern filters
+
+The following filters accept a glob like pattern ``X`` that can contain ``*`` to
+match any number of characters. Note that two or more consecutive wildcards (``**``) are not
+allowed.
+
+### Match directories **`::X/`**
+All matching subdirectories in the input root
+
+### Match files or directories **`::X`**
+All matching files or directories in the input root
+
+### Match nested directories **`::**/X/`**
+All subdirectories matching the pattern in arbitrarily deep subdirectories of the input
+
+### Match nested files **`::**/X`**
+All files matching the pattern in arbitrarily deep subdirectories of the input
+
+## History filters
+
+These filter do not modify git trees, but instead only operate on the commit graph.
+
+### Linearise history **:linear[:filter]**
+Produce a filtered history that does not contain any merge commits. This is done by
+simply dropping all parents except the first on every commit.
+
+### Filter specific parts of the history **:rev(...)**
+
+The `:rev(...)` filter allows you to apply different filters to different parts of the commit history based on commit relationships. Each entry in the filter specifies a condition and a filter to apply when that condition matches.
+
+**Syntax:**
+```
+:rev(
+  <operator><sha>:filter
+  _:filter
+  ...
+)
+```
+
+Commit references must be **full 40-character SHA-1 hashes**; short/abbreviated SHAs are not accepted.
+
+**Operators:**
+
+- **`<`** - Strict ancestor match: matches if the commit is an ancestor of `<sha>` AND the commit is not equal to `<sha>`
+- **`<=`** - Inclusive ancestor match: matches if the commit is an ancestor of `<sha>` OR the commit equals `<sha>`
+- **`==`** - Exact match: matches only if the commit equals `<sha>`
+- **`_`** - Default filter: matches any commit that doesn't match any previous condition (no SHA needed)
+
+**Matching behavior:**
+
+- Rules are evaluated in the order they are specified
+- **First match wins** - once a condition matches, that filter is applied and no further rules are checked
+- The default filter (`_`) will match any commit that hasn't matched a previous rule, making any rules after it unreachable
+
+**Examples:**
+
+```
+:rev(==def4567890123456789012345678901234567890:prefix=new,<=abc123450123456789012345678901234567890:prefix=old)
+```
+This applies `:prefix=old` to commit `abc12345...` and all its ancestors, and `:prefix=new` only to commit `def45678...`.
+
+```
+:rev(<abc123450123456789012345678901234567890:prefix=old,_:prefix=default)
+```
+This applies `:prefix=old` to all ancestors of that commit (but not the commit itself), and `:prefix=default` to all other commits (including that commit and any commits after it).
+
+### Prune trivial merge commits **:prune=trivial-merge**
+
+Produce a history that skips all merge commits whose tree is identical to the first parents
+tree.
+Normally Josh will keep all commits in the filtered history whose tree differs from any of it's
+parents.
+
+### Commit message rewriting **`:"template"`** or **`:"template";"regex"`**
+
+Rewrite commit messages using a template string. The template can use regex capture groups
+to extract and reformat parts of the original commit message, as well as special template variables
+for commit metadata.
+
+**Simple message replacement:**
+```
+:"New message"
+```
+This replaces all commit messages with "New message".
+
+**Using regex with named capture groups:**
+```
+:"[{type}] {message}";"(?s)^(?P<type>fix|feat|docs): (?P<message>.+)$"
+```
+This uses a regex to match the original commit message and extract named capture groups (`{type}` and `{message}`)
+which are then used in the template. The regex `(?s)^(?P<type>fix|feat|docs): (?P<message>.+)$` matches
+commit messages starting with "fix:", "feat:", or "docs:" followed by a message, and the template
+reformats them as `[type] message`.
+
+**Using template variables:**
+The template supports special variables that provide access to commit metadata:
+- `{#}` - The tree object ID (SHA-1 hash) of the commit
+- `{@}` - The commit object ID (SHA-1 hash)
+- `{/path}` - The content of the file at the specified path in the commit tree
+- `{#path}` - The object ID (SHA-1 hash) of the tree entry at the specified path
+
+Regex capture groups take priority over template variables. If a regex capture group has the same name as a template variable, the capture group value will be used.
+
+Example:
+```
+:"Message: {#} {@}"
+```
+This replaces commit messages with "Message: " followed by the tree ID and commit ID.
+
+**Combining regex capture groups and template variables:**
+```
+:"[{type}] {message} (commit: {@})";"(?s)^(?P<type>Original) (?P<message>.+)$"
+```
+This combines regex capture groups (`{type}` and `{message}`) with template variables (`{@}` for the commit ID).
+
+**Removing text from messages:**
+```
+:"";"TODO"
+```
+This removes all occurrences of "TODO" from commit messages by matching "TODO" and replacing it with an empty string.
+The regex pattern can use `(?s)` to enable dot-all mode (so `.` matches newlines), allowing it to work with
+multi-line commit messages that include both a subject line and a body.
+
+### Hook **`:hook=<arg>`**
+
+Apply a different filter to each commit in a history, where the per-commit filter is
+resolved at runtime rather than being fixed at invocation time.
+
+`<arg>` selects the git notes ref that stores those per-commit filter specifications.
+When `<arg>` does not start with `refs/`, Josh reads notes from `refs/notes/<arg>`, so
+`:hook=commits` uses the default git notes ref `refs/notes/commits`. Each note body must
+contain a valid Josh filter expression for that commit; if a commit has no note in the
+selected ref, `josh-filter` fails.
+
+Minimal example:
+
+```shell
+git notes --ref=commits add -m ':/code' -f HEAD~1
+git notes --ref=commits add -m ':/code:pin[::app.js]' -f HEAD
+josh-filter ':hook=commits'
+```
+
+In this example, the first filtered commit exposes `code/` at the repository root, while
+the second uses `:pin` to keep `app.js` at its previous contents for that commit only.
+
+When using Josh as a library, hook resolution is not tied to git notes. You can provide
+your own implementation of the `josh_core::cache::FilterHook` trait and attach it with
+`TransactionContext::with_filter_hook`, which lets your application decide how
+`filter_for_commit(commit_oid, arg)` resolves the per-commit filter.
+
+> **Note:** Using `:hook` correctly requires care to preserve josh filter invariants —
+> violating them can produce incorrect or inconsistent results. Most users won't need this
+> filter, but if you have a use case that seems to call for it, we'd love to hear about it!
+> Feel free to open an issue or start a discussion.
+
+### Pin tree contents
+
+Pin revision of a subtree to revision of the parent commit.
+
+In practical terms, it means that file and folder updates are "held off", and revisions are "pinned".
+If a tree entry already existed in the parent revision, that version will be chosen.
+Otherwise, the tree entry will not appear in the filtered commit.
+
+The source of the parent revision is always the first commit parent.
+
+Note that this filter is only practical when used with `:hook` or `workspace.josh`,
+as it should apply per-revision only. Applying `:pin` for the whole history
+will result in the subtree being excluded from all revisions.
+
+`:pin` cannot be combined with history splicing, since the two have no well-defined
+combined semantics. Splicing is on by default, so a filter that uses `:pin` must set the
+`no-splice` history flag; otherwise filtering fails with an error. For example:
+
+```
+:~(history="no-splice")[:workspace=workspaces/code]
+```
+
+Refer to `pin_filter_workspace.t` and `pin_filter_hook.t` for reference.
+
+Filter order matters
+--------------------
+
+Filters are applied in the left-to-right order they are given in the filter specification,
+and they are `not` commutative.
+
+For example, this command will filter out just the josh documentation, and store it in a
+ref named ``FILTERED_HEAD``:
+
+    $ josh-filter :/docs:prefix=josh-docs
+
+However, `this` command will produce an empty branch:
+
+    $ josh-filter :prefix=josh-docs:/docs
+
+What's happening in the latter command is that because the prefix filter is applied first, the
+entire ``josh`` history already lives within the ``josh-docs`` directory, as it was just
+transformed to exist there. Thus, to still get the docs, the command would need to be:
+
+    $ josh-filter :prefix=josh-docs:/josh-docs/docs
+
+which will contain the josh documentation at the base of the tree. We've lost the prefix, what
+gives?? Because the original git tree was already transformed, and then the subdirectory filter
+was applied to pull documentation from ``josh-docs/docs``, the prefix is gone - it was filtered out
+again by the subdirectory filter. Thus, the order in which filters are provided is crucial, as each
+filter further transforms the latest transformation of the tree.

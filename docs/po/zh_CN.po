@@ -1,0 +1,5550 @@
+msgid ""
+msgstr ""
+"Project-Id-Version: Just One Single History\n"
+"POT-Creation-Date: 2026-06-05T10:51:24+08:00\n"
+"PO-Revision-Date: 2026-06-05T10:51:24+08:00\n"
+"Last-Translator: Automatically generated\n"
+"Language-Team: none\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Language: zh_CN\n"
+"Plural-Forms: nplurals=1; plural=0;\n"
+
+#: src/SUMMARY.md:1
+msgid "Summary"
+msgstr "目录"
+
+#: src/SUMMARY.md:3
+msgid "Intro"
+msgstr "简介"
+
+#: src/SUMMARY.md:4 src/usecases.md:2
+msgid "Use cases"
+msgstr "应用场景"
+
+#: src/SUMMARY.md:5
+msgid "FAQ"
+msgstr "常见问题"
+
+#: src/SUMMARY.md:7
+msgid "Guide"
+msgstr "指南"
+
+#: src/SUMMARY.md:8
+msgid "Getting started"
+msgstr "快速开始"
+
+#: src/SUMMARY.md:9 src/guide/workspaces.md:1 src/reference/workspace.md:2
+msgid "Working with workspaces"
+msgstr "使用 workspace"
+
+#: src/SUMMARY.md:10
+msgid "Stacked changes"
+msgstr "堆叠式变更"
+
+#: src/SUMMARY.md:11 src/guide/importing.md:1
+msgid "Importing projects"
+msgstr "导入项目"
+
+#: src/SUMMARY.md:12
+msgid "Integrating with CI"
+msgstr "与 CI 集成"
+
+#: src/SUMMARY.md:13 src/guide/migration.md:1
+msgid "Migration guide"
+msgstr "迁移指南"
+
+#: src/SUMMARY.md:15
+msgid "Reference"
+msgstr "参考"
+
+#: src/SUMMARY.md:16 src/reference/cli.md:1
+msgid "josh CLI"
+msgstr "josh CLI"
+
+#: src/SUMMARY.md:17
+msgid "Filter syntax"
+msgstr "过滤器语法"
+
+#: src/SUMMARY.md:18 src/reference/experimental.md:1
+msgid "Experimental features"
+msgstr "实验特性"
+
+#: src/SUMMARY.md:19
+msgid "Workspaces"
+msgstr "Workspace"
+
+#: src/SUMMARY.md:20
+msgid "Forge integration"
+msgstr "代码托管平台集成"
+
+#: src/SUMMARY.md:21
+msgid "Graphql API"
+msgstr "GraphQL API"
+
+#: src/SUMMARY.md:22
+msgid "Handlebar generator"
+msgstr "Handlebars 生成器"
+
+#: src/SUMMARY.md:23
+msgid "The josh UI"
+msgstr "josh UI"
+
+#: src/SUMMARY.md:25
+msgid "Infrastructure"
+msgstr "基础设施"
+
+#: src/SUMMARY.md:26
+msgid "Proxy"
+msgstr "代理"
+
+#: src/SUMMARY.md:27 src/reference/container.md:1
+msgid "Container configuration"
+msgstr "容器配置"
+
+#: src/SUMMARY.md:29
+msgid "Contributing"
+msgstr "参与贡献"
+
+#: src/SUMMARY.md:30 src/contributing/testing.md:1
+msgid "Testing"
+msgstr "测试"
+
+#: src/SUMMARY.md:31
+msgid "Development tools"
+msgstr "开发工具"
+
+#: src/SUMMARY.md:32
+msgid "josh run"
+msgstr "josh run"
+
+#: src/SUMMARY.md:33
+msgid "Tracing"
+msgstr "追踪"
+
+#: src/intro.md:1
+msgid ""
+"![Just One Single History](https://raw.githubusercontent.com/josh-project/"
+"josh/master/splash.jpg)"
+msgstr ""
+"![Just One Single History](https://raw.githubusercontent.com/josh-project/"
+"josh/master/splash.jpg)"
+
+#: src/intro.md:3
+msgid ""
+"Josh combines the advantages of monorepos with those of multirepos by "
+"leveraging a blazingly-fast, incremental, and reversible implementation of "
+"git history filtering."
+msgstr ""
+"Josh 结合了 monorepo 与 multirepo 各自的优势，借助极速、增量且可逆的 git 历史"
+"过滤实现来实现这一目标。"
+
+#: src/intro.md:6
+msgid "Concept"
+msgstr "概念"
+
+#: src/intro.md:8
+msgid ""
+"Traditionally, history filtering has been viewed as an expensive operation "
+"that should only be performed to fix issues with a repository, such as "
+"purging big binary files or removing accidentally-committed secrets, or as "
+"part of a migration to a different repository structure, like switching from "
+"multirepo to monorepo (or vice versa)."
+msgstr ""
+"传统上，历史过滤被视为一种开销高昂的操作，只应在修复仓库问题时执行，例如清除"
+"大型二进制文件或删除意外提交的密钥，或作为迁移到不同仓库结构（如从 multirepo "
+"切换到 monorepo，或反之）的一部分。"
+
+#: src/intro.md:13
+msgid ""
+"The implementation shipped with git (`git-filter branch`) is only usable as "
+"a once-in-a-lifetime last resort for anything but tiny repositories."
+msgstr ""
+"git 自带的实现（`git-filter branch`）对于非小型仓库而言，只能作为生命周期中一次性的"
+"最后手段来使用。"
+
+#: src/intro.md:16
+msgid ""
+"Faster versions of history filtering have been implemented, such as [git-"
+"filter-repo](https://github.com/newren/git-filter-repo) or the [BFG repo "
+"cleaner](https://rtyley.github.io/bfg-repo-cleaner/). Those, while much "
+"faster, are designed for doing occasional, destructive maintenance tasks, "
+"usually with the idea already in mind that once the filtering is complete "
+"the old history should be discarded."
+msgstr ""
+"更快版本的历史过滤实现已经问世，例如 [git-filter-repo](https://github.com/"
+"newren/git-filter-repo) 或 [BFG repo cleaner](https://rtyley.github.io/"
+"bfg-repo-cleaner/)。这些工具虽然快得多，但其设计初衷是用于偶尔执行的破坏性维护"
+"任务，通常在执行前就已预设：一旦过滤完成，旧历史将被丢弃。"
+
+#: src/intro.md:22
+msgid "The idea behind `josh` started with two questions:"
+msgstr "`josh` 背后的理念源于两个问题："
+
+#: src/intro.md:24
+msgid ""
+"What if history filtering could be so fast that it can be part of a normal, "
+"everyday workflow, running on every single push and fetch without the user "
+"even noticing?"
+msgstr ""
+"如果历史过滤可以快到足以成为日常工作流程的一部分，在每次 push 和 fetch 时运行"
+"而用户甚至无所察觉，那会怎样？"
+
+#: src/intro.md:26
+msgid "What if history filtering was a non-destructive, reversible operation?"
+msgstr "如果历史过滤是一种非破坏性、可逆的操作，那会怎样？"
+
+#: src/intro.md:28
+msgid ""
+"Under those two premises a filter operation stops being a maintenance task. "
+"It seamlessly relates histories between repos, which can be used by "
+"developers and CI systems interchangeably in whatever way is most suitable "
+"to the task at hand."
+msgstr ""
+"基于这两个前提，过滤操作不再是维护任务，而是无缝地关联各仓库之间的历史，"
+"开发者和 CI 系统可以根据手头任务以最合适的方式互换使用。"
+
+#: src/intro.md:32
+msgid "How is this possible?"
+msgstr "这是如何实现的？"
+
+#: src/intro.md:34
+msgid ""
+"Filtering history is a highly predictable task: The set of filters that tend "
+"to be used for any given repository is limited, such that the input to the "
+"filter (a git branch) only gets modified in an incremental way. Thus, by "
+"keeping a persistent cache between filter runs, the work needed to re-run a "
+"filter on a new commit (and its history) becomes proportional to the number "
+"of changes since the last run; The work to filter no longer depends on the "
+"total length of the history. Additionally, most filters also do not depend "
+"on the size of the trees."
+msgstr ""
+"过滤历史是一项高度可预测的任务：针对任意给定仓库所使用的过滤器集合是有限的，"
+"过滤器的输入（git 分支）也只以增量方式被修改。因此，通过在两次过滤运行之间保留"
+"持久化缓存，对新提交（及其历史）重新运行过滤器所需的工作量，就与自上次运行以来"
+"的变更数量成正比；过滤工作量不再取决于历史总长度。此外，大多数过滤器也不依赖"
+"目录树的大小。"
+
+#: src/intro.md:41
+msgid ""
+"What has long been known to be true for performing merges also applies to "
+"history filtering: The more often it is done the less work it takes each "
+"time."
+msgstr ""
+"长期以来对合并操作所认知的规律，同样适用于历史过滤：执行得越频繁，每次所需的"
+"工作量就越少。"
+
+#: src/intro.md:44
+msgid ""
+"To guarantee filters are reversible we have to restrict the kind of filter "
+"that can be used; It is not possible to write arbitrary filters using a "
+"scripting language like is allowed in other tools. To still be able to cover "
+"a wide range of use cases we have introduced a domain-specific language to "
+"express more complex filters as a combination of simpler ones. Apart from "
+"guaranteeing reversibility, the use of a DSL also enables pre-optimization "
+"of filter expressions to minimize both the amount of work to be done to "
+"execute the filter as well as the on-disk size of the persistent cache."
+msgstr ""
+"为了保证过滤器的可逆性，我们必须限制可使用的过滤器类型；不允许像其他工具那样"
+"使用脚本语言编写任意过滤器。为了仍能覆盖广泛的使用场景，我们引入了一种领域特定"
+"语言（DSL），将更复杂的过滤器表达为简单过滤器的组合。除了保证可逆性之外，使用"
+"DSL 还能对过滤器表达式进行预优化，以最小化执行过滤所需的工作量以及持久化缓存的"
+"磁盘占用。"
+
+#: src/usecases.md:4
+msgid "Partial cloning"
+msgstr "部分克隆"
+
+#: src/usecases.md:6
+msgid ""
+"Reduce scope and size of clones by treating subdirectories of the monorepo "
+"as individual repositories."
+msgstr ""
+"通过将 monorepo 的子目录视为独立仓库，缩减克隆的范围和体积。"
+
+#: src/usecases.md:9 src/usecases.md:76
+msgid "Using the `josh` CLI:"
+msgstr "使用 `josh` 命令行工具："
+
+#: src/usecases.md:10
+msgid ""
+"```\n"
+"$ josh clone https://git.example.com/monorepo.git :/path/to/library ./"
+"library\n"
+"```"
+msgstr ""
+"```\n"
+"$ josh clone https://git.example.com/monorepo.git :/path/to/library ./"
+"library\n"
+"```"
+
+#: src/usecases.md:14 src/usecases.md:81
+msgid "Or via a shared [josh-proxy](./reference/proxy.md):"
+msgstr "或通过共享的 [josh-proxy](./reference/proxy.md)："
+
+#: src/usecases.md:15
+msgid ""
+"```\n"
+"$ git clone http://josh/monorepo.git:/path/to/library.git\n"
+"```"
+msgstr ""
+"```\n"
+"$ git clone http://josh/monorepo.git:/path/to/library.git\n"
+"```"
+
+#: src/usecases.md:19
+msgid ""
+"The partial repo will act as a normal git repository but only contain the "
+"files found in the subdirectory and only commits affecting those files. The "
+"partial repo supports both fetch as well as push operation."
+msgstr ""
+"部分仓库的行为与普通 git 仓库相同，但只包含该子目录中的文件以及影响这些文件的"
+"提交。部分仓库同时支持 fetch 和 push 操作。"
+
+#: src/usecases.md:23
+msgid ""
+"This helps not just to improve performance on the client due to having fewer "
+"files in the tree, it also enables collaboration on parts of the monorepo "
+"with other parties utilizing git's normal distributed development features. "
+"For example, this makes it easy to mirror just selected parts of your repo "
+"to public github repositories or specific customers."
+msgstr ""
+"这不仅有助于因工作树中文件更少而提升客户端性能，还能利用 git 的普通分布式开发"
+"功能，与其他方就 monorepo 的特定部分开展协作。例如，这使得仅将仓库中选定的部分"
+"镜像到公开的 github 仓库或特定客户变得轻而易举。"
+
+#: src/usecases.md:30
+msgid "Project composition / Workspaces"
+msgstr "项目组合 / Workspace"
+
+#: src/usecases.md:32
+msgid ""
+"Simplify code sharing and dependency management. Beyond just subdirectories, "
+"Josh supports filtering, re-mapping and composition of arbitrary virtual "
+"repositories from the content found in the monorepo."
+msgstr ""
+"简化代码共享和依赖管理。Josh 不仅支持子目录，还支持对 monorepo 中的内容进行"
+"过滤、重新映射和组合，构建任意虚拟仓库。"
+
+#: src/usecases.md:36
+msgid ""
+"The mapping itself is also stored in the repository and therefore versioned "
+"alongside the code."
+msgstr "该映射本身也存储在仓库中，因此与代码一起进行版本管理。"
+
+#: src/usecases.md:39
+msgid ""
+"Multiple projects, depending on a shared set of libraries, can thus live "
+"together in a single repository. This approach is commonly referred to as "
+"“monorepo”, and was popularized by [Google](https://people.engr.ncsu.edu/"
+"ermurph3/papers/seip18.pdf), Facebook or Twitter to name a few."
+msgstr ""
+"多个依赖同一组共享库的项目，因此可以共存于单个仓库中。这种方式通常被称为 "
+"monorepo，并由 [Google](https://people.engr.ncsu.edu/ermurph3/papers/seip18.pdf)、"
+"Facebook 或 Twitter 等公司推广普及。"
+
+#: src/usecases.md:44
+msgid ""
+"In this example, two projects (`project1` and `project2`) coexist in the "
+"`central` monorepo."
+msgstr "在本示例中，两个项目（`project1` 和 `project2`）共存于 `central` monorepo 中。"
+
+#: src/usecases.md:74
+msgid "Workspaces act as normal git repos."
+msgstr "Workspace 的行为与普通 git 仓库相同。"
+
+#: src/usecases.md:77
+msgid ""
+"```\n"
+"$ josh clone https://git.example.com/central.git :workspace=workspaces/"
+"project1 ./project1\n"
+"```"
+msgstr ""
+"```\n"
+"$ josh clone https://git.example.com/central.git :workspace=workspaces/"
+"project1 ./project1\n"
+"```"
+
+#: src/usecases.md:82
+msgid ""
+"```\n"
+"$ git clone http://josh/central.git:workspace=workspaces/project1.git\n"
+"```"
+msgstr ""
+"```\n"
+"$ git clone http://josh/central.git:workspace=workspaces/project1.git\n"
+"```"
+
+#: src/usecases.md:86
+msgid ""
+"Each of the subprojects defines a `workspace.josh` file, defining the "
+"mapping between the original central.git repository and the hierarchy in use "
+"inside of the project."
+msgstr ""
+"每个子项目均定义一个 `workspace.josh` 文件，用于描述原始 central.git 仓库与"
+"项目内部目录结构之间的映射关系。"
+
+#: src/usecases.md:88
+msgid ""
+"In this setup, project1 and project2 can seamlessly depend on the latest "
+"version of library1, while only checking out the part of the central "
+"monorepo that's needed for their purpose. What's more, any changes to a "
+"shared module will be synced in both directions."
+msgstr ""
+"在此配置下，project1 和 project2 可以无缝依赖 library1 的最新版本，同时只签出"
+"central monorepo 中其所需的部分。更重要的是，对共享模块的任何修改都会双向同步。"
+
+#: src/usecases.md:91
+msgid ""
+"If a developer of the library1 pushed a new update, both projects will get "
+"the new version, and the developer will be able to check if they broke any "
+"test. If a developer of project1 needs to update the library, the changes "
+"will be automatically shared back into central, and project2."
+msgstr ""
+"若 library1 的开发者推送了新的更新，两个项目都会收到新版本，该开发者也能据此"
+"检查是否破坏了任何测试。若 project1 的开发者需要更新该库，其变更将被自动同步回"
+"central 和 project2。"
+
+#: src/usecases.md:94
+msgid "Simplified CI/CD"
+msgstr "简化 CI/CD"
+
+#: src/usecases.md:96
+msgid ""
+"With everything stored in one repo, CI/CD systems only need to look into one "
+"source for each particular deliverable. However in traditional monorepo "
+"environments dependency management is handled by the build system. Build "
+"systems are usually tailored to specific languages and need their input "
+"already checked out on the filesystem. So the question:"
+msgstr ""
+"将所有内容存储在一个仓库中后，CI/CD 系统对每个特定交付物只需查看一个来源。"
+"然而，在传统的 monorepo 环境中，依赖管理由构建系统负责。构建系统通常针对特定"
+"语言定制，并需要其输入已签出到文件系统。因此问题来了："
+
+#: src/usecases.md:103
+msgid ""
+"\"What deliverables are affected by a given commit and need to be rebuild?\""
+msgstr "\"哪些交付物受某次提交影响并需要重新构建？\""
+
+#: src/usecases.md:105
+msgid ""
+"cannot be answered without cloning the entire repository and understanding "
+"how the languages used handle dependencies."
+msgstr ""
+"在不克隆整个仓库并了解所用语言如何处理依赖的情况下，这个问题无法得到解答。"
+
+#: src/usecases.md:108
+msgid ""
+"In particular when using C family languages, hidden dependencies on header "
+"files are easy to miss. For this reason limiting the visibility of files to "
+"the compiler by sandboxing is pretty much a requirement for reproducible "
+"builds."
+msgstr ""
+"尤其在使用 C 系语言时，对头文件的隐式依赖很容易被忽略。因此，通过沙箱化来限制"
+"编译器可见的文件范围，几乎是实现可复现构建的必要条件。"
+
+#: src/usecases.md:112
+msgid ""
+"With Josh, each deliverable gets its own virtual git repository with "
+"dependencies declared in the `workspace.josh` file. This means answering the "
+"above question becomes as simple as comparing commit ids. Furthermore due to "
+"the tree filtering each build is guaranteed to be perfectly sandboxed and "
+"only sees those parts of the monorepo that have actually been mapped."
+msgstr ""
+"使用 Josh 时，每个交付物都拥有其独立的虚拟 git 仓库，依赖项在 `workspace.josh` "
+"文件中声明。这意味着回答上述问题就如同比较提交 ID 一样简单。此外，由于采用了"
+"目录树过滤，每次构建都能保证在完美的沙箱中运行，仅能访问 monorepo 中实际映射"
+"的那些部分。"
+
+#: src/usecases.md:117
+msgid ""
+"This also means the deliverables to be re-built can be determined without "
+"cloning any repos like typically necessary with normal build tools."
+msgstr ""
+"这也意味着无需像普通构建工具通常所要求的那样克隆任何仓库，即可确定需要重新"
+"构建的交付物。"
+
+#: src/usecases.md:120 src/reference/graphql.md:1
+msgid "GraphQL API"
+msgstr "GraphQL API"
+
+#: src/usecases.md:122
+msgid ""
+"It is often desireable to access content stored in git without requiring a "
+"clone of the repository. This is useful for CI/CD systems or web frontends "
+"such as dashboards."
+msgstr ""
+"通常需要在不克隆仓库的情况下访问存储在 git 中的内容，这对于 CI/CD 系统或"
+"诸如仪表板之类的 Web 前端非常有用。"
+
+#: src/usecases.md:125
+msgid ""
+"Josh exposes a GraphQL API for that purpose. For example, it can be used to "
+"find all workspaces currently present in the tree:"
+msgstr ""
+"Josh 为此暴露了一个 GraphQL API。例如，可以用它来查找当前目录树中存在的所有"
+"workspace："
+
+#: src/usecases.md:128
+msgid ""
+"```\n"
+"query {\n"
+"  rev(at:\"refs/heads/master\", filter:\"::**/workspace.josh\") {\n"
+"    files { path }\n"
+"  }\n"
+"}\n"
+"```"
+msgstr ""
+"```\n"
+"query {\n"
+"  rev(at:\"refs/heads/master\", filter:\"::**/workspace.josh\") {\n"
+"    files { path }\n"
+"  }\n"
+"}\n"
+"```"
+
+#: src/usecases.md:136
+msgid "Caching proxy"
+msgstr "缓存代理"
+
+#: src/usecases.md:138
+msgid ""
+"Even without using the more advanced features like partial cloning or "
+"workspaces, `josh-proxy` can act as a cache to reduce traffic between "
+"locations or keep your CI from performing many requests to the main git host."
+msgstr ""
+"即使不使用部分克隆或 workspace 等更高级的功能，`josh-proxy` 也可以充当缓存，"
+"以减少各地点之间的流量，或防止 CI 向主 git 主机发起大量请求。"
+
+#: src/faq.md:1
+msgid "Frequently Asked Questions"
+msgstr "常见问题"
+
+#: src/faq.md:3
+msgid "How is Josh different from git sparse-checkout?"
+msgstr "Josh 与 git sparse-checkout 有何不同？"
+
+#: src/faq.md:5
+msgid ""
+"Josh operates on the git object graph and is unrelated to checking out files "
+"and the working tree on the filesystem, which is the only thing sparse-"
+"checkout is concerned with. A sparse checkout does not influence the "
+"contents of the object database and also not what gets downloaded over the "
+"network. Both can certainly be used together if needed."
+msgstr ""
+"Josh 基于 git 对象图，与在文件系统上检出文件和工作树（即 sparse-checkout 的关"
+"注点）无关。稀疏检出不会改变对象数据库的内容，也不会影响通过网络下载的内容。两"
+"者在需要时可以一起使用。"
+
+#: src/faq.md:8
+msgid "How is Josh different from partial clone?"
+msgstr "Josh 与部分克隆有何不同？"
+
+#: src/faq.md:10
+msgid ""
+"A partial clone will cause git to download only parts of an object database "
+"according to some predicate. It is still the same object database with the "
+"history having the same commits and sha1s. It still allows loading skipped "
+"parts of the object database at a later point. Josh creates an alternate "
+"history that has no reference to the skipped parts. It is as such very "
+"similar to git filter-branch just faster, with added features and a "
+"different user interface."
+msgstr ""
+"部分克隆（partial clone）会根据条件只下载对象数据库的一部分。它仍然是同一个对"
+"象数据库：历史包含相同的提交及相同的 SHA-1 标识，并且允许以后再加载此前被跳过"
+"的对象。Josh 则会创建一个不引用被跳过部分的替代历史，在本质上类似于 git filter-"
+"branch，但更快、功能更多、且提供不同的交互方式。"
+
+#: src/faq.md:13
+msgid "How is it different from submodules?"
+msgstr "Josh 与子模块有何不同？"
+
+#: src/faq.md:15
+msgid ""
+"Where git submodules are multiple, independent repos, referencing each other "
+"with SHAs, Josh supports the monorepo approach. All of the code is in one "
+"single repo which can easily be kept in sync, and Josh provides any sub "
+"folder (or in the case of workspaces, more complicated recombination of "
+"folders) as their own git repository. These repos are transparently "
+"synchronised both ways with the main monorepo. Josh can thus do more than "
+"submodules can, and is easier and faster to use."
+msgstr ""
+"git 子模块（submodules）是多个独立仓库，通过引用特定提交的 SHA 来相互关联。"
+"Josh 支持 monorepo（单体仓库）方式：所有代码保存在同一仓库中，便于同步。Josh "
+"可以将任意子文件夹（或工作区下更复杂的文件夹组合）视为独立的 git 仓库，与主 "
+"monorepo 之间实现双向透明的同步。因此 Josh 的功能超出子模块，且使用上更简单、"
+"更快捷。"
+
+#: src/faq.md:20
+msgid "How is it different from `git subtree`?"
+msgstr "Josh 与 `git subtree` 有何不同？"
+
+#: src/faq.md:22
+msgid ""
+"The basic idea behind Josh is quite similar to `git subtree`. However `git "
+"subtree`, just like `git filter-branch`, is way too slow for everyday use, "
+"even on medium sized repos. `git subtree` can only achieve acceptable "
+"performance when squashing commits and therefore losing history. One core "
+"part of Josh is essentially a much faster implementation of `git subtree "
+"split` which has been specifically optimized for being run frequently inside "
+"the same repository."
+msgstr ""
+"Josh 的基本思想与 `git subtree` 相似。然而与 `git filter-branch` 一样，`git "
+"subtree` 在常规使用中通常过慢，即便是中等规模的仓库也如此。`git subtree` 只有"
+"在压缩提交并因此丢失历史时才可能获得可接受的性能。Josh 的核心本质上是对 `git "
+"subtree split` 的高性能实现，针对在同一仓库内频繁运行进行了专门优化。"
+
+#: src/faq.md:27
+msgid "How is Josh different from `git filter-repo`?"
+msgstr "Josh 与 `git filter-repo` 有何不同？"
+
+#: src/faq.md:29
+msgid ""
+"Both  `josh-filter` as well as `git filter-repo` enable very fast rewriting "
+"of Git history and thus can in simple cases be used for the same purpose."
+msgstr ""
+"`josh-filter` 和 `git filter-repo` 都能快速重写 Git 历史，在简单场景下可实现相"
+"同目的。"
+
+#: src/faq.md:32
+msgid ""
+"Which one is right in more advanced use cases depends on your goals: `git "
+"filter-repo` offers more flexibility and options on what kind of filtering "
+"it supports, like rewriting commit messages or even plugging arbitrary "
+"scripts into the filtering."
+msgstr ""
+"在更复杂的用例中，应根据目标选择工具：`git filter-repo` 在过滤能力上更灵活、可"
+"选项更多，例如支持重写提交信息或插入任意脚本作为过滤步骤。"
+
+#: src/faq.md:35
+msgid ""
+"Josh uses a DSL instead of arbitrary scripts for complex filters and is much "
+"more restrictive in the kind of filtering possible, but in exchange for "
+"those limitations offers incremental filtering as well as bidirectional "
+"operation, meaning converting changes between both the original and the "
+"filtered repos."
+msgstr ""
+"Josh 使用 DSL（领域特定语言）而非任意脚本，因此在可实现的过滤类型上更受限制；"
+"但它支持增量过滤和双向操作，能够在原始仓库与过滤后仓库之间相互转换变更。"
+
+#: src/faq.md:38
+msgid "How is Josh different from all of the above alternatives?"
+msgstr "Josh 与以上所有替代方案有何不同？"
+
+#: src/faq.md:40
+msgid ""
+"Josh includes `josh-proxy` which offers repo filtering as a service, mainly "
+"intended to support monorepo workflows."
+msgstr ""
+"Josh 包含 `josh-proxy`，以服务形式提供仓库过滤，主要用于支持 monorepo 工作流。"
+
+#: src/guide/gettingstarted.md:1
+msgid "Getting Started"
+msgstr "快速入门"
+
+#: src/guide/gettingstarted.md:3
+msgid ""
+"The `josh` command-line tool lets you clone, fetch, push, and manage "
+"filtered views of git repositories directly from your terminal."
+msgstr ""
+"`josh` 命令行工具让您可以直接在终端中克隆、fetch、push 以及管理 git 仓库的"
+"过滤视图。"
+
+#: src/guide/gettingstarted.md:6 src/reference/cli.md:6
+msgid "Installation"
+msgstr "安装"
+
+#: src/guide/gettingstarted.md:8
+msgid "Install `josh` using Cargo (requires [Rust](https://rustup.rs)):"
+msgstr "使用 Cargo 安装 `josh`（需要 [Rust](https://rustup.rs)）："
+
+#: src/guide/gettingstarted.md:10 src/reference/cli.md:8
+msgid ""
+"```shell\n"
+"cargo install josh-cli --locked --git https://github.com/josh-project/josh."
+"git\n"
+"```"
+msgstr ""
+"```shell\n"
+"cargo install josh-cli --locked --git https://github.com/josh-project/josh."
+"git\n"
+"```"
+
+#: src/guide/gettingstarted.md:14
+msgid "Cloning a repository"
+msgstr "克隆仓库"
+
+#: src/guide/gettingstarted.md:16
+msgid ""
+"`josh clone` is similar to `git clone` but takes two required arguments "
+"after the URL: a [filter](../reference/filters.md) and a local destination "
+"path. Unlike `git clone`, the destination path is always required and cannot "
+"be inferred from the URL."
+msgstr ""
+"`josh clone` 与 `git clone` 类似，但在 URL 之后需要两个必填参数："
+"一个[过滤器](../reference/filters.md)和一个本地目标路径。与 `git clone` 不同，"
+"目标路径始终是必须的，无法从 URL 中推断。"
+
+#: src/guide/gettingstarted.md:20
+msgid ""
+"For example, let's clone just the documentation folder of the Josh "
+"repository:"
+msgstr "例如，仅克隆 Josh 仓库的文档目录："
+
+#: src/guide/gettingstarted.md:22
+msgid ""
+"```shell\n"
+"josh clone https://github.com/josh-project/josh.git :/docs ./josh-docs\n"
+"```"
+msgstr ""
+"```shell\n"
+"josh clone https://github.com/josh-project/josh.git :/docs ./josh-docs\n"
+"```"
+
+#: src/guide/gettingstarted.md:26
+msgid ""
+"The filter `:/docs` tells Josh to check out only the contents of the `docs/` "
+"subdirectory. The resulting repository will contain only the files from that "
+"folder and only the commits that touch them — as if that subdirectory had "
+"always been its own repository."
+msgstr ""
+"过滤器 `:/docs` 指示 Josh 仅签出 `docs/` 子目录的内容。生成的仓库将只包含该"
+"目录中的文件，以及仅触及这些文件的提交——就好像该子目录一直是其独立的仓库一样。"
+
+#: src/guide/gettingstarted.md:30
+msgid ""
+"To clone a repository without any filter (equivalent to a plain `git clone`):"
+msgstr "要在不使用任何过滤器的情况下克隆仓库（等同于普通的 `git clone`）："
+
+#: src/guide/gettingstarted.md:32
+msgid ""
+"```shell\n"
+"josh clone https://github.com/josh-project/josh.git :/ ./josh\n"
+"```"
+msgstr ""
+"```shell\n"
+"josh clone https://github.com/josh-project/josh.git :/ ./josh\n"
+"```"
+
+#: src/guide/gettingstarted.md:36
+msgid "Making and pushing changes"
+msgstr "修改并推送变更"
+
+#: src/guide/gettingstarted.md:38
+msgid ""
+"The cloned repository is a normal git repository. Edit files, commit as "
+"usual, then use `josh push` to send your changes back upstream:"
+msgstr ""
+"克隆出来的仓库是一个普通 git 仓库。像平常一样编辑文件并提交，然后使用 `josh "
+"push` 将你的变更发送回上游："
+
+#: src/guide/gettingstarted.md:47
+msgid ""
+"Josh transparently reverses the filter and applies your commits to the "
+"correct location in the upstream repository. From the perspective of the "
+"rest of the team, the changes appear exactly as if they had been pushed "
+"directly to the monorepo."
+msgstr ""
+"Josh 会透明地反向应用过滤器，并将你的提交应用到上游仓库中的正确位置。从团队"
+"其他成员的视角看，这些变更就像是直接推送到 monorepo 一样。"
+
+#: src/guide/gettingstarted.md:51
+msgid "Pulling changes"
+msgstr "拉取变更"
+
+#: src/guide/gettingstarted.md:53
+msgid "Use `josh pull` to fetch and integrate updates from upstream:"
+msgstr "使用 `josh pull` 从上游获取并集成更新："
+
+#: src/guide/gettingstarted.md:59
+msgid "Cloning a part of a repository"
+msgstr "克隆仓库的一部分"
+
+#: src/guide/gettingstarted.md:61
+msgid ""
+"Josh becomes particularly useful when you want to work on a filtered view of "
+"a larger repository — for example, a single subdirectory or a composed "
+"workspace. The `josh` CLI applies the filter client-side, which means the "
+"full repository object database is still downloaded from the upstream host. "
+"The filter determines which commits and files are visible in your working "
+"tree and which refs you can push to, but it does not reduce transfer size."
+msgstr ""
+"当你想在大型仓库的过滤视图上工作时，Josh 会特别有用，例如单个子目录或组合后"
+"的 workspace。`josh` CLI 会在客户端应用过滤器，这意味着仍然会从上游主机下载"
+"完整的仓库对象数据库。过滤器决定哪些提交和文件会在工作树中可见，以及你可以"
+"推送到哪些 ref，但它不会减少传输大小。"
+
+#: src/guide/gettingstarted.md:68
+msgid ""
+"**Note**: If a true partial download is important — for example to avoid "
+"transferring a large monorepo over a slow connection — you need server-side "
+"filtering via a [josh-proxy](../reference/proxy.md). With the proxy in "
+"place, only the filtered objects are ever sent over the network."
+msgstr ""
+"**注意**：如果真正的部分下载很重要，例如为了避免在慢速连接上传输大型 monorepo，"
+"你需要通过 [josh-proxy](../reference/proxy.md) 进行服务端过滤。部署代理后，"
+"网络上传输的始终只有过滤后的对象。"
+
+#: src/guide/gettingstarted.md:73
+msgid ""
+"Beyond simple subdirectory extraction, Josh's [filter language](../reference/"
+"filters.md) supports composition, remapping, and exclusions, making it "
+"possible to carve out any virtual slice of a repository."
+msgstr ""
+"除了简单的子目录提取之外，Josh 的[过滤器语言](../reference/filters.md)还支持"
+"组合、重映射和排除，从而可以切分出仓库中的任意虚拟片段。"
+
+#: src/guide/gettingstarted.md:77
+msgid "Next steps"
+msgstr "后续步骤"
+
+#: src/guide/gettingstarted.md:79
+msgid ""
+"**[Workspaces](./workspaces.md)** — Compose a virtual repository from "
+"multiple parts of a monorepo and keep them in sync bidirectionally."
+msgstr ""
+"**[Workspaces](./workspaces.md)** — 从 monorepo 的多个部分组合出一个虚拟仓库，"
+"并保持双向同步。"
+
+#: src/guide/gettingstarted.md:81
+msgid ""
+"**[Stacked changes](./stacked-changes.md)** — Push a series of commits as "
+"individual pull requests with automatic PR management."
+msgstr ""
+"**[Stacked changes](./stacked-changes.md)** — 将一系列提交推送为单独的 pull "
+"request，并自动管理 PR。"
+
+#: src/guide/gettingstarted.md:83
+msgid ""
+"**[Filter syntax](../reference/filters.md)** — Learn all the available "
+"filter operations."
+msgstr "**[Filter syntax](../reference/filters.md)** — 了解所有可用的过滤器操作。"
+
+#: src/guide/gettingstarted.md:85
+msgid ""
+"**[josh CLI reference](../reference/cli.md)** — Full reference for all "
+"`josh` subcommands and options."
+msgstr ""
+"**[josh CLI reference](../reference/cli.md)** — 所有 `josh` 子命令和选项的完整"
+"参考。"
+
+#: src/guide/gettingstarted.md:87
+msgid ""
+"**[Proxy setup](../reference/proxy.md)** — Running a shared `josh-proxy` for "
+"your team or CI/CD infrastructure, so that ordinary `git clone` works "
+"without any special client tooling."
+msgstr ""
+"**[Proxy setup](../reference/proxy.md)** — 为团队或 CI/CD 基础设施运行共享的 "
+"`josh-proxy`，让普通的 `git clone` 无需任何特殊客户端工具即可工作。"
+
+#: src/guide/workspaces.md:3
+msgid ""
+"A workspace is a list of files and folders remapped from a central "
+"repository into a new repository layout. For example, a shared library can "
+"be mapped into multiple workspaces, each placing it at the path that makes "
+"sense for that project."
+msgstr ""
+"workspace 是一组文件和文件夹的列表，它们会从中心仓库重映射到新的仓库布局中。"
+"例如，一个共享库可以映射到多个 workspace 中，并在每个 workspace 中放到对该"
+"项目有意义的路径下。"
+
+#: src/guide/workspaces.md:7
+msgid ""
+"In this guide we'll set up a small monorepo with two libraries and two "
+"applications, then use workspaces to develop against them in isolation."
+msgstr ""
+"在本指南中，我们会设置一个包含两个库和两个应用的小型 monorepo，然后使用 "
+"workspace 对它们进行隔离开发。"
+
+#: src/guide/workspaces.md:10
+msgid "The monorepo"
+msgstr "Monorepo"
+
+#: src/guide/workspaces.md:12
+msgid "Suppose you have a monorepo with this structure:"
+msgstr "假设你有一个结构如下的 monorepo："
+
+#: src/guide/workspaces.md:26
+msgid ""
+"Both applications depend on one or both of the shared libraries, but "
+"developers working on each application only want to see the code that's "
+"relevant to them."
+msgstr ""
+"两个应用都依赖其中一个或两个共享库，但开发每个应用的开发者只想看到与自己相关"
+"的代码。"
+
+#: src/guide/workspaces.md:29
+msgid "Creating a workspace"
+msgstr "创建 workspace"
+
+#: src/guide/workspaces.md:31
+msgid ""
+"Clone the monorepo scoped to `application1` using the `:workspace=` filter:"
+msgstr "使用 `:workspace=` 过滤器克隆范围限定为 `application1` 的 monorepo："
+
+#: src/guide/workspaces.md:33
+msgid ""
+"```shell\n"
+"josh clone https://github.com/myorg/monorepo.git :workspace=application1 ./"
+"application1\n"
+"cd application1\n"
+"```"
+msgstr ""
+"```shell\n"
+"josh clone https://github.com/myorg/monorepo.git :workspace=application1 ./"
+"application1\n"
+"cd application1\n"
+"```"
+
+#: src/guide/workspaces.md:38
+msgid ""
+"The cloned repository contains only the files and history relevant to "
+"`application1`:"
+msgstr "克隆得到的仓库只包含与 `application1` 相关的文件和历史："
+
+#: src/guide/workspaces.md:44
+msgid ""
+"**Note:** Josh lets you create a workspace out of any directory, even one "
+"that doesn't exist yet in the monorepo."
+msgstr ""
+"**注意：** Josh 允许你基于任意目录创建 workspace，即使该目录在 monorepo 中还"
+"不存在。"
+
+#: src/guide/workspaces.md:47
+msgid "Mapping dependencies with `workspace.josh`"
+msgstr "使用 `workspace.josh` 映射依赖"
+
+#: src/guide/workspaces.md:49
+msgid ""
+"The `workspace.josh` file describes which folders from the central "
+"repository should be mapped into this workspace, and where they should "
+"appear."
+msgstr ""
+"`workspace.josh` 文件描述中心仓库中的哪些文件夹应映射到此 workspace，以及它们"
+"应出现在哪个位置。"
+
+#: src/guide/workspaces.md:52
+msgid ""
+"Since `application1` depends on `library1`, create `workspace.josh` with:"
+msgstr "由于 `application1` 依赖 `library1`，请创建包含以下内容的 `workspace.josh`："
+
+#: src/guide/workspaces.md:58
+msgid "Commit the file:"
+msgstr "提交该文件："
+
+#: src/guide/workspaces.md:60
+msgid ""
+"```shell\n"
+"git add workspace.josh\n"
+"git commit -m \"Map library1 into the application1 workspace\"\n"
+"```"
+msgstr ""
+"```shell\n"
+"git add workspace.josh\n"
+"git commit -m \"Map library1 into the application1 workspace\"\n"
+"```"
+
+#: src/guide/workspaces.md:65
+msgid "Then push and pull to sync the workspace:"
+msgstr "然后推送并拉取，以同步 workspace："
+
+#: src/guide/workspaces.md:72
+msgid "The mapped library has now appeared in the workspace:"
+msgstr "映射后的库现在已经出现在 workspace 中："
+
+#: src/guide/workspaces.md:82
+msgid ""
+"The history reflects the merge of `library1`'s history into the workspace:"
+msgstr "历史记录反映出 `library1` 的历史已合并到 workspace 中："
+
+#: src/guide/workspaces.md:91
+msgid ""
+"Josh needs to merge the mapped module's history into the workspace so that "
+"all commits are present in both histories. In the central repository, the "
+"same commit appears as a plain linear commit — no merge — in `application1/`:"
+msgstr ""
+"Josh 需要将映射模块的历史合并到 workspace 中，以便所有提交同时存在于两边的"
+"历史中。在中心仓库里，同一个提交会在 `application1/` 中显示为普通的线性提交"
+"——没有 merge："
+
+#: src/guide/workspaces.md:104
+msgid "A second workspace"
+msgstr "第二个 workspace"
+
+#: src/guide/workspaces.md:106
+msgid ""
+"Let's create a workspace for `application2`, which depends on both libraries:"
+msgstr "接下来为依赖两个库的 `application2` 创建一个 workspace："
+
+#: src/guide/workspaces.md:108
+msgid ""
+"```shell\n"
+"cd ..\n"
+"josh clone https://github.com/myorg/monorepo.git :workspace=application2 ./"
+"application2\n"
+"cd application2\n"
+"```"
+msgstr ""
+"```shell\n"
+"cd ..\n"
+"josh clone https://github.com/myorg/monorepo.git :workspace=application2 ./"
+"application2\n"
+"cd application2\n"
+"```"
+
+#: src/guide/workspaces.md:114
+msgid "Add both dependencies to `workspace.josh`:"
+msgstr "将两个依赖都添加到 `workspace.josh`："
+
+#: src/guide/workspaces.md:121
+msgid "Commit, push, and pull:"
+msgstr "提交、推送并拉取："
+
+#: src/guide/workspaces.md:123
+msgid ""
+"```shell\n"
+"git add workspace.josh\n"
+"git commit -m \"Create workspace for application2\"\n"
+"josh push\n"
+"josh pull\n"
+"```"
+msgstr ""
+"```shell\n"
+"git add workspace.josh\n"
+"git commit -m \"Create workspace for application2\"\n"
+"josh push\n"
+"josh pull\n"
+"```"
+
+#: src/guide/workspaces.md:130
+msgid "The workspace now contains both libraries:"
+msgstr "该 workspace 现在包含两个库："
+
+#: src/guide/workspaces.md:142
+msgid ""
+"Because we added both dependencies in a single commit, the history contains "
+"just one merge commit, pulling in the history of both libraries:"
+msgstr ""
+"由于我们在单个提交中添加了两个依赖，历史记录只包含一个 merge commit，它引入了"
+"两个库的历史："
+
+#: src/guide/workspaces.md:153
+msgid "Pushing a change back to the monorepo"
+msgstr "将变更推回 monorepo"
+
+#: src/guide/workspaces.md:155
+msgid ""
+"While working in `application2`, you notice a bug in `library1`. Fix it and "
+"commit as usual:"
+msgstr "在 `application2` 中工作时，你发现 `library1` 中有一个 bug。修复它并照常提交："
+
+#: src/guide/workspaces.md:158
+msgid ""
+"```shell\n"
+"# edit libs/lib1/lib1.h\n"
+"git commit -a -m \"Fix bug in lib1\"\n"
+"josh push\n"
+"```"
+msgstr ""
+"```shell\n"
+"# edit libs/lib1/lib1.h\n"
+"git commit -a -m \"Fix bug in lib1\"\n"
+"josh push\n"
+"```"
+
+#: src/guide/workspaces.md:164
+msgid ""
+"Josh reverses the workspace filter and writes the change directly to "
+"`library1/` in the central repository. No special tooling is needed — it's a "
+"regular commit from the perspective of everyone else working on the monorepo."
+msgstr ""
+"Josh 会反向应用 workspace 过滤器，并将变更直接写入中心仓库的 `library1/`。"
+"不需要特殊工具——从其他所有在 monorepo 上工作的人的视角看，它就是一个普通提交。"
+
+#: src/guide/workspaces.md:168
+msgid "Pulling a change from another workspace"
+msgstr "从另一个 workspace 拉取变更"
+
+#: src/guide/workspaces.md:170
+msgid "A developer working in `application1` can now pull the fix:"
+msgstr "在 `application1` 中工作的开发者现在可以拉取该修复："
+
+#: src/guide/workspaces.md:177
+msgid ""
+"The fix appears in `modules/lib1/` exactly as if it had been committed there "
+"directly:"
+msgstr "该修复会出现在 `modules/lib1/` 中，就像它是直接提交到那里的一样："
+
+#: src/guide/workspaces.md:187
+msgid ""
+"Changes flow bidirectionally through the central repository — each workspace "
+"is an isolated view, but they all share the same underlying history."
+msgstr ""
+"变更会通过中心仓库双向流动——每个 workspace 都是一个隔离视图，但它们共享同一套"
+"底层历史。"
+
+#: src/guide/stacked-changes.md:1
+msgid "Stacked Changes"
+msgstr "堆叠式变更"
+
+#: src/guide/stacked-changes.md:3
+msgid ""
+"Josh supports a stacked-changes workflow where a series of commits on a "
+"local branch can each be pushed as a separate, independently-reviewable "
+"unit. This is useful when working on a larger feature that is best reviewed "
+"in smaller, logical steps."
+msgstr ""
+"Josh 支持堆叠式变更工作流：本地分支上的一系列提交可以分别作为独立、可单独审查"
+"的单元推送。当开发较大的功能，并且最好拆成较小的逻辑步骤来审查时，这会很有用。"
+
+#: src/guide/stacked-changes.md:7
+msgid ""
+"This feature is separate from Josh's filtering functionality. It works with "
+"any repository accessible via the `josh` CLI, regardless of whether you are "
+"working with a filtered view of a monorepo or a plain repository."
+msgstr ""
+"此功能独立于 Josh 的过滤功能。它适用于任何可通过 `josh` CLI 访问的仓库，无论"
+"你是在 monorepo 的过滤视图中工作，还是在普通仓库中工作。"
+
+#: src/guide/stacked-changes.md:11
+msgid "Concepts"
+msgstr "概念"
+
+#: src/guide/stacked-changes.md:13
+msgid ""
+"In a stacked changes workflow, each commit on your local branch represents "
+"one self-contained change. When you use `josh publish`, Josh creates a "
+"separate git ref for each qualifying commit."
+msgstr ""
+"在堆叠式变更工作流中，本地分支上的每个提交都表示一个自包含的变更。使用 `josh "
+"publish` 时，Josh 会为每个符合条件的提交创建单独的 git ref。"
+
+#: src/guide/stacked-changes.md:17
+msgid ""
+"A commit qualifies for a separate ref — and an automatic PR, when [forge "
+"integration](../reference/forge.md) is configured — only if both of the "
+"following are true:"
+msgstr ""
+"只有在同时满足以下两个条件时，提交才有资格获得单独的 ref；如果配置了[代码托管"
+"平台集成](../reference/forge.md)，还会自动创建 PR："
+
+#: src/guide/stacked-changes.md:21
+msgid "**It has a change ID** in the commit message footer (see below)."
+msgstr "**它在提交消息页脚中包含 change ID**（见下文）。"
+
+#: src/guide/stacked-changes.md:22
+msgid ""
+"**Its author email matches** the email configured in `user.email` in your "
+"git config."
+msgstr "**它的作者邮箱匹配** git config 中 `user.email` 配置的邮箱。"
+
+#: src/guide/stacked-changes.md:24
+msgid ""
+"Commits without a change ID, or authored by someone else, are silently "
+"skipped and are not pushed as individual changes."
+msgstr ""
+"没有 change ID 的提交，或由其他人创作的提交，会被静默跳过，不会作为单独变更"
+"推送。"
+
+#: src/guide/stacked-changes.md:27
+msgid "Change IDs"
+msgstr "Change ID"
+
+#: src/guide/stacked-changes.md:29
+msgid ""
+"A change ID is a short, stable identifier that you add manually to the "
+"footer of a commit message, using either of these footers:"
+msgstr ""
+"change ID 是一个简短、稳定的标识符，需要你手动添加到提交消息的页脚中，可以"
+"使用以下任一页脚："
+
+#: src/guide/stacked-changes.md:36
+msgid "or the Gerrit-compatible form:"
+msgstr "或使用兼容 Gerrit 的形式："
+
+#: src/guide/stacked-changes.md:42
+msgid ""
+"The change ID must not contain `@`. It must be unique within the stack. It "
+"is what allows `josh push` to match a commit to an existing PR across "
+"rebases and amends — so once you have assigned an ID to a change, keep it "
+"stable."
+msgstr ""
+"change ID 不能包含 `@`。它必须在堆栈内唯一。它让 `josh push` 能够在 rebase 和"
+" amend 之后仍将提交匹配到已有 PR；因此一旦为某个变更分配了 ID，就要保持它稳定。"
+
+#: src/guide/stacked-changes.md:46
+msgid "**Example commit message:**"
+msgstr "**示例提交消息：**"
+
+#: src/guide/stacked-changes.md:57
+msgid "Declaring dependencies with `Requires:`"
+msgstr "使用 `Requires:` 声明依赖"
+
+#: src/guide/stacked-changes.md:59
+msgid ""
+"By default, when Josh publishes a stack it includes only the intermediate "
+"commits that are textually needed for a change's diff to apply. Sometimes a "
+"change depends on another change in ways that go beyond textual conflicts — "
+"for example, it relies on a function introduced by an earlier change even "
+"though they touch different files."
+msgstr ""
+"默认情况下，Josh 发布一个堆栈时，只会包含应用某个变更 diff 在文本上所需的中间"
+"提交。有时，一个变更会以超出文本冲突的方式依赖另一个变更；例如，它依赖前一个"
+"变更引入的函数，即使两个变更触及的是不同文件。"
+
+#: src/guide/stacked-changes.md:64
+msgid ""
+"You can declare such dependencies with one or more `Requires:` footers in "
+"the commit message, referencing the change IDs of the changes you depend on:"
+msgstr ""
+"你可以在提交消息中使用一个或多个 `Requires:` 页脚声明这类依赖，引用所依赖变更"
+"的 change ID："
+
+#: src/guide/stacked-changes.md:77
+msgid ""
+"When Josh determines the dependencies for `form-wiring`, it will include "
+"`input-validation` even if the two changes don't overlap textually."
+msgstr ""
+"当 Josh 确定 `form-wiring` 的依赖时，即使这两个变更在文本上没有重叠，也会包含 "
+"`input-validation`。"
+
+#: src/guide/stacked-changes.md:80
+msgid "Multiple dependencies can be declared by repeating the footer:"
+msgstr "可以通过重复该页脚来声明多个依赖："
+
+#: src/guide/stacked-changes.md:88
+msgid ""
+"If a `Requires:` references a change ID that does not exist in the current "
+"stack, it is silently ignored. This commonly happens when the required "
+"change has already been merged into the base branch — the dependency is "
+"satisfied by the base itself, so there is nothing extra to include."
+msgstr ""
+"如果 `Requires:` 引用了当前堆栈中不存在的 change ID，它会被静默忽略。这通常"
+"发生在所需变更已经合入 base 分支时——依赖已经由 base 本身满足，因此没有额外"
+"内容需要包含。"
+
+#: src/guide/stacked-changes.md:93
+msgid "Workflow"
+msgstr "工作流"
+
+#: src/guide/stacked-changes.md:95
+msgid "1. Write your commits"
+msgstr "1. 编写提交"
+
+#: src/guide/stacked-changes.md:97
+msgid ""
+"Work on your feature normally, writing one commit per logical step. Add a "
+"`Change:` footer to each commit you want to submit for review:"
+msgstr ""
+"像平常一样开发功能，每个逻辑步骤编写一个提交。为每个想提交审查的提交添加 "
+"`Change:` 页脚："
+
+#: src/guide/stacked-changes.md:100
+msgid ""
+"```\n"
+"$ git commit -m \"Add validation for input fields\n"
+"\n"
+"Change: input-validation\"\n"
+"\n"
+"$ git commit -m \"Wire validation into the form component\n"
+"\n"
+"Change: form-wiring\"\n"
+"\n"
+"$ git commit -m \"Add tests for form validation\n"
+"\n"
+"Change: validation-tests\"\n"
+"```"
+msgstr ""
+"```\n"
+"$ git commit -m \"Add validation for input fields\n"
+"\n"
+"Change: input-validation\"\n"
+"\n"
+"$ git commit -m \"Wire validation into the form component\n"
+"\n"
+"Change: form-wiring\"\n"
+"\n"
+"$ git commit -m \"Add tests for form validation\n"
+"\n"
+"Change: validation-tests\"\n"
+"```"
+
+#: src/guide/stacked-changes.md:114
+msgid ""
+"Commits without a `Change:` footer are included in the push to the base "
+"branch but do not get their own ref or PR."
+msgstr ""
+"没有 `Change:` 页脚的提交会包含在推送到 base 分支的内容中，但不会获得自己的 "
+"ref 或 PR。"
+
+#: src/guide/stacked-changes.md:117
+msgid "2. Publish"
+msgstr "2. 发布"
+
+#: src/guide/stacked-changes.md:123
+msgid ""
+"For each qualifying commit Josh pushes a ref under `refs/heads/@changes/"
+"<base>/<author>/<change-id>`. With GitHub forge integration enabled, a pull "
+"request is created (or updated) for each of these refs automatically."
+msgstr ""
+"对于每个符合条件的提交，Josh 会在 `refs/heads/@changes/<base>/<author>/"
+"<change-id>` 下推送一个 ref。启用 GitHub 代码托管平台集成后，每个 ref 都会"
+"自动创建（或更新）一个 pull request。"
+
+#: src/guide/stacked-changes.md:127
+msgid ""
+"The first change in the stack targets the repository's default branch. Each "
+"subsequent PR targets the branch of the change before it. Intermediate PRs "
+"are automatically marked as **draft** until the changes before them are "
+"merged."
+msgstr ""
+"堆栈中的第一个变更以仓库的默认分支为目标。之后的每个 PR 都以前一个变更的分支"
+"为目标。中间 PR 会自动标记为 **draft**，直到位于它们之前的变更被合并。"
+
+#: src/guide/stacked-changes.md:131
+msgid "3. Iterate"
+msgstr "3. 迭代"
+
+#: src/guide/stacked-changes.md:133
+msgid ""
+"After receiving review feedback, amend or rebase your commits as needed, "
+"keeping the `Change:` footers intact:"
+msgstr "收到审查反馈后，按需 amend 或 rebase 你的提交，并保持 `Change:` 页脚不变："
+
+#: src/guide/stacked-changes.md:141
+msgid ""
+"As long as the change ID in the footer is preserved through your edits, "
+"`josh publish` updates the correct existing PRs rather than creating new "
+"ones."
+msgstr ""
+"只要编辑过程中保留页脚中的 change ID，`josh publish` 就会更新正确的现有 PR，"
+"而不是创建新的 PR。"
+
+#: src/guide/stacked-changes.md:144
+msgid "4. Merge"
+msgstr "4. 合并"
+
+#: src/guide/stacked-changes.md:146
+msgid ""
+"Once a PR is approved and its required checks pass, merge it through the "
+"forge's normal UI. Then sync your local branch to account for the merged "
+"commit:"
+msgstr ""
+"PR 获得批准且其必需检查通过后，通过代码托管平台的常规 UI 合并它。然后同步你的"
+"本地分支，以纳入已合并的提交："
+
+#: src/guide/stacked-changes.md:153
+msgid ""
+"This rebases your remaining local commits on top of the updated upstream "
+"state. `--autostash` ensures any uncommitted changes are preserved across "
+"the operation. After pulling, the next `josh publish` will retarget and "
+"promote the next PR in the stack from draft to ready for review."
+msgstr ""
+"这会将你剩余的本地提交 rebase 到更新后的上游状态之上。`--autostash` 可确保"
+"未提交的变更在整个操作过程中得到保留。拉取后，下一次 `josh publish` 会重新"
+"确定目标，并将堆栈中的下一个 PR 从 draft 提升为可供审查。"
+
+#: src/guide/stacked-changes.md:158
+msgid "Without forge integration"
+msgstr "没有代码托管平台集成时"
+
+#: src/guide/stacked-changes.md:160
+msgid ""
+"`josh publish` works without [forge integration](../reference/forge.md). "
+"Josh still pushes the individual `@changes/…` refs to the upstream "
+"repository; you can then create pull requests from them manually, or use "
+"them as part of a custom review workflow."
+msgstr ""
+"`josh publish` 无需[代码托管平台集成](../reference/forge.md)也能工作。Josh "
+"仍会将各个 `@changes/…` ref 推送到上游仓库；随后你可以手动从它们创建 pull "
+"request，或将它们用作自定义审查工作流的一部分。"
+
+#: src/guide/importing.md:3
+msgid ""
+"When moving to a monorepo setup, especially in existing organisations, it is "
+"common that the need to consolidate existing project repositories arises."
+msgstr ""
+"迁移到 monorepo 设置时，尤其是在已有组织中，经常会出现整合现有项目仓库的需求。"
+
+#: src/guide/importing.md:7
+msgid ""
+"The simplest possible case is one where the previous history of a project "
+"does not need to be retained. In this case, the projects files can simply be "
+"copied into the monoreop at the appropriate location and committed."
+msgstr ""
+"最简单的情况是无需保留项目之前的历史。在这种情况下，可以直接将项目文件复制到 "
+"monorepo 中的适当位置并提交。"
+
+#: src/guide/importing.md:12
+msgid ""
+"If history should be retained, josh can be used for importing a project as "
+"an alternative to built-in git commands like [`git subtree`](https://"
+"manpages.debian.org/testing/git-man/git-subtree.1.en.html)."
+msgstr ""
+"如果需要保留历史，可以使用 josh 导入项目，作为 [`git subtree`](https://"
+"manpages.debian.org/testing/git-man/git-subtree.1.en.html) 等 git 内置命令的"
+"替代方案。"
+
+#: src/guide/importing.md:16
+msgid ""
+"Josh's [filter capability](../reference/filters.md) lets you perform "
+"transformations on the history of a git repository to arbitrarily "
+"(re-)compose paths inside of a repository."
+msgstr ""
+"Josh 的[过滤能力](../reference/filters.md)允许你对 git 仓库历史执行转换，从而"
+"任意（重新）组合仓库内部的路径。"
+
+#: src/guide/importing.md:20
+msgid ""
+"A key aspect of this functionality is that all transformations are "
+"_reversible_. This means that if you apply a transformation moving files "
+"from the root of a repository to, say, `tools/project-b`, followed by an "
+"_inverse_ transformation moving files from `tools/project-b` back to the "
+"root, you receive the same commit hashes you put in."
+msgstr ""
+"此功能的一个关键点是所有转换都是_可逆的_。这意味着，如果你先应用一个转换，将"
+"文件从仓库根目录移动到例如 `tools/project-b`，然后再应用一个_反向_转换，将文件"
+"从 `tools/project-b` 移回根目录，最终得到的提交哈希会与输入时相同。"
+
+#: src/guide/importing.md:27
+msgid ""
+"We can use this feature to import a project into our monorepo while allowing "
+"external users to keep pulling on top of the same git history they already "
+"have, just with a new git remote."
+msgstr ""
+"我们可以利用这个功能将项目导入 monorepo，同时允许外部用户继续基于他们已有的"
+"同一份 git 历史拉取更新，只是改用一个新的 git remote。"
+
+#: src/guide/importing.md:31
+msgid ""
+"There are multiple ways of doing this, with the most common ones outlined "
+"below. You can look at [`josh#596`](https://github.com/josh-project/josh/"
+"issues/596) for a discussion of several other methods."
+msgstr ""
+"实现这一点有多种方式，下面概述了最常见的几种。你可以查看 [`josh#596`](https://"
+"github.com/josh-project/josh/issues/596)，其中讨论了其他几种方法。"
+
+#: src/guide/importing.md:35
+msgid "Import with `josh-filter`"
+msgstr "使用 `josh-filter` 导入"
+
+#: src/guide/importing.md:37
+msgid ""
+"Currently, the easiest way to do this is by using the `josh-filter` binary "
+"which is a command-line frontend to josh's filter capabilities."
+msgstr ""
+"目前，最简单的方法是使用 `josh-filter` 二进制文件，它是 josh 过滤能力的命令行"
+"前端。"
+
+#: src/guide/importing.md:40
+msgid "Inside of our target repository, it would work like this:"
+msgstr "在目标仓库内部，其工作方式如下："
+
+#: src/guide/importing.md:42
+msgid ""
+"Fetch the repository we want to import (say, \"Project B\", from "
+"`$REPO_URL`)."
+msgstr "获取我们想导入的仓库（比如从 `$REPO_URL` 获取 \"Project B\"）。"
+
+#: src/guide/importing.md:49
+msgid "This will set the `FETCH_HEAD` reference to the fetched repository."
+msgstr "这会将 `FETCH_HEAD` 引用设置为获取到的仓库。"
+
+#: src/guide/importing.md:51
+msgid ""
+"Rewrite the history of that repository through josh to make it look as if "
+"the project had always been developed at our target path (say, `tools/"
+"project-b`)."
+msgstr ""
+"通过 josh 重写该仓库的历史，使其看起来就像该项目一直是在目标路径（比如 "
+"`tools/project-b`）下开发的一样。"
+
+#: src/guide/importing.md:57
+msgid "':prefix=tools/project-b'"
+msgstr "':prefix=tools/project-b'"
+
+#: src/guide/importing.md:60
+msgid "This will set the `FILTERED_HEAD` reference to the rewritten history."
+msgstr "这会将 `FILTERED_HEAD` 引用设置为重写后的历史。"
+
+#: src/guide/importing.md:63
+msgid "Merge the rewritten history into our target repository."
+msgstr "将重写后的历史合并到目标仓库中。"
+
+#: src/guide/importing.md:69
+msgid ""
+"After this merge commit, the previously external project now lives at `tools/"
+"project-b` as expected."
+msgstr "在这个 merge commit 之后，之前的外部项目现在会按预期位于 `tools/project-b`。"
+
+#: src/guide/importing.md:72
+msgid ""
+"Any external users can now use the `:/tools/project-b` josh filter to "
+"retrieve changes made in the new project location - without the git hashes "
+"of their existing commits changing (that is to say, without conflicting)."
+msgstr ""
+"任何外部用户现在都可以使用 `:/tools/project-b` josh 过滤器来获取新项目位置中的"
+"变更，而不会改变他们现有提交的 git 哈希（也就是说，不会产生冲突）。"
+
+#: src/guide/importing.md:77
+msgid "Import by pushing to josh"
+msgstr "通过推送到 josh 导入"
+
+#: src/guide/importing.md:79
+msgid ""
+"If your monorepo is already running a `josh-proxy` in front of it, you can "
+"also import a project by pushing a project merge to josh."
+msgstr ""
+"如果你的 monorepo 前面已经运行了 `josh-proxy`，也可以通过向 josh 推送项目合并"
+"来导入项目。"
+
+#: src/guide/importing.md:82
+msgid ""
+"This has the benefit of not needing to clone the entire monorepo locally to "
+"do a merge, but the drawback of using a different, slightly slower filter "
+"mechanism when exporting the tree back out. For projects with very large "
+"history, consider using the `josh-filter` mechanism outlined above."
+msgstr ""
+"这样做的好处是不需要在本地克隆整个 monorepo 来执行合并，但缺点是在重新导出树"
+"时会使用另一种稍慢的过滤机制。对于历史非常庞大的项目，请考虑使用上面概述的 "
+"`josh-filter` 机制。"
+
+#: src/guide/importing.md:88
+msgid "Pushing a project merge to josh works like this:"
+msgstr "向 josh 推送项目合并的方式如下："
+
+#: src/guide/importing.md:90
+msgid ""
+"Assume we have a local checkout of \"Project B\", and we want to merge this "
+"into our monorepo. There is a `josh-proxy` running at `https://git.company."
+"name/monorepo.git`. We want to merge this project into `/tools/project-b` in "
+"the monorepo."
+msgstr ""
+"假设我们有 \"Project B\" 的本地 checkout，并且想将其合并到 monorepo 中。有一个 "
+"`josh-proxy` 正运行在 `https://git.company.name/monorepo.git`。我们想将该项目"
+"合并到 monorepo 中的 `/tools/project-b`。"
+
+#: src/guide/importing.md:95
+msgid "In the checkout of \"Project B\", add the josh remote:"
+msgstr "在 \"Project B\" 的 checkout 中，添加 josh remote："
+
+#: src/guide/importing.md:101
+msgid ""
+"Note the use of the `/tools/project-b.git` josh filter, which points to a "
+"path that should not yet exist in the monorepo."
+msgstr ""
+"注意这里使用了 `/tools/project-b.git` josh 过滤器，它指向 monorepo 中尚不应"
+"存在的路径。"
+
+#: src/guide/importing.md:104
+msgid ""
+"Push the repository to josh with the `-o merge` option, creating a merge "
+"commit introducing the project history at that location, while retaining its "
+"history:"
+msgstr ""
+"使用 `-o merge` 选项将仓库推送到 josh，创建一个 merge commit，在该位置引入项目"
+"历史，同时保留其历史："
+
+#: src/guide/importing.md:112
+msgid "Note for Gerrit users"
+msgstr "Gerrit 用户注意事项"
+
+#: src/guide/importing.md:114
+msgid ""
+"With either method, when merging a set of new commits into a Gerrit "
+"repository and going through the standard code-review process, Gerrit might "
+"complain about missing Change-IDs in the imported commits."
+msgstr ""
+"无论使用哪种方法，当将一组新提交合并到 Gerrit 仓库并走标准代码审查流程时，"
+"Gerrit 可能会抱怨导入的提交缺少 Change-ID。"
+
+#: src/guide/importing.md:118
+msgid ""
+"To work around this, the commits need to first be made \"known\" to Gerrit. "
+"This can be achieved by pushing the new parent of the merge commit to a "
+"separate branch in Gerrit directly (without going through the review "
+"mechanism). After this Gerrit will accept merge commits referencing that "
+"parent, as long as the merge commit itself has a Change-ID."
+msgstr ""
+"为了解决这个问题，需要先让 Gerrit \"知道\" 这些提交。可以通过将 merge commit "
+"的新父提交直接推送到 Gerrit 中的一个单独分支来实现（不经过审查机制）。之后，"
+"只要 merge commit 本身带有 Change-ID，Gerrit 就会接受引用该父提交的 merge commit。"
+
+#: src/guide/importing.md:125
+msgid ""
+"Some monorepo setups on Gerrit use a special unrestricted branch like `merge-"
+"staging` for this, to which users with permission to import projects can "
+"force-push unrelated histories."
+msgstr ""
+"Gerrit 上的一些 monorepo 设置会为此使用类似 `merge-staging` 的特殊非受限分支，"
+"有项目导入权限的用户可以向该分支 force-push 无关历史。"
+
+#: src/guide/migration.md:3
+msgid ""
+"This page covers breaking changes introduced in recent releases and how to "
+"adapt to them."
+msgstr "本页面介绍近期版本中引入的破坏性变更，以及如何适配这些变更。"
+
+#: src/guide/migration.md:5
+msgid "CRLF line endings in gpgsig headers preserved"
+msgstr "保留 gpgsig 头中的 CRLF 换行符"
+
+#: src/guide/migration.md:7 src/guide/migration.md:28 src/guide/migration.md:50
+#: src/guide/migration.md:60 src/guide/migration.md:69
+#: src/guide/migration.md:119
+msgid "_Applies when upgrading from r24.10.04 to r26.04.19._"
+msgstr "_适用于从 r24.10.04 升级到 r26.04.19。_"
+
+#: src/guide/migration.md:9
+msgid ""
+"Josh previously accidentally normalized `\\r\\n` line endings to `\\n` "
+"inside the `gpgsig` header of commit objects. This was a bug — git treats "
+"gpgsig values as opaque bytes, and the standard format uses `\\n` throughout "
+"— and has been fixed. Josh now preserves whichever line endings are present "
+"in the original commit."
+msgstr ""
+"Josh 之前会意外地将提交对象 `gpgsig` 头中的 `\\r\\n` 换行符规范化为 `\\n`。"
+"这是一个 bug——git 会将 gpgsig 值视为不透明字节，而标准格式全程使用 `\\n`——"
+"该问题现已修复。Josh 现在会保留原始提交中存在的任何换行符。"
+
+#: src/guide/migration.md:14
+msgid ""
+"**What changed:** If your upstream history contains commits with `\\r\\n` in "
+"their gpgsig headers, the filtered commit hashes will differ from those "
+"produced by the old version."
+msgstr ""
+"**变更内容：** 如果你的上游历史包含 gpgsig 头中带有 `\\r\\n` 的提交，过滤后的"
+"提交哈希将不同于旧版本生成的哈希。"
+
+#: src/guide/migration.md:17
+msgid ""
+"**How to restore the old behavior:** Use the `gpgsig=\"norm-lf\"` meta "
+"option if you need to reproduce a history that was created with the old "
+"normalization:"
+msgstr ""
+"**如何恢复旧行为：** 如果需要复现使用旧规范化行为创建的历史，请使用 "
+"`gpgsig=\"norm-lf\"` meta 选项："
+
+#: src/guide/migration.md:20
+msgid ""
+"```\n"
+":~(gpgsig=\"norm-lf\")[:/your/filter]\n"
+"```"
+msgstr ""
+"```\n"
+":~(gpgsig=\"norm-lf\")[:/your/filter]\n"
+"```"
+
+#: src/guide/migration.md:24
+msgid ""
+"See the [gpgsig option](../reference/filters.md#gpgsig-option) for details."
+msgstr "详情请参见 [gpgsig 选项](../reference/filters.md#gpgsig-option)。"
+
+#: src/guide/migration.md:26
+msgid "Trivial merges removed by default"
+msgstr "默认移除平凡合并"
+
+#: src/guide/migration.md:30
+msgid ""
+"Josh previously kept all merge commits in the filtered history, even when "
+"the filtered tree of a merge commit was identical to its first parent's tree "
+"(a \"trivial merge\"). Trivial merges are now removed by default during "
+"history simplification."
+msgstr ""
+"Josh 之前会在过滤后的历史中保留所有 merge commit，即使某个 merge commit 的过滤"
+"后 tree 与其第一个父提交的 tree 完全相同（即 \"trivial merge\"）。现在，在历史"
+"简化过程中会默认移除平凡合并。"
+
+#: src/guide/migration.md:34
+msgid ""
+"**What changed:** Filtered histories produced by the same filter may differ "
+"from those produced by older versions of Josh if the upstream history "
+"contains trivial merges. The internal cache version has been bumped, so all "
+"results will be recomputed on the first run after upgrading."
+msgstr ""
+"**变更内容：** 如果上游历史包含平凡合并，同一过滤器生成的过滤历史可能不同于"
+"旧版本 Josh 生成的结果。内部缓存版本已提升，因此升级后的首次运行会重新计算所有"
+"结果。"
+
+#: src/guide/migration.md:39
+msgid ""
+"**How to restore the old behavior:** Wrap your filter with the "
+"`history=\"keep-trivial-merges\"` meta option:"
+msgstr ""
+"**如何恢复旧行为：** 使用 `history=\"keep-trivial-merges\"` meta 选项包裹你的"
+"过滤器："
+
+#: src/guide/migration.md:42
+msgid ""
+"```\n"
+":~(history=\"keep-trivial-merges\")[:/your/filter]\n"
+"```"
+msgstr ""
+"```\n"
+":~(history=\"keep-trivial-merges\")[:/your/filter]\n"
+"```"
+
+#: src/guide/migration.md:46
+msgid ""
+"See [Filter options](../reference/filters.md#history-option) for details."
+msgstr "详情请参见[过滤器选项](../reference/filters.md#history-option)。"
+
+#: src/guide/migration.md:48
+msgid "`:join` filter removed"
+msgstr "移除 `:join` 过滤器"
+
+#: src/guide/migration.md:52
+msgid ""
+"The `:join` filter has been removed. It was a limited alternative to using "
+"`--reverse`/push for reconstructing upstream history from a filtered view."
+msgstr ""
+"`:join` 过滤器已被移除。它曾是从过滤视图重建上游历史时，替代 `--reverse`/push "
+"的一种受限方案。"
+
+#: src/guide/migration.md:55
+msgid ""
+"**How to migrate:** Use `josh-filter --reverse` or `josh push` to write "
+"changes back to the upstream repository."
+msgstr "**如何迁移：** 使用 `josh-filter --reverse` 或 `josh push` 将变更写回上游仓库。"
+
+#: src/guide/migration.md:58
+msgid "josh-ui (web UI) removed"
+msgstr "移除 josh-ui（Web UI）"
+
+#: src/guide/migration.md:62
+msgid ""
+"The `/ui` endpoint and the `josh-ui` component have been removed from the "
+"project."
+msgstr "项目中已移除 `/ui` 端点和 `josh-ui` 组件。"
+
+#: src/guide/migration.md:64
+msgid ""
+"**How to migrate:** There is no direct replacement. Remove any links or "
+"integrations that pointed to the `/ui` endpoint."
+msgstr "**如何迁移：** 没有直接替代品。请移除任何指向 `/ui` 端点的链接或集成。"
+
+#: src/guide/migration.md:67
+msgid "`:rev` filter syntax changed; `:from` and `:concat` removed"
+msgstr "`:rev` 过滤器语法已变更；`:from` 和 `:concat` 已移除"
+
+#: src/guide/migration.md:71
+msgid ""
+"The `:rev` filter now requires an explicit match operator before each SHA, "
+"and the zero-SHA shorthand for the default case has been replaced by `_`."
+msgstr ""
+"`:rev` 过滤器现在要求在每个 SHA 前使用显式匹配操作符，并且默认情况的 zero-SHA "
+"简写已替换为 `_`。"
+
+#: src/guide/migration.md:74
+msgid "**What changed:**"
+msgstr "**变更内容：**"
+
+#: src/guide/migration.md:76
+msgid "The old syntax used a bare SHA for each entry:"
+msgstr "旧语法为每个条目使用裸 SHA："
+
+#: src/guide/migration.md:80
+msgid ""
+"The new syntax requires an operator prefix and uses `_` for the default case:"
+msgstr "新语法要求使用操作符前缀，并用 `_` 表示默认情况："
+
+#: src/guide/migration.md:85
+msgid "Available operators:"
+msgstr "可用操作符："
+
+#: src/guide/migration.md:87
+msgid ""
+"`<=sha` — matches the commit and all its ancestors (inclusive); equivalent "
+"to the old bare-SHA behavior"
+msgstr "`<=sha` — 匹配该提交及其所有祖先（含自身）；等同于旧的裸 SHA 行为"
+
+#: src/guide/migration.md:89
+msgid ""
+"`<sha` — matches only strict ancestors (excludes the named commit itself)"
+msgstr "`<sha` — 仅匹配严格祖先（不包括命名提交本身）"
+
+#: src/guide/migration.md:90
+msgid "`==sha` — matches only the exact commit"
+msgstr "`==sha` — 仅匹配确切的提交"
+
+#: src/guide/migration.md:92
+msgid "**How to migrate `:rev` filters:**"
+msgstr "**如何迁移 `:rev` 过滤器：**"
+
+#: src/guide/migration.md:94
+msgid "Replace each bare `sha:filter` entry with `<=sha:filter`"
+msgstr "将每个裸 `sha:filter` 条目替换为 `<=sha:filter`"
+
+#: src/guide/migration.md:95
+msgid ""
+"Replace `0000000000000000000000000000000000000000:filter` with `_:filter`"
+msgstr "将 `0000000000000000000000000000000000000000:filter` 替换为 `_:filter`"
+
+#: src/guide/migration.md:97
+msgid "**`:from` removed:**"
+msgstr "**`:from` 已移除：**"
+
+#: src/guide/migration.md:99
+msgid ""
+"The `:from(sha:filter)` filter has been removed. It kept the original "
+"history up to and including `sha` unchanged and applied `filter` to all "
+"later commits."
+msgstr ""
+"`:from(sha:filter)` 过滤器已被移除。它会保持截至并包含 `sha` 的原始历史不变，"
+"并将 `filter` 应用于之后的所有提交。"
+
+#: src/guide/migration.md:102
+msgid "Equivalent `:rev` expression:"
+msgstr "等价的 `:rev` 表达式："
+
+#: src/guide/migration.md:107
+msgid "**`:concat` removed:**"
+msgstr "**`:concat` 已移除：**"
+
+#: src/guide/migration.md:109
+msgid ""
+"The `:concat(sha:filter)` filter has been removed. It was the internal "
+"building block of `:from` and sometimes appeared in normalized filter output "
+"(e.g. from `josh-filter -p`). Filters of the form `filter:concat(sha:"
+"filter)` are equivalent to `:from(sha:filter)` and should be migrated to:"
+msgstr ""
+"`:concat(sha:filter)` 过滤器已被移除。它曾是 `:from` 的内部构建块，有时会出现"
+"在规范化后的过滤器输出中（例如来自 `josh-filter -p`）。形如 `filter:concat(sha:"
+"filter)` 的过滤器等价于 `:from(sha:filter)`，应迁移为："
+
+#: src/guide/migration.md:117
+msgid "Cache location changed"
+msgstr "缓存位置已变更"
+
+#: src/guide/migration.md:121
+msgid ""
+"The local sled cache is now stored at `.git/josh/cache` instead of `.git/"
+"josh`."
+msgstr "本地 sled 缓存现在存储在 `.git/josh/cache`，而不是 `.git/josh`。"
+
+#: src/guide/migration.md:123
+msgid ""
+"**What changed:** On the first run after upgrading, Josh will not find any "
+"existing cache entries and will recompute all filter results from scratch. "
+"This is a one-time cost."
+msgstr ""
+"**变更内容：** 升级后的首次运行中，Josh 将找不到任何现有缓存条目，并会从头"
+"重新计算所有过滤结果。这是一次性成本。"
+
+#: src/guide/migration.md:126
+msgid ""
+"**No action required** for most users - the cache will be rebuilt "
+"automatically. If you have scripts or tooling that reference `.git/josh` "
+"directly (e.g. to delete or back up the cache), update them to point to `."
+"git/josh/cache` instead."
+msgstr ""
+"对大多数用户而言**无需操作**——缓存会自动重建。如果你有脚本或工具直接引用 "
+"`.git/josh`（例如用于删除或备份缓存），请将它们更新为指向 `.git/josh/cache`。"
+
+#: src/reference/cli.md:3
+msgid ""
+"The `josh` command is the primary tool for working with filtered git "
+"repositories. It provides projection-aware equivalents of the common git "
+"operations."
+msgstr ""
+"`josh` 命令是处理过滤后 git 仓库的主要工具。它提供了常见 git 操作的投影视图"
+"感知等价命令。"
+
+#: src/reference/cli.md:14
+msgid "josh clone"
+msgstr "josh clone"
+
+#: src/reference/cli.md:16
+msgid "Clone a repository, optionally applying a filter projection."
+msgstr "克隆仓库，并可选择应用过滤器投影。"
+
+#: src/reference/cli.md:22 src/reference/cli.md:97 src/reference/cli.md:122
+#: src/reference/cli.md:153 src/reference/cli.md:184 src/reference/cli.md:223
+#: src/reference/cli.md:238 src/reference/cli.md:251 src/reference/cli.md:283
+#: src/contributing/josh-run.md:69
+msgid "Argument"
+msgstr "参数"
+
+#: src/reference/cli.md:22 src/reference/cli.md:30 src/reference/cli.md:62
+#: src/reference/cli.md:79 src/reference/cli.md:97 src/reference/cli.md:104
+#: src/reference/cli.md:122 src/reference/cli.md:129 src/reference/cli.md:153
+#: src/reference/cli.md:161 src/reference/cli.md:184 src/reference/cli.md:223
+#: src/reference/cli.md:238 src/reference/cli.md:251 src/reference/cli.md:283
+#: src/reference/cli.md:290 src/reference/cli.md:342
+#: src/reference/experimental.md:108 src/reference/experimental.md:115
+#: src/reference/experimental.md:123 src/reference/experimental.md:151
+#: src/contributing/josh-run.md:69 src/contributing/josh-run.md:85
+msgid "Description"
+msgstr "描述"
+
+#: src/reference/cli.md:24 src/reference/cli.md:156
+msgid "`<url>`"
+msgstr "`<url>`"
+
+#: src/reference/cli.md:24
+msgid "Remote repository URL (HTTPS, SSH, or local path)"
+msgstr "远程仓库 URL（HTTPS、SSH 或本地路径）"
+
+#: src/reference/cli.md:25 src/reference/cli.md:157
+msgid "`<filter>`"
+msgstr "`<filter>`"
+
+#: src/reference/cli.md:25
+msgid ""
+"[Filter spec](./filters.md) to apply (e.g. `:/docs`, `:workspace=workspaces/"
+"myproject`)"
+msgstr ""
+"要应用的[过滤器规格](./filters.md)（例如 `:/docs`、`:workspace=workspaces/"
+"myproject`）"
+
+#: src/reference/cli.md:26
+msgid "`<out>`"
+msgstr "`<out>`"
+
+#: src/reference/cli.md:26
+msgid "Local directory to clone into"
+msgstr "要克隆到的本地目录"
+
+#: src/reference/cli.md:28 src/reference/cli.md:60 src/reference/cli.md:77
+#: src/reference/cli.md:102 src/reference/cli.md:127 src/reference/cli.md:159
+#: src/reference/cli.md:288 src/reference/cli.md:340
+msgid "**Options:**"
+msgstr "**选项：**"
+
+#: src/reference/cli.md:30 src/reference/cli.md:62 src/reference/cli.md:79
+#: src/reference/cli.md:104 src/reference/cli.md:129 src/reference/cli.md:161
+#: src/reference/cli.md:290 src/reference/cli.md:342
+#: src/contributing/josh-run.md:85
+msgid "Flag"
+msgstr "标志"
+
+#: src/reference/cli.md:32
+msgid "`-b`, `--branch <ref>`"
+msgstr "`-b`, `--branch <ref>`"
+
+#: src/reference/cli.md:32
+msgid "Branch or ref to clone (default: `HEAD`)"
+msgstr "要克隆的分支或 ref（默认：`HEAD`）"
+
+#: src/reference/cli.md:33 src/reference/cli.md:163
+msgid "`--forge <name>`"
+msgstr "`--forge <name>`"
+
+#: src/reference/cli.md:33
+msgid "Forge integration to use (e.g. `github`)"
+msgstr "要使用的代码托管平台集成（例如 `github`）"
+
+#: src/reference/cli.md:34 src/reference/cli.md:164
+msgid "`--no-forge`"
+msgstr "`--no-forge`"
+
+#: src/reference/cli.md:34 src/reference/cli.md:164
+msgid "Disable forge integration"
+msgstr "禁用代码托管平台集成"
+
+#: src/reference/cli.md:36 src/reference/cli.md:295
+#: src/reference/filters.md:277 src/reference/experimental.md:18
+msgid "**Examples:**"
+msgstr "**示例：**"
+
+#: src/reference/cli.md:38
+msgid ""
+"```shell\n"
+"# Clone only the docs/ subdirectory\n"
+"josh clone https://github.com/josh-project/josh.git :/docs ./josh-docs\n"
+"\n"
+"# Clone a workspace projection\n"
+"josh clone https://github.com/myorg/monorepo.git :workspace=workspaces/"
+"frontend ./frontend\n"
+"\n"
+"# Clone the full repository (no filter)\n"
+"josh clone https://github.com/josh-project/josh.git :/ ./josh\n"
+"```"
+msgstr ""
+"```shell\n"
+"# 仅克隆 docs/ 子目录\n"
+"josh clone https://github.com/josh-project/josh.git :/docs ./josh-docs\n"
+"\n"
+"# 克隆一个 workspace 投影\n"
+"josh clone https://github.com/myorg/monorepo.git :workspace=workspaces/"
+"frontend ./frontend\n"
+"\n"
+"# 克隆完整仓库（无过滤器）\n"
+"josh clone https://github.com/josh-project/josh.git :/ ./josh\n"
+"```"
+
+#: src/reference/cli.md:51
+msgid "josh fetch"
+msgstr "josh fetch"
+
+#: src/reference/cli.md:53
+msgid ""
+"Fetch from a remote and update the filtered local refs. Equivalent to `git "
+"fetch` but filter-aware."
+msgstr "从远程获取并更新过滤后的本地 ref。等同于 `git fetch`，但感知过滤器。"
+
+#: src/reference/cli.md:64 src/reference/cli.md:81
+msgid "`-r`, `--remote <name>`"
+msgstr "`-r`, `--remote <name>`"
+
+#: src/reference/cli.md:64
+msgid "Remote name or URL to fetch from (default: `origin`)"
+msgstr "要从中获取的远程名称或 URL（默认：`origin`）"
+
+#: src/reference/cli.md:65 src/reference/cli.md:82
+msgid "`-R`, `--ref <ref>`"
+msgstr "`-R`, `--ref <ref>`"
+
+#: src/reference/cli.md:65
+msgid "Ref to fetch (default: `HEAD`)"
+msgstr "要获取的 ref（默认：`HEAD`）"
+
+#: src/reference/cli.md:69
+msgid "josh pull"
+msgstr "josh pull"
+
+#: src/reference/cli.md:71
+msgid ""
+"Fetch and integrate changes from a remote. Equivalent to `git pull` but "
+"filter-aware."
+msgstr "从远程获取并集成变更。等同于 `git pull`，但感知过滤器。"
+
+#: src/reference/cli.md:81
+msgid "Remote name or URL to pull from (default: `origin`)"
+msgstr "要从中拉取的远程名称或 URL（默认：`origin`）"
+
+#: src/reference/cli.md:82
+msgid "Ref to pull (default: `HEAD`)"
+msgstr "要拉取的 ref（默认：`HEAD`）"
+
+#: src/reference/cli.md:83
+msgid "`--rebase`"
+msgstr "`--rebase`"
+
+#: src/reference/cli.md:83
+msgid "Rebase the current branch on top of the upstream branch"
+msgstr "将当前分支 rebase 到上游分支之上"
+
+#: src/reference/cli.md:84
+msgid "`--autostash`"
+msgstr "`--autostash`"
+
+#: src/reference/cli.md:84
+msgid "Automatically stash local changes before rebasing"
+msgstr "在 rebase 前自动 stash 本地变更"
+
+#: src/reference/cli.md:88
+msgid "josh push"
+msgstr "josh push"
+
+#: src/reference/cli.md:90
+msgid ""
+"Push commits back to the upstream repository. Josh reverses the filter and "
+"reconstructs the correct upstream commits, so your changes land in the right "
+"place in the monorepo."
+msgstr ""
+"将提交推回上游仓库。Josh 会反向应用过滤器并重建正确的上游提交，因此你的变更会"
+"落到 monorepo 中的正确位置。"
+
+#: src/reference/cli.md:99 src/reference/cli.md:124 src/reference/cli.md:186
+msgid "`<remote>`"
+msgstr "`<remote>`"
+
+#: src/reference/cli.md:99 src/reference/cli.md:124
+msgid "Remote name to push to (default: `origin`)"
+msgstr "要推送到的远程名称（默认：`origin`）"
+
+#: src/reference/cli.md:100 src/reference/cli.md:125
+msgid "`<refspecs>`"
+msgstr "`<refspecs>`"
+
+#: src/reference/cli.md:100 src/reference/cli.md:125
+msgid "Refs to push (default: current branch)"
+msgstr "要推送的 ref（默认：当前分支）"
+
+#: src/reference/cli.md:106 src/reference/cli.md:131
+msgid "`-f`, `--force`"
+msgstr "`-f`, `--force`"
+
+#: src/reference/cli.md:106 src/reference/cli.md:131
+msgid "Force-push (non-fast-forward)"
+msgstr "强制推送（非 fast-forward）"
+
+#: src/reference/cli.md:107 src/reference/cli.md:132
+msgid "`--atomic`"
+msgstr "`--atomic`"
+
+#: src/reference/cli.md:107 src/reference/cli.md:132
+msgid "Atomic push (all-or-nothing)"
+msgstr "原子推送（全有或全无）"
+
+#: src/reference/cli.md:108 src/reference/cli.md:133
+msgid "`--dry-run`"
+msgstr "`--dry-run`"
+
+#: src/reference/cli.md:108 src/reference/cli.md:133
+msgid "Show what would be pushed without actually pushing"
+msgstr "显示将要推送的内容，但不实际推送"
+
+#: src/reference/cli.md:112
+msgid "josh publish"
+msgstr "josh publish"
+
+#: src/reference/cli.md:114
+msgid ""
+"Push each commit as an independent, minimal diff (stacked changes workflow). "
+"Each commit with a [Change ID](../guide/stacked-changes.md) is pushed to its "
+"own ref and, when [forge integration](./forge.md) is configured, gets its "
+"own pull request."
+msgstr ""
+"将每个提交作为独立的最小 diff 推送（堆叠式变更工作流）。每个带有 [Change ID]"
+"(../guide/stacked-changes.md) 的提交都会被推送到自己的 ref；配置[代码托管平台"
+"集成](./forge.md)后，还会获得自己的 pull request。"
+
+#: src/reference/cli.md:137
+msgid "josh remote"
+msgstr "josh remote"
+
+#: src/reference/cli.md:139
+msgid "Manage josh-aware remotes."
+msgstr "管理感知 josh 的 remote。"
+
+#: src/reference/cli.md:141
+msgid ""
+"**Note**: `josh remote add` can be used in any existing git repository, not "
+"only ones originally cloned with `josh clone`. This is the standard way to "
+"add josh filtering to a repository you already have checked out."
+msgstr ""
+"**注意**：`josh remote add` 可用于任何现有 git 仓库，并不只限于最初使用 `josh "
+"clone` 克隆的仓库。这是为已 checkout 的仓库添加 josh 过滤的标准方式。"
+
+#: src/reference/cli.md:145
+msgid "josh remote add"
+msgstr "josh remote add"
+
+#: src/reference/cli.md:147
+msgid "Add a remote with an associated filter projection."
+msgstr "添加一个带有关联过滤器投影的 remote。"
+
+#: src/reference/cli.md:155
+msgid "`<name>`"
+msgstr "`<name>`"
+
+#: src/reference/cli.md:155
+msgid "Remote name"
+msgstr "远程名称"
+
+#: src/reference/cli.md:156
+msgid "Remote repository URL"
+msgstr "远程仓库 URL"
+
+#: src/reference/cli.md:157
+msgid "[Filter spec](./filters.md) to associate with this remote"
+msgstr "要与该 remote 关联的[过滤器规格](./filters.md)"
+
+#: src/reference/cli.md:163
+msgid "Forge integration (e.g. `github`)"
+msgstr "代码托管平台集成（例如 `github`）"
+
+#: src/reference/cli.md:166 src/reference/filters.md:39
+#: src/reference/filters.md:56 src/reference/filters.md:68
+#: src/reference/filters.md:90 src/reference/filters.md:108
+#: src/reference/filters.md:161 src/reference/filters.md:183
+msgid "**Example:**"
+msgstr "**示例：**"
+
+#: src/reference/cli.md:168
+msgid ""
+"```shell\n"
+"# Add a second remote scoped to the backend/ subdirectory\n"
+"josh remote add backend https://github.com/myorg/monorepo.git :/services/"
+"backend\n"
+"```"
+msgstr ""
+"```shell\n"
+"# 添加第二个 remote，范围限定到 backend/ 子目录\n"
+"josh remote add backend https://github.com/myorg/monorepo.git :/services/"
+"backend\n"
+"```"
+
+#: src/reference/cli.md:175
+msgid "josh filter"
+msgstr "josh filter"
+
+#: src/reference/cli.md:177
+msgid ""
+"Re-apply the filter for an existing remote to update the local filtered "
+"refs. Useful after manually modifying the filter configuration without "
+"fetching."
+msgstr ""
+"为现有 remote 重新应用过滤器，以更新本地过滤后的 ref。适用于手动修改过滤器"
+"配置后、尚未 fetch 的情况。"
+
+#: src/reference/cli.md:186
+msgid "Remote name whose filter should be re-applied"
+msgstr "需要重新应用过滤器的远程名称"
+
+#: src/reference/cli.md:190
+msgid "josh auth"
+msgstr "josh auth"
+
+#: src/reference/cli.md:192
+msgid ""
+"Manage authentication credentials for forge integrations. Forge integration "
+"is optional and used for automatic pull request management — see [Forge "
+"integration](./forge.md) for details."
+msgstr ""
+"管理代码托管平台集成的认证凭据。代码托管平台集成是可选功能，用于自动管理 pull "
+"request——详情请参见[代码托管平台集成](./forge.md)。"
+
+#: src/reference/cli.md:201
+msgid ""
+"The only currently supported forge is `github`. See [Forge integration](./"
+"forge.md) for full documentation."
+msgstr "当前唯一支持的代码托管平台是 `github`。完整文档请参见[代码托管平台集成](./forge.md)。"
+
+#: src/reference/cli.md:206
+msgid "josh cache"
+msgstr "josh cache"
+
+#: src/reference/cli.md:208
+msgid ""
+"Manage the distributed filter cache. The distributed cache stores filter "
+"results inside a ref in the git repository, allowing a warm cache to be "
+"shared between machines via ordinary git push/fetch."
+msgstr ""
+"管理分布式过滤器缓存。分布式缓存会将过滤结果存储在 git 仓库的某个 ref 中，"
+"从而允许通过普通的 git push/fetch 在多台机器之间共享预热缓存。"
+
+#: src/reference/cli.md:212
+msgid ""
+"The cache subcommand requires a josh remote to be configured (see `josh "
+"remote add`)."
+msgstr "cache 子命令要求已配置 josh remote（见 `josh remote add`）。"
+
+#: src/reference/cli.md:214
+msgid "josh cache build"
+msgstr "josh cache build"
+
+#: src/reference/cli.md:216
+msgid ""
+"Apply the configured filter to all already-fetched refs and populate the "
+"local distributed cache with the results."
+msgstr "将配置的过滤器应用于所有已获取的 ref，并用结果填充本地分布式缓存。"
+
+#: src/reference/cli.md:225 src/reference/cli.md:240 src/reference/cli.md:253
+msgid "`[remote]`"
+msgstr "`[remote]`"
+
+#: src/reference/cli.md:225
+msgid "Remote name to build cache for (default: `origin`)"
+msgstr "要为其构建缓存的远程名称（默认：`origin`）"
+
+#: src/reference/cli.md:227
+msgid "Run this before `josh cache push` to ensure the cache is up to date."
+msgstr "在 `josh cache push` 之前运行此命令，以确保缓存是最新的。"
+
+#: src/reference/cli.md:229
+msgid "josh cache push"
+msgstr "josh cache push"
+
+#: src/reference/cli.md:231
+msgid ""
+"Push the local distributed cache and the filtered refs to the backing "
+"remote, so that other machines can fetch them."
+msgstr "将本地分布式缓存和过滤后的 ref 推送到底层 remote，以便其他机器获取它们。"
+
+#: src/reference/cli.md:240
+msgid "Remote name to push cache to (default: `origin`)"
+msgstr "要推送缓存到的远程名称（默认：`origin`）"
+
+#: src/reference/cli.md:242
+msgid "josh cache fetch"
+msgstr "josh cache fetch"
+
+#: src/reference/cli.md:244
+msgid ""
+"Fetch the distributed cache and filtered refs from the remote, warming the "
+"local cache without re-computing filters from scratch."
+msgstr "从 remote 获取分布式缓存和过滤后的 ref，预热本地缓存，而无需从头重新计算过滤器。"
+
+#: src/reference/cli.md:253
+msgid "Remote name to fetch cache from (default: `origin`)"
+msgstr "要从中获取缓存的远程名称（默认：`origin`）"
+
+#: src/reference/cli.md:255
+msgid "**Typical workflow:**"
+msgstr "**典型工作流：**"
+
+#: src/reference/cli.md:267
+msgid ""
+"**Note:** The distributed cache is currently only available through the "
+"`josh` CLI. It is not yet supported by `josh-proxy`."
+msgstr ""
+"**注意：** 分布式缓存目前只能通过 `josh` CLI 使用。`josh-proxy` 尚不支持它。"
+
+#: src/reference/cli.md:272 src/contributing/josh-run.md:1
+msgid "josh compose run"
+msgstr "josh compose run"
+
+#: src/reference/cli.md:274
+msgid "**Experimental:** requires `JOSH_EXPERIMENTAL_FEATURES=1`."
+msgstr "**实验性：** 需要 `JOSH_EXPERIMENTAL_FEATURES=1`。"
+
+#: src/reference/cli.md:276
+msgid ""
+"Run a workspace in an isolated, automatically-cached container. See [josh "
+"compose run](../contributing/josh-run.md) for full documentation."
+msgstr ""
+"在隔离且自动缓存的容器中运行 workspace。完整文档请参见 [josh compose run]"
+"(../contributing/josh-run.md)。"
+
+#: src/reference/cli.md:285 src/contributing/josh-run.md:71
+msgid "`[REFERENCE]`"
+msgstr "`[REFERENCE]`"
+
+#: src/reference/cli.md:285
+msgid ""
+"Git ref to build from: `.` (working tree), `+` (index), `HEAD`, or any ref "
+"(default: `.`)"
+msgstr "用于构建的 git ref：`.`（工作树）、`+`（索引）、`HEAD` 或任意 ref（默认：`.`）"
+
+#: src/reference/cli.md:286 src/contributing/josh-run.md:72
+msgid "`[FILTER]`"
+msgstr "`[FILTER]`"
+
+#: src/reference/cli.md:286
+msgid ""
+"Filter selecting the workspace to run (default: `:+compose`, reads `compose."
+"josh` in the repo root)"
+msgstr "选择要运行的 workspace 的过滤器（默认：`:+compose`，读取仓库根目录中的 `compose.josh`）"
+
+#: src/reference/cli.md:292 src/contributing/josh-run.md:87
+msgid "`--clean`"
+msgstr "`--clean`"
+
+#: src/reference/cli.md:292 src/contributing/josh-run.md:87
+msgid "Remove cached images and output volumes"
+msgstr "移除缓存镜像和输出卷"
+
+#: src/reference/cli.md:293 src/contributing/josh-run.md:88
+msgid "`--clean-all`"
+msgstr "`--clean-all`"
+
+#: src/reference/cli.md:293 src/contributing/josh-run.md:88
+msgid "Remove cached images, output volumes, and persistent cache volumes"
+msgstr "移除缓存镜像、输出卷和持久缓存卷"
+
+#: src/reference/cli.md:310
+msgid "josh-filter (standalone binary)"
+msgstr "josh-filter（独立二进制文件）"
+
+#: src/reference/cli.md:312
+msgid ""
+"`josh-filter` is a lower-level command that rewrites git history using Josh "
+"filter specs. It is intended for scripting and one-off history rewriting "
+"tasks rather than day-to-day development workflows."
+msgstr ""
+"`josh-filter` 是一个较低层级的命令，会使用 Josh 过滤器规格重写 git 历史。它"
+"面向脚本和一次性历史重写任务，而不是日常开发工作流。"
+
+#: src/reference/cli.md:316
+msgid ""
+"**Input:** the second positional argument selects what to filter. It "
+"defaults to `HEAD` but can be any of:"
+msgstr "**输入：** 第二个位置参数选择要过滤的对象。它默认是 `HEAD`，但也可以是："
+
+#: src/reference/cli.md:319
+msgid "`.` - the working tree (including uncommitted changes)"
+msgstr "`.` - 工作树（包括未提交变更）"
+
+#: src/reference/cli.md:320
+msgid "`+` - the index (staged changes only)"
+msgstr "`+` - 索引（仅暂存变更）"
+
+#: src/reference/cli.md:321
+msgid "A full or abbreviated commit SHA"
+msgstr "完整或缩写的提交 SHA"
+
+#: src/reference/cli.md:322
+msgid "A ref name (e.g. `main`, `refs/heads/feature`)"
+msgstr "ref 名称（例如 `main`、`refs/heads/feature`）"
+
+#: src/reference/cli.md:324
+msgid ""
+"**Output:** the filtered commit SHA is printed to stdout. The filtered "
+"history is also written to the ref given by `--update` (default: "
+"`FILTERED_HEAD`)."
+msgstr ""
+"**输出：** 过滤后的提交 SHA 会打印到 stdout。过滤后的历史也会写入 `--update` "
+"给定的 ref（默认：`FILTERED_HEAD`）。"
+
+#: src/reference/cli.md:327
+msgid "**Basic usage:**"
+msgstr "**基本用法：**"
+
+#: src/reference/cli.md:344
+msgid "`--update <ref>`"
+msgstr "`--update <ref>`"
+
+#: src/reference/cli.md:344
+msgid "Ref to update with the filtered result (default: `FILTERED_HEAD`)"
+msgstr "用过滤结果更新的 ref（默认：`FILTERED_HEAD`）"
+
+#: src/reference/cli.md:345
+msgid "`--file <path>`"
+msgstr "`--file <path>`"
+
+#: src/reference/cli.md:345
+msgid "Read filter spec from a file"
+msgstr "从文件读取过滤器规格"
+
+#: src/reference/cli.md:346
+msgid "`--squash-pattern <pattern>`"
+msgstr "`--squash-pattern <pattern>`"
+
+#: src/reference/cli.md:346
+msgid "Squash commits matching the pattern"
+msgstr "压缩匹配该模式的提交"
+
+#: src/reference/cli.md:347
+msgid "`--squash-file <path>`"
+msgstr "`--squash-file <path>`"
+
+#: src/reference/cli.md:347
+msgid "Read squash patterns from a file"
+msgstr "从文件读取 squash 模式"
+
+#: src/reference/cli.md:348
+msgid "`--single`"
+msgstr "`--single`"
+
+#: src/reference/cli.md:348
+msgid "Produce a single squashed commit"
+msgstr "生成单个压缩后的提交"
+
+#: src/reference/cli.md:349
+msgid "`-d`"
+msgstr "`-d`"
+
+#: src/reference/cli.md:349
+msgid "Discovery mode: populate cache with probable filters"
+msgstr "发现模式：使用可能的过滤器填充缓存"
+
+#: src/reference/cli.md:350
+msgid "`-t`"
+msgstr "`-t`"
+
+#: src/reference/cli.md:350
+msgid "Output Chrome tracing data"
+msgstr "输出 Chrome tracing 数据"
+
+#: src/reference/cli.md:351
+msgid "`-p`"
+msgstr "`-p`"
+
+#: src/reference/cli.md:351
+msgid "Print the filter spec (and exit)"
+msgstr "打印过滤器规格（然后退出）"
+
+#: src/reference/cli.md:352
+msgid "`-i`"
+msgstr "`-i`"
+
+#: src/reference/cli.md:352
+msgid "Print the filter ID (and exit)"
+msgstr "打印过滤器 ID（然后退出）"
+
+#: src/reference/cli.md:353
+msgid "`-s`"
+msgstr "`-s`"
+
+#: src/reference/cli.md:353
+msgid "Print cache statistics"
+msgstr "打印缓存统计信息"
+
+#: src/reference/cli.md:354
+msgid "`-n`"
+msgstr "`-n`"
+
+#: src/reference/cli.md:354
+msgid "Skip loading the cache"
+msgstr "跳过加载缓存"
+
+#: src/reference/cli.md:355
+msgid "`--distributed-cache`"
+msgstr "`--distributed-cache`"
+
+#: src/reference/cli.md:355
+msgid "Enable the distributed cache backend"
+msgstr "启用分布式缓存后端"
+
+#: src/reference/cli.md:356
+msgid "`--reverse`"
+msgstr "`--reverse`"
+
+#: src/reference/cli.md:356
+msgid ""
+"Reverse-apply the filter (unapply): reconstruct upstream commits from "
+"filtered ones"
+msgstr "反向应用过滤器（取消应用）：根据过滤后的提交重建上游提交"
+
+#: src/reference/cli.md:357
+msgid "`--check-roundtrip`"
+msgstr "`--check-roundtrip`"
+
+#: src/reference/cli.md:357
+msgid ""
+"When used with `--reverse`, verify that applying the filter to the reverse "
+"result reproduces the original commit. Exits with code 1 if the check fails."
+msgstr ""
+"与 `--reverse` 一起使用时，验证对反向结果应用过滤器是否能复现原始提交。如果"
+"检查失败，则以代码 1 退出。"
+
+#: src/reference/filters.md:2
+msgid "History filtering"
+msgstr "历史过滤"
+
+#: src/reference/filters.md:4
+msgid ""
+"Josh transforms commits by applying filters to them. As any commit in git "
+"represents not just a single state of the file system but also its entire "
+"history, applying a filter to a commit produces an entirely new history. The "
+"result of a filter is a normal git commit and therefore can be filtered "
+"again, making filters chainable."
+msgstr ""
+"Josh 通过对提交应用过滤器来转换提交。由于 git 中的任何提交不仅表示文件系统的"
+"单一状态，也表示其完整历史，因此对提交应用过滤器会生成一段全新的历史。过滤器"
+"的结果是一个普通 git 提交，因此可以再次过滤，这让过滤器可以链式组合。"
+
+#: src/reference/filters.md:10 src/contributing/josh-run.md:63
+msgid "Syntax"
+msgstr "语法"
+
+#: src/reference/filters.md:12
+msgid "Filters always begin with a colon and can be chained:"
+msgstr "过滤器始终以冒号开头，并且可以链式组合："
+
+#: src/reference/filters.md:16
+msgid ""
+"When used as part of an URL filters cannot contain white space or newlines. "
+"When read from a file however white space can be inserted between filters "
+"(not after the leading colon). Additionally newlines can be used instead of "
+"`,` inside of composition filters."
+msgstr ""
+"作为 URL 的一部分使用时，过滤器不能包含空白或换行。不过，从文件读取时，可以"
+"在过滤器之间插入空白（但不能放在开头冒号之后）。此外，在组合过滤器内部可以"
+"使用换行代替 `,`。"
+
+#: src/reference/filters.md:20
+msgid ""
+"Some filters take arguments, and arguments can optionally be quoted using "
+"double quotes, if special characters used by the filter language need to be "
+"used (like `:` or space):"
+msgstr ""
+"某些过滤器接受参数；如果需要使用过滤器语言中的特殊字符（例如 `:` 或空格），"
+"参数可以选择用双引号引用："
+
+#: src/reference/filters.md:23
+msgid ""
+"    :filter=argument1,\"argument2\"\n"
+"    "
+msgstr ""
+"    :filter=argument1,\"argument2\"\n"
+"    "
+
+#: src/reference/filters.md:25
+msgid "Filter options **`:~(key1=\"value1\",key2=\"value2\")[:filter]`**"
+msgstr "过滤器选项 **`:~(key1=\"value1\",key2=\"value2\")[:filter]`**"
+
+#: src/reference/filters.md:27
+msgid ""
+"The `:~(...)[]` syntax allows you to provide filter options (metadata) that "
+"affect how the filter is applied. The options are specified as key-value "
+"pairs in parentheses, followed by the actual filter in square brackets."
+msgstr ""
+"`:~(...)[]` 语法允许你提供影响过滤器应用方式的过滤器选项（元数据）。选项以"
+"括号中的键值对指定，后面跟着方括号中的实际过滤器。"
+
+#: src/reference/filters.md:31 src/reference/filters.md:253
+msgid "**Syntax:**"
+msgstr "**语法：**"
+
+#: src/reference/filters.md:32
+msgid ""
+"```\n"
+":~(option1=\"value1\",option2=\"value2\")[:filter]\n"
+"```"
+msgstr ""
+"```\n"
+":~(option1=\"value1\",option2=\"value2\")[:filter]\n"
+"```"
+
+#: src/reference/filters.md:36
+msgid ""
+"Multiple options can be specified by separating them with commas. Option "
+"values must be quoted using double quotes."
+msgstr "可以用逗号分隔来指定多个选项。选项值必须使用双引号引用。"
+
+#: src/reference/filters.md:40
+msgid ""
+"```\n"
+":~(key1=\"value1\",key2=\"value2\")[:/sub1]\n"
+"```"
+msgstr ""
+"```\n"
+":~(key1=\"value1\",key2=\"value2\")[:/sub1]\n"
+"```"
+
+#: src/reference/filters.md:44
+msgid ""
+"This applies the `:/sub1` filter with the specified options attached as "
+"metadata."
+msgstr "这会应用 `:/sub1` 过滤器，并将指定选项作为元数据附加到该过滤器。"
+
+#: src/reference/filters.md:46
+msgid "History option"
+msgstr "History 选项"
+
+#: src/reference/filters.md:48
+msgid ""
+"The `history` option controls how the commit history is processed during "
+"filtering. It affects both how commits are walked and how merge commits are "
+"handled in the output history."
+msgstr ""
+"`history` 选项控制过滤过程中提交历史的处理方式。它会同时影响提交遍历方式和"
+"输出历史中 merge commit 的处理方式。"
+
+#: src/reference/filters.md:51 src/reference/filters.md:85
+msgid "**Available values:**"
+msgstr "**可用值：**"
+
+#: src/reference/filters.md:53
+msgid ""
+"**`history=\"linear\"`** - Produces a linear history by converting merge "
+"commits into regular commits, creating a linear chain of commits in the "
+"output history."
+msgstr ""
+"**`history=\"linear\"`** - 通过将 merge commit 转换为普通提交来生成线性历史，"
+"在输出历史中创建一条线性提交链。"
+
+#: src/reference/filters.md:57
+msgid ""
+"```\n"
+":~(history=\"linear\")[:/sub1]\n"
+"```"
+msgstr ""
+"```\n"
+":~(history=\"linear\")[:/sub1]\n"
+"```"
+
+#: src/reference/filters.md:61
+msgid ""
+"**`history=\"keep-trivial-merges\"`** - Prevents dropping trivial merge "
+"commits that would normally be pruned from the output history."
+msgstr ""
+"**`history=\"keep-trivial-merges\"`** - 防止丢弃通常会从输出历史中剪除的平凡"
+" merge commit。"
+
+#: src/reference/filters.md:64
+msgid ""
+"Normally, Josh will drop merge commits from the filtered history if their "
+"filtered tree is identical to the first parent's tree. Setting this option "
+"to `\"keep-trivial-merges\"` preserves these commits in the output history."
+msgstr ""
+"通常，如果某个 merge commit 的过滤后 tree 与其第一个父提交的 tree 相同，Josh "
+"会从过滤后的历史中丢弃该 merge commit。将此选项设置为 `\"keep-trivial-merges\"` "
+"会在输出历史中保留这些提交。"
+
+#: src/reference/filters.md:69
+msgid ""
+"```\n"
+":~(history=\"keep-trivial-merges\")[::file1]\n"
+"```"
+msgstr ""
+"```\n"
+":~(history=\"keep-trivial-merges\")[::file1]\n"
+"```"
+
+#: src/reference/filters.md:73
+msgid ""
+"**Note for users of older versions:** In older versions of Josh, `\"keep-"
+"trivial-merges\"` was the default behavior. If you're upgrading from an "
+"older version and need to recreate the same history structure, you should "
+"explicitly set `history=\"keep-trivial-merges\"` in your filter options."
+msgstr ""
+"**旧版本用户注意：** 在较旧版本的 Josh 中，`\"keep-trivial-merges\"` 是默认"
+"行为。如果你正从旧版本升级，并且需要重建相同的历史结构，应在过滤器选项中显式"
+"设置 `history=\"keep-trivial-merges\"`。"
+
+#: src/reference/filters.md:77
+msgid "Gpgsig option"
+msgstr "Gpgsig 选项"
+
+#: src/reference/filters.md:79
+msgid ""
+"The `gpgsig` option controls how PGP/GPG signature headers (`gpgsig`) in "
+"commit objects are handled during filtering."
+msgstr "`gpgsig` 选项控制过滤过程中如何处理提交对象中的 PGP/GPG 签名头（`gpgsig`）。"
+
+#: src/reference/filters.md:82
+msgid ""
+"By default Josh preserves the `gpgsig` header byte-for-byte. This keeps the "
+"commit hash stable across round-trips but makes the signature invalid (since "
+"the tree and parent references change)."
+msgstr ""
+"默认情况下，Josh 会逐字节保留 `gpgsig` 头。这会让提交哈希在往返转换中保持"
+"稳定，但会使签名失效（因为 tree 和父引用发生了变化）。"
+
+#: src/reference/filters.md:87
+msgid ""
+"**`gpgsig=\"remove\"`** - Strips the `gpgsig` header from every filtered "
+"commit. Equivalent to the `:unsign` shorthand filter."
+msgstr ""
+"**`gpgsig=\"remove\"`** - 从每个过滤后的提交中剥离 `gpgsig` 头。等同于 "
+"`:unsign` 简写过滤器。"
+
+#: src/reference/filters.md:91
+msgid ""
+"```\n"
+":~(gpgsig=\"remove\")[:/sub1]\n"
+"```"
+msgstr ""
+"```\n"
+":~(gpgsig=\"remove\")[:/sub1]\n"
+"```"
+
+#: src/reference/filters.md:95
+msgid ""
+"**`gpgsig=\"norm-lf\"`** - Normalizes `\\r\\n` line endings to `\\n` inside "
+"the `gpgsig` header before writing the filtered commit."
+msgstr ""
+"**`gpgsig=\"norm-lf\"`** - 在写入过滤后的提交前，将 `gpgsig` 头内部的 `\\r\\n` "
+"换行符规范化为 `\\n`。"
+
+#: src/reference/filters.md:98
+msgid ""
+"The standard git commit object format uses `\\n` line endings throughout, "
+"including inside `gpgsig` headers. Some signing tools or forges write "
+"`\\r\\n` instead, which is technically non-standard but valid as far as git "
+"is concerned — git treats the header value as opaque bytes. Josh preserves "
+"whichever line endings are present in the original commit."
+msgstr ""
+"标准 git 提交对象格式全程使用 `\\n` 换行符，包括 `gpgsig` 头内部。一些签名工具"
+"或代码托管平台会改写为 `\\r\\n`，这在技术上不符合标准，但对 git 来说仍是有效"
+"的——git 会将头值视为不透明字节。Josh 会保留原始提交中存在的任何换行符。"
+
+#: src/reference/filters.md:103
+msgid ""
+"An older version of Josh accidentally normalized `\\r\\n` to `\\n` during "
+"filtering. This option restores that behavior and is intended **only** for "
+"deployments that need to reproduce a history produced by the old version — "
+"both variants represent the same logical content but produce different "
+"commit hashes, causing history to diverge."
+msgstr ""
+"较旧版本的 Josh 在过滤过程中曾意外地将 `\\r\\n` 规范化为 `\\n`。此选项会恢复"
+"该行为，并且**仅**面向需要复现旧版本生成历史的部署——两种形式表示相同的逻辑内容，"
+"但会生成不同提交哈希，导致历史分叉。"
+
+#: src/reference/filters.md:109
+msgid ""
+"```\n"
+":~(gpgsig=\"norm-lf\")[:/sub1]\n"
+"```"
+msgstr ""
+"```\n"
+":~(gpgsig=\"norm-lf\")[:/sub1]\n"
+"```"
+
+#: src/reference/filters.md:113
+msgid "Available filters"
+msgstr "可用过滤器"
+
+#: src/reference/filters.md:115
+msgid "Subdirectory **`:/a`**"
+msgstr "子目录 **`:/a`**"
+
+#: src/reference/filters.md:116
+msgid ""
+"Take only the selected subdirectory from the input and make it the root of "
+"the filtered tree. Note that `:/a/b` and `:/a:/b` are equivalent ways to get "
+"the same result."
+msgstr ""
+"仅从输入中取出选中的子目录，并使其成为过滤后 tree 的根。注意，`:/a/b` 和 "
+"`:/a:/b` 是得到相同结果的等价写法。"
+
+#: src/reference/filters.md:120
+msgid "Directory **`::a/`**"
+msgstr "目录 **`::a/`**"
+
+#: src/reference/filters.md:121
+msgid ""
+"A shorthand for the commonly occurring filter combination `:/a:prefix=a`."
+msgstr "常见过滤器组合 `:/a:prefix=a` 的简写。"
+
+#: src/reference/filters.md:123
+msgid "File **`::a`** or **`::destination=source`**"
+msgstr "文件 **`::a`** 或 **`::destination=source`**"
+
+#: src/reference/filters.md:124
+msgid "Produces a tree with only the specified file."
+msgstr "生成一个仅包含指定文件的 tree。"
+
+#: src/reference/filters.md:126
+msgid ""
+"When using a single argument (`::a`), the file is placed at the same full "
+"path as in the source tree. When using the `destination=source` syntax (`::"
+"destination=source`), the file is renamed from `source` to `destination` in "
+"the filtered tree."
+msgstr ""
+"使用单个参数（`::a`）时，文件会放在与源 tree 中相同的完整路径下。使用 "
+"`destination=source` 语法（`::destination=source`）时，该文件会在过滤后的 tree "
+"中从 `source` 重命名为 `destination`。"
+
+#: src/reference/filters.md:129
+msgid "Examples:"
+msgstr "示例："
+
+#: src/reference/filters.md:130
+msgid "`::file.txt` - Selects `file.txt` and places it at `file.txt`"
+msgstr "`::file.txt` - 选择 `file.txt` 并将其放在 `file.txt`"
+
+#: src/reference/filters.md:131
+msgid ""
+"`::src/file.txt` - Selects `src/file.txt` and places it at `src/file.txt`"
+msgstr "`::src/file.txt` - 选择 `src/file.txt` 并将其放在 `src/file.txt`"
+
+#: src/reference/filters.md:132
+msgid ""
+"`::renamed.txt=src/original.txt` - Selects `src/original.txt` and places it "
+"at `renamed.txt`"
+msgstr "`::renamed.txt=src/original.txt` - 选择 `src/original.txt` 并将其放在 `renamed.txt`"
+
+#: src/reference/filters.md:133
+msgid ""
+"`::subdir/file.txt=src/file.txt` - Selects `src/file.txt` and places it at "
+"`subdir/file.txt`"
+msgstr "`::subdir/file.txt=src/file.txt` - 选择 `src/file.txt` 并将其放在 `subdir/file.txt`"
+
+#: src/reference/filters.md:135
+msgid ""
+"Note that `::a/b` is equivalent to `::a/::b`. Pattern filters (with `*`) "
+"cannot be combined with the `destination=source` syntax."
+msgstr ""
+"注意，`::a/b` 等同于 `::a/::b`。模式过滤器（带 `*`）不能与 "
+"`destination=source` 语法组合使用。"
+
+#: src/reference/filters.md:138
+msgid "Prefix **`:prefix=a`**"
+msgstr "前缀 **`:prefix=a`**"
+
+#: src/reference/filters.md:139
+msgid ""
+"Take the input tree and place it into subdirectory `a`. Note that `:prefix=a/"
+"b` and `:prefix=b:prefix=a` are equivalent."
+msgstr "取输入 tree 并将其放入子目录 `a`。注意，`:prefix=a/b` 和 `:prefix=b:prefix=a` 等价。"
+
+#: src/reference/filters.md:142
+msgid "Composition **`:[:filter1,:filter2,...,:filterN]`**"
+msgstr "组合 **`:[:filter1,:filter2,...,:filterN]`**"
+
+#: src/reference/filters.md:143
+msgid ""
+"Compose a tree by overlaying the outputs of `:filter1` ... `:filterN` on top "
+"of each other. It is guaranteed that each file will only appear at most once "
+"in the output. The first filter that consumes a file is the one deciding "
+"it's mapped location. Therefore the order in which filters are composed "
+"matters."
+msgstr ""
+"通过将 `:filter1` ... `:filterN` 的输出相互叠加来组合一个 tree。保证每个文件"
+"在输出中最多只出现一次。第一个消费某个文件的过滤器会决定它的映射位置。因此，"
+"过滤器的组合顺序很重要。"
+
+#: src/reference/filters.md:148
+msgid ""
+"Inside of a composition `x=:filter` can be used as an alternative spelling "
+"for `:filter:prefix=x`."
+msgstr "在组合内部，`x=:filter` 可作为 `:filter:prefix=x` 的另一种写法。"
+
+#: src/reference/filters.md:151
+msgid "Exclusion **`:exclude[:filter]`**"
+msgstr "排除 **`:exclude[:filter]`**"
+
+#: src/reference/filters.md:152
+msgid ""
+"Remove all paths present in the _output_ of `:filter` from the input tree. "
+"It should generally be avoided to use any filters that change paths and "
+"instead only use filters that select paths without altering them."
+msgstr ""
+"从输入 tree 中移除 `:filter` _输出_中存在的所有路径。通常应避免使用任何会改变"
+"路径的过滤器，而只使用选择路径但不修改路径的过滤器。"
+
+#: src/reference/filters.md:156
+msgid "Invert **`:invert[:filter]`**"
+msgstr "反转 **`:invert[:filter]`**"
+
+#: src/reference/filters.md:157
+msgid ""
+"A shorthand syntax that applies the inverse of the composed filter. The "
+"inverse of a filter is a filter that undoes the transformation. For example, "
+"the inverse of `:/sub1` (subdirectory) is `:prefix=sub1` (prefix), and vice "
+"versa."
+msgstr ""
+"用于应用组合过滤器反向形式的简写语法。过滤器的反向形式是撤销该转换的过滤器。"
+"例如，`:/sub1`（子目录）的反向是 `:prefix=sub1`（前缀），反之亦然。"
+
+#: src/reference/filters.md:165
+msgid ""
+"This is equivalent to `:prefix=sub1`, which takes the input tree and places "
+"it into the `sub1` subdirectory."
+msgstr "这等同于 `:prefix=sub1`，它会取输入 tree 并将其放入 `sub1` 子目录。"
+
+#: src/reference/filters.md:168
+msgid "Multiple filters can be provided in the compose:"
+msgstr "可以在 compose 中提供多个过滤器："
+
+#: src/reference/filters.md:172
+msgid "This inverts the composition of `:/sub1` and `:/sub2`."
+msgstr "这会反转 `:/sub1` 和 `:/sub2` 的组合。"
+
+#: src/reference/filters.md:174
+msgid "Scope **`:<X>[..]`**"
+msgstr "作用域 **`:<X>[..]`**"
+
+#: src/reference/filters.md:175
+msgid "A shorthand syntax that expands to `:X:[..]:invert[:X]`, where:"
+msgstr "会展开为 `:X:[..]:invert[:X]` 的简写语法，其中："
+
+#: src/reference/filters.md:176
+msgid "`:X` is a filter (without built-in compose)"
+msgstr "`:X` 是一个过滤器（不含内置 compose）"
+
+#: src/reference/filters.md:177
+msgid "`:[..]` is a compose filter (like in `:exclude`)"
+msgstr "`:[..]` 是一个 compose 过滤器（类似 `:exclude` 中的用法）"
+
+#: src/reference/filters.md:179
+msgid ""
+"This filter first applies `:X` to scope the input, then applies the compose "
+"filter `:[..]`, and finally inverts `:X` to restore the original scope. This "
+"is useful when you want to apply a composition filter within a specific "
+"scope and then restore the original structure."
+msgstr ""
+"此过滤器首先应用 `:X` 来限定输入作用域，然后应用 compose 过滤器 `:[..]`，最后"
+"反转 `:X` 以恢复原始作用域。当你想在特定作用域内应用组合过滤器，然后恢复原始"
+"结构时，这会很有用。"
+
+#: src/reference/filters.md:187
+msgid "This is equivalent to `:/sub1:[::file1,::file2]:invert[:/sub1]`, which:"
+msgstr "这等同于 `:/sub1:[::file1,::file2]:invert[:/sub1]`，它会："
+
+#: src/reference/filters.md:188
+msgid "Selects the `sub1` subdirectory (applies `:/sub1`)"
+msgstr "选择 `sub1` 子目录（应用 `:/sub1`）"
+
+#: src/reference/filters.md:189
+msgid ""
+"Applies the composition filter to select `file1` and `file2` (applies `:[::"
+"file1,::file2]`)"
+msgstr "应用组合过滤器来选择 `file1` 和 `file2`（应用 `:[::file1,::file2]`）"
+
+#: src/reference/filters.md:190
+msgid ""
+"Restores the original scope by inverting the subdirectory selection (applies "
+"`:invert[:/sub1]`)"
+msgstr "通过反转子目录选择来恢复原始作用域（应用 `:invert[:/sub1]`）"
+
+#: src/reference/filters.md:192
+msgid "Stored **`:+path/to/file`**"
+msgstr "存储式 **`:+path/to/file`**"
+
+#: src/reference/filters.md:193
+msgid ""
+"Looks for a file with a `.josh` extension at the specified path and applies "
+"the filter defined in that file. The path argument should be provided "
+"_without_ the `.josh` extension, as it will be automatically appended."
+msgstr ""
+"在指定路径查找带 `.josh` 扩展名的文件，并应用该文件中定义的过滤器。路径参数"
+"应_不带_ `.josh` 扩展名，因为它会被自动附加。"
+
+#: src/reference/filters.md:196
+msgid ""
+"For example, `:+st/config` will look for a file at `st/config.josh` and "
+"apply the filter defined in that file. The resulting tree will contain the "
+"contents specified by the filter in the `.josh` file."
+msgstr ""
+"例如，`:+st/config` 会查找 `st/config.josh` 文件，并应用该文件中定义的过滤器。"
+"生成的 tree 将包含 `.josh` 文件中过滤器指定的内容。"
+
+#: src/reference/filters.md:199
+msgid ""
+"Stored filters apply from the root of the repository, making them useful for "
+"configuration files that define filters to be applied at the repository root "
+"level."
+msgstr ""
+"存储式过滤器会从仓库根目录应用，因此适合用于定义应在仓库根级别应用的过滤器的"
+"配置文件。"
+
+#: src/reference/filters.md:202
+msgid "Workspace **`:workspace=a`**"
+msgstr "Workspace **`:workspace=a`**"
+
+#: src/reference/filters.md:203
+msgid ""
+"Like stored filters, but with an additional \"base\" component that first "
+"selects the specified directory (called the \"workspace root\") before "
+"applying the filter from the `workspace.josh` file inside it."
+msgstr ""
+"类似存储式过滤器，但带有一个额外的 \"base\" 组件，会先选择指定目录（称为 "
+"\"workspace root\"），然后应用其中 `workspace.josh` 文件里的过滤器。"
+
+#: src/reference/filters.md:206
+msgid ""
+"The workspace filter is equivalent to `:/a` combined with applying a stored "
+"filter, where the filter is read from `workspace.josh` within the selected "
+"directory. The resulting tree will contain the contents of the workspace "
+"root as well as additional files specified in the `workspace.josh` file. "
+"(see [Workspaces](./workspace.md))"
+msgstr ""
+"workspace 过滤器等同于 `:/a` 与存储式过滤器的组合，其中过滤器会从所选目录内的 "
+"`workspace.josh` 读取。生成的 tree 将包含 workspace root 的内容，以及 "
+"`workspace.josh` 文件中指定的额外文件。（参见 [Workspaces](./workspace.md)）"
+
+#: src/reference/filters.md:211
+msgid ""
+"Text replacement **`:replace(\"regex_0\":\"replacement_0\",...,\"regex_N\":"
+"\"replacement_N\")`**"
+msgstr ""
+"文本替换 **`:replace(\"regex_0\":\"replacement_0\",...,\"regex_N\":"
+"\"replacement_N\")`**"
+
+#: src/reference/filters.md:212
+msgid ""
+"Applies the supplied regular expressions to every file in the input tree."
+msgstr "将提供的正则表达式应用到输入 tree 中的每个文件。"
+
+#: src/reference/filters.md:214
+msgid "Signature removal **`:unsign`**"
+msgstr "移除签名 **`:unsign`**"
+
+#: src/reference/filters.md:215
+msgid ""
+"The default behaviour of Josh is to copy, if it exists, the signature of the "
+"original commit in the filtered commit. This makes the signature invalid, "
+"but allows a perfect round-trip: josh will be able to recreate the original "
+"commit from the filtered one."
+msgstr ""
+"Josh 的默认行为是，如果原始提交存在签名，就将其复制到过滤后的提交中。这会使"
+"签名失效，但允许完美往返：josh 能够根据过滤后的提交重建原始提交。"
+
+#: src/reference/filters.md:219
+msgid ""
+"This behaviour might not be desirable, and this filter drops the signatures "
+"from the history. It is a shorthand for `:~(gpgsig=\"remove\")[:/]`. See the "
+"[gpgsig option](#gpgsig-option) for additional gpgsig-related options."
+msgstr ""
+"这种行为可能并不总是理想的，而此过滤器会从历史中丢弃签名。它是 "
+"`:~(gpgsig=\"remove\")[:/]` 的简写。更多 gpgsig 相关选项请参见 [gpgsig 选项]"
+"(#gpgsig-option)。"
+
+#: src/reference/filters.md:223
+msgid "Pattern filters"
+msgstr "模式过滤器"
+
+#: src/reference/filters.md:225
+msgid ""
+"The following filters accept a glob like pattern `X` that can contain `*` to "
+"match any number of characters. Note that two or more consecutive wildcards "
+"(`**`) are not allowed."
+msgstr ""
+"以下过滤器接受类似 glob 的模式 `X`，其中可包含 `*` 来匹配任意数量的字符。注意，"
+"不允许使用两个或更多连续通配符（`**`）。"
+
+#: src/reference/filters.md:229
+msgid "Match directories **`::X/`**"
+msgstr "匹配目录 **`::X/`**"
+
+#: src/reference/filters.md:230
+msgid "All matching subdirectories in the input root"
+msgstr "输入根目录中所有匹配的子目录"
+
+#: src/reference/filters.md:232
+msgid "Match files or directories **`::X`**"
+msgstr "匹配文件或目录 **`::X`**"
+
+#: src/reference/filters.md:233
+msgid "All matching files or directories in the input root"
+msgstr "输入根目录中所有匹配的文件或目录"
+
+#: src/reference/filters.md:235
+msgid "Match nested directories **`::**/X/`**"
+msgstr "匹配嵌套目录 **`::**/X/`**"
+
+#: src/reference/filters.md:236
+msgid ""
+"All subdirectories matching the pattern in arbitrarily deep subdirectories "
+"of the input"
+msgstr "输入中任意深度子目录内所有匹配该模式的子目录"
+
+#: src/reference/filters.md:238
+msgid "Match nested files **`::**/X`**"
+msgstr "匹配嵌套文件 **`::**/X`**"
+
+#: src/reference/filters.md:239
+msgid ""
+"All files matching the pattern in arbitrarily deep subdirectories of the "
+"input"
+msgstr "输入中任意深度子目录内所有匹配该模式的文件"
+
+#: src/reference/filters.md:241
+msgid "History filters"
+msgstr "历史过滤器"
+
+#: src/reference/filters.md:243
+msgid ""
+"These filter do not modify git trees, but instead only operate on the commit "
+"graph."
+msgstr "这些过滤器不会修改 git tree，而只作用于提交图。"
+
+#: src/reference/filters.md:245
+msgid "Linearise history **:linear\\[:filter\\]**"
+msgstr "线性化历史 **:linear\\[:filter\\]**"
+
+#: src/reference/filters.md:246
+msgid ""
+"Produce a filtered history that does not contain any merge commits. This is "
+"done by simply dropping all parents except the first on every commit."
+msgstr "生成不包含任何 merge commit 的过滤历史。实现方式是在每个提交上简单丢弃除第一个父提交外的所有父提交。"
+
+#: src/reference/filters.md:249
+msgid "Filter specific parts of the history **:rev(...)**"
+msgstr "过滤历史的特定部分 **:rev(...)**"
+
+#: src/reference/filters.md:251
+msgid ""
+"The `:rev(...)` filter allows you to apply different filters to different "
+"parts of the commit history based on commit relationships. Each entry in the "
+"filter specifies a condition and a filter to apply when that condition "
+"matches."
+msgstr ""
+"`:rev(...)` 过滤器允许你基于提交关系，对提交历史的不同部分应用不同过滤器。"
+"过滤器中的每个条目都会指定一个条件，以及条件匹配时要应用的过滤器。"
+
+#: src/reference/filters.md:262
+msgid ""
+"Commit references must be **full 40-character SHA-1 hashes**; short/"
+"abbreviated SHAs are not accepted."
+msgstr "提交引用必须是**完整的 40 字符 SHA-1 哈希**；不接受短 SHA 或缩写 SHA。"
+
+#: src/reference/filters.md:264
+msgid "**Operators:**"
+msgstr "**操作符：**"
+
+#: src/reference/filters.md:266
+msgid ""
+"**`<`** - Strict ancestor match: matches if the commit is an ancestor of "
+"`<sha>` AND the commit is not equal to `<sha>`"
+msgstr "**`<`** - 严格祖先匹配：如果该提交是 `<sha>` 的祖先，且该提交不等于 `<sha>`，则匹配"
+
+#: src/reference/filters.md:267
+msgid ""
+"**`<=`** - Inclusive ancestor match: matches if the commit is an ancestor of "
+"`<sha>` OR the commit equals `<sha>`"
+msgstr "**`<=`** - 包含式祖先匹配：如果该提交是 `<sha>` 的祖先，或该提交等于 `<sha>`，则匹配"
+
+#: src/reference/filters.md:268
+msgid "**`==`** - Exact match: matches only if the commit equals `<sha>`"
+msgstr "**`==`** - 精确匹配：仅当该提交等于 `<sha>` 时匹配"
+
+#: src/reference/filters.md:269
+msgid ""
+"**`_`** - Default filter: matches any commit that doesn't match any previous "
+"condition (no SHA needed)"
+msgstr "**`_`** - 默认过滤器：匹配任何未匹配前面条件的提交（不需要 SHA）"
+
+#: src/reference/filters.md:271
+msgid "**Matching behavior:**"
+msgstr "**匹配行为：**"
+
+#: src/reference/filters.md:273
+msgid "Rules are evaluated in the order they are specified"
+msgstr "规则会按指定顺序求值"
+
+#: src/reference/filters.md:274
+msgid ""
+"**First match wins** - once a condition matches, that filter is applied and "
+"no further rules are checked"
+msgstr "**首次匹配优先** - 一旦条件匹配，就会应用该过滤器，并且不再检查后续规则"
+
+#: src/reference/filters.md:275
+msgid ""
+"The default filter (`_`) will match any commit that hasn't matched a "
+"previous rule, making any rules after it unreachable"
+msgstr "默认过滤器（`_`）会匹配任何未匹配前面规则的提交，因此它后面的任何规则都不可达"
+
+#: src/reference/filters.md:282
+msgid ""
+"This applies `:prefix=old` to commit `abc12345...` and all its ancestors, "
+"and `:prefix=new` only to commit `def45678...`."
+msgstr "这会将 `:prefix=old` 应用于提交 `abc12345...` 及其所有祖先，并仅将 `:prefix=new` 应用于提交 `def45678...`。"
+
+#: src/reference/filters.md:287
+msgid ""
+"This applies `:prefix=old` to all ancestors of that commit (but not the "
+"commit itself), and `:prefix=default` to all other commits (including that "
+"commit and any commits after it)."
+msgstr ""
+"这会将 `:prefix=old` 应用于该提交的所有祖先（但不包括该提交本身），并将 "
+"`:prefix=default` 应用于所有其他提交（包括该提交及其之后的任何提交）。"
+
+#: src/reference/filters.md:289
+msgid "Prune trivial merge commits **:prune=trivial-merge**"
+msgstr "剪除平凡 merge commit **:prune=trivial-merge**"
+
+#: src/reference/filters.md:291
+msgid ""
+"Produce a history that skips all merge commits whose tree is identical to "
+"the first parents tree. Normally Josh will keep all commits in the filtered "
+"history whose tree differs from any of it's parents."
+msgstr ""
+"生成一段历史，跳过所有 tree 与第一个父提交 tree 相同的 merge commit。通常，"
+"Josh 会在过滤后的历史中保留 tree 与任一父提交不同的所有提交。"
+
+#: src/reference/filters.md:296
+msgid ""
+"Commit message rewriting **`:\"template\"`** or **`:\"template\";\"regex\"`**"
+msgstr "提交消息重写 **`:\"template\"`** 或 **`:\"template\";\"regex\"`**"
+
+#: src/reference/filters.md:298
+msgid ""
+"Rewrite commit messages using a template string. The template can use regex "
+"capture groups to extract and reformat parts of the original commit message, "
+"as well as special template variables for commit metadata."
+msgstr ""
+"使用模板字符串重写提交消息。模板可以使用正则捕获组来提取并重新格式化原始提交"
+"消息的部分内容，也可以使用表示提交元数据的特殊模板变量。"
+
+#: src/reference/filters.md:302
+msgid "**Simple message replacement:**"
+msgstr "**简单消息替换：**"
+
+#: src/reference/filters.md:303
+msgid ""
+"```\n"
+":\"New message\"\n"
+"```"
+msgstr ""
+"```\n"
+":\"New message\"\n"
+"```"
+
+#: src/reference/filters.md:306
+msgid "This replaces all commit messages with \"New message\"."
+msgstr "这会将所有提交消息替换为 \"New message\"。"
+
+#: src/reference/filters.md:308
+msgid "**Using regex with named capture groups:**"
+msgstr "**使用带命名捕获组的正则：**"
+
+#: src/reference/filters.md:309
+msgid ""
+"```\n"
+":\"[{type}] {message}\";\"(?s)^(?P<type>fix|feat|docs): (?P<message>.+)$\"\n"
+"```"
+msgstr ""
+"```\n"
+":\"[{type}] {message}\";\"(?s)^(?P<type>fix|feat|docs): (?P<message>.+)$\"\n"
+"```"
+
+#: src/reference/filters.md:312
+msgid ""
+"This uses a regex to match the original commit message and extract named "
+"capture groups (`{type}` and `{message}`) which are then used in the "
+"template. The regex `(?s)^(?P<type>fix|feat|docs): (?P<message>.+)$` matches "
+"commit messages starting with \"fix:\", \"feat:\", or \"docs:\" followed by "
+"a message, and the template reformats them as `[type] message`."
+msgstr ""
+"这会使用正则匹配原始提交消息，并提取命名捕获组（`{type}` 和 `{message}`），"
+"随后在模板中使用它们。正则 `(?s)^(?P<type>fix|feat|docs): (?P<message>.+)$` "
+"会匹配以 \"fix:\"、\"feat:\" 或 \"docs:\" 开头并跟随消息的提交消息，模板会将"
+"其重新格式化为 `[type] message`。"
+
+#: src/reference/filters.md:317
+msgid ""
+"**Using template variables:** The template supports special variables that "
+"provide access to commit metadata:"
+msgstr "**使用模板变量：** 模板支持用于访问提交元数据的特殊变量："
+
+#: src/reference/filters.md:319
+msgid "`{#}` - The tree object ID (SHA-1 hash) of the commit"
+msgstr "`{#}` - 提交的 tree 对象 ID（SHA-1 哈希）"
+
+#: src/reference/filters.md:320
+msgid "`{@}` - The commit object ID (SHA-1 hash)"
+msgstr "`{@}` - 提交对象 ID（SHA-1 哈希）"
+
+#: src/reference/filters.md:321
+msgid ""
+"`{/path}` - The content of the file at the specified path in the commit tree"
+msgstr "`{/path}` - 提交 tree 中指定路径处文件的内容"
+
+#: src/reference/filters.md:322
+msgid ""
+"`{#path}` - The object ID (SHA-1 hash) of the tree entry at the specified "
+"path"
+msgstr "`{#path}` - 指定路径处 tree 条目的对象 ID（SHA-1 哈希）"
+
+#: src/reference/filters.md:324
+msgid ""
+"Regex capture groups take priority over template variables. If a regex "
+"capture group has the same name as a template variable, the capture group "
+"value will be used."
+msgstr ""
+"正则捕获组优先于模板变量。如果某个正则捕获组与模板变量同名，将使用捕获组的值。"
+
+#: src/reference/filters.md:326
+msgid "Example:"
+msgstr "示例："
+
+#: src/reference/filters.md:327
+msgid ""
+"```\n"
+":\"Message: {#} {@}\"\n"
+"```"
+msgstr ""
+"```\n"
+":\"Message: {#} {@}\"\n"
+"```"
+
+#: src/reference/filters.md:330
+msgid ""
+"This replaces commit messages with \"Message: \" followed by the tree ID and "
+"commit ID."
+msgstr "这会将提交消息替换为 \"Message: \" 后跟 tree ID 和提交 ID。"
+
+#: src/reference/filters.md:332
+msgid "**Combining regex capture groups and template variables:**"
+msgstr "**组合正则捕获组和模板变量：**"
+
+#: src/reference/filters.md:333
+msgid ""
+"```\n"
+":\"[{type}] {message} (commit: {@})\";\"(?s)^(?P<type>Original) (?P<message>."
+"+)$\"\n"
+"```"
+msgstr ""
+"```\n"
+":\"[{type}] {message} (commit: {@})\";\"(?s)^(?P<type>Original) (?P<message>."
+"+)$\"\n"
+"```"
+
+#: src/reference/filters.md:336
+msgid ""
+"This combines regex capture groups (`{type}` and `{message}`) with template "
+"variables (`{@}` for the commit ID)."
+msgstr "这会将正则捕获组（`{type}` 和 `{message}`）与模板变量（表示提交 ID 的 `{@}`）组合使用。"
+
+#: src/reference/filters.md:338
+msgid "**Removing text from messages:**"
+msgstr "**从消息中移除文本：**"
+
+#: src/reference/filters.md:339
+msgid ""
+"```\n"
+":\"\";\"TODO\"\n"
+"```"
+msgstr ""
+"```\n"
+":\"\";\"TODO\"\n"
+"```"
+
+#: src/reference/filters.md:342
+msgid ""
+"This removes all occurrences of \"TODO\" from commit messages by matching "
+"\"TODO\" and replacing it with an empty string. The regex pattern can use `(?"
+"s)` to enable dot-all mode (so `.` matches newlines), allowing it to work "
+"with multi-line commit messages that include both a subject line and a body."
+msgstr ""
+"这会通过匹配 \"TODO\" 并将其替换为空字符串，从提交消息中移除所有 \"TODO\"。"
+"正则模式可以使用 `(?s)` 启用 dot-all 模式（使 `.` 匹配换行），从而可以处理同时"
+"包含主题行和正文的多行提交消息。"
+
+#: src/reference/filters.md:346
+msgid "Hook **`:hook=<arg>`**"
+msgstr "Hook **`:hook=<arg>`**"
+
+#: src/reference/filters.md:348
+msgid ""
+"Apply a different filter to each commit in a history, where the per-commit "
+"filter is resolved at runtime rather than being fixed at invocation time."
+msgstr "对历史中的每个提交应用不同过滤器，其中每提交过滤器会在运行时解析，而不是在调用时固定。"
+
+#: src/reference/filters.md:351
+msgid ""
+"`<arg>` selects the git notes ref that stores those per-commit filter "
+"specifications. When `<arg>` does not start with `refs/`, Josh reads notes "
+"from `refs/notes/<arg>`, so `:hook=commits` uses the default git notes ref "
+"`refs/notes/commits`. Each note body must contain a valid Josh filter "
+"expression for that commit; if a commit has no note in the selected ref, "
+"`josh-filter` fails."
+msgstr ""
+"`<arg>` 选择用于存储这些每提交过滤器规格的 git notes ref。当 `<arg>` 不以 "
+"`refs/` 开头时，Josh 会从 `refs/notes/<arg>` 读取 notes，因此 `:hook=commits` "
+"会使用默认 git notes ref `refs/notes/commits`。每个 note 正文必须包含该提交的"
+"有效 Josh 过滤器表达式；如果某个提交在所选 ref 中没有 note，`josh-filter` 会失败。"
+
+#: src/reference/filters.md:357
+msgid "Minimal example:"
+msgstr "最小示例："
+
+#: src/reference/filters.md:365
+msgid ""
+"In this example, the first filtered commit exposes `code/` at the repository "
+"root, while the second uses `:pin` to keep `app.js` at its previous contents "
+"for that commit only."
+msgstr ""
+"在此示例中，第一个过滤后的提交会在仓库根目录暴露 `code/`，而第二个提交使用 "
+"`:pin` 仅针对该提交保持 `app.js` 为先前内容。"
+
+#: src/reference/filters.md:368
+msgid ""
+"When using Josh as a library, hook resolution is not tied to git notes. You "
+"can provide your own implementation of the `josh_core::cache::FilterHook` "
+"trait and attach it with `TransactionContext::with_filter_hook`, which lets "
+"your application decide how `filter_for_commit(commit_oid, arg)` resolves "
+"the per-commit filter."
+msgstr ""
+"将 Josh 作为库使用时，hook 解析并不绑定到 git notes。你可以提供自己的 "
+"`josh_core::cache::FilterHook` trait 实现，并通过 "
+"`TransactionContext::with_filter_hook` 附加它，让应用自行决定 "
+"`filter_for_commit(commit_oid, arg)` 如何解析每提交过滤器。"
+
+#: src/reference/filters.md:373
+msgid ""
+"**Note:** Using `:hook` correctly requires care to preserve josh filter "
+"invariants — violating them can produce incorrect or inconsistent results. "
+"Most users won't need this filter, but if you have a use case that seems to "
+"call for it, we'd love to hear about it! Feel free to open an issue or start "
+"a discussion."
+msgstr ""
+"**注意：** 正确使用 `:hook` 需要谨慎维护 josh 过滤器不变式——违反这些不变式"
+"可能产生错误或不一致的结果。大多数用户不需要此过滤器，但如果你有看起来需要它"
+"的用例，我们很愿意了解。欢迎打开 issue 或发起讨论。"
+
+#: src/reference/filters.md:378
+msgid "Pin tree contents"
+msgstr "固定 tree 内容"
+
+#: src/reference/filters.md:380
+msgid "Pin revision of a subtree to revision of the parent commit."
+msgstr "将子 tree 的修订固定到父提交的修订。"
+
+#: src/reference/filters.md:382
+msgid ""
+"In practical terms, it means that file and folder updates are \"held off\", "
+"and revisions are \"pinned\". If a tree entry already existed in the parent "
+"revision, that version will be chosen. Otherwise, the tree entry will not "
+"appear in the filtered commit."
+msgstr ""
+"实际效果是文件和文件夹更新会被 \"held off\"，修订会被 \"pinned\"。如果某个 tree "
+"条目已经存在于父修订中，将选择该版本。否则，该 tree 条目不会出现在过滤后的提交中。"
+
+#: src/reference/filters.md:386
+msgid "The source of the parent revision is always the first commit parent."
+msgstr "父修订的来源始终是第一个提交父项。"
+
+#: src/reference/filters.md:388
+msgid ""
+"Note that this filter is only practical when used with `:hook` or `workspace."
+"josh`, as it should apply per-revision only. Applying `:pin` for the whole "
+"history will result in the subtree being excluded from all revisions."
+msgstr ""
+"注意，此过滤器只有与 `:hook` 或 `workspace.josh` 一起使用时才实用，因为它应"
+"仅按修订应用。对整个历史应用 `:pin` 会导致该子 tree 被从所有修订中排除。"
+
+#: src/reference/filters.md:392
+msgid ""
+"Refer to `pin_filter_workspace.t` and `pin_filter_hook.t` for reference."
+msgstr "请参考 `pin_filter_workspace.t` 和 `pin_filter_hook.t`。"
+
+#: src/reference/filters.md:394
+msgid "Filter order matters"
+msgstr "过滤器顺序很重要"
+
+#: src/reference/filters.md:397
+msgid ""
+"Filters are applied in the left-to-right order they are given in the filter "
+"specification, and they are `not` commutative."
+msgstr "过滤器会按照过滤器规格中给定的从左到右顺序应用，并且它们`不`满足交换律。"
+
+#: src/reference/filters.md:400
+msgid ""
+"For example, this command will filter out just the josh documentation, and "
+"store it in a ref named `FILTERED_HEAD`:"
+msgstr "例如，此命令会仅过滤出 josh 文档，并将其存储在名为 `FILTERED_HEAD` 的 ref 中："
+
+#: src/reference/filters.md:405
+msgid "However, `this` command will produce an empty branch:"
+msgstr "然而，`this` 命令会生成一个空分支："
+
+#: src/reference/filters.md:409
+msgid ""
+"What's happening in the latter command is that because the prefix filter is "
+"applied first, the entire `josh` history already lives within the `josh-"
+"docs` directory, as it was just transformed to exist there. Thus, to still "
+"get the docs, the command would need to be:"
+msgstr ""
+"后一个命令中发生的情况是：由于 prefix 过滤器先应用，整个 `josh` 历史已经位于 "
+"`josh-docs` 目录中，因为它刚刚被转换到那里。因此，如果仍要获得 docs，命令需要是："
+
+#: src/reference/filters.md:415
+msgid ""
+"which will contain the josh documentation at the base of the tree. We've "
+"lost the prefix, what gives?? Because the original git tree was already "
+"transformed, and then the subdirectory filter was applied to pull "
+"documentation from `josh-docs/docs`, the prefix is gone - it was filtered "
+"out again by the subdirectory filter. Thus, the order in which filters are "
+"provided is crucial, as each filter further transforms the latest "
+"transformation of the tree."
+msgstr ""
+"这会在 tree 根部包含 josh 文档。前缀怎么没了？因为原始 git tree 已经被转换，"
+"随后又应用子目录过滤器从 `josh-docs/docs` 提取文档，所以前缀消失了——它被子目录"
+"过滤器再次过滤掉了。因此，提供过滤器的顺序至关重要，因为每个过滤器都会进一步"
+"转换 tree 的最新转换结果。"
+
+#: src/reference/experimental.md:3
+msgid ""
+"Experimental features are opt-in and must be enabled at runtime by setting "
+"the environment variable `JOSH_EXPERIMENTAL_FEATURES=1`. Their behaviour or "
+"syntax may change in future releases."
+msgstr ""
+"实验性功能需要显式启用，并且必须在运行时设置环境变量 "
+"`JOSH_EXPERIMENTAL_FEATURES=1`。它们的行为或语法可能在未来版本中发生变化。"
+
+#: src/reference/experimental.md:7
+msgid "Filters"
+msgstr "过滤器"
+
+#: src/reference/experimental.md:9
+msgid "Insertion **`:$path=content`**"
+msgstr "插入 **`:$path=content`**"
+
+#: src/reference/experimental.md:11
+msgid ""
+"Inserts a git object at `path` in the output tree. The content can be given "
+"in two ways:"
+msgstr "在输出 tree 的 `path` 处插入一个 git 对象。内容可以通过两种方式给出："
+
+#: src/reference/experimental.md:13
+msgid ""
+"**Inline text** — `:$path=\"content\"` writes a new file at `path` containing "
+"the given literal text. No newline is appended automatically."
+msgstr ""
+"**内联文本** — `:$path=\"content\"` 在 `path` 处写入一个新文件，其内容为给定的"
+"字面文本。不会自动追加换行符。"
+
+#: src/reference/experimental.md:15
+msgid ""
+"**By object id** — `:$path=<oid>` inserts an existing object referenced by "
+"its 40-character SHA-1 hash. The object may be a **blob** (inserted as a "
+"file) or a **tree** (inserted as a subtree); the kind is resolved from the "
+"repository. Referencing an object of any other kind, or one that does not "
+"exist, is an error. This avoids inlining large blobs or whole subtrees as a "
+"string."
+msgstr ""
+"**通过对象 id** — `:$path=<oid>` 插入一个由其 40 字符 SHA-1 哈希引用的已有对"
+"象。该对象可以是 **blob**（作为文件插入）或 **tree**（作为子树插入）；其类型"
+"由仓库解析确定。引用任何其他类型的对象，或引用不存在的对象，都会报错。这可以避"
+"免将大型 blob 或整个子树作为字符串内联。"
+
+#: src/reference/experimental.md:21
+msgid ""
+"The path argument follows the same quoting rules as other filter arguments: "
+"quote with double quotes if the path contains spaces or special characters."
+msgstr ""
+"路径参数遵循与其他过滤器参数相同的引用规则：如果路径包含空格或特殊字符，请使用"
+"双引号引用。"
+
+#: src/reference/experimental.md:24
+msgid ""
+"The inverse of `:$path=content` is `:exclude[::path]`, which removes the "
+"inserted file or subtree."
+msgstr ""
+"`:$path=content` 的反向形式是 `:exclude[::path]`，它会移除插入的文件或子树。"
+
+#: src/reference/experimental.md:28
+msgid ""
+"```\n"
+"# Insert a file named \"VERSION\" containing \"1.0\" at the root\n"
+":$VERSION=\"1.0\"\n"
+"\n"
+"# Insert a file whose name contains a space\n"
+":$\"release notes.txt\"=\"Initial release\"\n"
+"\n"
+"# Insert an existing blob by its SHA\n"
+":$added.txt=e69de29bb2d1d6434b8b29ae775ad8c2e48c5391\n"
+"\n"
+"# Insert an existing tree as a subtree at \"vendored\"\n"
+":$vendored=4b825dc642cb6eb9a060e54bf8d69288fbee4904\n"
+"\n"
+"# Combine with a subdirectory filter to insert the file alongside existing "
+"content\n"
+":[:/sub1,:$added.txt=\"hello world\"]\n"
+"```"
+msgstr ""
+"```\n"
+"# 在根目录插入名为 \"VERSION\" 且内容为 \"1.0\" 的文件\n"
+":$VERSION=\"1.0\"\n"
+"\n"
+"# 插入名称包含空格的文件\n"
+":$\"release notes.txt\"=\"Initial release\"\n"
+"\n"
+"# 通过 SHA 插入一个已有的 blob\n"
+":$added.txt=e69de29bb2d1d6434b8b29ae775ad8c2e48c5391\n"
+"\n"
+"# 将一个已有的 tree 作为子树插入到 \"vendored\"\n"
+":$vendored=4b825dc642cb6eb9a060e54bf8d69288fbee4904\n"
+"\n"
+"# 与子目录过滤器组合，在现有内容旁插入文件\n"
+":[:/sub1,:$added.txt=\"hello world\"]\n"
+"```"
+
+#: src/reference/experimental.md:45
+msgid "Object reference **`:&path`**"
+msgstr "对象引用 **`:&path`**"
+
+#: src/reference/experimental.md:46
+msgid ""
+"Reads the git object at `path` (a file or directory) and replaces its "
+"content with a text blob containing the object's SHA-1 hash. This turns a "
+"real file or tree into a lightweight pointer."
+msgstr ""
+"读取 `path` 处的 git 对象（文件或目录），并将其内容替换为包含该对象 SHA-1 哈希"
+"的文本 blob。这会将真实文件或 tree 转换为轻量指针。"
+
+#: src/reference/experimental.md:49
+msgid "If `path` does not exist in the input tree, the filter is a no-op."
+msgstr "如果 `path` 在输入 tree 中不存在，该过滤器就是 no-op。"
+
+#: src/reference/experimental.md:51
+msgid ""
+"Example: `:&sub1` on a commit where `sub1` is a directory produces a file "
+"`sub1` whose content is the 40-character SHA of that directory tree."
+msgstr ""
+"示例：在 `sub1` 是目录的提交上使用 `:&sub1`，会生成一个文件 `sub1`，其内容是"
+"该目录 tree 的 40 字符 SHA。"
+
+#: src/reference/experimental.md:54
+msgid "Object dereference **`:#path`**"
+msgstr "对象解引用 **`:#path`**"
+
+#: src/reference/experimental.md:55
+msgid ""
+"Reads the SHA-1 hash stored as text in the file at `path` and replaces that "
+"file with the git object the hash points to (a file or a directory tree). "
+"This follows the pointer written by `:&path`."
+msgstr ""
+"读取 `path` 处文件中以文本形式存储的 SHA-1 哈希，并将该文件替换为该哈希指向的 "
+"git 对象（文件或目录 tree）。这会跟随 `:&path` 写入的指针。"
+
+#: src/reference/experimental.md:59
+msgid ""
+"If `path` does not exist the filter is a no-op. If the content is not a "
+"valid SHA or the object is not present in the repository, an error is "
+"returned."
+msgstr ""
+"如果 `path` 不存在，该过滤器就是 no-op。如果内容不是有效 SHA，或对象不存在于"
+"仓库中，则返回错误。"
+
+#: src/reference/experimental.md:62
+msgid ""
+"Example: given a file `sub1` whose content is the SHA of a directory tree, `:"
+"#sub1` replaces that file with the actual directory tree at `sub1`."
+msgstr ""
+"示例：给定一个文件 `sub1`，其内容是某个目录 tree 的 SHA，`:#sub1` 会将该文件"
+"替换为 `sub1` 处的实际目录 tree。"
+
+#: src/reference/experimental.md:65
+msgid "Object dereference into subdirectory **`:#/path`**"
+msgstr "将对象解引用到子目录 **`:#/path`**"
+
+#: src/reference/experimental.md:66
+msgid ""
+"Dereferences the pointer stored at `path` and then extracts the resulting "
+"object directly at the repository root, discarding the `path` prefix. This "
+"is the typical way to restore content that was previously stored with `:"
+"&path`."
+msgstr ""
+"解引用存储在 `path` 处的指针，然后将得到的对象直接提取到仓库根目录，丢弃 "
+"`path` 前缀。这是恢复之前用 `:&path` 存储的内容的典型方式。"
+
+#: src/reference/experimental.md:70
+msgid ""
+"Expands to `:#path:/path`. The canonical printed form is the expanded syntax."
+msgstr "会展开为 `:#path:/path`。规范打印形式是展开后的语法。"
+
+#: src/reference/experimental.md:72
+msgid ""
+"Example: `:#/sub1` on a tree where `sub1` holds a SHA of a directory returns "
+"that directory's contents at the root, as if `sub1` never existed."
+msgstr ""
+"示例：在 `sub1` 保存目录 SHA 的 tree 上使用 `:#/sub1`，会在根目录返回该目录的"
+"内容，就像 `sub1` 从未存在一样。"
+
+#: src/reference/experimental.md:75
+msgid "Tree ID capture **`:#path[filter]`**"
+msgstr "Tree ID 捕获 **`:#path[filter]`**"
+
+#: src/reference/experimental.md:76
+msgid ""
+"Applies `filter` to the current tree and writes the SHA-1 hash of the "
+"resulting tree as a text file at `path`. The filter itself does not appear "
+"in the output — only the hash it produces."
+msgstr ""
+"将 `filter` 应用于当前 tree，并把结果 tree 的 SHA-1 哈希作为文本文件写入 "
+"`path`。过滤器本身不会出现在输出中——只有它生成的哈希会出现。"
+
+#: src/reference/experimental.md:79
+msgid ""
+"This lets you record a stable, content-addressed reference to a subtree "
+"alongside other files."
+msgstr "这允许你在其他文件旁记录一个稳定、按内容寻址的子 tree 引用。"
+
+#: src/reference/experimental.md:81
+msgid ""
+"Example: `:#version.txt[:/sub1]` writes the SHA of the `sub1` directory tree "
+"into `version.txt`."
+msgstr "示例：`:#version.txt[:/sub1]` 会将 `sub1` 目录 tree 的 SHA 写入 `version.txt`。"
+
+#: src/reference/experimental.md:83
+msgid "Starlark filter **`:!path/to/script[context filter]`**"
+msgstr "Starlark 过滤器 **`:!path/to/script[context filter]`**"
+
+#: src/reference/experimental.md:84
+msgid ""
+"Evaluates a [Starlark](https://github.com/bazelbuild/starlark) script stored "
+"in the repository and uses the filter it produces. The script file is loaded "
+"from `path` with a `.star` extension appended automatically."
+msgstr ""
+"求值仓库中存储的 [Starlark](https://github.com/bazelbuild/starlark) 脚本，并"
+"使用它生成的过滤器。脚本文件会从 `path` 加载，并自动追加 `.star` 扩展名。"
+
+#: src/reference/experimental.md:88
+msgid ""
+"The optional `[context filter]` scopes the tree that is visible to the "
+"script: the context filter is applied to the input tree first, and the "
+"result is what the script sees as `tree`. The context filter does not affect "
+"the filter that the script returns — it only controls what the script can "
+"read."
+msgstr ""
+"可选的 `[context filter]` 会限定脚本可见的 tree：上下文过滤器会先应用到输入 "
+"tree，结果就是脚本看到的 `tree`。上下文过滤器不会影响脚本返回的过滤器——它只"
+"控制脚本可以读取什么。"
+
+#: src/reference/experimental.md:93
+msgid ""
+"The script file itself is always included in the output tree alongside "
+"whatever the script's filter selects."
+msgstr "脚本文件本身始终会与脚本过滤器选中的内容一起包含在输出 tree 中。"
+
+#: src/reference/experimental.md:96
+msgid "**Script contract**"
+msgstr "**脚本契约**"
+
+#: src/reference/experimental.md:98
+msgid ""
+"The script must assign a `Filter` value to the variable named `filter`. At "
+"the start of execution `filter` is pre-set to a no-op filter, so a minimal "
+"script that selects nothing can simply leave it unchanged, or assign a new "
+"value:"
+msgstr ""
+"脚本必须将一个 `Filter` 值赋给名为 `filter` 的变量。执行开始时，`filter` 会被"
+"预设为 no-op 过滤器，因此一个什么都不选择的最小脚本可以直接保持它不变，或赋予"
+"新值："
+
+#: src/reference/experimental.md:103
+msgid "\"src\""
+msgstr "\"src\""
+
+#: src/reference/experimental.md:106
+msgid "**Global variables available in the script**"
+msgstr "**脚本中可用的全局变量**"
+
+#: src/reference/experimental.md:108
+msgid "Variable"
+msgstr "变量"
+
+#: src/reference/experimental.md:108
+msgid "Type"
+msgstr "类型"
+
+#: src/reference/experimental.md:110
+msgid "`filter`"
+msgstr "`filter`"
+
+#: src/reference/experimental.md:110
+msgid "`Filter`"
+msgstr "`Filter`"
+
+#: src/reference/experimental.md:110
+msgid "Starts as a no-op filter. Assign your result here."
+msgstr "初始为 no-op 过滤器。请在这里赋予你的结果。"
+
+#: src/reference/experimental.md:111
+msgid "`tree`"
+msgstr "`tree`"
+
+#: src/reference/experimental.md:111
+msgid "`Tree`"
+msgstr "`Tree`"
+
+#: src/reference/experimental.md:111
+msgid ""
+"The commit tree (or the context-filtered tree if a context filter was given)."
+msgstr "提交 tree（如果给出了上下文过滤器，则为上下文过滤后的 tree）。"
+
+#: src/reference/experimental.md:113
+msgid "**Global functions**"
+msgstr "**全局函数**"
+
+#: src/reference/experimental.md:115
+msgid "Function"
+msgstr "函数"
+
+#: src/reference/experimental.md:117
+msgid "`compose([f1, f2, ...])`"
+msgstr "`compose([f1, f2, ...])`"
+
+#: src/reference/experimental.md:117
+msgid "Overlay multiple filters, same semantics as `:[f1,f2,...]`."
+msgstr "叠加多个过滤器，语义与 `:[f1,f2,...]` 相同。"
+
+#: src/reference/experimental.md:119
+msgid "**`Filter` methods**"
+msgstr "**`Filter` 方法**"
+
+#: src/reference/experimental.md:121
+msgid "All methods return a new `Filter` and can be chained."
+msgstr "所有方法都会返回一个新的 `Filter`，并且可以链式调用。"
+
+#: src/reference/experimental.md:123 src/reference/experimental.md:151
+msgid "Method"
+msgstr "方法"
+
+#: src/reference/experimental.md:125
+msgid "`filter.subdir(path)`"
+msgstr "`filter.subdir(path)`"
+
+#: src/reference/experimental.md:125
+msgid "Select a subdirectory and make it the root."
+msgstr "选择一个子目录并使其成为根。"
+
+#: src/reference/experimental.md:126
+msgid "`filter.prefix(path)`"
+msgstr "`filter.prefix(path)`"
+
+#: src/reference/experimental.md:126
+msgid "Place the tree under a subdirectory prefix."
+msgstr "将 tree 放到某个子目录前缀下。"
+
+#: src/reference/experimental.md:127
+msgid "`filter.file(path)`"
+msgstr "`filter.file(path)`"
+
+#: src/reference/experimental.md:127
+msgid "Select a single file, keeping its path."
+msgstr "选择单个文件，并保留其路径。"
+
+#: src/reference/experimental.md:128
+msgid "`filter.rename(dst, src)`"
+msgstr "`filter.rename(dst, src)`"
+
+#: src/reference/experimental.md:128
+msgid "Select `src` and place it at `dst`."
+msgstr "选择 `src` 并将其放到 `dst`。"
+
+#: src/reference/experimental.md:129
+msgid "`filter.pattern(pattern)`"
+msgstr "`filter.pattern(pattern)`"
+
+#: src/reference/experimental.md:129
+msgid "Select files/directories matching a glob pattern (`*` allowed)."
+msgstr "选择匹配 glob 模式的文件/目录（允许 `*`）。"
+
+#: src/reference/experimental.md:130
+msgid "`filter.chain(other)`"
+msgstr "`filter.chain(other)`"
+
+#: src/reference/experimental.md:130
+msgid "Apply `other` after this filter."
+msgstr "在此过滤器之后应用 `other`。"
+
+#: src/reference/experimental.md:131
+msgid "`filter.nop()`"
+msgstr "`filter.nop()`"
+
+#: src/reference/experimental.md:131
+msgid "No-op; passes the tree through unchanged."
+msgstr "No-op；让 tree 原样通过。"
+
+#: src/reference/experimental.md:132
+msgid "`filter.empty()`"
+msgstr "`filter.empty()`"
+
+#: src/reference/experimental.md:132
+msgid "Produce an empty tree."
+msgstr "生成一个空 tree。"
+
+#: src/reference/experimental.md:133
+msgid "`filter.linear()`"
+msgstr "`filter.linear()`"
+
+#: src/reference/experimental.md:133
+msgid "Linearise history (drop merge parents)."
+msgstr "线性化历史（丢弃 merge 父项）。"
+
+#: src/reference/experimental.md:134
+msgid "`filter.workspace(path)`"
+msgstr "`filter.workspace(path)`"
+
+#: src/reference/experimental.md:134
+msgid "Apply the workspace filter rooted at `path`."
+msgstr "应用根位于 `path` 的 workspace 过滤器。"
+
+#: src/reference/experimental.md:135
+msgid "`filter.stored(path)`"
+msgstr "`filter.stored(path)`"
+
+#: src/reference/experimental.md:135
+msgid "Apply the stored filter at `path.josh`."
+msgstr "应用 `path.josh` 处的存储式过滤器。"
+
+#: src/reference/experimental.md:136
+msgid "`filter.starlark(path, context_filter)`"
+msgstr "`filter.starlark(path, context_filter)`"
+
+#: src/reference/experimental.md:136
+msgid "Apply another Starlark filter with an optional context filter."
+msgstr "应用另一个 Starlark 过滤器，并可带一个可选上下文过滤器。"
+
+#: src/reference/experimental.md:137
+msgid "`filter.author(name, email)`"
+msgstr "`filter.author(name, email)`"
+
+#: src/reference/experimental.md:137
+msgid "Override the commit author."
+msgstr "覆盖提交作者。"
+
+#: src/reference/experimental.md:138
+msgid "`filter.committer(name, email)`"
+msgstr "`filter.committer(name, email)`"
+
+#: src/reference/experimental.md:138
+msgid "Override the committer."
+msgstr "覆盖提交者。"
+
+#: src/reference/experimental.md:139
+msgid "`filter.message(template)`"
+msgstr "`filter.message(template)`"
+
+#: src/reference/experimental.md:139
+msgid "Rewrite commit messages using a template."
+msgstr "使用模板重写提交消息。"
+
+#: src/reference/experimental.md:140
+msgid "`filter.unsign()`"
+msgstr "`filter.unsign()`"
+
+#: src/reference/experimental.md:140
+msgid "Strip GPG signatures from commits."
+msgstr "从提交中剥离 GPG 签名。"
+
+#: src/reference/experimental.md:141
+msgid "`filter.prune_trivial_merge()`"
+msgstr "`filter.prune_trivial_merge()`"
+
+#: src/reference/experimental.md:141
+msgid "Remove merge commits whose tree equals their first parent."
+msgstr "移除 tree 等于其第一个父项的 merge commit。"
+
+#: src/reference/experimental.md:142
+msgid "`filter.hook(hook)`"
+msgstr "`filter.hook(hook)`"
+
+#: src/reference/experimental.md:142
+msgid "Apply a hook filter."
+msgstr "应用 hook 过滤器。"
+
+#: src/reference/experimental.md:143
+msgid "`filter.with_meta(key, value)`"
+msgstr "`filter.with_meta(key, value)`"
+
+#: src/reference/experimental.md:143
+msgid "Attach metadata to the filter."
+msgstr "将元数据附加到过滤器。"
+
+#: src/reference/experimental.md:144
+msgid "`filter.is_nop()`"
+msgstr "`filter.is_nop()`"
+
+#: src/reference/experimental.md:144
+msgid "Returns `True` if the filter is a no-op."
+msgstr "如果过滤器是 no-op，则返回 `True`。"
+
+#: src/reference/experimental.md:145
+msgid "`filter.peel()`"
+msgstr "`filter.peel()`"
+
+#: src/reference/experimental.md:145
+msgid "Strip metadata from the filter."
+msgstr "从过滤器中剥离元数据。"
+
+#: src/reference/experimental.md:147
+msgid "**`Tree` methods**"
+msgstr "**`Tree` 方法**"
+
+#: src/reference/experimental.md:149
+msgid ""
+"The `tree` object provides read-only access to the commit tree visible to "
+"the script."
+msgstr "`tree` 对象提供对脚本可见提交 tree 的只读访问。"
+
+#: src/reference/experimental.md:153
+msgid "`tree.file(path)`"
+msgstr "`tree.file(path)`"
+
+#: src/reference/experimental.md:153
+msgid ""
+"Returns the text content of the file at `path`, or an empty string if absent "
+"or binary."
+msgstr "返回 `path` 处文件的文本内容；如果不存在或为二进制文件，则返回空字符串。"
+
+#: src/reference/experimental.md:154
+msgid "`tree.files(path)`"
+msgstr "`tree.files(path)`"
+
+#: src/reference/experimental.md:154
+msgid "Returns a list of file paths that are direct children of `path`."
+msgstr "返回作为 `path` 直接子项的文件路径列表。"
+
+#: src/reference/experimental.md:155
+msgid "`tree.dirs(path)`"
+msgstr "`tree.dirs(path)`"
+
+#: src/reference/experimental.md:155
+msgid "Returns a list of directory paths that are direct children of `path`."
+msgstr "返回作为 `path` 直接子项的目录路径列表。"
+
+#: src/reference/experimental.md:156
+msgid "`tree.tree(path)`"
+msgstr "`tree.tree(path)`"
+
+#: src/reference/experimental.md:156
+msgid "Returns a `Tree` object rooted at `path`."
+msgstr "返回根位于 `path` 的 `Tree` 对象。"
+
+#: src/reference/experimental.md:158
+msgid "**Example**"
+msgstr "**示例**"
+
+#: src/reference/experimental.md:160
+msgid ""
+"A script that dynamically includes every top-level subdirectory as a "
+"prefixed subtree:"
+msgstr "一个将每个顶层子目录动态包含为带前缀子 tree 的脚本："
+
+#: src/reference/experimental.md:163
+msgid "# st/config.star\n"
+msgstr "# st/config.star\n"
+
+#: src/reference/experimental.md:164
+msgid "\"\""
+msgstr "\"\""
+
+#: src/reference/experimental.md:168
+msgid "Applied with `:!st/config`."
+msgstr "使用 `:!st/config` 应用。"
+
+#: src/reference/workspace.md:5
+msgid ""
+"For the sake of this example we will assume a `josh-proxy` instance is "
+"running and serving a repo on `http://josh/world.git` with some shared code "
+"in `shared`."
+msgstr ""
+"为便于示例，我们假设有一个 `josh-proxy` 实例正在运行，并在 "
+"`http://josh/world.git` 上提供一个仓库，其中 `shared` 下有一些共享代码。"
+
+#: src/reference/workspace.md:8
+msgid "Create a new workspace"
+msgstr "创建新的 workspace"
+
+#: src/reference/workspace.md:11
+msgid ""
+"To create a new workspace in the path `ws/hello` simply clone it as if it "
+"already exists:"
+msgstr "要在路径 `ws/hello` 创建新的 workspace，只需像它已经存在一样克隆它："
+
+#: src/reference/workspace.md:13
+msgid ""
+"    $ git clone http://josh/world.git:workspace=ws/hello.git\n"
+"    "
+msgstr ""
+"    $ git clone http://josh/world.git:workspace=ws/hello.git\n"
+"    "
+
+#: src/reference/workspace.md:15
+msgid ""
+"`git` will report that you appear to have cloned an empty repository if that "
+"path does not yet exist. If you don't get this message it means that the "
+"path already exists in the repo but may not yet have configured any path "
+"mappings."
+msgstr ""
+"如果该路径尚不存在，`git` 会报告你似乎克隆了一个空仓库。如果你没有看到这条"
+"消息，则表示该路径已经存在于仓库中，但可能尚未配置任何路径映射。"
+
+#: src/reference/workspace.md:20
+msgid ""
+"The next step is to add some path mapping to the `workspace.josh` file in "
+"the root of the workspace:"
+msgstr "下一步是在 workspace 根目录的 `workspace.josh` 文件中添加一些路径映射："
+
+#: src/reference/workspace.md:23
+msgid ""
+"    $ cd hello\n"
+"    $ echo \"mod/a = :/shared/a\" > workspace.josh\n"
+"    "
+msgstr ""
+"    $ cd hello\n"
+"    $ echo \"mod/a = :/shared/a\" > workspace.josh\n"
+"    "
+
+#: src/reference/workspace.md:26
+msgid "And and commit the changes:"
+msgstr "然后提交这些变更："
+
+#: src/reference/workspace.md:28
+msgid ""
+"    $ git add workspace.josh\n"
+"    $ git commit -m \"add workspace\"\n"
+"    "
+msgstr ""
+"    $ git add workspace.josh\n"
+"    $ git commit -m \"add workspace\"\n"
+"    "
+
+#: src/reference/workspace.md:31
+msgid ""
+"If the path did not exist previously, the resulting commit will be a root "
+"commit that does not share any history with the `world.git` repo. This means "
+"a normal `git push` will be rejected at this point. To get correct history, "
+"the resulting commit needs to be a based on the history that already exists "
+"in `world.git`. There is however no way to do this locally, because we don't "
+"have the data required for this. Also, the resulting tree should contain the "
+"contents of `shared/a` mapped to `mod/a` which means it needs to be produced "
+"on the server side because we don't have the files to put there."
+msgstr ""
+"如果该路径之前不存在，生成的提交会是一个 root commit，不与 `world.git` 仓库"
+"共享任何历史。这意味着此时普通的 `git push` 会被拒绝。为了获得正确的历史，"
+"生成的提交需要基于 `world.git` 中已经存在的历史。然而，本地无法做到这一点，"
+"因为我们没有所需的数据。另外，生成的 tree 应包含映射到 `mod/a` 的 `shared/a` "
+"内容，这意味着它需要在服务端生成，因为我们本地没有可放入那里的文件。"
+
+#: src/reference/workspace.md:40
+msgid "To accomplish that push with the create option:"
+msgstr "要完成这一点，请使用 create 选项推送："
+
+#: src/reference/workspace.md:45
+msgid ""
+"**Note**: While it is perfectly possible to use Josh without a code review "
+"system, it is strongly recommended to use some form of code review to be "
+"able to inspect commits created by Josh before they get into the immutable "
+"history of your main repository."
+msgstr ""
+"**注意**：虽然完全可以在没有代码审查系统的情况下使用 Josh，但强烈建议使用某种"
+"形式的代码审查，以便在 Josh 创建的提交进入主仓库不可变历史之前检查它们。"
+
+#: src/reference/workspace.md:49
+msgid ""
+"As the resulting commit is created on the server side we need to get it from "
+"the server:"
+msgstr "由于生成的提交是在服务端创建的，我们需要从服务端获取它："
+
+#: src/reference/workspace.md:53
+msgid ""
+"Now you should see `mod/a` populated with the content of the shared code."
+msgstr "现在你应该会看到 `mod/a` 已填充共享代码的内容。"
+
+#: src/reference/workspace.md:56
+msgid "Map a shared path into a workspace"
+msgstr "将共享路径映射到 workspace 中"
+
+#: src/reference/workspace.md:59
+msgid ""
+"To add shared path to a location in the workspace that does not exist yet, "
+"first add an entry to the `workspace.josh` file and commit that."
+msgstr ""
+"要将共享路径添加到 workspace 中尚不存在的位置，先向 `workspace.josh` 文件添加"
+"一个条目并提交。"
+
+#: src/reference/workspace.md:62
+msgid ""
+"You can add the mapping at the end of the file using a simple syntax, and "
+"rely on josh to rewrite it for you in a canonical way."
+msgstr "你可以使用简单语法在文件末尾添加映射，并依赖 josh 为你将其重写为规范形式。"
+
+#: src/reference/workspace.md:68
+msgid ""
+"At this point the path is of course empty, so the commit needs to be pushed "
+"to the server. When the same commit is then fetched back it will have the "
+"mapped path populated with the shared content."
+msgstr ""
+"此时该路径当然是空的，因此需要将提交推送到服务端。随后再取回同一个提交时，"
+"映射路径将填充共享内容。"
+
+#: src/reference/workspace.md:72
+msgid ""
+"When the commit is pushed, josh will notify you about the rewrite. You can "
+"fetch the rewritten commit using the advertised SHA. Alternatively, you can "
+"use [git sync](./cli.md#git-sync) which will do it for you."
+msgstr ""
+"推送提交时，josh 会通知你发生了重写。你可以使用提示的 SHA 获取重写后的提交。"
+"或者，也可以使用 [git sync](./cli.md#git-sync)，它会为你完成这一步。"
+
+#: src/reference/workspace.md:76
+msgid "Publish a non-shared path into a shared location"
+msgstr "将非共享路径发布到共享位置"
+
+#: src/reference/workspace.md:79
+msgid ""
+"The steps here are exactly the same as for the mapping example above. The "
+"only difference being that the path already exists in the workspace but not "
+"in the shared location."
+msgstr ""
+"这里的步骤与上面的映射示例完全相同。唯一不同的是，该路径已经存在于 workspace "
+"中，但不存在于共享位置中。"
+
+#: src/reference/workspace.md:82
+msgid "Remove a mapping"
+msgstr "移除映射"
+
+#: src/reference/workspace.md:85
+msgid ""
+"To remove a mapping remove the corresponding entry from the `workspace.josh` "
+"file. The content of the previously shared path will stay in the workspace. "
+"That means the main repo will have two copies of that path from that point "
+"on. Effectively creating a fork of that code."
+msgstr ""
+"要移除映射，请从 `workspace.josh` 文件中删除对应条目。之前共享路径的内容会"
+"保留在 workspace 中。这意味着从此以后主仓库将拥有该路径的两份副本，实际上创建"
+"了该代码的一个 fork。"
+
+#: src/reference/workspace.md:89
+msgid "Remove a mapped path"
+msgstr "移除已映射路径"
+
+#: src/reference/workspace.md:92
+msgid ""
+"To remove a mapped path as well as it's contents, remove the entry from the "
+"`workspace.josh` file and also remove the path inside the workspace using "
+"`git rm`."
+msgstr ""
+"要移除已映射路径及其内容，请从 `workspace.josh` 文件中删除该条目，并使用 "
+"`git rm` 移除 workspace 内的该路径。"
+
+#: src/reference/forge.md:1
+msgid "Forge Integration"
+msgstr "代码托管平台集成"
+
+#: src/reference/forge.md:3
+msgid ""
+"Forge integration is an **optional** feature that connects `josh` to a code "
+"hosting platform (a \"forge\") such as GitHub. It is not required for normal "
+"git operations — cloning, pushing, and pulling all work without it, even "
+"with private repositories."
+msgstr ""
+"代码托管平台集成是一项**可选**功能，用于将 `josh` 连接到 GitHub 等代码托管平台"
+"（\"forge\"）。普通 git 操作不需要它——即使是私有仓库，克隆、推送和拉取也都能"
+"在没有它的情况下工作。"
+
+#: src/reference/forge.md:7
+msgid ""
+"Forge integration is specifically used for **automatic pull request "
+"management** during [stacked changes](../guide/stacked-changes.md) "
+"workflows. When you push a stack of commits with `josh publish`, `josh` can "
+"automatically create or update one pull request per commit on the forge."
+msgstr ""
+"代码托管平台集成专门用于在[堆叠式变更](../guide/stacked-changes.md)工作流中"
+"进行**自动 pull request 管理**。当你使用 `josh publish` 推送一组提交时，`josh` "
+"可以在代码托管平台上为每个提交自动创建或更新一个 pull request。"
+
+#: src/reference/forge.md:12
+msgid "GitHub"
+msgstr "GitHub"
+
+#: src/reference/forge.md:14
+msgid "GitHub is currently the only supported forge."
+msgstr "GitHub 是当前唯一支持的代码托管平台。"
+
+#: src/reference/forge.md:16
+msgid "Authentication"
+msgstr "认证"
+
+#: src/reference/forge.md:18
+msgid ""
+"`josh` uses GitHub's [device flow](https://docs.github.com/en/apps/oauth-"
+"apps/building-oauth-apps/authorizing-oauth-apps#device-flow) for "
+"authentication — the same flow used by the official GitHub CLI."
+msgstr ""
+"`josh` 使用 GitHub 的 [device flow](https://docs.github.com/en/apps/oauth-apps/"
+"building-oauth-apps/authorizing-oauth-apps#device-flow) 进行认证——这与官方 "
+"GitHub CLI 使用的是同一流程。"
+
+#: src/reference/forge.md:21
+msgid "**Log in:**"
+msgstr "**登录：**"
+
+#: src/reference/forge.md:27
+msgid ""
+"This prints a URL and a one-time code. If clipboard access is available the "
+"code is also copied automatically, otherwise it is only printed to the "
+"terminal. Open the URL in your browser, enter the code, and authorize the "
+"application."
+msgstr ""
+"这会打印一个 URL 和一次性代码。如果可以访问剪贴板，该代码也会自动复制；否则"
+"只会打印到终端。请在浏览器中打开该 URL，输入代码并授权应用。"
+
+#: src/reference/forge.md:31
+msgid ""
+"The token is stored in `~/.config/josh-cli/credentials.json` with `0600` "
+"permissions."
+msgstr "令牌会以 `0600` 权限存储在 `~/.config/josh-cli/credentials.json` 中。"
+
+#: src/reference/forge.md:33
+msgid "**Log out:**"
+msgstr "**登出：**"
+
+#: src/reference/forge.md:39
+msgid ""
+"**Alternatively**, set the `GH_TOKEN` environment variable to a [personal "
+"access token](https://docs.github.com/en/authentication/keeping-your-account-"
+"and-data-secure/managing-your-personal-access-tokens). This takes precedence "
+"over any stored token and is useful in CI environments:"
+msgstr ""
+"**或者**，将 `GH_TOKEN` 环境变量设置为[个人访问令牌](https://docs.github.com/"
+"en/authentication/keeping-your-account-and-data-secure/managing-your-personal-"
+"access-tokens)。它优先于任何已存储令牌，并且适合 CI 环境："
+
+#: src/reference/forge.md:47
+msgid "What forge integration enables"
+msgstr "代码托管平台集成启用的能力"
+
+#: src/reference/forge.md:49
+msgid ""
+"Once authenticated, `josh publish` will, in addition to pushing the git refs:"
+msgstr "认证后，`josh publish` 除了推送 git ref，还会："
+
+#: src/reference/forge.md:51
+msgid "**Create** a pull request for each commit that does not yet have one."
+msgstr "为尚无 pull request 的每个提交**创建**一个 pull request。"
+
+#: src/reference/forge.md:52
+msgid ""
+"**Update** existing pull requests (title, body, base branch) when commits "
+"are amended or rebased."
+msgstr "当提交被 amend 或 rebase 时，**更新**现有 pull request（标题、正文、base 分支）。"
+
+#: src/reference/forge.md:54
+msgid ""
+"**Manage draft status** automatically: pull requests whose base branch is "
+"not the repository's default branch are marked as drafts, and promoted to "
+"\"ready for review\" once they target the default branch directly."
+msgstr ""
+"自动**管理 draft 状态**：base 分支不是仓库默认分支的 pull request 会被标记为 "
+"draft；一旦它们直接以默认分支为目标，就会提升为 \"ready for review\"。"
+
+#: src/reference/forge.md:58
+msgid ""
+"See the [Stacked changes](../guide/stacked-changes.md) guide for a full "
+"walkthrough."
+msgstr "完整演练请参见[堆叠式变更](../guide/stacked-changes.md)指南。"
+
+#: src/reference/graphql.md:4
+msgid ""
+"Josh implements a GraphQL API to query the content of repositories without a "
+"need to clone them via a git client."
+msgstr "Josh 实现了一个 GraphQL API，可查询仓库内容，而无需通过 git 客户端克隆仓库。"
+
+#: src/reference/graphql.md:7
+msgid "The API is exposed at:"
+msgstr "API 暴露在："
+
+#: src/reference/graphql.md:9
+msgid ""
+"    http://hostname/~/graphql/name_of_repo.git\n"
+"    "
+msgstr ""
+"    http://hostname/~/graphql/name_of_repo.git\n"
+"    "
+
+#: src/reference/graphql.md:11
+msgid ""
+"To explore the API and generated documentation, an interactive GraphQL shell "
+"can be found at:"
+msgstr "要探索 API 和生成的文档，可以在以下位置找到交互式 GraphQL shell："
+
+#: src/reference/graphql.md:13
+msgid ""
+"    http://hostname/~/graphiql/name_of_repo.git\n"
+"    "
+msgstr ""
+"    http://hostname/~/graphiql/name_of_repo.git\n"
+"    "
+
+#: src/reference/proxy.md:2
+msgid "josh-proxy"
+msgstr "josh-proxy"
+
+#: src/reference/proxy.md:5
+msgid ""
+"**Note**: `josh-proxy` is primarily intended for infrastructure and DevOps "
+"use cases — for example, to deploy a shared caching proxy for your team or "
+"CI/CD pipelines so that ordinary `git clone` works without any special "
+"client tooling. Individual developers can use the [`josh` CLI](../reference/"
+"cli.md) instead, which requires no server setup."
+msgstr ""
+"**注意**：`josh-proxy` 主要面向基础设施和 DevOps 用例——例如，为团队或 CI/CD "
+"流水线部署共享缓存代理，使普通 `git clone` 无需任何特殊客户端工具即可工作。"
+"个人开发者可以改用无需服务端设置的 [`josh` CLI](../reference/cli.md)。"
+
+#: src/reference/proxy.md:11
+msgid ""
+"Josh provides an HTTP proxy server that can be used with any git hosting "
+"service which communicates via HTTP."
+msgstr "Josh 提供了一个 HTTP 代理服务器，可与任何通过 HTTP 通信的 git 托管服务一起使用。"
+
+#: src/reference/proxy.md:14
+msgid ""
+"It needs the URL of the upstream server and a local directory to store its "
+"data. Optionally, a port to listen on can be specified. For example, running "
+"a local `josh-proxy` instance for github.com on port 8000:"
+msgstr ""
+"它需要上游服务器的 URL，以及用于存储数据的本地目录。也可以指定要监听的端口。"
+"例如，在端口 8000 上为 github.com 运行本地 `josh-proxy` 实例："
+
+#: src/reference/proxy.md:18
+msgid ""
+"    $ docker run -p 8000:8000 -e JOSH_REMOTE=https://github.com -v josh-vol:/"
+"data/git joshproject/josh-proxy:latest\n"
+"    "
+msgstr ""
+"    $ docker run -p 8000:8000 -e JOSH_REMOTE=https://github.com -v josh-vol:/"
+"data/git joshproject/josh-proxy:latest\n"
+"    "
+
+#: src/reference/proxy.md:20
+msgid ""
+"**Note**: While `josh-proxy` is intended to be used with a http upstream it "
+"can also proxy for an ssh upstream when `ssh` is used instead of `http` in "
+"the url. In that case it will use the ssh private key of the current user "
+"(just like git would) and take the username from the downstream http "
+"request. This mode of operation can be useful for evaluation or local use by "
+"individual developers but should never be used on a normal server deployment."
+msgstr ""
+"**注意**：虽然 `josh-proxy` 旨在与 http 上游一起使用，但当 URL 中使用 `ssh` "
+"而不是 `http` 时，它也可以代理 ssh 上游。在这种情况下，它会使用当前用户的 ssh "
+"私钥（就像 git 一样），并从下游 http 请求中取得用户名。这种运行模式可用于评估"
+"或个人开发者本地使用，但绝不应在普通服务端部署中使用。"
+
+#: src/reference/proxy.md:27
+msgid ""
+"For a first example of how to make use of josh, just the josh documentation "
+"can be checked out as its own repository via this command:"
+msgstr "作为使用 josh 的第一个示例，可以通过此命令仅将 josh 文档签出为自己的仓库："
+
+#: src/reference/proxy.md:30 src/reference/proxy.md:70
+msgid ""
+"    $ git clone http://localhost:8000/josh-project/josh.git:/docs.git\n"
+"    "
+msgstr ""
+"    $ git clone http://localhost:8000/josh-project/josh.git:/docs.git\n"
+"    "
+
+#: src/reference/proxy.md:32
+msgid ""
+"**Note**: This URL needs to contain the `.git` suffix twice: once after the "
+"original path and once more after the filter spec."
+msgstr "**注意**：此 URL 需要包含两次 `.git` 后缀：一次在原始路径之后，另一次在过滤器规格之后。"
+
+#: src/reference/proxy.md:35
+msgid ""
+"`josh-proxy` supports read and write access to the repository, so when "
+"making changes to any files in the filtered repository, you can just commit "
+"and push them like you are used to."
+msgstr ""
+"`josh-proxy` 支持对仓库的读写访问，因此在过滤后的仓库中修改任何文件时，你可以"
+"像平常一样提交并推送。"
+
+#: src/reference/proxy.md:39
+msgid ""
+"**Note**: The proxy is semantically stateless. The data inside the docker "
+"volume is only persisted across runs for performance reasons. This has two "
+"important implications for deployment:"
+msgstr ""
+"**注意**：从语义上讲，代理是无状态的。docker volume 中的数据仅出于性能原因在"
+"多次运行之间保留。这对部署有两个重要影响："
+
+#: src/reference/proxy.md:41
+msgid ""
+"The data does not need to be backed up unless working with very large repos "
+"where rebuilding would be very expensive. And 2) Multiple instances of josh-"
+"proxy can be used interchangeably for availability or load balancing "
+"purposes."
+msgstr ""
+"除非处理的是重建成本非常高的大型仓库，否则数据无需备份。并且 2）可以互换使用"
+"多个 josh-proxy 实例，以实现可用性或负载均衡。"
+
+#: src/reference/proxy.md:45
+msgid "URL syntax and breakdown"
+msgstr "URL 语法和拆解"
+
+#: src/reference/proxy.md:48
+msgid "This is the URL of a `josh-proxy` instance:"
+msgstr "这是一个 `josh-proxy` 实例的 URL："
+
+#: src/reference/proxy.md:50
+msgid ""
+"    http://localhost:8000\n"
+"    "
+msgstr ""
+"    http://localhost:8000\n"
+"    "
+
+#: src/reference/proxy.md:52
+msgid ""
+"This is the repository location on the upstream host on which to perform the "
+"filter operations:"
+msgstr "这是上游主机上要执行过滤操作的仓库位置："
+
+#: src/reference/proxy.md:56
+msgid "This is the set of filter operations to perform:"
+msgstr "这是要执行的一组过滤操作："
+
+#: src/reference/proxy.md:60
+msgid ""
+"Much more information on the available filters and the syntax of all filters "
+"is covered in detail in the [filters](./filters.md) section."
+msgstr "关于可用过滤器和所有过滤器语法的更多信息，请参见[过滤器](./filters.md)部分。"
+
+#: src/reference/proxy.md:63
+msgid "Repository naming"
+msgstr "仓库命名"
+
+#: src/reference/proxy.md:66
+msgid ""
+"By default, a git URL is used to point to the remote repository to download "
+"_and also_ to dictate how the local repository shall be named.  It's "
+"important to learn that the last name in the URL is what the local git "
+"client will name the new, local repository. For example:"
+msgstr ""
+"默认情况下，git URL 用于指向要下载的远程仓库，_同时_也决定本地仓库如何命名。"
+"需要注意的是，URL 中的最后一个名称就是本地 git 客户端给新本地仓库使用的名称。"
+"例如："
+
+#: src/reference/proxy.md:72
+msgid ""
+"will create the new repository at directory `docs`, as `docs.git` is the "
+"last name in the URL."
+msgstr "会在目录 `docs` 处创建新仓库，因为 `docs.git` 是 URL 中的最后一个名称。"
+
+#: src/reference/proxy.md:74
+msgid ""
+"By default, this leads to rather odd-looking repositories when the `prefix` "
+"filter is the final filter of a URL:"
+msgstr "默认情况下，当 `prefix` 过滤器是 URL 的最后一个过滤器时，这会导致仓库看起来很奇怪："
+
+#: src/reference/proxy.md:77
+msgid ""
+"    $ git clone http://localhost:8000/josh-project/josh.git:/docs:"
+"prefix=josh-docs.git\n"
+"    "
+msgstr ""
+"    $ git clone http://localhost:8000/josh-project/josh.git:/docs:"
+"prefix=josh-docs.git\n"
+"    "
+
+#: src/reference/proxy.md:79
+msgid ""
+"This will still clone just the josh documentation, but the final directory "
+"structure will look like this:"
+msgstr "这仍然只会克隆 josh 文档，但最终目录结构会是这样："
+
+#: src/reference/proxy.md:86
+msgid ""
+"Having the root repository directory name be the fully-specified filter is "
+"most likely not what was intended. This results from git's reuse and "
+"repurposing of the remote URL, as `prefix=josh-docs` is the final name in "
+"the URL. With no other alternatives, this gets used for the repository name."
+msgstr ""
+"将根仓库目录名设为完整指定的过滤器，通常并不是期望结果。这是因为 git 会复用并"
+"重新解释远程 URL，而 `prefix=josh-docs` 是 URL 中的最终名称。在没有其他替代项"
+"时，它会被用作仓库名称。"
+
+#: src/reference/proxy.md:90
+msgid ""
+"To explicitly specify a repository name, provide the desired name after the "
+"URL when cloning a new repository:"
+msgstr "要显式指定仓库名称，请在克隆新仓库时在 URL 后提供所需名称："
+
+#: src/reference/proxy.md:93
+msgid ""
+"    $ git clone http://localhost:8000/josh-project/josh.git:/docs:"
+"prefix=josh-docs.git my-repo\n"
+"    "
+msgstr ""
+"    $ git clone http://localhost:8000/josh-project/josh.git:/docs:"
+"prefix=josh-docs.git my-repo\n"
+"    "
+
+#: src/reference/proxy.md:95
+msgid "Retry with backoff"
+msgstr "带退避的重试"
+
+#: src/reference/proxy.md:98
+msgid ""
+"`josh-proxy` automatically retries transient upstream HTTP errors (for "
+"example, 5xx responses) with exponential backoff. By default up to 3 retries "
+"are attempted, with a delay starting at 1 second and capped at 5 seconds. "
+"The number of retries can be configured with the `--http-retry` flag "
+"(default: `3`):"
+msgstr ""
+"`josh-proxy` 会使用指数退避自动重试临时上游 HTTP 错误（例如 5xx 响应）。默认"
+"最多尝试 3 次重试，延迟从 1 秒开始，最高限制为 5 秒。可以使用 `--http-retry` "
+"标志配置重试次数（默认：`3`）："
+
+#: src/reference/proxy.md:103
+msgid ""
+"    $ josh-proxy --remote https://github.com --local /data/git --http-retry "
+"5\n"
+"    "
+msgstr ""
+"    $ josh-proxy --remote https://github.com --local /data/git --http-retry "
+"5\n"
+"    "
+
+#: src/reference/proxy.md:105
+msgid "Set `--http-retry 0` to disable retries entirely."
+msgstr "设置 `--http-retry 0` 可完全禁用重试。"
+
+#: src/reference/proxy.md:107
+msgid "Serving a github repo"
+msgstr "提供 github 仓库服务"
+
+#: src/reference/proxy.md:110
+msgid ""
+"To prompt for authentication, Josh relies on the server requesting it on "
+"fetch. When using a server which doesn't need authentication for fetching, "
+"Josh will not automatically prompt for authentication when pushing, and it "
+"will be impossible to provide credentials for pushing."
+msgstr ""
+"为了提示认证，Josh 依赖服务端在 fetch 时请求认证。当使用不需要认证即可 fetch "
+"的服务器时，Josh 在 push 时不会自动提示认证，也无法为 push 提供凭据。"
+
+#: src/reference/proxy.md:114
+msgid ""
+"To solve this, you need to pass the `--require-auth` option to josh-proxy. "
+"This can be done with `JOSH_EXTRA_OPTS` when using the docker image like so:"
+msgstr ""
+"为解决此问题，需要向 josh-proxy 传递 `--require-auth` 选项。使用 docker 镜像时，"
+"可以像这样通过 `JOSH_EXTRA_OPTS` 完成："
+
+#: src/reference/proxy.md:117
+msgid ""
+"`docker run -d -p 8000:8000 -e JOSH_EXTRA_OPTS=\"--require-auth\" -e "
+"JOSH_REMOTE=https://github.com/josh-project -v josh-vol:$(pwd)/git_data "
+"joshproject/josh-proxy:latest `"
+msgstr ""
+"`docker run -d -p 8000:8000 -e JOSH_EXTRA_OPTS=\"--require-auth\" -e "
+"JOSH_REMOTE=https://github.com/josh-project -v josh-vol:$(pwd)/git_data "
+"joshproject/josh-proxy:latest `"
+
+#: src/reference/proxy.md:119
+msgid ""
+"In this example, we serve only the josh-project repositories. Be aware that "
+"if you don't add the organisation or repo URL, your instance will be able to "
+"serve all of github. You can (and should) restrict it to your repository or "
+"organisation by making it part of the URL."
+msgstr ""
+"在此示例中，我们只提供 josh-project 仓库。请注意，如果不添加组织或仓库 URL，"
+"你的实例将能够提供整个 github。你可以（也应该）通过将仓库或组织作为 URL 的一"
+"部分来限制范围。"
+
+#: src/reference/container.md:3
+msgid "Container options"
+msgstr "容器选项"
+
+#: src/reference/container.md:71
+msgid "Container volumes"
+msgstr "容器卷"
+
+#: src/reference/container.md:104
+msgid "Container services"
+msgstr "容器服务"
+
+#: src/reference/container.md:106
+msgid ""
+"The Josh container uses [s6-overlay](https://github.com/just-containers/s6-"
+"overlay) as a process supervisor to manage multiple services:"
+msgstr ""
+"Josh 容器使用 [s6-overlay](https://github.com/just-containers/s6-overlay) 作为"
+"进程监督器来管理多个服务："
+
+#: src/reference/container.md:109
+msgid "Long-running services"
+msgstr "长时间运行的服务"
+
+#: src/reference/container.md:111
+msgid ""
+"**josh-proxy** - The main HTTP proxy service that handles git requests, "
+"applies filters, and communicates with upstream repositories."
+msgstr ""
+"**josh-proxy** - 主要的 HTTP 代理服务，负责处理 git 请求、应用过滤器并与上游"
+"仓库通信。"
+
+#: src/reference/container.md:114
+msgid "**sshd** - OpenSSH server that provides SSH access to the proxy."
+msgstr "**sshd** - 提供代理 SSH 访问的 OpenSSH 服务器。"
+
+#: src/reference/container.md:116
+msgid "One-shot initialization services"
+msgstr "一次性初始化服务"
+
+#: src/reference/container.md:118
+msgid ""
+"These services run once during container startup to prepare the environment:"
+msgstr "这些服务会在容器启动期间运行一次，以准备环境："
+
+#: src/reference/container.md:120
+msgid ""
+"**josh-generate-keys** - Generates SSH server keys at `/data/keys/.ssh/"
+"id_ed25519` if they don't already exist. Therefore, SSH server keys are "
+"persisted across container restarts when the volume is mounted."
+msgstr ""
+"**josh-generate-keys** - 如果 `/data/keys/.ssh/id_ed25519` 处还不存在 SSH "
+"服务器密钥，则生成它们。因此，当挂载该卷时，SSH 服务器密钥会在容器重启之间"
+"持久保存。"
+
+#: src/reference/container.md:123
+msgid ""
+"**sshd-generate-config** - Generates the sshd configuration file from a "
+"template, applying configuration environment variables."
+msgstr "**sshd-generate-config** - 根据模板生成 sshd 配置文件，并应用配置环境变量。"
+
+#: src/reference/container.md:126
+msgid "SSH access"
+msgstr "SSH 访问"
+
+#: src/reference/container.md:128
+msgid ""
+"Josh supports SSH access. To use SSH, you need to add the following lines to "
+"your `~/.ssh/config`:"
+msgstr "Josh 支持 SSH 访问。要使用 SSH，需要将以下行添加到你的 `~/.ssh/config`："
+
+#: src/reference/container.md:137
+msgid "Alternatively, you can pass those options via `GIT_SSH_COMMAND`:"
+msgstr "或者，你可以通过 `GIT_SSH_COMMAND` 传递这些选项："
+
+#: src/reference/container.md:139
+msgid ""
+"```\n"
+"GIT_SSH_COMMAND=\"ssh -o PreferredAuthentications=publickey -o "
+"ForwardAgent=yes\" git clone ssh://git@your-josh-instance.internal/...\n"
+"```"
+msgstr ""
+"```\n"
+"GIT_SSH_COMMAND=\"ssh -o PreferredAuthentications=publickey -o "
+"ForwardAgent=yes\" git clone ssh://git@your-josh-instance.internal/...\n"
+"```"
+
+#: src/reference/container.md:143
+msgid "In other words, you need to ensure SSH agent forwarding is enabled."
+msgstr "换句话说，你需要确保已启用 SSH agent forwarding。"
+
+#: src/reference/container.md:145
+msgid "How SSH access works"
+msgstr "SSH 访问的工作方式"
+
+#: src/reference/container.md:147
+msgid ""
+"```mermaid\n"
+"sequenceDiagram\n"
+"    participant User as Git CLI<br/>(User Machine)\n"
+"    participant Agent as SSH Agent<br/>(User Machine)\n"
+"    participant SSHD as sshd<br/>(Josh Container)\n"
+"    participant Shell as josh-ssh-shell<br/>(Josh Container)\n"
+"    participant Proxy as josh-proxy<br/>(Josh Container)\n"
+"    participant Upstream as Upstream Repo<br/>(e.g., GitHub)\n"
+"\n"
+"    User->>Agent: Load SSH keys\n"
+"    Note over User,Agent: User's SSH keys remain<br/>on local machine\n"
+"\n"
+"    User->>SSHD: git clone ssh://git@josh:8022/repo.git:/filter.git\n"
+"    Note over User,SSHD: SSH connection with<br/>ForwardAgent=yes\n"
+"\n"
+"    SSHD->>Agent: Forward SSH_AUTH_SOCK\n"
+"    Note over SSHD,Agent: Agent socket forwarded<br/>into container\n"
+"\n"
+"    SSHD->>Shell: Execute git-upload-pack\n"
+"    Note over Shell: Validates SSH_AUTH_SOCK<br/>is a valid socket\n"
+"\n"
+"    Shell->>Proxy: HTTP POST /serve_namespace\n"
+"    Note over Shell,Proxy: Sends command, repo path,<br/>and SSH_AUTH_SOCK "
+"path\n"
+"\n"
+"    Proxy->>Upstream: git fetch (via SSH)\n"
+"    Note over Proxy,Upstream: Uses forwarded SSH_AUTH_SOCK<br/>for "
+"authentication\n"
+"\n"
+"    Upstream->>Agent: Authenticate via SSH_AUTH_SOCK\n"
+"    Agent-->>Upstream: Sign challenge with user's key\n"
+"\n"
+"    Upstream-->>Proxy: Repository objects\n"
+"\n"
+"    Proxy->>Proxy: Apply josh filter\n"
+"    Note over Proxy: Transform repository<br/>based on filter spec\n"
+"\n"
+"    Proxy->>Shell: Serve filtered repo via Unix sockets\n"
+"    Shell->>SSHD: Proxy git protocol\n"
+"    SSHD->>User: Filtered repository\n"
+"\n"
+"    Note over User,Upstream: User's SSH keys never leave<br/>their machine. "
+"Authentication<br/>is delegated through the<br/>forwarded agent socket.\n"
+"```"
+msgstr ""
+"```mermaid\n"
+"sequenceDiagram\n"
+"    participant User as Git CLI<br/>(用户机器)\n"
+"    participant Agent as SSH Agent<br/>(用户机器)\n"
+"    participant SSHD as sshd<br/>(Josh 容器)\n"
+"    participant Shell as josh-ssh-shell<br/>(Josh 容器)\n"
+"    participant Proxy as josh-proxy<br/>(Josh 容器)\n"
+"    participant Upstream as 上游仓库<br/>(例如 GitHub)\n"
+"\n"
+"    User->>Agent: 加载 SSH 密钥\n"
+"    Note over User,Agent: 用户的 SSH 密钥保留在<br/>本地机器上\n"
+"\n"
+"    User->>SSHD: git clone ssh://git@josh:8022/repo.git:/filter.git\n"
+"    Note over User,SSHD: 使用 ForwardAgent=yes<br/>建立 SSH 连接\n"
+"\n"
+"    SSHD->>Agent: 转发 SSH_AUTH_SOCK\n"
+"    Note over SSHD,Agent: Agent socket 被转发<br/>到容器中\n"
+"\n"
+"    SSHD->>Shell: 执行 git-upload-pack\n"
+"    Note over Shell: 验证 SSH_AUTH_SOCK<br/>是有效 socket\n"
+"\n"
+"    Shell->>Proxy: HTTP POST /serve_namespace\n"
+"    Note over Shell,Proxy: 发送命令、仓库路径<br/>和 SSH_AUTH_SOCK 路径\n"
+"\n"
+"    Proxy->>Upstream: git fetch（通过 SSH）\n"
+"    Note over Proxy,Upstream: 使用转发的 SSH_AUTH_SOCK<br/>进行认证\n"
+"\n"
+"    Upstream->>Agent: 通过 SSH_AUTH_SOCK 认证\n"
+"    Agent-->>Upstream: 使用用户密钥签名挑战\n"
+"\n"
+"    Upstream-->>Proxy: 仓库对象\n"
+"\n"
+"    Proxy->>Proxy: 应用 josh 过滤器\n"
+"    Note over Proxy: 基于过滤器规格<br/>转换仓库\n"
+"\n"
+"    Proxy->>Shell: 通过 Unix socket 提供过滤后的仓库\n"
+"    Shell->>SSHD: 代理 git 协议\n"
+"    SSHD->>User: 过滤后的仓库\n"
+"\n"
+"    Note over User,Upstream: 用户的 SSH 密钥永不离开<br/>其机器。认证通过<br/>转发的 agent socket<br/>委托完成。\n"
+"```"
+
+#: src/reference/container.md:189
+msgid ""
+"**SSH Agent Forwarding**: The user's SSH agent socket is forwarded into the "
+"container, allowing josh-proxy to authenticate to upstream repositories "
+"without accessing the user's private keys directly."
+msgstr ""
+"**SSH Agent Forwarding**：用户的 SSH agent socket 会被转发到容器中，使 "
+"josh-proxy 能够在不直接访问用户私钥的情况下向上游仓库认证。"
+
+#: src/reference/container.md:191
+msgid ""
+"**Two-stage architecture**: `sshd` handles the SSH connection and launches "
+"`josh-ssh-shell`, which then communicates with `josh-proxy` via HTTP."
+msgstr ""
+"**两阶段架构**：`sshd` 处理 SSH 连接并启动 `josh-ssh-shell`，后者再通过 HTTP "
+"与 `josh-proxy` 通信。"
+
+#: src/reference/container.md:193
+msgid ""
+"**Security**: Private SSH keys never enter the container. All authentication "
+"is performed by delegating to the user's local SSH agent through the "
+"forwarded socket."
+msgstr ""
+"**安全性**：SSH 私钥永远不会进入容器。所有认证都通过转发的 socket 委托给用户"
+"本地 SSH agent 完成。"
+
+#: src/contributing/testing.md:2
+msgid ""
+"Currently the Josh project mainly uses integration tests for it's "
+"verification, so make sure you will be able to run and check them."
+msgstr "目前 Josh 项目主要使用集成测试进行验证，因此请确保你能够运行并检查它们。"
+
+#: src/contributing/testing.md:5
+msgid ""
+"The following sections will describe how to run the different kind's of "
+"tests used for the verification of the Josh project."
+msgstr "以下各节将介绍如何运行用于验证 Josh 项目的不同类型测试。"
+
+#: src/contributing/testing.md:8
+msgid "UnitTests & DocTests"
+msgstr "单元测试和文档测试"
+
+#: src/contributing/testing.md:13
+msgid "Integration Tests"
+msgstr "集成测试"
+
+#: src/contributing/testing.md:15
+msgid "1. Setup the test environment"
+msgstr "1. 设置测试环境"
+
+#: src/contributing/testing.md:16
+msgid ""
+"Due to the fact that the integration tests need additional tools and a more "
+"complex environment and due to the fact that the integration test are done "
+"using [cram](https://pypi.org/project/cram/). you will need to crate an "
+"extra environment to run these tests. To simplify the setup of the "
+"integration testing we have set up a [Nix Shell](https://nixos.org/manual/"
+"nix/stable/#chap-installation) environment which you can start by using the "
+"following command if you have installed the [Nix Shell](https://nixos.org/"
+"manual/nix/stable/#chap-installation)."
+msgstr ""
+"由于集成测试需要额外工具和更复杂的环境，并且集成测试使用 [cram](https://pypi."
+"org/project/cram/) 完成，你需要创建额外环境来运行这些测试。为简化集成测试设置，"
+"我们准备了一个 [Nix Shell](https://nixos.org/manual/nix/stable/#chap-installation) "
+"环境；如果你已安装 [Nix Shell](https://nixos.org/manual/nix/stable/#chap-"
+"installation)，可使用以下命令启动它。"
+
+#: src/contributing/testing.md:22
+msgid ""
+"**Attention:** Currently it is still necessary to install the following "
+"tools in your host system."
+msgstr "**注意：** 当前仍需要在主机系统中安装以下工具。"
+
+#: src/contributing/testing.md:24
+msgid "curl"
+msgstr "curl"
+
+#: src/contributing/testing.md:25
+msgid "hyper_cgi"
+msgstr "hyper_cgi"
+
+#: src/contributing/testing.md:30
+msgid "Setup the Nix Shell"
+msgstr "设置 Nix Shell"
+
+#: src/contributing/testing.md:31
+msgid ""
+"**Attention:** When running this command the first time, this command will "
+"take quite a bit to finish. You also will need internet access while "
+"executing this command. Depending on performance of your connection the "
+"command will take more or less time."
+msgstr ""
+"**注意：** 首次运行此命令时，它需要相当长时间才能完成。执行此命令时还需要"
+"互联网访问。根据连接性能不同，命令耗时会有所不同。"
+
+#: src/contributing/testing.md:39
+msgid ""
+"Once the command is finished you will be prompted with the nix-shell which "
+"will provide the needed shell environment to execute the integration tests."
+msgstr "命令完成后，你会进入 nix-shell，它会提供执行集成测试所需的 shell 环境。"
+
+#: src/contributing/testing.md:43
+msgid "2. Verify you have built all necessary binaries"
+msgstr "2. 验证你已构建所有必需二进制文件"
+
+#: src/contributing/testing.md:50
+msgid "3. Run the integration tests"
+msgstr "3. 运行集成测试"
+
+#: src/contributing/testing.md:51
+msgid ""
+"**Attention:** Be aware that all tests except the once in experimental "
+"should be green."
+msgstr "**注意：** 请注意，除 experimental 中的测试外，所有测试都应通过。"
+
+#: src/contributing/dev-tools.md:1
+msgid "Dev-Tools"
+msgstr "开发工具"
+
+#: src/contributing/dev-tools.md:3
+msgid ""
+"[Nix Shell](https://nixos.org/manual/nix/unstable/command-ref/nix-shell.html)"
+msgstr "[Nix Shell](https://nixos.org/manual/nix/unstable/command-ref/nix-shell.html)"
+
+#: src/contributing/dev-tools.md:4
+msgid "[Rust](https://rustup.rs/)"
+msgstr "[Rust](https://rustup.rs/)"
+
+#: src/contributing/dev-tools.md:5
+msgid "[Cargo](https://rustup.rs/)"
+msgstr "[Cargo](https://rustup.rs/)"
+
+#: src/contributing/josh-run.md:3
+msgid ""
+"`josh compose run` is an experimental `josh` CLI subcommand that runs "
+"workspaces in isolated, automatically-cached containers. It is used to build "
+"the josh binaries and run the integration test suite."
+msgstr ""
+"`josh compose run` 是一个实验性的 `josh` CLI 子命令，用于在隔离且自动缓存的"
+"容器中运行 workspace。它用于构建 josh 二进制文件并运行集成测试套件。"
+
+#: src/contributing/josh-run.md:7
+msgid ""
+"**Note:** `josh compose run` is experimental and requires "
+"`JOSH_EXPERIMENTAL_FEATURES=1` to be set in the environment."
+msgstr "**注意：** `josh compose run` 是实验性的，需要在环境中设置 `JOSH_EXPERIMENTAL_FEATURES=1`。"
+
+#: src/contributing/josh-run.md:10
+msgid "Motivation"
+msgstr "动机"
+
+#: src/contributing/josh-run.md:12
+msgid ""
+"A common problem with monorepo builds is that the container context contains "
+"the entire repository — thousands of files most builds don't need. This has "
+"two consequences:"
+msgstr ""
+"monorepo 构建中的一个常见问题是，容器上下文包含整个仓库——其中有成千上万个大多"
+"数构建并不需要的文件。这会带来两个后果："
+
+#: src/contributing/josh-run.md:14
+msgid ""
+"**Fragile caching.** Docker and podman derive cache tags from the context "
+"contents. Any file touched anywhere in the repo can break the cache even if "
+"the build doesn't use that file."
+msgstr ""
+"**脆弱的缓存。** Docker 和 podman 会根据上下文内容派生缓存标签。仓库中任何"
+"位置的任何文件被修改，都可能破坏缓存，即使构建并不使用该文件。"
+
+#: src/contributing/josh-run.md:15
+msgid ""
+"**Hidden dependencies.** If a build silently reads a file that \"happens to "
+"be there\", it works locally but may break in a clean environment or for "
+"another team member."
+msgstr ""
+"**隐藏依赖。** 如果构建静默读取了某个\"恰好在那里\"的文件，它可能在本地可用，"
+"但在干净环境中或其他团队成员那里失败。"
+
+#: src/contributing/josh-run.md:17
+msgid ""
+"`josh compose run` addresses both problems by filtering the repository to "
+"exactly the files a given workspace needs before any container is involved:"
+msgstr ""
+"`josh compose run` 会在涉及任何容器之前，将仓库过滤为给定 workspace 所需的"
+"精确文件集合，从而解决这两个问题："
+
+#: src/contributing/josh-run.md:19
+msgid ""
+"The filtered tree's git SHA becomes the cache key. Only changes to files "
+"actually included in the workspace invalidate the cache."
+msgstr "过滤后 tree 的 git SHA 会成为缓存键。只有实际包含在 workspace 中的文件变更才会使缓存失效。"
+
+#: src/contributing/josh-run.md:20
+msgid ""
+"The container sees only what the workspace definition explicitly includes — "
+"files outside the workspace are structurally impossible to access."
+msgstr "容器只能看到 workspace 定义显式包含的内容——workspace 外的文件在结构上无法访问。"
+
+#: src/contributing/josh-run.md:21
+msgid ""
+"The host working tree is never modified. Artifacts produced by the container "
+"are stored in a podman volume and exported back when the run completes."
+msgstr "主机工作树永远不会被修改。容器生成的产物会存储在 podman 卷中，并在运行完成后导出回来。"
+
+#: src/contributing/josh-run.md:23
+msgid "Prerequisites"
+msgstr "前置条件"
+
+#: src/contributing/josh-run.md:25
+msgid "**podman** installed and on `$PATH`"
+msgstr "已安装 **podman**，并且位于 `$PATH` 中"
+
+#: src/contributing/josh-run.md:26
+msgid "**josh** installed and on `$PATH`:"
+msgstr "已安装 **josh**，并且位于 `$PATH` 中："
+
+#: src/contributing/josh-run.md:27
+msgid "`JOSH_EXPERIMENTAL_FEATURES=1` set in your environment"
+msgstr "你的环境中已设置 `JOSH_EXPERIMENTAL_FEATURES=1`"
+
+#: src/contributing/josh-run.md:33
+msgid "Quick start"
+msgstr "快速开始"
+
+#: src/contributing/josh-run.md:35
+msgid "All commands are run from the root of the josh repository."
+msgstr "所有命令都从 josh 仓库根目录运行。"
+
+#: src/contributing/josh-run.md:37
+msgid "Run all tests"
+msgstr "运行所有测试"
+
+#: src/contributing/josh-run.md:43
+msgid ""
+"With no arguments, `josh compose run` looks for a `compose.josh` file in the "
+"repository root and uses it as the filter. In this repo, `compose.josh` "
+"points to `ws/test.josh`, so `josh compose run` runs the full test suite."
+msgstr ""
+"不带参数时，`josh compose run` 会在仓库根目录查找 `compose.josh` 文件，并将其"
+"用作过滤器。在此仓库中，`compose.josh` 指向 `ws/test.josh`，因此 `josh compose "
+"run` 会运行完整测试套件。"
+
+#: src/contributing/josh-run.md:45
+msgid "Run a specific workspace"
+msgstr "运行特定 workspace"
+
+#: src/contributing/josh-run.md:51
+msgid "Use the staged index instead of the working tree"
+msgstr "使用暂存索引而不是工作树"
+
+#: src/contributing/josh-run.md:57
+msgid "Build from the last commit (ignoring local changes)"
+msgstr "从最后一个提交构建（忽略本地变更）"
+
+#: src/contributing/josh-run.md:71
+msgid "Git ref to build from. Defaults to `.` (working tree)."
+msgstr "用于构建的 git ref。默认是 `.`（工作树）。"
+
+#: src/contributing/josh-run.md:72
+msgid ""
+"Josh filter selecting the workspace to run. Defaults to `:+compose` (reads "
+"`compose.josh`)."
+msgstr "选择要运行 workspace 的 Josh 过滤器。默认是 `:+compose`（读取 `compose.josh`）。"
+
+#: src/contributing/josh-run.md:74
+msgid "`[REFERENCE]` values"
+msgstr "`[REFERENCE]` 值"
+
+#: src/contributing/josh-run.md:76
+msgid "Value"
+msgstr "值"
+
+#: src/contributing/josh-run.md:76
+msgid "Meaning"
+msgstr "含义"
+
+#: src/contributing/josh-run.md:78
+msgid "`.` (default)"
+msgstr "`.`（默认）"
+
+#: src/contributing/josh-run.md:78
+msgid "Working tree, including uncommitted changes"
+msgstr "工作树，包括未提交变更"
+
+#: src/contributing/josh-run.md:79
+msgid "`+`"
+msgstr "`+`"
+
+#: src/contributing/josh-run.md:79
+msgid ""
+"Staged files only (git index). Useful to test exactly what you have `git "
+"add`ed."
+msgstr "仅暂存文件（git index）。适合精确测试你已 `git add` 的内容。"
+
+#: src/contributing/josh-run.md:80
+msgid "`HEAD`"
+msgstr "`HEAD`"
+
+#: src/contributing/josh-run.md:80
+msgid ""
+"Last commit, ignoring any local changes. Useful for clean builds or before/"
+"after comparisons."
+msgstr "最后一个提交，忽略任何本地变更。适合干净构建或前后对比。"
+
+#: src/contributing/josh-run.md:81
+msgid "Any git ref or SHA"
+msgstr "任意 git ref 或 SHA"
+
+#: src/contributing/josh-run.md:81
+msgid "Build from that specific commit."
+msgstr "从该特定提交构建。"
+
+#: src/contributing/josh-run.md:83
+msgid "Options"
+msgstr "选项"
+
+#: src/contributing/josh-run.md:90
+msgid "Inspecting test results"
+msgstr "检查测试结果"
+
+#: src/contributing/josh-run.md:92
+msgid ""
+"Near the start of the output, `josh compose run` prints the `WS_TREE` SHA:"
+msgstr "在输出开头附近，`josh compose run` 会打印 `WS_TREE` SHA："
+
+#: src/contributing/josh-run.md:98
+msgid ""
+"The prysk-updated `.t` test files (showing diffs for any failures) are "
+"stored in the podman volume `out_<WS_TREE>` under `tests/`, not in the "
+"working directory."
+msgstr ""
+"prysk 更新后的 `.t` 测试文件（显示任何失败的 diff）存储在 podman 卷 "
+"`out_<WS_TREE>` 的 `tests/` 下，而不是工作目录中。"
+
+#: src/contributing/josh-run.md:101
+msgid "# List all test result files\n"
+msgstr "# 列出所有测试结果文件\n"
+
+#: src/contributing/josh-run.md:103
+msgid "# Print a specific test file to stdout\n"
+msgstr "# 将特定测试文件打印到 stdout\n"
+
+#: src/contributing/josh-run.md:108
+msgid ""
+"For failing tests the prysk diff format shows: the shell command that "
+"failed, the expected output (indented two spaces), and the actual output "
+"(preceded by `+`)."
+msgstr ""
+"对于失败测试，prysk diff 格式会显示：失败的 shell 命令、预期输出（缩进两个"
+"空格）以及实际输出（前面带 `+`）。"
+
+#: src/contributing/josh-run.md:110
+msgid "The final lines of output report the overall result:"
+msgstr "输出最后几行会报告总体结果："
+
+#: src/contributing/josh-run.md:117
+msgid "or"
+msgstr "或"
+
+#: src/contributing/josh-run.md:123
+msgid "Cache behavior"
+msgstr "缓存行为"
+
+#: src/contributing/josh-run.md:125
+msgid ""
+"Each run produces a podman volume named `out_<WS_TREE>`. Successful runs are "
+"also recorded under `.josh/success/<WS_TREE>`. A cached result is reused "
+"only when that success marker is present and, for workspaces that keep "
+"output, the matching `out_<WS_TREE>` volume still exists. The cache key is "
+"the git SHA of the filtered workspace tree, so:"
+msgstr ""
+"每次运行都会生成名为 `out_<WS_TREE>` 的 podman 卷。成功运行也会记录在 "
+"`.josh/success/<WS_TREE>` 下。只有当该成功标记存在，并且对于保留输出的 "
+"workspace，匹配的 `out_<WS_TREE>` 卷仍然存在时，才会复用缓存结果。缓存键是"
+"过滤后 workspace tree 的 git SHA，因此："
+
+#: src/contributing/josh-run.md:127
+msgid ""
+"Changing any file included in the workspace automatically produces a new SHA "
+"and bypasses the cache."
+msgstr "更改 workspace 中包含的任何文件都会自动生成新的 SHA 并绕过缓存。"
+
+#: src/contributing/josh-run.md:128
+msgid "Changing unrelated files has no effect on the cache."
+msgstr "更改无关文件不会影响缓存。"
+
+#: src/contributing/josh-run.md:129
+msgid ""
+"Two developers with identical workspace contents share the same cache key "
+"(useful if volumes are shared via a registry)."
+msgstr "两个 workspace 内容相同的开发者会共享同一个缓存键（如果通过 registry 共享卷，这会很有用）。"
+
+#: src/contributing/josh-run.md:131
+msgid "Forcing a re-run"
+msgstr "强制重新运行"
+
+#: src/contributing/josh-run.md:133
+msgid ""
+"To re-run without changing source files, remove the output volume manually:"
+msgstr "要在不更改源文件的情况下重新运行，请手动移除输出卷："
+
+#: src/contributing/josh-run.md:136
+msgid "# Find the relevant volume\n"
+msgstr "# 查找相关卷\n"
+
+#: src/contributing/josh-run.md:138
+msgid "# Remove it\n"
+msgstr "# 移除它\n"
+
+#: src/contributing/josh-run.md:143
+msgid ""
+"Alternatively, use `josh compose run --clean` to remove all cached images "
+"and output volumes, or `--clean-all` to also remove persistent cache volumes "
+"(e.g. the Cargo registry cache)."
+msgstr ""
+"或者，使用 `josh compose run --clean` 移除所有缓存镜像和输出卷，或使用 "
+"`--clean-all` 同时移除持久缓存卷（例如 Cargo registry 缓存）。"
+
+#: src/contributing/josh-run.md:145
+msgid "Clearing all output volumes"
+msgstr "清理所有输出卷"
+
+#: src/contributing/josh-run.md:148
+msgid "'^out_'"
+msgstr "'^out_'"
+
+#: src/contributing/josh-run.md:151
+msgid "Workspace definitions"
+msgstr "Workspace 定义"
+
+#: src/contributing/josh-run.md:153
+msgid ""
+"A workspace is defined by a `.josh` file, typically under `ws/`. The file "
+"uses josh filter expressions to declare what the workspace needs and how to "
+"run it."
+msgstr ""
+"workspace 由一个 `.josh` 文件定义，通常位于 `ws/` 下。该文件使用 josh 过滤器"
+"表达式声明 workspace 需要什么以及如何运行。"
+
+#: src/contributing/josh-run.md:155
+msgid "Workspace keys"
+msgstr "Workspace 键"
+
+#: src/contributing/josh-run.md:157
+msgid "Key"
+msgstr "键"
+
+#: src/contributing/josh-run.md:157
+msgid "Purpose"
+msgstr "用途"
+
+#: src/contributing/josh-run.md:159
+msgid "`:#image[:+path/to/image]`"
+msgstr "`:#image[:+path/to/image]`"
+
+#: src/contributing/josh-run.md:159
+msgid "Container image workspace to build from"
+msgstr "用于构建的容器镜像 workspace"
+
+#: src/contributing/josh-run.md:160
+msgid "`:$label=\"...\"`"
+msgstr "`:$label=\"...\"`"
+
+#: src/contributing/josh-run.md:160
+msgid "Human-readable label shown in output"
+msgstr "输出中显示的人类可读标签"
+
+#: src/contributing/josh-run.md:161
+msgid "`:$cmd=\"...\"`"
+msgstr "`:$cmd=\"...\"`"
+
+#: src/contributing/josh-run.md:161
+msgid "Command to run inside the container"
+msgstr "要在容器内运行的命令"
+
+#: src/contributing/josh-run.md:162
+msgid "`:$cache=\"name\"`"
+msgstr "`:$cache=\"name\"`"
+
+#: src/contributing/josh-run.md:162
+msgid ""
+"Persistent podman volume mounted at `/opt/cache` (e.g. for Cargo's registry)"
+msgstr "挂载在 `/opt/cache` 的持久 podman 卷（例如用于 Cargo registry）"
+
+#: src/contributing/josh-run.md:163
+msgid "`:$output=\"none\"`"
+msgstr "`:$output=\"none\"`"
+
+#: src/contributing/josh-run.md:163
+msgid "Disable output volume (run produces no extracted artifacts)"
+msgstr "禁用输出卷（运行不会生成可提取产物）"
+
+#: src/contributing/josh-run.md:164
+msgid "`:$network=\"host\"`"
+msgstr "`:$network=\"host\"`"
+
+#: src/contributing/josh-run.md:164
+msgid "Container network mode"
+msgstr "容器网络模式"
+
+#: src/contributing/josh-run.md:165
+msgid "`worktree = :[...]`"
+msgstr "`worktree = :[...]`"
+
+#: src/contributing/josh-run.md:165
+msgid "Files placed in the container's working directory"
+msgstr "放入容器工作目录的文件"
+
+#: src/contributing/josh-run.md:166
+msgid "`inputs = :[...]`"
+msgstr "`inputs = :[...]`"
+
+#: src/contributing/josh-run.md:166
+msgid ""
+"Dependency workspaces; each named entry is run first and its output is "
+"mounted inside the container"
+msgstr "依赖 workspace；每个命名条目会先运行，其输出会挂载到容器内"
+
+#: src/contributing/josh-run.md:167
+msgid "`env = :[...]`"
+msgstr "`env = :[...]`"
+
+#: src/contributing/josh-run.md:167
+msgid "Environment variables injected into the container"
+msgstr "注入容器的环境变量"
+
+#: src/contributing/josh-run.md:169
+msgid "Example: `ws/fetch.josh`"
+msgstr "示例：`ws/fetch.josh`"
+
+#: src/contributing/josh-run.md:171
+msgid ""
+"```\n"
+":$label=\"cargo fetch\"\n"
+":#image[:+images/dev-local]\n"
+":$cache=\"rust\"\n"
+":$network=\"host\"\n"
+"\n"
+":$cmd=\"cargo fetch --locked\"\n"
+"\n"
+"worktree = :[\n"
+"    ::**/Cargo.toml\n"
+"    ::**/Cargo.lock\n"
+"    ::**/rust-toolchain.toml\n"
+"    ::**/lib.rs\n"
+"    ::**/main.rs\n"
+"]\n"
+"```"
+msgstr ""
+"```\n"
+":$label=\"cargo fetch\"\n"
+":#image[:+images/dev-local]\n"
+":$cache=\"rust\"\n"
+":$network=\"host\"\n"
+"\n"
+":$cmd=\"cargo fetch --locked\"\n"
+"\n"
+"worktree = :[\n"
+"    ::**/Cargo.toml\n"
+"    ::**/Cargo.lock\n"
+"    ::**/rust-toolchain.toml\n"
+"    ::**/lib.rs\n"
+"    ::**/main.rs\n"
+"]\n"
+"```"
+
+#: src/contributing/josh-run.md:188
+msgid ""
+"This workspace fetches Cargo dependencies into a persistent cache volume. "
+"Only the files needed to resolve the dependency graph are included, so the "
+"cache is invalidated only when those files change."
+msgstr ""
+"此 workspace 会将 Cargo 依赖获取到持久缓存卷中。它只包含解析依赖图所需的文件，"
+"因此只有这些文件发生变化时缓存才会失效。"
+
+#: src/contributing/josh-run.md:190
+msgid "Example: `ws/build-rust.josh`"
+msgstr "示例：`ws/build-rust.josh`"
+
+#: src/contributing/josh-run.md:192
+msgid ""
+"```\n"
+":$label=\"rust build\"\n"
+":#image[:+images/dev-local]\n"
+":$cache=\"rust\"\n"
+"\n"
+"inputs = :[\n"
+"    :#fetch[:+ws/fetch]\n"
+"]\n"
+"\n"
+"env = :[\n"
+"    ::JOSH_VERSION=VERSION_STRING\n"
+"]\n"
+"\n"
+"worktree = :[\n"
+"    ::run.sh=ws/build-rust.sh\n"
+"    ::Cargo.toml\n"
+"    ::Cargo.lock\n"
+"    ::rust-toolchain.toml\n"
+"    ::josh-*/\n"
+"    ::forges/\n"
+"]\n"
+"```"
+msgstr ""
+"```\n"
+":$label=\"rust build\"\n"
+":#image[:+images/dev-local]\n"
+":$cache=\"rust\"\n"
+"\n"
+"inputs = :[\n"
+"    :#fetch[:+ws/fetch]\n"
+"]\n"
+"\n"
+"env = :[\n"
+"    ::JOSH_VERSION=VERSION_STRING\n"
+"]\n"
+"\n"
+"worktree = :[\n"
+"    ::run.sh=ws/build-rust.sh\n"
+"    ::Cargo.toml\n"
+"    ::Cargo.lock\n"
+"    ::rust-toolchain.toml\n"
+"    ::josh-*/\n"
+"    ::forges/\n"
+"]\n"
+"```"
+
+#: src/contributing/josh-run.md:215
+msgid "This workspace:"
+msgstr "此 workspace："
+
+#: src/contributing/josh-run.md:216
+msgid ""
+"Declares `ws/fetch` as an input dependency; its output (the populated Cargo "
+"cache) is mounted before the build runs."
+msgstr "声明 `ws/fetch` 为输入依赖；其输出（已填充的 Cargo 缓存）会在构建运行前挂载。"
+
+#: src/contributing/josh-run.md:217
+msgid ""
+"Injects the `JOSH_VERSION` environment variable from the `VERSION_STRING` "
+"file."
+msgstr "从 `VERSION_STRING` 文件注入 `JOSH_VERSION` 环境变量。"
+
+#: src/contributing/josh-run.md:218
+msgid ""
+"Places `ws/build-rust.sh` into the container as `run.sh` (the entrypoint)."
+msgstr "将 `ws/build-rust.sh` 作为 `run.sh`（入口点）放入容器。"
+
+#: src/contributing/josh-run.md:219
+msgid "Includes only the source trees needed to compile."
+msgstr "仅包含编译所需的源 tree。"
+
+#: src/contributing/josh-run.md:221
+msgid "Creating a new workspace"
+msgstr "创建新的 workspace"
+
+#: src/contributing/josh-run.md:223
+msgid ""
+"**Write a `.josh` file** under `ws/`. Declare at minimum an `:#image[...]` "
+"reference and a `worktree` subtree containing the files your build needs."
+msgstr ""
+"在 `ws/` 下**编写 `.josh` 文件**。至少声明一个 `:#image[...]` 引用，以及一个"
+"包含构建所需文件的 `worktree` 子 tree。"
+
+#: src/contributing/josh-run.md:225
+msgid ""
+"**Write the entrypoint** either as a `run.sh` in the worktree or via `:"
+"$cmd=\"...\"`. Place any outputs you want extracted under `/out` inside the "
+"container (unless `:$output=\"none\"`)."
+msgstr ""
+"**编写入口点**，可以是在 worktree 中的 `run.sh`，也可以通过 `:$cmd=\"...\"` "
+"指定。将任何想提取的输出放到容器内的 `/out` 下（除非 `:$output=\"none\"`）。"
+
+#: src/contributing/josh-run.md:227
+msgid "**Run it:**"
+msgstr "**运行它：**"
+
+#: src/contributing/josh-run.md:233
+msgid ""
+"**Add dependencies** via `inputs = :[...]` if your workspace needs the "
+"output of another workspace. Each named entry in `inputs` is run first and "
+"its output volume is mounted at `/<name>` inside the container."
+msgstr ""
+"如果你的 workspace 需要另一个 workspace 的输出，请通过 `inputs = :[...]` **添加"
+"依赖**。`inputs` 中的每个命名条目都会先运行，其输出卷会挂载到容器内的 `/<name>`。"

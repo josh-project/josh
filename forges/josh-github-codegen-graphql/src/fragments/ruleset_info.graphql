@@ -1,0 +1,12 @@
+fragment _RulesetInfo on RepositoryRuleset {
+  id
+  name
+  enforcement
+  target
+  conditions {
+    refName {
+      include
+      exclude
+    }
+  }
+}

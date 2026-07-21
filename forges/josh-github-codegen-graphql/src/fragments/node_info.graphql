@@ -1,0 +1,4 @@
+fragment _NodeInfo on Node {
+  __typename
+  id
+}

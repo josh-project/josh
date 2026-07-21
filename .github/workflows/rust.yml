@@ -1,0 +1,110 @@
+name: rust
+
+on:
+  push:
+    branches: [ master ]
+  pull_request:
+    branches: [ '**' ]
+    types: [opened, synchronize, reopened, ready_for_review]
+  merge_group:
+
+env:
+  CARGO_TERM_COLOR: always
+  JOSH_EXPERIMENTAL_FEATURES: "1"
+  # Bootstrap `josh` binary used by CI to drive `josh compose run` and to
+  # pull/push job markers, volumes, and images from R2. Pinned to a known-good
+  # commit that is already merged into `master` (so the build is reproducible
+  # for any branch and the binary is not rebuilt for every PR / merge-queue
+  # run). Bump when a backward-incompatible change to `josh compose` requires
+  # it; the new SHA must also already be on `origin/master`.
+  JOSH_BOOTSTRAP_SHA: 1471ea656cc52eecd43010d58989bb946186cf28
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    name: CI
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
+    steps:
+    - name: Free up disk space
+      shell: bash
+      run: |
+        set -eu
+        CLEANUP_DIRS=(
+          "/usr/local/lib/android"
+          "/usr/share/dotnet"
+          "/usr/share/swift"
+          "/usr/local/.ghcup"
+        )
+        for dir in "${CLEANUP_DIRS[@]}"; do
+          if [[ -d "$dir" ]]; then
+            echo "removing ${dir}"
+            sudo rm -rf "$dir"
+          fi
+        done
+    - name: Setup BuildX
+      uses: docker/setup-buildx-action@4d04d5d9486b7bd6fa91e7baf45bbb4f8b9deedd # v4.0.0
+    - name: Checkout
+      uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      with:
+        fetch-depth: 0
+    - name: Get tags
+      run: git fetch --tags origin
+    - name: Install podman
+      shell: bash
+      run: .github/workflows/scripts/install-podman.sh
+    - name: Install Rust toolchain
+      uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
+    - name: Bootstrap josh binary
+      env:
+        AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+        AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+      run: .github/workflows/scripts/bootstrap-josh.sh
+    - name: Pull cached job markers and volumes from R2
+      if: github.event_name != 'pull_request' || !github.event.pull_request.head.repo.fork
+      env:
+        AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+        AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+      run: |
+        export PATH="$(pwd)/target/release:$PATH"
+        export JOSH_EXPERIMENTAL_FEATURES=1
+        .github/workflows/scripts/pull-jobs.sh HEAD ":[::sidecars.josh=ci-sidecars.josh,:/]:+compose"
+    - name: Pull cached images from R2
+      if: github.event_name != 'pull_request' || !github.event.pull_request.head.repo.fork
+      env:
+        AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+        AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+      run: |
+        export PATH="$(pwd)/target/release:$PATH"
+        export JOSH_EXPERIMENTAL_FEATURES=1
+        .github/workflows/scripts/pull-images.sh HEAD ":[::sidecars.josh=ci-sidecars.josh,:/]:+compose"
+    - name: Run tests
+      env:
+        AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+        AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+      run: |
+        set -o pipefail
+        target/release/josh compose run HEAD \
+          ":[::sidecars.josh=ci-sidecars.josh,:/]:+compose" 2>&1 \
+          | tee /tmp/compose-run.log
+        if grep -q SCCACHE_REMOTE_CACHE_MISSING /tmp/compose-run.log; then
+          echo "::error::sccache remote cache was not used during the build"
+          exit 1
+        fi
+    - name: Push job markers and volumes to R2
+      if: success() && (github.event_name != 'pull_request' || !github.event.pull_request.head.repo.fork)
+      env:
+        AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+        AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+      run: |
+        export PATH="$(pwd)/target/release:$PATH"
+        export JOSH_EXPERIMENTAL_FEATURES=1
+        .github/workflows/scripts/push-jobs.sh HEAD ":[::sidecars.josh=ci-sidecars.josh,:/]:+compose"
+    - name: Push built images to R2
+      if: success() && (github.event_name != 'pull_request' || !github.event.pull_request.head.repo.fork)
+      env:
+        AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+        AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+      run: |
+        export PATH="$(pwd)/target/release:$PATH"
+        export JOSH_EXPERIMENTAL_FEATURES=1
+        .github/workflows/scripts/push-images.sh HEAD ":[::sidecars.josh=ci-sidecars.josh,:/]:+compose"

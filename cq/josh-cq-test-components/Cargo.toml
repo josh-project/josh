@@ -1,0 +1,17 @@
+[package]
+name = "josh-cq-test-components"
+version = "26.7.19"
+edition = "2024"
+license-file = "../../LICENSE"
+
+[dependencies]
+tokio.workspace = true
+axum.workspace = true
+anyhow.workspace = true
+git2.workspace = true
+tempfile.workspace = true
+url.workspace = true
+futures.workspace = true
+tracing.workspace = true
+headers.workspace = true
+axum-cgi.workspace = true

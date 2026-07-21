@@ -1,0 +1,14 @@
+[package]
+name = "josh-test-support"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+# Versions are kept loose so they never conflict with the root
+# workspace's lock during unified builds.
+anyhow = "1"
+dirs = "6"
+git2 = { version = "0.20", default-features = false, features = ["vendored-libgit2"] }
+tempfile = "3"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }

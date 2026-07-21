@@ -1,0 +1,32 @@
+:$label="cargo test build"
+:#image[:+images/rust-dev-local]
+:$cache="sccache"
+
+:+sidecars
+
+inputs = :[
+    :#fetch[:+ws/fetch]
+    :#cargo-deps-build[:+ws/cargo-deps-build]
+]
+
+env = :[
+    :$RUSTFLAGS="-D warnings -Ctarget-feature=-crt-static"
+    :$CARGO_HOME="/fetch/cargo-cache"
+]
+
+worktree = :[
+    ::run.sh=ws/cargo-test-build.sh
+    ::check-sccache.sh=ws/check-sccache.sh
+    ::Cargo.toml
+    ::Cargo.lock
+    ::rust-toolchain.toml
+    ::rustfmt.toml
+    ::axum-cgi/
+    ::axum-cgi-server/
+    ::hyper-reverse-proxy/
+    ::josh-*/**/*
+    ::cq/
+    ::forges/
+    ::deployment/
+    ::devtools/josh-test-support/
+]

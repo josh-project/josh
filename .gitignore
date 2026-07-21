@@ -1,0 +1,12 @@
+target
+id_rsa.pub
+e2e-tests/_data*
+e2e-tests/_remote*
+docs/_build
+.cargo_home
+.idea
+.claude
+.josh
+**/.DS_Store
+**/.pixi
+**/__pycache__

@@ -1,0 +1,26 @@
+[package]
+name = "josh-test-webhook-client"
+version = "26.7.19"
+edition = "2024"
+authors = ["Josh Project authors <contact@josh-project.dev>"]
+description = "Test webhook client for josh integration testing"
+license-file = "../../LICENSE"
+repository = "https://github.com/josh-project/josh"
+
+[dependencies]
+bincode.workspace = true
+tokio-tungstenite = { version = "^0", features = ["rustls-tls-native-roots"] }
+
+josh-test-webhook-service.workspace = true
+
+http.workspace = true
+bytes.workspace = true
+rand.workspace = true
+tokio.workspace = true
+url.workspace = true
+reqwest.workspace = true
+anyhow.workspace = true
+backon.workspace = true
+futures-util.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
