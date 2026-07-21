@@ -25,10 +25,10 @@ jobs:
           - macos-26
           - macos-26-intel
           - windows-2025
-          - ubuntu-24.04
+          - ubuntu-26.04
         include:
           - channel: beta
-            os: ubuntu-24.04
+            os: ubuntu-26.04
 
     steps:
     - name: Checkout repository
@@ -38,7 +38,7 @@ jobs:
 
   clippy:
     name: Clippy
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     steps:
     - name: Checkout repository
       uses: actions/checkout@v6
@@ -53,7 +53,7 @@ jobs:
 
   msrv:
     name: Check building with the MSRV
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     env:
       RUSTFLAGS: "" # No need to check warnings on old MSRV, clear `-Dwarnings`
     steps:
