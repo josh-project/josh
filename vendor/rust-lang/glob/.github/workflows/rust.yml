@@ -32,7 +32,7 @@ jobs:
 
     steps:
     - name: Checkout repository
-      uses: actions/checkout@v6
+      uses: actions/checkout@v7
     - run: rustup default ${{ matrix.channel }} && rustup update --no-self-update
     - run: cargo test --all
 
@@ -41,7 +41,7 @@ jobs:
     runs-on: ubuntu-26.04
     steps:
     - name: Checkout repository
-      uses: actions/checkout@v6
+      uses: actions/checkout@v7
 
     - name: Update rust
       run: |
@@ -58,7 +58,7 @@ jobs:
       RUSTFLAGS: "" # No need to check warnings on old MSRV, clear `-Dwarnings`
     steps:
     - name: Checkout repository
-      uses: actions/checkout@v6
+      uses: actions/checkout@v7
     - run: |
         msrv="$(
           cargo metadata --format-version 1 |
