@@ -64,11 +64,7 @@
 #![allow(clippy::while_let_loop)]
 
 #[cfg(test)]
-#[macro_use]
-extern crate doc_comment;
-
-#[cfg(test)]
-doctest!("../README.md");
+doc_comment::doctest!("../README.md");
 
 use std::cmp;
 use std::cmp::Ordering;
@@ -319,7 +315,7 @@ impl Error for GlobError {
     }
 
     #[allow(unknown_lints, bare_trait_objects)]
-    fn cause(&self) -> Option<&Error> {
+    fn cause(&self) -> Option<&dyn Error> {
         Some(&self.error)
     }
 }

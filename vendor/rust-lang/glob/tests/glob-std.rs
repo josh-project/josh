@@ -12,9 +12,6 @@
 
 #![cfg_attr(test, deny(warnings))]
 
-extern crate glob;
-extern crate tempfile;
-
 use glob::{glob, glob_with};
 use std::env;
 use std::fs;
