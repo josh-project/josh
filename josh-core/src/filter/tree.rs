@@ -349,7 +349,7 @@ pub fn diff_paths(
         return Ok(r);
     }
 
-    if let Ok(tree1) = repo.find_tree(input2) {
+    if let Ok(tree1) = repo.find_tree(input1) {
         for entry in tree1.iter() {
             let name = entry.name().ok_or_else(|| anyhow!("no name"))?;
             r.append(&mut diff_paths(
@@ -622,4 +622,44 @@ pub fn empty_id() -> git2::Oid {
 
 pub fn empty(repo: &git2::Repository) -> git2::Tree<'_> {
     repo.find_tree(empty_id()).unwrap()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn make_tree(repo: &git2::Repository, paths: &[&str]) -> git2::Oid {
+        let mut b = git2::build::TreeUpdateBuilder::new();
+        for p in paths {
+            let oid = repo.blob(p.as_bytes()).unwrap();
+            b.upsert(*p, oid, git2::FileMode::Blob);
+        }
+        let base = repo.treebuilder(None).unwrap().write().unwrap();
+        b.create_updated(repo, &repo.find_tree(base).unwrap())
+            .unwrap()
+    }
+
+    // Removing a whole subdirectory must report every file under it as removed. This exercises
+    // the "input1 is a tree, input2 is gone" branch of diff_paths, which is only reachable via
+    // the recursion for entries present in tree1 but absent from tree2.
+    #[test]
+    fn diff_paths_reports_removed_subtree() {
+        let td = tempfile::tempdir().unwrap();
+        let repo = git2::Repository::init_bare(td.path()).unwrap();
+
+        let tree1 = make_tree(&repo, &["dir/file1", "dir/file2", "kept"]);
+        let tree2 = make_tree(&repo, &["kept"]);
+
+        let removed = diff_paths(&repo, tree1, tree2, "").unwrap();
+        assert_eq!(
+            removed,
+            vec![("dir/file1".to_string(), -1), ("dir/file2".to_string(), -1)]
+        );
+
+        let added = diff_paths(&repo, tree2, tree1, "").unwrap();
+        assert_eq!(
+            added,
+            vec![("dir/file1".to_string(), 1), ("dir/file2".to_string(), 1)]
+        );
+    }
 }
