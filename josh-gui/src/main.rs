@@ -63,6 +63,35 @@ pub fn scope_label(scope: &josh_changes::ChangesRef) -> String {
     }
 }
 
+/// Open a fresh josh-core transaction and run `josh_github_changes::sync::sync`
+/// against `scope`. Mirrors the cache+transaction wiring in
+/// `josh-cli/src/bin/josh.rs:248` (sled load, layered backends, open per call)
+/// so the GUI gets behavior identical to running `josh changes sync` from the
+/// terminal. Transactions are intentionally short-lived: built per invocation
+/// and dropped when the sync finishes.
+async fn run_sync(scope: josh_changes::ChangesRef) -> anyhow::Result<()> {
+    let repo = git2::Repository::discover(".")?;
+    let repo_path = repo.path().to_path_buf();
+    let git_common_dir = repo.commondir().to_path_buf();
+    josh_core::cache::sled_load(&git_common_dir)?;
+    let cache = std::sync::Arc::new(
+        josh_core::cache::CacheStack::new()
+            .with_backend(josh_core::cache::SledCacheBackend::default())
+            .with_backend(josh_core::cache::DistributedCacheBackend::new(
+                &git_common_dir,
+            )?),
+    );
+    let txn = josh_core::cache::TransactionContext::new(&repo_path, cache).open()?;
+    josh_github_changes::sync::sync(
+        &repo,
+        &txn,
+        &scope,
+        josh_github_changes::sync::SyncOptions::default(),
+    )
+    .await?;
+    Ok(())
+}
+
 #[derive(Clone, PartialEq)]
 pub enum Page {
     List,
@@ -183,6 +212,27 @@ fn app() -> Element {
     };
 
     let scope_text = scope_label(&current_scope.read());
+    let mut sync_in_progress: Signal<bool> = use_signal(|| false);
+    let scope_class = if *sync_in_progress.read() {
+        "header-scope syncing"
+    } else {
+        "header-scope"
+    };
+    let on_sync_click = move |_| {
+        // peek() avoids re-subscribing this handler to a signal it writes.
+        if *sync_in_progress.peek() {
+            return;
+        }
+        sync_in_progress.set(true);
+        let scope = current_scope.read().clone();
+        spawn(async move {
+            if let Err(e) = run_sync(scope).await {
+                eprintln!("sync failed: {e:#}");
+            }
+            sync_in_progress.set(false);
+            // No manual oid bump; the 1s poll picks up new ref tips.
+        });
+    };
 
     rsx! {
         style { {include_str!("style.css")} }
@@ -202,7 +252,7 @@ fn app() -> Element {
                     }
                 }
                 {breadcrumb(&page.read(), page, list_data)}
-                span { class: "header-scope", "{scope_text}" }
+                span { class: "{scope_class}", onclick: on_sync_click, "{scope_text}" }
             }
             match &*page.read() {
                 Page::List => rsx! {
