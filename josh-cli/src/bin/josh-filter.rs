@@ -113,11 +113,6 @@ fn make_app() -> clap::Command {
                 .short('g'),
         )
         .arg(
-            clap::Arg::new("max_comp")
-                .long("max_comp")
-                .short('m'),
-        )
-        .arg(
             clap::Arg::new("reverse").action(clap::ArgAction::SetTrue).long("reverse").help(
                 "reverse-apply the filter to the output reference to update the input reference",
             ),
@@ -370,11 +365,6 @@ fn run_filter(args: Vec<String>) -> anyhow::Result<i32> {
     if let Some(searchstring) = args.get_one::<String>("search") {
         let ifilterobj = filterobj.chain(josh_core::filter::parse(":SQUASH:INDEX")?);
 
-        let max_complexity: usize = args
-            .get_one::<String>("max_comp")
-            .unwrap_or(&"6".to_string())
-            .parse()?;
-
         let commit = repo.revparse_single(&input_ref)?.peel_to_commit()?;
 
         let index_commit = josh_core::filter_commit(&transaction, ifilterobj, commit.id())?;
@@ -388,8 +378,7 @@ fn run_filter(args: Vec<String>) -> anyhow::Result<i32> {
         let index_tree = repo.find_commit(index_commit)?.tree()?;
 
         /* let start = std::time::Instant::now(); */
-        let candidates =
-            josh_search::search_candidates(&repo, &index_tree, searchstring, max_complexity)?;
+        let candidates = josh_search::search_candidates(&repo, &index_tree, &tree, searchstring)?;
         let matches = josh_search::search_matches(&repo, &tree, searchstring, &candidates)?;
         /* let duration = start.elapsed(); */
 

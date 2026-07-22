@@ -429,13 +429,7 @@ impl Revision {
         Ok(Some(warnings))
     }
 
-    fn search(
-        &self,
-        string: String,
-        max_complexity: Option<i32>,
-        context: &Context,
-    ) -> FieldResult<Option<Vec<SearchResult>>> {
-        let max_complexity = max_complexity.unwrap_or(6) as usize;
+    fn search(&self, string: String, context: &Context) -> FieldResult<Option<Vec<SearchResult>>> {
         let transaction = context.transaction.lock().unwrap();
         let ifilterobj = filter::parse(":SQUASH:INDEX")?;
         let tree = transaction.repo().find_commit(self.commit_id)?.tree()?;
@@ -447,8 +441,8 @@ impl Revision {
         let candidates = josh_search::search_candidates(
             transaction.repo(),
             index_tree.tree(),
+            x.tree(),
             &string,
-            max_complexity,
         )?;
         let results =
             josh_search::search_matches(transaction.repo(), x.tree(), &string, &candidates)?;
