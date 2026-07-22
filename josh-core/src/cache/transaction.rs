@@ -574,6 +574,18 @@ impl Transaction {
     }
 }
 
+/// Number of `(tree, index)` pairs remembered as diff bases for josh-search's incremental fast
+/// path. A small ring rather than a single pointer: the `_trigram_index` sled tree is shared
+/// across every filter spec indexed through one josh cache, and alternating specs would thrash
+/// a single slot.
+const RECENT_INDEX_SLOTS: usize = 4;
+
+/// Sled keys for the recent-pair ring. 8 bytes long, so they can never collide with the 20-byte
+/// oid keys of the memoization entries in the same tree.
+fn recent_index_key(slot: usize) -> Vec<u8> {
+    format!("_recent{}", slot).into_bytes()
+}
+
 /// Back josh-search's index memoization with the persistent trigram sled tree, so `:INDEX` (and
 /// any other in-transaction indexing) stays incremental across transactions and processes.
 impl josh_search::IndexCache for Transaction {
@@ -583,5 +595,40 @@ impl josh_search::IndexCache for Transaction {
 
     fn set_index(&self, tree: git2::Oid, index: git2::Oid) {
         self.insert_trigram_index(tree, index)
+    }
+
+    fn get_recent(&self) -> Vec<(git2::Oid, git2::Oid)> {
+        let t2 = self.t2.borrow();
+        (0..RECENT_INDEX_SLOTS)
+            .filter_map(|slot| {
+                t2.trigram_index_tree
+                    .get(recent_index_key(slot))
+                    .unwrap()
+                    .filter(|v| v.len() == 40)
+                    .map(|v| {
+                        (
+                            git2::Oid::from_bytes(&v[..20]).unwrap(),
+                            git2::Oid::from_bytes(&v[20..]).unwrap(),
+                        )
+                    })
+            })
+            .collect()
+    }
+
+    fn set_recent(&self, tree: git2::Oid, index: git2::Oid) {
+        let mut pairs = josh_search::IndexCache::get_recent(self);
+        pairs.retain(|(t, _)| *t != tree);
+        pairs.insert(0, (tree, index));
+        pairs.truncate(RECENT_INDEX_SLOTS);
+
+        let t2 = self.t2.borrow();
+        for (slot, (t, i)) in pairs.iter().enumerate() {
+            let mut value = Vec::with_capacity(40);
+            value.extend_from_slice(t.as_bytes());
+            value.extend_from_slice(i.as_bytes());
+            t2.trigram_index_tree
+                .insert(recent_index_key(slot), value)
+                .unwrap();
+        }
     }
 }
