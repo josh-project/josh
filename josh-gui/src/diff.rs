@@ -202,11 +202,15 @@ pub fn FileDiffView(
     scope: josh_changes::ChangesRef,
     mut page: Signal<Page>,
 ) -> Element {
+    let changes_ref_oid = use_context::<Signal<Option<git2::Oid>>>();
     let mut detail = use_signal(|| detail::load_detail(&sha, &scope));
     let mut prev_sha = use_signal(|| sha.clone());
-    if *prev_sha.read() != sha {
+    let mut prev_oid = use_signal(|| *changes_ref_oid.peek());
+    let cur_oid = *changes_ref_oid.read();
+    if *prev_sha.read() != sha || *prev_oid.read() != cur_oid {
         detail.set(detail::load_detail(&sha, &scope));
         prev_sha.set(sha.clone());
+        prev_oid.set(cur_oid);
     }
     let (prev_file, next_file) = detail
         .read()
@@ -544,7 +548,6 @@ pub fn FileDiffView(
                                             class: "nav-btn",
                                             disabled: comment_text.read().trim().is_empty(),
                                             onclick: {
-                                                let mut detail_sig = detail;
                                                 let sha_save = sha_for_save.clone();
                                                 let path_save = path_for_save.clone();
                                                 let scope_save = scope_for_save.clone();
@@ -566,10 +569,16 @@ pub fn FileDiffView(
                                                         )
                                                         .is_ok()
                                                         {
-                                                            detail_sig.set(detail::load_detail(
-                                                                &sha_save,
+                                                            // Bumping the shared OID signal
+                                                            // triggers the prev_oid check above on
+                                                            // the next render, which reloads
+                                                            // `detail`. Other views (list,
+                                                            // metadata) refresh through the same
+                                                            // signal.
+                                                            detail::bump_changes_ref_oid(
+                                                                changes_ref_oid,
                                                                 &scope_save,
-                                                            ));
+                                                            );
                                                             commenting.set(false);
                                                             comment_text.set("".to_string());
                                                         }
