@@ -1,0 +1,25 @@
+:$label="devtools build"
+:#image[:+images/rust-devtools-dev-local]
+:$cache="sccache"
+:$output="none"
+
+:+sidecars
+
+inputs = :[
+    :#fetch[:+ws/devtools-fetch]
+    :#devtools-deps-build[:+ws/devtools-deps-build]
+]
+
+env = :[
+    :$RUSTFLAGS="-D warnings -Ctarget-feature=-crt-static"
+    :$CARGO_HOME="/fetch/cargo-cache"
+]
+
+worktree = :[
+    ::run.sh=ws/devtools-build.sh
+    ::check-sccache.sh=ws/check-sccache.sh
+    :+ws/patched-cargo
+    ::devtools/
+    ::cq/josh-cq-test-components/
+    ::axum-cgi/
+]
