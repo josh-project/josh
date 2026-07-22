@@ -388,18 +388,9 @@ fn run_filter(args: Vec<String>) -> anyhow::Result<i32> {
         let index_tree = repo.find_commit(index_commit)?.tree()?;
 
         /* let start = std::time::Instant::now(); */
-        let candidates = josh_core::filter::trigram::search_candidates(
-            &transaction,
-            &index_tree,
-            searchstring,
-            max_complexity,
-        )?;
-        let matches = josh_core::filter::trigram::search_matches(
-            &transaction,
-            &tree,
-            searchstring,
-            &candidates,
-        )?;
+        let candidates =
+            josh_search::search_candidates(&repo, &index_tree, searchstring, max_complexity)?;
+        let matches = josh_search::search_matches(&repo, &tree, searchstring, &candidates)?;
         /* let duration = start.elapsed(); */
 
         for r in matches {

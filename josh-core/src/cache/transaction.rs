@@ -573,3 +573,15 @@ impl Transaction {
         Ok(None)
     }
 }
+
+/// Back josh-search's index memoization with the persistent trigram sled tree, so `:INDEX` (and
+/// any other in-transaction indexing) stays incremental across transactions and processes.
+impl josh_search::IndexCache for Transaction {
+    fn get_index(&self, tree: git2::Oid) -> Option<git2::Oid> {
+        self.get_trigram_index(tree)
+    }
+
+    fn set_index(&self, tree: git2::Oid, index: git2::Oid) {
+        self.insert_trigram_index(tree, index)
+    }
+}

@@ -1,0 +1,16 @@
+[package]
+name = "josh-search"
+version = "26.7.19"
+repository = "https://github.com/josh-project/josh"
+authors = ["Josh Project authors <contact@josh-project.dev>"]
+license-file = "../LICENSE"
+description = "Trigram based code search index for git repositories"
+keywords = ["git", "search", "index", "trigram"]
+readme = "../README.md"
+edition = "2024"
+
+[dependencies]
+anyhow.workspace = true
+bitvec = "1.0.1"
+git2.workspace = true
+hex.workspace = true
