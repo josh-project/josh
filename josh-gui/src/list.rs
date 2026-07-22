@@ -83,7 +83,23 @@ pub fn ListView(
     }
 
     use_effect(move || {
+        let offset = *scroll_offset.peek();
+        if offset > 0 {
+            let js = format!(
+                "var el=document.getElementById('changes-scroll');if(el)el.scrollTop={};",
+                offset
+            );
+            let _ = dioxus::document::eval(&js);
+        }
+    });
+
+    let mut sel_effect_ready = use_signal(|| false);
+    use_effect(move || {
         let sel = selected_change.read();
+        if !*sel_effect_ready.peek() {
+            sel_effect_ready.set(true);
+            return;
+        }
         let Some(cid) = sel.as_deref() else {
             return;
         };
@@ -207,15 +223,15 @@ pub fn ListView(
                                             id: "change-{row.sha}",
                                             class: "{class}",
                                             onclick: {
-                                                let s = sha.clone();
-                                                move |_| page.set(Page::Detail { sha: s.clone() })
+                                                let c = cid.clone();
+                                                move |_| selected_change.set(Some(c.clone()))
                                             },
                                             td {
                                                 onclick: {
-                                                    let c = cid.clone();
+                                                    let s = sha.clone();
                                                     move |evt| {
                                                         evt.stop_propagation();
-                                                        selected_change.set(Some(c.clone()));
+                                                        page.set(Page::Detail { sha: s.clone() });
                                                     }
                                                 },
                                                 "{row.subject}"
