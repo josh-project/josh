@@ -205,3 +205,16 @@ pub fn spawn_git_command(
         }
     }
 }
+
+/// Read a commit's parent OIDs directly from the raw ODB bytes, parsing only the parent lines via
+/// `gix_object::CommitRefIter`. This avoids libgit2's commit parse cache (a lock-guarded global
+/// that also decodes author/committer/message) whenever a caller only needs the parent ids.
+pub fn read_parent_ids(repo: &git2::Repository, oid: git2::Oid) -> anyhow::Result<Vec<git2::Oid>> {
+    let odb = repo.odb()?;
+    let odb_commit = odb.read(oid)?;
+    debug_assert_eq!(odb_commit.kind(), git2::ObjectType::Commit);
+    gix_object::CommitRefIter::from_bytes(odb_commit.data())
+        .parent_ids()
+        .map(|p| Ok(git2::Oid::from_bytes(p.as_bytes())?))
+        .collect()
+}

@@ -192,14 +192,10 @@ impl Revision {
     fn parents(&self, context: &Context) -> FieldResult<Vec<Revision>> {
         let transaction = context.transaction.lock().unwrap();
         let commit = transaction.repo().find_commit(self.commit_id)?;
-        let filter_commit = transaction.repo().find_commit(filter::apply_to_commit(
-            self.filter,
-            &commit,
-            &transaction,
-        )?)?;
+        let filter_commit_id = filter::apply_to_commit(self.filter, &commit, &transaction)?;
 
-        let parents = filter_commit
-            .parent_ids()
+        let parents = josh_core::git::read_parent_ids(transaction.repo(), filter_commit_id)?
+            .into_iter()
             .map(|id| Revision {
                 filter: self.filter,
                 commit_id: history::find_original(
@@ -252,10 +248,8 @@ impl Revision {
 
                 if orig != git2::Oid::zero() {
                     ids[i] = orig;
-                    contained_in = transaction
-                        .repo()
-                        .find_commit(ids[i])?
-                        .parent_ids()
+                    contained_in = josh_core::git::read_parent_ids(transaction.repo(), ids[i])?
+                        .into_iter()
                         .next()
                         .unwrap_or(ids[i]);
                 } else {
