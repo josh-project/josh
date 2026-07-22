@@ -1,5 +1,5 @@
 use crate::check_experimental_features_enabled;
-use crate::op::{InsertContent, LazyRef, Op, Regex};
+use crate::op::{InsertContent, LazyRef, Op, Regex, RevMatch};
 use crate::opt;
 use crate::persist::{self, Node, to_filter, to_op};
 use std::sync::LazyLock;
@@ -84,6 +84,18 @@ impl Filter {
     /// would otherwise change across revisions
     pub fn pin(self, other: Filter) -> Filter {
         self.chain(to_filter(Op::Pin(other)))
+    }
+
+    /// Chain a `:rev(...)` filter. Each `(match, tip, then)` arm applies `then` to a commit whose
+    /// relationship to `tip` satisfies `match` (e.g. `AncestorInclusive` is `<=tip`); the first
+    /// matching arm wins and a commit matching none passes through unchanged. Tips are resolved
+    /// oids (`RevMatch::Default` ignores its tip); construct `Op::Rev` directly for lazy refs.
+    pub fn rev(self, arms: Vec<(RevMatch, git2::Oid, Filter)>) -> Filter {
+        self.chain(to_filter(Op::Rev(
+            arms.into_iter()
+                .map(|(m, tip, then)| (m, LazyRef::Resolved(tip), then))
+                .collect(),
+        )))
     }
 
     /// Create a no-op filter that passes everything through unchanged
