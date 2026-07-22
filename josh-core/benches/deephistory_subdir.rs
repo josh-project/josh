@@ -1,5 +1,5 @@
 use criterion::{BatchSize, BenchmarkId, Criterion, Throughput, criterion_group, criterion_main};
-use josh_core::filter::Filter;
+use josh_core::filter::{Filter, RevMatch};
 use josh_core::git::josh_commit_signature;
 use rand::prelude::*;
 use std::path::{Path, PathBuf};
@@ -278,5 +278,75 @@ fn deephistory_subdir(c: &mut Criterion) {
     group.finish();
 }
 
-criterion_group!(benches, deephistory_subdir);
+/// Companion to `deephistory_subdir` that gates the same `:/<SUBDIR>` selection behind a
+/// `:rev(<=<head>:...)` cutoff. The added work over the plain subdir bench is exactly the
+/// `is_ancestor_of` ancestor walk the rev filter triggers: `get_rev_filter` asks, per commit,
+/// whether it is an ancestor of the tip, which builds (once per `filter_commit`, since the
+/// `ANCESTORS` set is memoized and `reset_caches` clears it each iteration) the full ancestor set
+/// of the tip. The tip here is the case head, so its ancestor set is the whole filtered history --
+/// the case where that walk overlaps `walk2`'s own commit reads. Since every commit is `<= head`,
+/// the filtered output is identical to `deephistory_subdir`; only the cost differs. This isolates
+/// how the ancestor walk reads commits (full `find_commit` vs the parent-only `read_parent_ids`).
+fn deephistory_rev(c: &mut Criterion) {
+    josh_test_support::init_tracing("bench=trace");
+
+    let bench = SubdirBench::setup().expect("set up benchmark");
+
+    // Correctness gate (untimed): with the tip at the case head every commit is an ancestor, so the
+    // rev-gated selection must produce exactly the plain subdir filter's tree. Guards against
+    // `is_ancestor_of` silently returning false -- which would apply a Nop and measure the wrong
+    // (cheaper) path. Runs on the smallest case, then resets caches so nothing warms the timed runs.
+    {
+        let case = bench.cases.first().expect("at least one case");
+        let rev_filter = Filter::new().rev(vec![(
+            RevMatch::AncestorInclusive,
+            case.head,
+            Filter::new().subdir(SUBDIR),
+        )]);
+        let transaction = bench.context.open().expect("open transaction");
+        let rev_head = josh_core::filter_commit(&transaction, rev_filter, case.head).expect("rev");
+        let sub_head =
+            josh_core::filter_commit(&transaction, bench.filter, case.head).expect("subdir");
+        let tree_of = |oid| transaction.repo().find_commit(oid).unwrap().tree_id();
+        assert_eq!(
+            tree_of(rev_head),
+            tree_of(sub_head),
+            "rev(<=head:/{SUBDIR}) must match the plain subdir filter -- is_ancestor_of misbehaving?"
+        );
+        drop(transaction);
+        josh_core::reset_caches().expect("reset caches");
+    }
+
+    let mut group = c.benchmark_group("deephistory_rev");
+    group.sample_size(10);
+    for case in &bench.cases {
+        // `:rev(<=<case head>:/<SUBDIR>)` -- every commit in the history is an ancestor of the case
+        // head, so all match and receive the subdir selection.
+        let rev_filter = Filter::new().rev(vec![(
+            RevMatch::AncestorInclusive,
+            case.head,
+            Filter::new().subdir(SUBDIR),
+        )]);
+        group.throughput(Throughput::Elements(case.n_commits as u64));
+        group.bench_function(BenchmarkId::from_parameter(case.n_commits), |b| {
+            b.iter_batched(
+                || {
+                    josh_core::reset_caches().expect("reset caches");
+                    let transaction = bench.context.open().expect("open transaction");
+                    let iter_span = tracing::info_span!(target: "bench", "iter").entered();
+                    (transaction, iter_span)
+                },
+                |(transaction, iter_span)| {
+                    josh_core::filter_commit(&transaction, rev_filter, case.head)
+                        .expect("filter commit");
+                    (transaction, iter_span)
+                },
+                BatchSize::PerIteration,
+            );
+        });
+    }
+    group.finish();
+}
+
+criterion_group!(benches, deephistory_subdir, deephistory_rev);
 criterion_main!(benches);
