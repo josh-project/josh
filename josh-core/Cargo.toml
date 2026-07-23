@@ -33,6 +33,14 @@ harness = false
 name = "deephistory_subdir_distributed"
 harness = false
 
+[[bench]]
+name = "deephistory_glob"
+harness = false
+
+[[bench]]
+name = "widetree_glob"
+harness = false
+
 [dependencies]
 backtrace = "0.3.76"
 bitvec = "1.0.1"
