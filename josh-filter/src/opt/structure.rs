@@ -127,6 +127,24 @@ pub(super) fn resurrects_from_empty(filter: Filter) -> bool {
     }
 }
 
+/// Whether `filter` commutes with `tree::compose`, i.e. `filter(compose(t0, t1, ..)) ==
+/// compose(filter(t0), filter(t1), ..)`. This is the condition for pulling a chain element that
+/// sits *after* a `Compose` into each of the compose's branches (see `flatten`). Only pure path
+/// relocation/selection ops distribute: `Prefix`/`Subdir` (and `Nop`/`Empty`), plus `Chain`/
+/// `Compose` built from them. Ops whose result at one path depends on another path -- `Exclude`,
+/// `Select`, `Subtract`, `File` -- do not, since the paths they read may be split across branches
+/// and only meet in the composed tree. The whitelist is deliberately conservative: anything not
+/// listed is assumed not to distribute, which only ever suppresses the optimization.
+pub(super) fn distributes_over_compose(filter: Filter) -> bool {
+    match to_op_ref(filter) {
+        Op::Nop | Op::Empty | Op::Prefix(_) | Op::Subdir(_) => true,
+        Op::Chain(filters) | Op::Compose(filters) => {
+            filters.iter().all(|f| distributes_over_compose(*f))
+        }
+        _ => false,
+    }
+}
+
 pub(super) fn common_post(filters: &Vec<Filter>) -> Option<(Filter, Vec<Filter>)> {
     let mut rest = vec![];
     let mut common_post: Option<Filter> = None;

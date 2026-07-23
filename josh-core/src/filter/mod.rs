@@ -2628,6 +2628,22 @@ mod tests {
             ins("x", "y"),
         ])));
 
+        // Chain[Compose[Subdir(d1), Subdir(d2)], Exclude(File(s2/f0, s1/f0))]. `File` reads its
+        // source (`s1/f0`, present only under d1) from the *composed* tree, so distributing the
+        // trailing `Exclude(File)` into each branch changes the result: sequentially the merged
+        // tree contains `s1/f0`, so `File` recreates `s2/f0` and `Exclude` drops it; distributed,
+        // the d2 branch has no `s1/f0`, so nothing is excluded and `s2/f0` survives.
+        cases.push(to_filter(Op::Chain(vec![
+            to_filter(Op::Compose(vec![
+                to_filter(Op::Subdir(std::path::PathBuf::from("d1"))),
+                to_filter(Op::Subdir(std::path::PathBuf::from("d2"))),
+            ])),
+            to_filter(Op::Exclude(to_filter(Op::File(
+                std::path::PathBuf::from("s2/f0"),
+                std::path::PathBuf::from("s1/f0"),
+            )))),
+        ])));
+
         for sub in cases {
             // Both `optimize` and `minimize` run the rules under test, so exercise both.
             for (name, optimized) in [
