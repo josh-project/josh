@@ -109,6 +109,7 @@ struct Transaction2 {
     legalize_map: HashMap<(crate::filter::Filter, git2::Oid), crate::filter::Filter>,
     downstack_deps_map: HashMap<git2::Oid, std::collections::HashSet<crate::filter::DownstackDep>>,
     merge_trees_map: HashMap<(git2::Oid, git2::Oid, git2::Oid), git2::Oid>,
+    last_written_commit: Option<(git2::Oid, git2::Oid)>,
 
     cache: std::sync::Arc<CacheStack>,
     path_tree: sled::Tree,
@@ -178,6 +179,7 @@ impl Transaction {
                 legalize_map: HashMap::new(),
                 downstack_deps_map: HashMap::new(),
                 merge_trees_map: HashMap::new(),
+                last_written_commit: None,
                 cache,
                 path_tree,
                 invert_tree,
@@ -319,6 +321,18 @@ impl Transaction {
     pub fn get_overlay(&self, from: (git2::Oid, git2::Oid)) -> Option<git2::Oid> {
         let t2 = self.t2.borrow_mut();
         t2.overlay_map.get(&from).cloned()
+    }
+
+    /// Remember the most recent commit josh wrote in this transaction as `(oid, tree_id)`. A history
+    /// walk processes a commit right after writing its parent, so this single slot answers the
+    /// common "what tree does my filtered parent have" lookup without re-parsing the parent from the
+    /// odb -- and without retaining every written commit the way a map would.
+    pub fn set_last_written_commit(&self, commit: git2::Oid, tree: git2::Oid) {
+        self.t2.borrow_mut().last_written_commit = Some((commit, tree));
+    }
+
+    pub fn last_written_commit(&self) -> Option<(git2::Oid, git2::Oid)> {
+        self.t2.borrow().last_written_commit
     }
 
     pub fn insert_legalize(
