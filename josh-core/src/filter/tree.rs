@@ -84,51 +84,114 @@ pub fn regex_replace<'a>(
     Ok(repo.find_tree(builder.write()?)?)
 }
 
-pub fn remove_pred<'a>(
-    transaction: &'a cache::Transaction,
-    root: &str,
+/// Compare two tree entry names in canonical git tree order: byte-wise, with tree entries
+/// sorted as if their name had a trailing '/'.
+fn git_tree_entry_cmp(a: &[u8], a_is_tree: bool, b: &[u8], b_is_tree: bool) -> std::cmp::Ordering {
+    let len = a.len().min(b.len());
+    match a[..len].cmp(&b[..len]) {
+        std::cmp::Ordering::Equal => {}
+        ord => return ord,
+    }
+    let ca = a
+        .get(len)
+        .copied()
+        .unwrap_or(if a_is_tree { b'/' } else { 0 });
+    let cb = b
+        .get(len)
+        .copied()
+        .unwrap_or(if b_is_tree { b'/' } else { 0 });
+    ca.cmp(&cb)
+}
+
+/// Rebuild `input` keeping only blob entries accepted by `pred`. `path` is a reusable buffer
+/// holding the slash-separated path of the tree currently being visited; it is restored to its
+/// incoming length before returning. Gitlink (submodule) entries are always dropped.
+pub fn remove_pred(
+    transaction: &cache::Transaction,
+    path: &mut String,
     input: git2::Oid,
-    pred: &dyn Fn(&Path, bool) -> bool,
+    pred: &dyn Fn(&str, bool) -> bool,
     key: git2::Oid,
-) -> anyhow::Result<git2::Tree<'a>> {
-    let repo = transaction.repo();
+) -> anyhow::Result<git2::Oid> {
     if let Some(cached) = transaction.get_glob((input, key)) {
-        return Ok(repo.find_tree(cached)?);
+        return Ok(cached);
     }
 
+    let repo = transaction.repo();
     let tree = repo.find_tree(input)?;
     let mut builder = repo.treebuilder(None)?;
+    let empty = empty_id();
+    let mut changed = false;
+    // Previous entry, used to verify the input tree is in canonical git order with no duplicate
+    // names. Non-canonical trees (fsck-invalid, but transportable with default git settings) were
+    // normalized by the old unconditional `builder.write()`, so they must not take the unchanged
+    // fast path.
+    let mut prev: Option<(git2::TreeEntry, bool)> = None;
 
     for entry in tree.iter() {
         let name = entry.name().ok_or_else(|| anyhow!("INVALID_FILENAME"))?;
-        let path = std::path::PathBuf::from(root).join(name);
-
-        if entry.kind() == Some(git2::ObjectType::Blob) && pred(&path, true) {
-            builder.insert(name, entry.id(), entry.filemode()).ok();
+        let base = path.len();
+        if !path.is_empty() {
+            path.push('/');
         }
+        path.push_str(name);
 
-        if entry.kind() == Some(git2::ObjectType::Tree) {
-            let s = if !root.is_empty() && pred(&path, false) {
-                entry.id()
-            } else {
-                remove_pred(
-                    transaction,
-                    &format!("{}{}{}", root, if root.is_empty() { "" } else { "/" }, name),
-                    entry.id(),
-                    &pred,
-                    key,
-                )?
-                .id()
-            };
-
-            if s != empty_id() {
-                builder.insert(name, s, 0o0040000).ok();
+        let is_tree = entry.kind() == Some(git2::ObjectType::Tree);
+        if let Some((prev_entry, prev_is_tree)) = &prev {
+            let prev_name = prev_entry.name_bytes();
+            if prev_name == name.as_bytes()
+                || git_tree_entry_cmp(prev_name, *prev_is_tree, name.as_bytes(), is_tree)
+                    != std::cmp::Ordering::Less
+            {
+                changed = true;
             }
         }
+
+        match entry.kind() {
+            Some(git2::ObjectType::Blob) => {
+                if pred(path, true) {
+                    // `filemode()` is the libgit2-normalized mode: if it differs from the raw
+                    // on-disk mode (e.g. legacy 100664 blobs), the rebuilt tree differs from the
+                    // input. Failed inserts (names the treebuilder rejects, like ".git") were
+                    // silently dropped by the old code, so they also count as changed.
+                    if entry.filemode_raw() != entry.filemode() {
+                        changed = true;
+                    }
+                    if builder.insert(name, entry.id(), entry.filemode()).is_err() {
+                        changed = true;
+                    }
+                } else {
+                    changed = true;
+                }
+            }
+            Some(git2::ObjectType::Tree) => {
+                let s = remove_pred(transaction, path, entry.id(), pred, key)?;
+                if s != entry.id() || s == empty || entry.filemode_raw() != 0o0040000 {
+                    changed = true;
+                }
+                if s != empty && builder.insert(name, s, 0o0040000).is_err() {
+                    changed = true;
+                }
+            }
+            // Gitlinks (and any other kinds) are dropped, so the rebuilt tree differs from the
+            // input and must not take the unchanged fast path below.
+            _ => {
+                changed = true;
+            }
+        }
+        path.truncate(base);
+        prev = Some((entry, is_tree));
     }
 
-    let result = repo.find_tree(builder.write()?)?;
-    transaction.insert_glob((input, key), result.id());
+    // If nothing was dropped or rewritten, the builder holds exactly the input's entries; since
+    // git trees are content-addressed, writing it out would reproduce `input` bit-identically.
+    let result = if changed {
+        builder.write()?
+    } else {
+        debug_assert_eq!(builder.write()?, input);
+        input
+    };
+    transaction.insert_glob((input, key), result);
     Ok(result)
 }
 
@@ -637,6 +700,187 @@ mod tests {
         let base = repo.treebuilder(None).unwrap().write().unwrap();
         b.create_updated(repo, &repo.find_tree(base).unwrap())
             .unwrap()
+    }
+
+    fn open_transaction(td: &tempfile::TempDir) -> cache::Transaction {
+        cache::sled_load(td.path()).unwrap();
+        let ctx = cache::TransactionContext::new(td.path(), cache::CacheStack::default().into());
+        ctx.open().unwrap()
+    }
+
+    // A gitlink (submodule) entry must be dropped from the rebuilt tree -- and must therefore
+    // defeat the "unchanged input" fast path -- while a symlink blob accepted by the predicate
+    // keeps its 0o120000 filemode.
+    #[test]
+    fn remove_pred_drops_gitlink_and_preserves_symlink_mode() {
+        let td = tempfile::tempdir().unwrap();
+        let repo = git2::Repository::init_bare(td.path()).unwrap();
+
+        let blob = repo.blob(b"content").unwrap();
+        let link = repo.blob(b"target").unwrap();
+        // Gitlinks reference commits in other repositories; libgit2 does not require the oid
+        // to exist locally.
+        let sub = git2::Oid::from_str("0123456789012345678901234567890123456789").unwrap();
+
+        let mut b = repo.treebuilder(None).unwrap();
+        b.insert("keep.rs", blob, 0o100644).unwrap();
+        b.insert("link.rs", link, 0o120000).unwrap();
+        b.insert("sub", sub, 0o160000).unwrap();
+        let input = b.write().unwrap();
+
+        let t = open_transaction(&td);
+        let key = git2::Oid::from_str("1111111111111111111111111111111111111111").unwrap();
+        let out = remove_pred(&t, &mut String::new(), input, &|_, isblob| isblob, key).unwrap();
+
+        assert_ne!(out, input, "dropping the gitlink must produce a new tree");
+        let out_tree = t.repo().find_tree(out).unwrap();
+        assert!(
+            out_tree.get_name("sub").is_none(),
+            "gitlink must be dropped"
+        );
+        assert!(out_tree.get_name("keep.rs").is_some());
+        let link_entry = out_tree.get_name("link.rs").expect("symlink kept");
+        assert_eq!(link_entry.filemode(), 0o120000);
+        assert_eq!(link_entry.id(), link);
+    }
+
+    // The predicate must see full slash-separated paths at every depth (truncate discipline of
+    // the shared path buffer), and a keep-everything predicate must return the input oid via the
+    // unchanged fast path.
+    #[test]
+    fn remove_pred_passes_full_paths_and_reuses_unchanged_input() {
+        let td = tempfile::tempdir().unwrap();
+        let repo = git2::Repository::init_bare(td.path()).unwrap();
+
+        let paths = ["a/b/drop.txt", "a/b/keep.rs", "a/keep.rs", "top.rs"];
+        let input = make_tree(&repo, &paths);
+
+        let t = open_transaction(&td);
+        let key = git2::Oid::from_str("2222222222222222222222222222222222222222").unwrap();
+
+        let seen = std::cell::RefCell::new(Vec::new());
+        let pred = |path: &str, isblob: bool| {
+            assert!(isblob, "predicate must only be called for blobs");
+            seen.borrow_mut().push(path.to_string());
+            path.ends_with(".rs")
+        };
+        let out = remove_pred(&t, &mut String::new(), input, &pred, key).unwrap();
+
+        let mut seen = seen.into_inner();
+        seen.sort();
+        assert_eq!(seen, paths);
+
+        let out_tree = t.repo().find_tree(out).unwrap();
+        for kept in ["a/b/keep.rs", "a/keep.rs", "top.rs"] {
+            assert!(out_tree.get_path(Path::new(kept)).is_ok(), "{kept} kept");
+        }
+        assert!(out_tree.get_path(Path::new("a/b/drop.txt")).is_err());
+
+        let key2 = git2::Oid::from_str("3333333333333333333333333333333333333333").unwrap();
+        let out2 = remove_pred(&t, &mut String::new(), input, &|_, _| true, key2).unwrap();
+        assert_eq!(out2, input, "keep-everything must return the input oid");
+    }
+
+    // Write a raw (unvalidated) tree object straight into the odb. This can express fsck-invalid
+    // trees -- legacy filemodes, unsorted or duplicate entries, forbidden names -- that git can
+    // still transport with default settings and that therefore reach remove_pred in production.
+    fn write_raw_tree(repo: &git2::Repository, entries: &[(&str, &str, git2::Oid)]) -> git2::Oid {
+        let mut data = Vec::new();
+        for (mode, name, oid) in entries {
+            data.extend_from_slice(mode.as_bytes());
+            data.push(b' ');
+            data.extend_from_slice(name.as_bytes());
+            data.push(0);
+            data.extend_from_slice(oid.as_bytes());
+        }
+        repo.odb()
+            .unwrap()
+            .write(git2::ObjectType::Tree, &data)
+            .unwrap()
+    }
+
+    // A legacy blob mode like 100664 is normalized by the treebuilder, so a keep-everything
+    // predicate must NOT return the raw input oid: it must return the normalized rewrite,
+    // exactly like the old unconditional builder.write() did.
+    #[test]
+    fn remove_pred_normalizes_legacy_filemode() {
+        let td = tempfile::tempdir().unwrap();
+        let repo = git2::Repository::init_bare(td.path()).unwrap();
+
+        let blob = repo.blob(b"content").unwrap();
+        let input = write_raw_tree(&repo, &[("100664", "file.rs", blob)]);
+        assert_ne!(
+            repo.find_tree(input)
+                .unwrap()
+                .get_name("file.rs")
+                .unwrap()
+                .filemode_raw(),
+            0o100644,
+            "input must carry the raw legacy mode"
+        );
+
+        let mut b = repo.treebuilder(None).unwrap();
+        b.insert("file.rs", blob, 0o100644).unwrap();
+        let expected = b.write().unwrap();
+        assert_ne!(expected, input);
+
+        let t = open_transaction(&td);
+        let key = git2::Oid::from_str("4444444444444444444444444444444444444444").unwrap();
+        let out = remove_pred(&t, &mut String::new(), input, &|_, isblob| isblob, key).unwrap();
+        assert_eq!(
+            out, expected,
+            "legacy mode must be normalized, not passed through"
+        );
+    }
+
+    // Entries the treebuilder rejects (".git") were silently dropped by the old code, and
+    // non-canonical entry order was normalized by the old unconditional builder.write(). Both
+    // must still happen instead of returning the fsck-invalid input via the fast path.
+    #[test]
+    fn remove_pred_normalizes_invalid_names_and_entry_order() {
+        let td = tempfile::tempdir().unwrap();
+        let repo = git2::Repository::init_bare(td.path()).unwrap();
+        let blob = repo.blob(b"content").unwrap();
+        let t = open_transaction(&td);
+
+        // ".git" is rejected by the treebuilder: the old code dropped it via .ok().
+        let input = write_raw_tree(
+            &repo,
+            &[("100644", ".git", blob), ("100644", "keep.rs", blob)],
+        );
+        let key = git2::Oid::from_str("5555555555555555555555555555555555555555").unwrap();
+        let out = remove_pred(&t, &mut String::new(), input, &|_, isblob| isblob, key).unwrap();
+        assert_ne!(out, input);
+        let out_tree = t.repo().find_tree(out).unwrap();
+        assert!(out_tree.get_name(".git").is_none(), ".git must be dropped");
+        assert!(out_tree.get_name("keep.rs").is_some());
+
+        // Unsorted input: the old code always rewrote it in canonical order.
+        let input = write_raw_tree(&repo, &[("100644", "b.rs", blob), ("100644", "a.rs", blob)]);
+        let mut b = repo.treebuilder(None).unwrap();
+        b.insert("a.rs", blob, 0o100644).unwrap();
+        b.insert("b.rs", blob, 0o100644).unwrap();
+        let expected = b.write().unwrap();
+        assert_ne!(expected, input);
+        let key = git2::Oid::from_str("6666666666666666666666666666666666666666").unwrap();
+        let out = remove_pred(&t, &mut String::new(), input, &|_, isblob| isblob, key).unwrap();
+        assert_eq!(
+            out, expected,
+            "unsorted input must be rewritten in canonical order"
+        );
+
+        // Duplicate names: last one wins in the treebuilder, exactly as the old code behaved.
+        let blob2 = repo.blob(b"other").unwrap();
+        let input = write_raw_tree(
+            &repo,
+            &[("100644", "a.rs", blob), ("100644", "a.rs", blob2)],
+        );
+        let mut b = repo.treebuilder(None).unwrap();
+        b.insert("a.rs", blob2, 0o100644).unwrap();
+        let expected = b.write().unwrap();
+        let key = git2::Oid::from_str("7777777777777777777777777777777777777777").unwrap();
+        let out = remove_pred(&t, &mut String::new(), input, &|_, isblob| isblob, key).unwrap();
+        assert_eq!(out, expected, "duplicate entries must be deduplicated");
     }
 
     // Removing a whole subdirectory must report every file under it as removed. This exercises
