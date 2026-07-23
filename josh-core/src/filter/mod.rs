@@ -1946,7 +1946,7 @@ pub fn is_ancestor_of(
             let mut todo = vec![tip];
             let mut ancestors = std::collections::HashSet::from_iter(todo.iter().copied());
             while let Some(commit) = todo.pop() {
-                for parent in transaction.repo().find_commit(commit)?.parent_ids() {
+                for parent in crate::git::read_parent_ids(transaction.repo(), commit)? {
                     if ancestors.insert(parent) {
                         // Newly inserted! Also handle its parents.
                         todo.push(parent);
