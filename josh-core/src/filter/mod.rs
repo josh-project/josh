@@ -14,7 +14,7 @@ pub use josh_filter::flang::parse::{get_comments, parse};
 pub use josh_filter::opt;
 pub use josh_filter::opt::invert;
 pub use josh_filter::persist::{as_tree, from_tree};
-pub use josh_filter::persist::{peel_op, to_filter, to_op, to_ops};
+pub use josh_filter::persist::{peel_op, peel_op_ref, to_filter, to_op, to_ops};
 pub use josh_filter::{Filter, InsertContent, LazyRef, Op, RevMatch};
 pub use josh_filter::{as_file, pretty, spec};
 
@@ -1364,19 +1364,48 @@ pub fn apply<'a>(
         }
 
         Op::Pattern(pattern) => {
-            let pattern = glob::Pattern::new(pattern)?;
+            // Compiled globs and cache-key oids, memoized per interned filter node. Keys are
+            // pointers to `Box::leak`'d, immutable nodes that live for the process lifetime, so
+            // entries are pure functions of their key and can never go stale -- this map is
+            // intentionally not wired into `reset_caches`.
+            static PATTERN_MEMO: LazyLock<
+                std::sync::RwLock<
+                    std::collections::HashMap<usize, std::sync::Arc<(glob::Pattern, git2::Oid)>>,
+                >,
+            > = LazyLock::new(Default::default);
+
+            let node_key = peel_op_ref(filter) as *const Op as usize;
+            let memo = PATTERN_MEMO.read().unwrap().get(&node_key).cloned();
+            let memo = if let Some(memo) = memo {
+                memo
+            } else {
+                // Compile errors are propagated without caching, so error behavior is per-call
+                // identical to the uncached implementation.
+                let compiled = glob::Pattern::new(pattern)?;
+                let key = to_filter(op.clone()).id();
+                let entry = std::sync::Arc::new((compiled, key));
+                PATTERN_MEMO
+                    .write()
+                    .unwrap()
+                    .entry(node_key)
+                    .or_insert_with(|| entry.clone());
+                entry
+            };
+            let (pattern, key) = (&memo.0, memo.1);
             let options = glob::MatchOptions {
                 case_sensitive: true,
                 require_literal_separator: true,
                 require_literal_leading_dot: true,
             };
-            Ok(x.clone().with_tree(tree::remove_pred(
+            let input = x.tree().id();
+            let t = tree::remove_pred(
                 transaction,
-                "",
-                x.tree().id(),
-                &|path, isblob| isblob && (pattern.matches_path_with(path, options)),
-                to_filter(op.clone()).id(),
-            )?))
+                &mut String::new(),
+                input,
+                &|path, isblob| isblob && pattern.matches_with(path, options),
+                key,
+            )?;
+            Ok(x.with_tree(repo.find_tree(t)?))
         }
         Op::Insert(dest_path, content) => {
             let (oid, mode, is_tree) = match content {
