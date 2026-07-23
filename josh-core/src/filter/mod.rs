@@ -1362,20 +1362,29 @@ pub fn apply<'a>(
             Ok(x.with_tree(t))
         }
 
-        Op::Pattern(glob) => {
-            let options = glob::MatchOptions {
-                case_sensitive: true,
-                require_literal_separator: true,
-                require_literal_leading_dot: true,
-            };
+        Op::Pattern(cp) => {
             let input = x.tree().id();
-            let t = tree::remove_pred(
-                transaction,
-                &mut String::new(),
-                input,
-                &|path, isblob| isblob && glob.matches_with(path, options),
-                peel_filter(filter).id(),
-            )?;
+            let key = peel_filter(filter).id();
+            let t = if cp.fallback {
+                // More components than the NFA state mask can hold: match full paths.
+                tree::remove_pred(
+                    transaction,
+                    &mut String::new(),
+                    input,
+                    &|path, isblob| {
+                        isblob && cp.full.matches_with(path, tree::PATTERN_MATCH_OPTIONS)
+                    },
+                    key,
+                )?
+            } else {
+                tree::remove_pattern(
+                    transaction,
+                    input,
+                    cp,
+                    key,
+                    tree::CompiledPattern::initial_state(),
+                )?
+            };
             Ok(if t == input {
                 x
             } else {

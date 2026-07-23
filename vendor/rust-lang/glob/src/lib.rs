@@ -577,19 +577,29 @@ impl FromStr for Pattern {
     }
 }
 
+/// A token of a compiled glob pattern; the output of the glob parser.
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
-enum PatternToken {
+pub enum PatternToken {
+    /// A literal character, matched verbatim.
     Char(char),
+    /// `?`: any single character.
     AnyChar,
+    /// `*`: any sequence of characters, possibly empty.
     AnySequence,
+    /// `**` as a full path component: any sequence of path components.
     AnyRecursiveSequence,
+    /// `[...]`: any character matching one of the given specifiers.
     AnyWithin(Vec<CharSpecifier>),
+    /// `[!...]`: any character matching none of the given specifiers.
     AnyExcept(Vec<CharSpecifier>),
 }
 
+/// A member of a bracket class: a single character or an inclusive range.
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
-enum CharSpecifier {
+pub enum CharSpecifier {
+    /// A single character, e.g. `a` in `[abc]`.
     SingleChar(char),
+    /// An inclusive character range, e.g. `a-z` in `[a-z0-9]`.
     CharRange(char, char),
 }
 
@@ -795,6 +805,32 @@ impl Pattern {
     /// Access the original glob pattern.
     pub fn as_str(&self) -> &str {
         &self.original
+    }
+
+    /// Access the parsed token stream of this pattern.
+    ///
+    /// This is the exact output of the glob parser: literal characters are
+    /// `Char` tokens, bracket classes are `AnyWithin`/`AnyExcept`, and `**`
+    /// is `AnyRecursiveSequence`. In particular, a `/` inside a bracket class
+    /// never appears as a `Char('/')` token, so splitting a pattern into
+    /// path components is a matter of splitting this slice at `Char('/')`.
+    pub fn tokens(&self) -> &[PatternToken] {
+        &self.tokens
+    }
+
+    /// Construct a pattern directly from a token stream, e.g. a sub-slice of
+    /// another pattern's `tokens()`. The pattern has no original string form:
+    /// `as_str` returns `""`; matching is unaffected, as it only ever
+    /// consults the tokens.
+    pub fn from_tokens(tokens: Vec<PatternToken>) -> Self {
+        let is_recursive = tokens.contains(&AnyRecursiveSequence);
+        let has_metachars = tokens.iter().any(|t| !matches!(t, Char(_)));
+        Self {
+            original: String::new(),
+            tokens,
+            is_recursive,
+            has_metachars,
+        }
     }
 
     fn matches_from(
