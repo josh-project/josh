@@ -1370,20 +1370,19 @@ pub fn apply<'a>(
             // intentionally not wired into `reset_caches`.
             static PATTERN_MEMO: LazyLock<
                 std::sync::RwLock<
-                    std::collections::HashMap<usize, std::sync::Arc<(glob::Pattern, git2::Oid)>>,
+                    std::collections::HashMap<usize, std::sync::Arc<tree::CompiledPattern>>,
                 >,
             > = LazyLock::new(Default::default);
 
             let node_key = peel_op_ref(filter) as *const Op as usize;
             let memo = PATTERN_MEMO.read().unwrap().get(&node_key).cloned();
-            let memo = if let Some(memo) = memo {
+            let cp = if let Some(memo) = memo {
                 memo
             } else {
                 // Compile errors are propagated without caching, so error behavior is per-call
                 // identical to the uncached implementation.
-                let compiled = glob::Pattern::new(pattern)?;
                 let key = to_filter(op.clone()).id();
-                let entry = std::sync::Arc::new((compiled, key));
+                let entry = std::sync::Arc::new(tree::CompiledPattern::compile(pattern, key)?);
                 PATTERN_MEMO
                     .write()
                     .unwrap()
@@ -1391,20 +1390,26 @@ pub fn apply<'a>(
                     .or_insert_with(|| entry.clone());
                 entry
             };
-            let (pattern, key) = (&memo.0, memo.1);
-            let options = glob::MatchOptions {
-                case_sensitive: true,
-                require_literal_separator: true,
-                require_literal_leading_dot: true,
-            };
             let input = x.tree().id();
-            let t = tree::remove_pred(
-                transaction,
-                &mut String::new(),
-                input,
-                &|path, isblob| isblob && pattern.matches_with(path, options),
-                key,
-            )?;
+            let t = if cp.fallback {
+                // Degenerate patterns that cannot be split into components: match full paths.
+                tree::remove_pred(
+                    transaction,
+                    &mut String::new(),
+                    input,
+                    &|path, isblob| {
+                        isblob && cp.full.matches_with(path, tree::PATTERN_MATCH_OPTIONS)
+                    },
+                    cp.key,
+                )?
+            } else {
+                tree::remove_pattern(
+                    transaction,
+                    input,
+                    &cp,
+                    tree::CompiledPattern::initial_state(),
+                )?
+            };
             Ok(x.with_tree(repo.find_tree(t)?))
         }
         Op::Insert(dest_path, content) => {

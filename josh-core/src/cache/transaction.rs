@@ -21,7 +21,10 @@ static REF_CACHE: LazyLock<RwLock<HashMap<git2::Oid, HashMap<git2::Oid, git2::Oi
 static POPULATE_MAP: LazyLock<RwLock<HashMap<(git2::Oid, git2::Oid), git2::Oid>>> =
     LazyLock::new(Default::default);
 
-static GLOB_MAP: LazyLock<RwLock<HashMap<(git2::Oid, git2::Oid), git2::Oid>>> =
+// Keyed by (input tree, pattern key, NFA state mask). The state mask makes entries independent
+// of the path a subtree was reached through; the legacy full-path fallback folds its root path
+// into a synthetic pattern key and uses mask 0.
+static GLOB_MAP: LazyLock<RwLock<HashMap<(git2::Oid, git2::Oid, u64), git2::Oid>>> =
     LazyLock::new(Default::default);
 
 /// Clear the process-global in-memory caches shared across all transactions.
@@ -424,11 +427,11 @@ impl Transaction {
         POPULATE_MAP.read().unwrap().get(&tree).cloned()
     }
 
-    pub fn insert_glob(&self, tree: (git2::Oid, git2::Oid), result: git2::Oid) {
+    pub fn insert_glob(&self, tree: (git2::Oid, git2::Oid, u64), result: git2::Oid) {
         GLOB_MAP.write().unwrap().entry(tree).or_insert(result);
     }
 
-    pub fn get_glob(&self, tree: (git2::Oid, git2::Oid)) -> Option<git2::Oid> {
+    pub fn get_glob(&self, tree: (git2::Oid, git2::Oid, u64)) -> Option<git2::Oid> {
         GLOB_MAP.read().unwrap().get(&tree).cloned()
     }
 
