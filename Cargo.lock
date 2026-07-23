@@ -3428,6 +3428,7 @@ dependencies = [
  "anyhow",
  "dirs",
  "git2",
+ "rand 0.10.1",
  "tempfile",
  "tracing",
  "tracing-subscriber",
