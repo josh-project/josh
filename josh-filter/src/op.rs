@@ -34,35 +34,6 @@ impl std::hash::Hash for Regex {
     }
 }
 
-/// Newtype around `glob::Pattern` adding structural `PartialEq`/`Eq`/`Hash` (by pattern
-/// string, like [`Regex`]) so `Op` can derive them for use as an interning key. The glob is
-/// compiled at construction -- use [`Op::pattern`] -- so applying a `Pattern` op never
-/// recompiles it, and `as_str()` recovers the source pattern verbatim (which is why
-/// `Op::Pattern` carries no separate string). Derefs to the compiled glob.
-#[derive(Clone, Debug)]
-pub struct PatternGlob(pub glob::Pattern);
-
-impl std::ops::Deref for PatternGlob {
-    type Target = glob::Pattern;
-    fn deref(&self) -> &glob::Pattern {
-        &self.0
-    }
-}
-
-impl PartialEq for PatternGlob {
-    fn eq(&self, other: &Self) -> bool {
-        self.0.as_str() == other.0.as_str()
-    }
-}
-
-impl Eq for PatternGlob {}
-
-impl std::hash::Hash for PatternGlob {
-    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-        self.0.as_str().hash(state);
-    }
-}
-
 impl std::fmt::Display for LinkMode {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
@@ -176,7 +147,7 @@ pub enum Op {
     ObjectDeref(std::path::PathBuf),
     ObjectRef(std::path::PathBuf),
 
-    Pattern(PatternGlob),
+    Pattern(crate::pattern::CompiledPattern),
     Message(String, Regex),
 
     Unapply(LazyRef, Filter),
@@ -195,6 +166,8 @@ impl Op {
     /// Construct a `Pattern` op, compiling its glob. A bad glob therefore errors where the
     /// pattern enters the system (parse, deserialization) instead of on first apply.
     pub fn pattern(pattern: &str) -> anyhow::Result<Op> {
-        Ok(Op::Pattern(PatternGlob(glob::Pattern::new(pattern)?)))
+        Ok(Op::Pattern(crate::pattern::CompiledPattern::compile(
+            pattern,
+        )?))
     }
 }

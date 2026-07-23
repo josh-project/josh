@@ -2,6 +2,7 @@ pub mod filter;
 pub mod flang;
 pub mod op;
 pub mod opt;
+pub mod pattern;
 pub mod persist;
 
 pub use filter::{Filter, compose};
