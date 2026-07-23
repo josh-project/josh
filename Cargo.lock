@@ -3634,6 +3634,8 @@ dependencies = [
  "anyhow",
  "criterion2",
  "git2",
+ "gix-hash",
+ "gix-object",
  "josh-core",
  "josh-test-support",
  "rand 0.10.2",
