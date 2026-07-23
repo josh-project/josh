@@ -9,6 +9,7 @@ edition = "2021"
 anyhow = "1"
 dirs = "6"
 git2 = { version = "0.20", default-features = false, features = ["vendored-libgit2"] }
+rand = "0.10"
 tempfile = "3"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }

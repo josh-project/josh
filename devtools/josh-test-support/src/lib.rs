@@ -1,5 +1,6 @@
 use std::time::Instant;
 
+pub mod bench;
 pub mod provision_repo;
 
 use tracing::field::{Field, Visit};
