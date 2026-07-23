@@ -1,5 +1,5 @@
 use super::prefix_sort::prefix_sort;
-use super::structure::{common_post, common_pre, group, last_chain};
+use super::structure::{common_post, common_pre, group, last_chain, resurrects_from_empty};
 use super::{FilterSet, OPTIMIZED};
 use crate::filter::Filter;
 use crate::op::Op;
@@ -129,16 +129,23 @@ pub(super) fn step(filter: Filter) -> Filter {
                 }
             }
 
-            // If any filter is Op::Empty the whole chain results in Op::Empty
-            if filters.contains(&to_filter(Op::Empty)) {
-                return to_filter(Op::Empty);
-            }
-
             // Remove Nop filters
             let nop_filter = to_filter(Op::Nop);
             flattened.retain(|f| *f != nop_filter);
             if flattened.is_empty() {
                 return to_filter(Op::Nop);
+            }
+
+            // If a filter is Op::Empty the tree becomes empty at that point, so the whole chain
+            // is Op::Empty -- unless a later element resurrects content from an empty tree
+            // (a generative Insert/TreeId ignores its input), in which case we must keep the chain.
+            if let Some(pos) = flattened.iter().position(|f| *f == to_filter(Op::Empty)) {
+                if !flattened[pos + 1..]
+                    .iter()
+                    .any(|f| resurrects_from_empty(*f))
+                {
+                    return to_filter(Op::Empty);
+                }
             }
 
             // Optimize adjacent Prefix/Subdir pairs
@@ -156,8 +163,13 @@ pub(super) fn step(filter: Filter) -> Filter {
                             if a != b && a.components().count() == b.components().count() =>
                         {
                             // :prefix=a:/b will always result in an empty tree since the
-                            // output of :prefix=a does not have a subtree "b"
-                            return to_filter(Op::Empty);
+                            // output of :prefix=a does not have a subtree "b". As above, this
+                            // only collapses the whole chain when nothing after the pair can
+                            // resurrect content from the resulting empty tree.
+                            if !flattened[i + 2..].iter().any(|f| resurrects_from_empty(*f)) {
+                                return to_filter(Op::Empty);
+                            }
+                            // A generative op follows: fall through and keep the chain intact.
                         }
                         _ => {}
                     }

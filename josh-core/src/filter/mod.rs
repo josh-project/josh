@@ -2606,25 +2606,49 @@ mod tests {
             to_filter(Op::Subdir(std::path::PathBuf::from("ws"))),
         )));
 
+        // A generative Insert ignores its input, so a chain that becomes empty before it must not
+        // collapse to `Empty`. These filters have to be built as raw ASTs: `parse` optimizes, which
+        // would apply (and previously mis-apply) the very rule under test.
+        let ins = |p: &str, c: &str| {
+            to_filter(Op::Insert(
+                std::path::PathBuf::from(p),
+                InsertContent::Inline(c.to_string()),
+            ))
+        };
+        // Chain[Empty, Insert] -- the interior emptiness comes from an explicit `Empty`.
+        cases.push(to_filter(Op::Chain(vec![
+            to_filter(Op::Empty),
+            ins("x", "y"),
+        ])));
+        // Chain[Prefix(p), Subdir(q), Insert] -- the interior emptiness comes from the
+        // prefix/subdir-mismatch rule (`:prefix=p:/q` is always empty).
+        cases.push(to_filter(Op::Chain(vec![
+            to_filter(Op::Prefix(std::path::PathBuf::from("p"))),
+            to_filter(Op::Subdir(std::path::PathBuf::from("q"))),
+            ins("x", "y"),
+        ])));
+
         for sub in cases {
-            let optimized = opt::optimize(sub);
-            match (apply_tree(sub), apply_tree(optimized)) {
-                (Ok(g), Ok(o)) => {
-                    assert_eq!(
-                        g, o,
-                        "optimizer changed result for {sub:?} -> {optimized:?}"
-                    )
+            // Both `optimize` and `minimize` run the rules under test, so exercise both.
+            for (name, optimized) in [
+                ("optimize", opt::optimize(sub)),
+                ("minimize", opt::minimize(sub)),
+            ] {
+                match (apply_tree(sub), apply_tree(optimized)) {
+                    (Ok(g), Ok(o)) => {
+                        assert_eq!(g, o, "{name} changed result for {sub:?} -> {optimized:?}")
+                    }
+                    (Err(ge), _) => panic!("ground-truth apply failed for {sub:?}: {ge}"),
+                    (_, Err(oe)) => {
+                        panic!("{name} apply failed for {sub:?} -> {optimized:?}: {oe}")
+                    }
                 }
-                (Err(ge), _) => panic!("ground-truth apply failed for {sub:?}: {ge}"),
-                (_, Err(oe)) => {
-                    panic!("optimized apply failed for {sub:?} -> {optimized:?}: {oe}")
+                if invert(sub).is_ok() {
+                    assert!(
+                        invert(optimized).is_ok(),
+                        "{name} broke invertibility of {sub:?} -> {optimized:?}"
+                    );
                 }
-            }
-            if invert(sub).is_ok() {
-                assert!(
-                    invert(optimized).is_ok(),
-                    "optimize broke invertibility of {sub:?} -> {optimized:?}"
-                );
             }
         }
     }

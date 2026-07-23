@@ -107,6 +107,26 @@ fn is_generative(filter: Filter) -> bool {
     matches!(to_op_ref(filter), Op::Insert(..) | Op::TreeId(..))
 }
 
+/// Whether applying `filter` to an *empty* tree can produce a *non-empty* tree.
+///
+/// Only the generative ops (`Insert`, `TreeId`) fabricate content from nothing; every other
+/// tree op maps empty to empty (`File` uses a zero oid as a delete sentinel, and path/content
+/// ops have nothing to act on). Generative entries also survive `tree::compose`, so a generative
+/// op nested inside `Chain`/`Compose`/the kept side of `Subtract` still resurrects. `Exclude`,
+/// `Select` and `Pin` always yield empty on an empty input regardless of their operand, so they
+/// (and every other op) are treated as non-resurrecting. Unknown ops default to `false`, which is
+/// sound for the verified op set and only ever makes callers less aggressive.
+pub(super) fn resurrects_from_empty(filter: Filter) -> bool {
+    match to_op_ref(filter) {
+        Op::Insert(..) | Op::TreeId(..) => true,
+        Op::Chain(filters) | Op::Compose(filters) => {
+            filters.iter().any(|f| resurrects_from_empty(*f))
+        }
+        Op::Subtract(a, _) => resurrects_from_empty(*a),
+        _ => false,
+    }
+}
+
 pub(super) fn common_post(filters: &Vec<Filter>) -> Option<(Filter, Vec<Filter>)> {
     let mut rest = vec![];
     let mut common_post: Option<Filter> = None;
