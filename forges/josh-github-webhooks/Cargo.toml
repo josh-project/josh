@@ -19,7 +19,7 @@ serde.workspace = true
 serde_json.workspace = true
 chrono.workspace = true
 
-constant_time_eq = "^0.4"
+constant_time_eq = "^0.5"
 hex = "^0.4"
 
 [dev-dependencies]
