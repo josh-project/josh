@@ -160,6 +160,10 @@ struct Transaction2 {
 
 pub struct Transaction {
     t2: std::cell::RefCell<Transaction2>,
+    /// josh-search indexing state kept for the whole transaction, so indexing a chain of
+    /// commits reuses the merge work of earlier commits. Its own cell because `trigram_index`
+    /// borrows it for the entire call while also borrowing other caches through `t2`.
+    trigram_indexer: std::cell::RefCell<josh_search::Indexer>,
     repo: git2::Repository,
     /// Per-transaction in-memory object store, flushed to a packfile when the transaction drops, at
     /// an explicit boundary, or mid-transaction when it exceeds its size limit. Never shared with
@@ -239,6 +243,7 @@ impl Transaction {
                 misses: 0,
                 nesting_level: 0,
             }),
+            trigram_indexer: Default::default(),
             repo,
             mem_odb,
             mem_odb_limit,
@@ -755,6 +760,14 @@ impl Transaction {
         }
 
         Ok(None)
+    }
+}
+
+impl Transaction {
+    /// The transaction-lifetime josh-search indexer, to pass to `josh_search::trigram_index`
+    /// alongside the [`IndexCache`] from [`Transaction::trigram_index_cache`].
+    pub fn trigram_indexer(&self) -> std::cell::RefMut<'_, josh_search::Indexer> {
+        self.trigram_indexer.borrow_mut()
     }
 }
 
