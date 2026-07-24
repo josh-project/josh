@@ -19,7 +19,7 @@
   $ git commit -m "add file3" 1> /dev/null
 
   $ josh-filter -s :INDEX --update refs/heads/index
-  4740798fdfd3f243763aad91b2badafbf72ff9e2
+  899dcf292f1324dd6dc7847df15ef55419362675
   [3] reachable_roots
   [3] sequence_number
   [6] :INDEX
@@ -115,231 +115,231 @@
   }
 
   $ git diff ${EMPTY_TREE}..refs/heads/index
-  diff --git a/20/20/20/sub1 b/20/20/20/sub1
+  diff --git a/20/20/20/8f b/20/20/20/8f
   new file mode 100644
   index 0000000..e69de29
-  diff --git a/20/20/6f/sub1 b/20/20/6f/sub1
+  diff --git a/20/20/6f/8f b/20/20/6f/8f
   new file mode 100644
   index 0000000..e69de29
-  diff --git a/20/20/74/sub1 b/20/20/74/sub1
+  diff --git a/20/20/74/8f b/20/20/74/8f
   new file mode 100644
   index 0000000..e69de29
-  diff --git a/20/64/6f/sub1 b/20/64/6f/sub1
+  diff --git a/20/64/6f/8f b/20/64/6f/8f
   new file mode 100644
   index 0000000..e69de29
-  diff --git a/20/68/61/sub2 b/20/68/61/sub2
+  diff --git a/20/68/61/48 b/20/68/61/48
   new file mode 100644
   index 0000000..e69de29
-  diff --git a/20/6c/69/sub1 b/20/6c/69/sub1
+  diff --git a/20/6c/69/8f b/20/6c/69/8f
   new file mode 100644
   index 0000000..e69de29
-  diff --git a/20/6d/6f/sub1 b/20/6d/6f/sub1
+  diff --git a/20/6d/6f/48 b/20/6d/6f/48
   new file mode 100644
   index 0000000..e69de29
-  diff --git a/20/6d/6f/sub2 b/20/6d/6f/sub2
+  diff --git a/20/6d/6f/8f b/20/6d/6f/8f
   new file mode 100644
   index 0000000..e69de29
-  diff --git a/20/6f/6e/sub1 b/20/6f/6e/sub1
+  diff --git a/20/6f/6e/8f b/20/6f/6e/8f
   new file mode 100644
   index 0000000..e69de29
-  diff --git a/20/73/65/sub2 b/20/73/65/sub2
+  diff --git a/20/73/65/48 b/20/73/65/48
   new file mode 100644
   index 0000000..e69de29
-  diff --git a/20/74/65/sub1 b/20/74/65/sub1
+  diff --git a/20/74/65/8f b/20/74/65/8f
   new file mode 100644
   index 0000000..e69de29
-  diff --git a/20/74/68/sub1 b/20/74/68/sub1
+  diff --git a/20/74/68/8f b/20/74/68/8f
   new file mode 100644
   index 0000000..e69de29
-  diff --git a/20/74/6f/sub2 b/20/74/6f/sub2
+  diff --git a/20/74/6f/48 b/20/74/6f/48
   new file mode 100644
   index 0000000..e69de29
-  diff --git a/20/77/68/sub2 b/20/77/68/sub2
+  diff --git a/20/77/68/48 b/20/77/68/48
   new file mode 100644
   index 0000000..e69de29
-  diff --git a/20/77/69/sub1 b/20/77/69/sub1
+  diff --git a/20/77/69/8f b/20/77/69/8f
   new file mode 100644
   index 0000000..e69de29
-  diff --git a/61/6e/20/sub1 b/61/6e/20/sub1
+  diff --git a/61/6e/20/8f b/61/6e/20/8f
   new file mode 100644
   index 0000000..e69de29
-  diff --git a/61/6e/6f/sub1 b/61/6e/6f/sub1
+  diff --git a/61/6e/6f/8f b/61/6e/6f/8f
   new file mode 100644
   index 0000000..e69de29
-  diff --git a/61/70/70/sub2 b/61/70/70/sub2
+  diff --git a/61/70/70/48 b/61/70/70/48
   new file mode 100644
   index 0000000..e69de29
-  diff --git a/61/74/20/sub2 b/61/74/20/sub2
+  diff --git a/61/74/20/48 b/61/74/20/48
   new file mode 100644
   index 0000000..e69de29
-  diff --git a/63/75/6d/sub1 b/63/75/6d/sub1
+  diff --git a/63/75/6d/8f b/63/75/6d/8f
   new file mode 100644
   index 0000000..e69de29
-  diff --git a/64/6f/63/sub1 b/64/6f/63/sub1
+  diff --git a/64/6f/63/8f b/64/6f/63/8f
   new file mode 100644
   index 0000000..e69de29
-  diff --git a/65/20/20/sub1 b/65/20/20/sub1
+  diff --git a/65/20/20/8f b/65/20/20/8f
   new file mode 100644
   index 0000000..e69de29
-  diff --git a/65/20/6c/sub1 b/65/20/6c/sub1
+  diff --git a/65/20/6c/8f b/65/20/6c/8f
   new file mode 100644
   index 0000000..e69de29
-  diff --git a/65/20/6d/sub2 b/65/20/6d/sub2
+  diff --git a/65/20/6d/48 b/65/20/6d/48
   new file mode 100644
   index 0000000..e69de29
-  diff --git a/65/20/74/sub2 b/65/20/74/sub2
+  diff --git a/65/20/74/48 b/65/20/74/48
   new file mode 100644
   index 0000000..e69de29
-  diff --git a/65/20/77/sub2 b/65/20/77/sub2
+  diff --git a/65/20/77/48 b/65/20/77/48
   new file mode 100644
   index 0000000..e69de29
-  diff --git a/65/65/20/sub2 b/65/65/20/sub2
+  diff --git a/65/65/20/48 b/65/65/20/48
   new file mode 100644
   index 0000000..e69de29
-  diff --git a/65/6e/73/sub2 b/65/6e/73/sub2
+  diff --git a/65/6e/73/48 b/65/6e/73/48
   new file mode 100644
   index 0000000..e69de29
-  diff --git a/65/6e/74/sub1 b/65/6e/74/sub1
+  diff --git a/65/6e/74/8f b/65/6e/74/8f
   new file mode 100644
   index 0000000..e69de29
-  diff --git a/65/72/20/sub1 b/65/72/20/sub1
+  diff --git a/65/72/20/8f b/65/72/20/8f
   new file mode 100644
   index 0000000..e69de29
-  diff --git a/65/73/74/sub1 b/65/73/74/sub1
+  diff --git a/65/73/74/8f b/65/73/74/8f
   new file mode 100644
   index 0000000..e69de29
-  diff --git a/66/69/72/sub1 b/66/69/72/sub1
+  diff --git a/66/69/72/8f b/66/69/72/8f
   new file mode 100644
   index 0000000..e69de29
-  diff --git a/68/20/6d/sub1 b/68/20/6d/sub1
+  diff --git a/68/20/6d/8f b/68/20/6d/8f
   new file mode 100644
   index 0000000..e69de29
-  diff --git a/68/61/6e/sub1 b/68/61/6e/sub1
+  diff --git a/68/61/6e/8f b/68/61/6e/8f
   new file mode 100644
   index 0000000..e69de29
-  diff --git a/68/61/70/sub2 b/68/61/70/sub2
+  diff --git a/68/61/70/48 b/68/61/70/48
   new file mode 100644
   index 0000000..e69de29
-  diff --git a/68/61/74/sub2 b/68/61/74/sub2
+  diff --git a/68/61/74/48 b/68/61/74/48
   new file mode 100644
   index 0000000..e69de29
-  diff --git a/68/65/72/sub1 b/68/65/72/sub1
+  diff --git a/68/65/72/8f b/68/65/72/8f
   new file mode 100644
   index 0000000..e69de29
-  diff --git a/69/6e/65/sub1 b/69/6e/65/sub1
+  diff --git a/69/6e/65/8f b/69/6e/65/8f
   new file mode 100644
   index 0000000..e69de29
-  diff --git a/69/72/73/sub1 b/69/72/73/sub1
+  diff --git a/69/72/73/8f b/69/72/73/8f
   new file mode 100644
   index 0000000..e69de29
-  diff --git a/69/74/68/sub1 b/69/74/68/sub1
+  diff --git a/69/74/68/8f b/69/74/68/8f
   new file mode 100644
   index 0000000..e69de29
-  diff --git a/6c/69/6e/sub1 b/6c/69/6e/sub1
+  diff --git a/6c/69/6e/8f b/6c/69/6e/8f
   new file mode 100644
   index 0000000..e69de29
-  diff --git a/6d/65/6e/sub1 b/6d/65/6e/sub1
+  diff --git a/6d/65/6e/8f b/6d/65/6e/8f
   new file mode 100644
   index 0000000..e69de29
-  diff --git a/6d/6f/72/sub1 b/6d/6f/72/sub1
+  diff --git a/6d/6f/72/48 b/6d/6f/72/48
   new file mode 100644
   index 0000000..e69de29
-  diff --git a/6d/6f/72/sub2 b/6d/6f/72/sub2
+  diff --git a/6d/6f/72/8f b/6d/6f/72/8f
   new file mode 100644
   index 0000000..e69de29
-  diff --git a/6e/20/20/sub1 b/6e/20/20/sub1
+  diff --git a/6e/20/20/8f b/6e/20/20/8f
   new file mode 100644
   index 0000000..e69de29
-  diff --git a/6e/65/20/sub1 b/6e/65/20/sub1
+  diff --git a/6e/65/20/48 b/6e/65/20/48
   new file mode 100644
   index 0000000..e69de29
-  diff --git a/6e/65/20/sub2 b/6e/65/20/sub2
+  diff --git a/6e/65/20/8f b/6e/65/20/8f
   new file mode 100644
   index 0000000..e69de29
-  diff --git a/6e/6f/74/sub1 b/6e/6f/74/sub1
+  diff --git a/6e/6f/74/8f b/6e/6f/74/8f
   new file mode 100644
   index 0000000..e69de29
-  diff --git a/6e/74/20/sub1 b/6e/74/20/sub1
+  diff --git a/6e/74/20/8f b/6e/74/20/8f
   new file mode 100644
   index 0000000..e69de29
-  diff --git a/6f/20/73/sub2 b/6f/20/73/sub2
+  diff --git a/6f/20/73/48 b/6f/20/73/48
   new file mode 100644
   index 0000000..e69de29
-  diff --git a/6f/63/75/sub1 b/6f/63/75/sub1
+  diff --git a/6f/63/75/8f b/6f/63/75/8f
   new file mode 100644
   index 0000000..e69de29
-  diff --git a/6f/6e/65/sub1 b/6f/6e/65/sub1
+  diff --git a/6f/6e/65/48 b/6f/6e/65/48
   new file mode 100644
   index 0000000..e69de29
-  diff --git a/6f/6e/65/sub2 b/6f/6e/65/sub2
+  diff --git a/6f/6e/65/8f b/6f/6e/65/8f
   new file mode 100644
   index 0000000..e69de29
-  diff --git a/6f/72/65/sub1 b/6f/72/65/sub1
+  diff --git a/6f/72/65/48 b/6f/72/65/48
   new file mode 100644
   index 0000000..e69de29
-  diff --git a/6f/72/65/sub2 b/6f/72/65/sub2
+  diff --git a/6f/72/65/8f b/6f/72/65/8f
   new file mode 100644
   index 0000000..e69de29
-  diff --git a/6f/74/68/sub1 b/6f/74/68/sub1
+  diff --git a/6f/74/68/8f b/6f/74/68/8f
   new file mode 100644
   index 0000000..e69de29
-  diff --git a/70/65/6e/sub2 b/70/65/6e/sub2
+  diff --git a/70/65/6e/48 b/70/65/6e/48
   new file mode 100644
   index 0000000..e69de29
-  diff --git a/70/70/65/sub2 b/70/70/65/sub2
+  diff --git a/70/70/65/48 b/70/70/65/48
   new file mode 100644
   index 0000000..e69de29
-  diff --git a/72/20/64/sub1 b/72/20/64/sub1
+  diff --git a/72/20/64/8f b/72/20/64/8f
   new file mode 100644
   index 0000000..e69de29
-  diff --git a/72/65/20/sub1 b/72/65/20/sub1
+  diff --git a/72/65/20/48 b/72/65/20/48
   new file mode 100644
   index 0000000..e69de29
-  diff --git a/72/65/20/sub2 b/72/65/20/sub2
+  diff --git a/72/65/20/8f b/72/65/20/8f
   new file mode 100644
   index 0000000..e69de29
-  diff --git a/72/73/74/sub1 b/72/73/74/sub1
+  diff --git a/72/73/74/8f b/72/73/74/8f
   new file mode 100644
   index 0000000..e69de29
-  diff --git a/73/65/65/sub2 b/73/65/65/sub2
+  diff --git a/73/65/65/48 b/73/65/65/48
   new file mode 100644
   index 0000000..e69de29
-  diff --git a/73/74/20/sub1 b/73/74/20/sub1
+  diff --git a/73/74/20/8f b/73/74/20/8f
   new file mode 100644
   index 0000000..e69de29
-  diff --git a/74/20/64/sub1 b/74/20/64/sub1
+  diff --git a/74/20/64/8f b/74/20/64/8f
   new file mode 100644
   index 0000000..e69de29
-  diff --git a/74/20/68/sub2 b/74/20/68/sub2
+  diff --git a/74/20/68/48 b/74/20/68/48
   new file mode 100644
   index 0000000..e69de29
-  diff --git a/74/20/74/sub1 b/74/20/74/sub1
+  diff --git a/74/20/74/8f b/74/20/74/8f
   new file mode 100644
   index 0000000..e69de29
-  diff --git a/74/20/77/sub1 b/74/20/77/sub1
+  diff --git a/74/20/77/8f b/74/20/77/8f
   new file mode 100644
   index 0000000..e69de29
-  diff --git a/74/65/73/sub1 b/74/65/73/sub1
+  diff --git a/74/65/73/8f b/74/65/73/8f
   new file mode 100644
   index 0000000..e69de29
-  diff --git a/74/68/20/sub1 b/74/68/20/sub1
+  diff --git a/74/68/20/8f b/74/68/20/8f
   new file mode 100644
   index 0000000..e69de29
-  diff --git a/74/68/61/sub1 b/74/68/61/sub1
+  diff --git a/74/68/61/8f b/74/68/61/8f
   new file mode 100644
   index 0000000..e69de29
-  diff --git a/74/68/65/sub1 b/74/68/65/sub1
+  diff --git a/74/68/65/8f b/74/68/65/8f
   new file mode 100644
   index 0000000..e69de29
-  diff --git a/74/6f/20/sub2 b/74/6f/20/sub2
+  diff --git a/74/6f/20/48 b/74/6f/20/48
   new file mode 100644
   index 0000000..e69de29
-  diff --git a/75/6d/65/sub1 b/75/6d/65/sub1
+  diff --git a/75/6d/65/8f b/75/6d/65/8f
   new file mode 100644
   index 0000000..e69de29
-  diff --git a/77/68/61/sub2 b/77/68/61/sub2
+  diff --git a/77/68/61/48 b/77/68/61/48
   new file mode 100644
   index 0000000..e69de29
-  diff --git a/77/69/74/sub1 b/77/69/74/sub1
+  diff --git a/77/69/74/8f b/77/69/74/8f
   new file mode 100644
   index 0000000..e69de29
