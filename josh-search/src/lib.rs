@@ -6,11 +6,18 @@
 //! `(b1, b2, b3)`, the index contains
 //!
 //! ```text
-//! <hex(b1)>/<hex(b2)>/<hex(b3)>/path/to/file
+//! <hex(b1)>/<hex(b2)>/<hex(b3)>/<bucket>/<bucket>...
 //! ```
 //!
 //! with the empty blob as the leaf marker. The subtree below a trigram's three "spine" levels
-//! mirrors the source tree's structure restricted to files containing that trigram.
+//! mirrors the source tree's structure restricted to files containing that trigram. Mirror
+//! entries are named by a one-byte hash of the entry's name (two hex chars, see
+//! [`bucket_name`]) rather than by the name itself: two bytes instead of full names, fan-out
+//! capped at 256, and — because the hash depends only on the entry's own name — mirrors stay
+//! stable when siblings are added or removed. Colliding names share a bucket, which then
+//! means "some member contains the trigram"; search expands buckets to all their members via
+//! the source tree ([`bucketed_entries`]), keeping candidates a superset and verification
+//! exact.
 //!
 //! Mirror granularity is adaptive: small directories (see [`COARSE_MAX_FILES`] /
 //! [`COARSE_MAX_BYTES`]) appear as a single blob leaf — "some file under this directory
@@ -106,6 +113,33 @@ fn hex_name(b: u8) -> BString {
     format!("{:02x}", b).into()
 }
 
+/// The mirror entry name of a source entry: a one-byte FNV-1a hash of its name, as two hex
+/// chars. Depending only on the entry's own name keeps mirrors stable when siblings come and
+/// go (a dense scheme like positions would rename neighbours on every insertion), while
+/// cutting entry names to two bytes and capping mirror fan-out at 256. Colliding names share
+/// a bucket, which then means "some member contains the trigram".
+fn bucket_name(name: &[u8]) -> String {
+    let mut h: u32 = 0x811c9dc5;
+    for &b in name {
+        h = (h ^ b as u32).wrapping_mul(0x01000193);
+    }
+    format!("{:02x}", (h ^ (h >> 8) ^ (h >> 16) ^ (h >> 24)) & 0xff)
+}
+
+/// A source directory's indexable entries with their mirror bucket names: blobs and trees in
+/// git tree order; other kinds (submodules etc.) are not indexed. Bucket names repeat on
+/// collision. The index side and the search side must both enumerate exactly this way — it is
+/// the bucket -> entries mapping, derived from the source tree instead of stored in the index.
+fn bucketed_entries(
+    entries: &[gix_object::tree::Entry],
+) -> Vec<(String, &gix_object::tree::Entry)> {
+    entries
+        .iter()
+        .filter(|e| !e.mode.is_commit())
+        .map(|e| (bucket_name(&e.filename), e))
+        .collect()
+}
+
 fn tree_entry(filename: BString, oid: gix_hash::ObjectId) -> gix_object::tree::Entry {
     gix_object::tree::Entry {
         mode: gix_object::tree::EntryKind::Tree.into(),
@@ -130,7 +164,7 @@ pub struct Indexer {
     trees: HashMap<gix_hash::ObjectId, std::sync::Arc<gix_object::Tree>>,
     /// Source tree -> index, for trees indexed or cache-resolved with this state.
     tree_memo: HashMap<gix_hash::ObjectId, gix_hash::ObjectId>,
-    /// Source blob and entry name -> the file's wrapped trigram tree. The name is part of the
+    /// Source blob and bucket -> the file's wrapped trigram tree. The bucket is part of the
     /// key because the mirror entries inside carry it.
     blob_memo: HashMap<(gix_hash::ObjectId, String), gix_hash::ObjectId>,
     /// Source blob -> its nameless trigram spine (empty-blob leaves), the building block of
@@ -262,23 +296,23 @@ impl Run<'_> {
     }
 
     /// The wrapped trigram tree of one file: its trigram spine with the one-entry mirror
-    /// `{name: empty blob}` at every leaf. Building the wrapped form directly (rather than
+    /// `{bucket: empty blob}` at every leaf. Building the wrapped form directly (rather than
     /// wrapping afterwards via [`wrap`](Run::wrap)) avoids an intermediate tree that would
     /// be rewritten anyway.
     fn index_blob(
         &mut self,
         oid: gix_hash::ObjectId,
-        name: &str,
+        bucket: &str,
         content: &str,
     ) -> gix_hash::ObjectId {
-        let key = (oid, name.to_owned());
+        let key = (oid, bucket.to_owned());
         if let Some(id) = self.ix.blob_memo.get(&key) {
             return *id;
         }
 
         let mirror = self.write_tree(vec![gix_object::tree::Entry {
             mode: gix_object::tree::EntryKind::Blob.into(),
-            filename: name.into(),
+            filename: bucket.into(),
             oid: empty_blob(),
         }]);
         let id = self.content_spine(content, gix_object::tree::EntryKind::Tree.into(), mirror);
@@ -361,17 +395,17 @@ impl Run<'_> {
     }
 
     /// Lift a child directory's index into its parent's namespace by nesting each mirror `M`
-    /// as the single-entry tree `{name: M}`. Only directories go through here:
+    /// as the single-entry tree `{bucket: M}`. Only directories go through here:
     /// [`index_blob`](Run::index_blob) builds the wrapped form of file entries directly.
     fn wrap(
         &mut self,
-        name: &str,
+        bucket: &str,
         index: gix_hash::ObjectId,
     ) -> anyhow::Result<gix_hash::ObjectId> {
         if index == empty_tree() {
             return Ok(index);
         }
-        let key = (index, name.to_owned());
+        let key = (index, bucket.to_owned());
         if let Some(id) = self.ix.wrap_memo.get(&key) {
             return Ok(*id);
         }
@@ -387,7 +421,7 @@ impl Run<'_> {
                 for leaf in l3.entries.iter() {
                     let mirror = vec![gix_object::tree::Entry {
                         mode: leaf.mode,
-                        filename: name.into(),
+                        filename: bucket.into(),
                         oid: leaf.oid,
                     }];
                     e3.push(tree_entry(leaf.filename.clone(), self.write_tree(mirror)));
@@ -402,12 +436,10 @@ impl Run<'_> {
         Ok(id)
     }
 
-    /// Merge index trees, all inputs at once: entries are grouped by name across every input
-    /// and each group merges recursively, so every result node is written exactly once (a
+    /// Merge index trees, all inputs at once, so every result node is written exactly once (a
     /// pairwise fold would rewrite the accumulated spine once per input). Same-name entries
-    /// are either trees (spine levels merge recursively; below the spine the wrapped mirrors
-    /// of a directory's children have disjoint names) or identical coarse leaves (the empty
-    /// blob at the same spine position of several coarse spines), which collapse.
+    /// are either trees — spine levels, or two children hashing to the same bucket — which
+    /// merge recursively, or identical empty-blob leaves, which collapse.
     fn overlay_many(
         &mut self,
         mut inputs: Vec<gix_hash::ObjectId>,
@@ -484,24 +516,42 @@ impl Run<'_> {
             return Ok(id);
         }
 
-        let mut wrapped = Vec::with_capacity(tree.entries.len());
-        for entry in tree.entries.clone() {
-            let name = std::str::from_utf8(&entry.filename)?.to_owned();
-            let child_oid = entry.oid.to_owned();
+        // Mirror entries are named by bucket (name hash); bucketed_entries is the mapping and
+        // the search side derives the same one from the source tree. First decide what each
+        // entry contributes: files and small directories contribute blob leaves, large
+        // directories mirror subtrees — except in a bucket that mixes both kinds, where the
+        // large directories degrade to coarse leaves so the bucket's entries stay mergeable.
+        let entries = bucketed_entries(&tree.entries);
+        let mut leaf_buckets = HashSet::new();
+        for (bucket, entry) in &entries {
+            let is_leaf = if entry.mode.is_tree() {
+                self.is_small(entry.oid.to_owned())?
+            } else {
+                true
+            };
+            if is_leaf {
+                leaf_buckets.insert(bucket.clone());
+            }
+        }
+
+        let mut wrapped = Vec::with_capacity(entries.len());
+        for (bucket, entry) in &entries {
             if entry.mode.is_tree() {
+                let child_oid = entry.oid.to_owned();
                 // Small directories are recorded at directory granularity: one coarse
-                // leaf for the whole directory instead of per-file mirrors.
-                let child = if self.is_small(child_oid)? {
+                // leaf for the whole directory instead of per-file mirrors. Large ones
+                // too when their bucket also holds leaf contributions.
+                let coarse = self.is_small(child_oid)? || leaf_buckets.contains(bucket);
+                let child = if coarse {
                     self.coarse_index(child_oid)?
                 } else {
                     self.index_tree_oid(child_oid)?
                 };
-                wrapped.push(self.wrap(&name, child)?);
-            } else if !entry.mode.is_commit() {
+                wrapped.push(self.wrap(bucket, child)?);
+            } else {
                 let content = read_blob_text(self.src, entry.oid);
-                wrapped.push(self.index_blob(child_oid, &name, &content));
+                wrapped.push(self.index_blob(entry.oid.to_owned(), bucket, &content));
             }
-            // Submodules etc. are not indexed.
         }
         let index = self.overlay_many(wrapped)?;
 
@@ -630,12 +680,28 @@ pub fn search_candidates(
     }
 
     intersect_walk(src, &roots, source_tree, "", &mut results)?;
+    // The walk visits mirror entries in bucket (hash) order; report candidates in path order.
+    results.sort();
+    results.dedup();
     Ok(results)
 }
 
-/// Emit every candidate file path present in ALL of the mirror trees `roots`. Mirrors follow
-/// `source`'s structure; a blob entry where the source has a directory is a coarse leaf and
-/// expands to every file under that source directory.
+/// The bucket -> source entries mapping of one directory level. Colliding names share a
+/// bucket, so a mirror entry can resolve to several source entries.
+fn buckets_of(
+    source_entries: &[gix_object::tree::Entry],
+) -> HashMap<String, Vec<&gix_object::tree::Entry>> {
+    let mut map: HashMap<String, Vec<&gix_object::tree::Entry>> = HashMap::new();
+    for (bucket, entry) in bucketed_entries(source_entries) {
+        map.entry(bucket).or_default().push(entry);
+    }
+    map
+}
+
+/// Emit every candidate file path present in ALL of the mirror trees `roots`. Mirror entries
+/// are named by bucket; `source` provides the bucket -> entries mapping per level. A blob
+/// entry expands to every bucket member (each file directly, each directory — coarse leaf —
+/// to all files under it); a tree entry recurses into every large-directory member.
 fn intersect_walk(
     src: &dyn Objects,
     roots: &[gix_hash::ObjectId],
@@ -657,10 +723,11 @@ fn intersect_walk(
         .iter()
         .min_by_key(|t| t.len())
         .expect("roots is never empty");
-
     let source_entries = read_tree_entries(src, source)?;
+    let buckets = buckets_of(&source_entries);
+
     'entry: for entry in smallest {
-        let name = std::str::from_utf8(&entry.filename)?;
+        let bucket = std::str::from_utf8(&entry.filename)?;
 
         let mut child_roots = Vec::with_capacity(trees.len());
         for tree in &trees {
@@ -672,41 +739,47 @@ fn intersect_walk(
             }
         }
 
-        let path = join_path(prefix, name);
+        let Some(members) = buckets.get(bucket) else {
+            continue;
+        };
         if entry.mode.is_tree() {
-            let Some(source_entry) = source_entries.iter().find(|e| e.filename == entry.filename)
-            else {
-                continue;
-            };
-            intersect_walk(src, &child_roots, source_entry.oid.to_owned(), &path, out)?;
+            for member in members {
+                if !member.mode.is_tree() {
+                    continue;
+                }
+                let name = std::str::from_utf8(&member.filename)?;
+                let path = join_path(prefix, name);
+                intersect_walk(src, &child_roots, member.oid.to_owned(), &path, out)?;
+            }
         } else if !entry.mode.is_commit() {
-            emit_leaf(src, &source_entries, name, &path, out)?;
+            emit_leaf(src, members, prefix, out)?;
         }
     }
     Ok(())
 }
 
-/// Emit the candidates of one mirror leaf at `path`: the file itself, or — for a coarse leaf,
-/// where the source has a directory — every file under that source directory.
+/// Emit the candidates of one mirror blob leaf resolved to its bucket `members`: each file
+/// member directly, each directory member (a coarse leaf) expanded to all files under it.
 fn emit_leaf(
     src: &dyn Objects,
-    source_entries: &[gix_object::tree::Entry],
-    name: &str,
-    path: &str,
+    members: &[&gix_object::tree::Entry],
+    prefix: &str,
     out: &mut Vec<String>,
 ) -> anyhow::Result<()> {
-    match source_entries
-        .iter()
-        .find(|e| e.filename == name.as_bytes())
-    {
-        Some(e) if e.mode.is_tree() => collect_paths(src, e.oid.to_owned(), path, out)?,
-        Some(e) if !e.mode.is_commit() => out.push(path.to_owned()),
-        _ => {}
+    for member in members {
+        let name = std::str::from_utf8(&member.filename)?;
+        let path = join_path(prefix, name);
+        if member.mode.is_tree() {
+            collect_paths(src, member.oid.to_owned(), &path, out)?;
+        } else if !member.mode.is_commit() {
+            out.push(path);
+        }
     }
     Ok(())
 }
 
-/// Emit every candidate of the single mirror `oid`, following `source` for coarse expansion.
+/// Emit every candidate of the single mirror `oid`, following `source` for bucket resolution
+/// and coarse expansion.
 fn collect_mirror_paths(
     src: &dyn Objects,
     oid: gix_hash::ObjectId,
@@ -715,23 +788,23 @@ fn collect_mirror_paths(
     out: &mut Vec<String>,
 ) -> anyhow::Result<()> {
     let source_entries = read_tree_entries(src, source)?;
+    let buckets = buckets_of(&source_entries);
     for entry in read_tree_entries(src, oid)? {
-        let name = std::str::from_utf8(&entry.filename)?;
-        let path = join_path(prefix, name);
+        let bucket = std::str::from_utf8(&entry.filename)?;
+        let Some(members) = buckets.get(bucket) else {
+            continue;
+        };
         if entry.mode.is_tree() {
-            let Some(source_entry) = source_entries.iter().find(|e| e.filename == entry.filename)
-            else {
-                continue;
-            };
-            collect_mirror_paths(
-                src,
-                entry.oid.to_owned(),
-                source_entry.oid.to_owned(),
-                &path,
-                out,
-            )?;
+            for member in members {
+                if !member.mode.is_tree() {
+                    continue;
+                }
+                let name = std::str::from_utf8(&member.filename)?;
+                let path = join_path(prefix, name);
+                collect_mirror_paths(src, entry.oid.to_owned(), member.oid.to_owned(), &path, out)?;
+            }
         } else if !entry.mode.is_commit() {
-            emit_leaf(src, &source_entries, name, &path, out)?;
+            emit_leaf(src, members, prefix, out)?;
         }
     }
     Ok(())
@@ -955,14 +1028,18 @@ mod tests {
         // long as this oid does not change.
         assert_eq!(
             index.to_string(),
-            "13344d7487ed9e2193bc08847ed14b0656a4d597"
+            "03111ef5ca624b955d799a80181c1bf0c2099fcd"
         );
 
         // "Tes" folds to "tes", which lives at 74/65/73 in the hex spine. sub1 is a small
-        // directory, so the mirror records it as one coarse blob leaf.
-        let leaf = path_entry(objects(&repo), index, std::path::Path::new("74/65/73/sub1"))
-            .unwrap()
-            .unwrap();
+        // directory, so the mirror records it as one coarse blob leaf under its bucket name.
+        let leaf = path_entry(
+            objects(&repo),
+            index,
+            std::path::Path::new(&format!("74/65/73/{}", bucket_name(b"sub1"))),
+        )
+        .unwrap()
+        .unwrap();
         assert_eq!(
             gix_object::FindHeader::try_header(&repo.objects, &leaf)
                 .unwrap()
@@ -998,6 +1075,52 @@ mod tests {
     }
 
     #[test]
+    fn bucket_name_basics() {
+        for name in ["a", "file.txt", "sub1", "ütf8"] {
+            let b = bucket_name(name.as_bytes());
+            assert_eq!(b.len(), 2);
+            assert!(b.bytes().all(|c| c.is_ascii_hexdigit()));
+            assert_eq!(b, bucket_name(name.as_bytes()));
+        }
+    }
+
+    #[test]
+    fn colliding_names_share_a_bucket() {
+        let (_tmp, repo) = test_repo();
+        let cache = MapCache::default();
+
+        // Find a name whose bucket collides with "target_file".
+        let target_bucket = bucket_name(b"target_file");
+        let collider = (0..100_000)
+            .map(|i| format!("other{}", i))
+            .find(|n| bucket_name(n.as_bytes()) == target_bucket)
+            .expect("collision exists among 100k candidates");
+
+        // Enough filler files to keep the directory fine-grained.
+        let mut files: Vec<(String, String)> = (0..18)
+            .map(|i| (format!("big/filler_{:02}", i), format!("filler {}", i)))
+            .collect();
+        files.push((
+            "big/target_file".to_owned(),
+            "needleword lives here".to_owned(),
+        ));
+        files.push((format!("big/{}", collider), "collider content".to_owned()));
+        let files: Vec<(&str, &str)> = files.iter().map(|(p, c)| (&p[..], &c[..])).collect();
+        let tree = commit_tree(&repo, &files);
+
+        let index = trigram_index(objects(&repo), &cache, &mut Indexer::default(), tree).unwrap();
+
+        // The bucket is a superset: both members are candidates for a needle in one of them;
+        // verification is exact.
+        let candidates = search_candidates(objects(&repo), index, tree, "needleword").unwrap();
+        assert!(candidates.contains(&"big/target_file".to_owned()));
+        assert!(candidates.contains(&format!("big/{}", collider)));
+        let matches = search_matches(objects(&repo), tree, "needleword", &candidates).unwrap();
+        assert_eq!(matches.len(), 1);
+        assert_eq!(matches[0].0, "big/target_file");
+    }
+
+    #[test]
     fn coarse_and_fine_granularity() {
         let (_tmp, repo) = test_repo();
         let cache = MapCache::default();
@@ -1019,11 +1142,15 @@ mod tests {
 
         let index = trigram_index(objects(&repo), &cache, &mut Indexer::default(), tree).unwrap();
 
-        // Fine: "d07" (from uniqueword07) mirrors big's structure down to the file.
+        // Fine: "d07" (from uniqueword07) mirrors big's structure down to the file's bucket.
         let leaf = path_entry(
             objects(&repo),
             index,
-            std::path::Path::new("64/30/37/big/file_07"),
+            std::path::Path::new(&format!(
+                "64/30/37/{}/{}",
+                bucket_name(b"big"),
+                bucket_name(b"file_07")
+            )),
         )
         .unwrap()
         .unwrap();
@@ -1039,7 +1166,7 @@ mod tests {
         let leaf = path_entry(
             objects(&repo),
             index,
-            std::path::Path::new("6e/65/65/small"),
+            std::path::Path::new(&format!("6e/65/65/{}", bucket_name(b"small"))),
         )
         .unwrap()
         .unwrap();
@@ -1051,9 +1178,12 @@ mod tests {
             gix_object::Kind::Blob
         );
 
-        // Fine candidates stay per-file and exact.
+        // Fine candidates stay per-file (modulo bucket collisions) and matches exact.
         let candidates = search_candidates(objects(&repo), index, tree, "uniqueword07").unwrap();
-        assert_eq!(candidates, vec!["big/file_07"]);
+        assert!(candidates.contains(&"big/file_07".to_owned()));
+        let matches = search_matches(objects(&repo), tree, "uniqueword07", &candidates).unwrap();
+        assert_eq!(matches.len(), 1);
+        assert_eq!(matches[0].0, "big/file_07");
 
         // A coarse hit makes every file under the directory a candidate; verification is
         // exact.
