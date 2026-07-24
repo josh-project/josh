@@ -1,53 +1,92 @@
   $ export TESTTMP=${PWD}
 
+
   $ cd ${TESTTMP}
+
+
   $ git init -q testrepo 1> /dev/null
+
+
   $ cd testrepo
 
+
   $ mkdir sub1
+
+
   $ printf "First Test document" > sub1/file1
+
+
   $ git add sub1
+
+
   $ git commit -m "add file1" 1> /dev/null
 
+
   $ printf "Another document with more \n than \n one line" > sub1/file2
+
+
   $ git add sub1
+
+
   $ git commit -m "add file2" 1> /dev/null
 
+
   $ mkdir sub2
+
+
   $ printf "One more to see what happens" > sub2/file3
+
+
   $ git add sub2
+
+
   $ git commit -m "add file3" 1> /dev/null
 
+
   $ josh-filter -s :INDEX --update refs/heads/index
-  4740798fdfd3f243763aad91b2badafbf72ff9e2
+  899dcf292f1324dd6dc7847df15ef55419362675
   [3] reachable_roots
   [3] sequence_number
   [6] :INDEX
 
+
   $ josh-filter :/ --search "Another"
   sub1/file2:1: Another document with more 
   2b1320977125dad24866056fa94acf30d77d9453
+
+
   $ josh-filter :/ --search "happens"
   sub2/file3:1: One more to see what happens
   2b1320977125dad24866056fa94acf30d77d9453
+
+
   $ josh-filter :/ --search "Test"
   sub1/file1:1: First Test document
   2b1320977125dad24866056fa94acf30d77d9453
+
+
   $ josh-filter :/ --search "document"
   sub1/file1:1: First Test document
   sub1/file2:1: Another document with more 
   2b1320977125dad24866056fa94acf30d77d9453
+
+
   $ josh-filter :/ --search "x"
   2b1320977125dad24866056fa94acf30d77d9453
+
+
   $ josh-filter :/ --search "e"
   sub1/file1:1: First Test document
   sub1/file2:1: Another document with more 
   sub1/file2:3:  one line
   sub2/file3:1: One more to see what happens
   2b1320977125dad24866056fa94acf30d77d9453
+
+
   $ josh-filter :/ --search "line"
   sub1/file2:3:  one line
   2b1320977125dad24866056fa94acf30d77d9453
+
 
   $ josh-filter :/ -g 'query { rev(at: "refs/heads/master") { results: search(string: "e") { path { path }, matches { line, text }} }}'
   2b1320977125dad24866056fa94acf30d77d9453
@@ -94,6 +133,8 @@
       ]
     }
   }
+
+
   $ josh-filter :/ -g 'query { rev(at: "refs/heads/master", filter: ":/sub2") { results: search(string: "e") { path { path }, matches { line, text }} }}'
   2b1320977125dad24866056fa94acf30d77d9453
   {
@@ -114,221 +155,222 @@
     }
   }
 
+
   $ git-tree-pretty refs/heads/index
   .
   ├── 20/
   │   ├── 20/
   │   │   ├── 20/
-  │   │   │   └── sub1
+  │   │   │   └── 8f
   │   │   ├── 6f/
-  │   │   │   └── sub1
+  │   │   │   └── 8f
   │   │   └── 74/
-  │   │       └── sub1
+  │   │       └── 8f
   │   ├── 64/
   │   │   └── 6f/
-  │   │       └── sub1
+  │   │       └── 8f
   │   ├── 68/
   │   │   └── 61/
-  │   │       └── sub2
+  │   │       └── 48
   │   ├── 6c/
   │   │   └── 69/
-  │   │       └── sub1
+  │   │       └── 8f
   │   ├── 6d/
   │   │   └── 6f/
-  │   │       ├── sub1
-  │   │       └── sub2
-  │   ├── 6f/
-  │   │   └── 6e/
-  │   │       └── sub1
-  │   ├── 73/
-  │   │   └── 65/
-  │   │       └── sub2
+  \xe2\x94\x82   \xe2\x94\x82       \xe2\x94\x9c\xe2\x94\x80\xe2\x94\x80 48 (escaped)
+  \xe2\x94\x82   \xe2\x94\x82       \xe2\x94\x94\xe2\x94\x80\xe2\x94\x80 8f (escaped)
+  \xe2\x94\x82   \xe2\x94\x9c\xe2\x94\x80\xe2\x94\x80 6f/ (escaped)
+  \xe2\x94\x82   \xe2\x94\x82   \xe2\x94\x94\xe2\x94\x80\xe2\x94\x80 6e/ (escaped)
+  \xe2\x94\x82   \xe2\x94\x82       \xe2\x94\x94\xe2\x94\x80\xe2\x94\x80 8f (escaped)
+  \xe2\x94\x82   \xe2\x94\x9c\xe2\x94\x80\xe2\x94\x80 73/ (escaped)
+  \xe2\x94\x82   \xe2\x94\x82   \xe2\x94\x94\xe2\x94\x80\xe2\x94\x80 65/ (escaped)
+  │   │       └── 48
   │   ├── 74/
   │   │   ├── 65/
-  │   │   │   └── sub1
+  │   │   │   └── 8f
   │   │   ├── 68/
-  │   │   │   └── sub1
+  │   │   │   └── 8f
   │   │   └── 6f/
-  │   │       └── sub2
+  │   │       └── 48
   │   └── 77/
   │       ├── 68/
-  │       │   └── sub2
+  │       │   └── 48
   │       └── 69/
-  │           └── sub1
+  │           └── 8f
   ├── 61/
   │   ├── 6e/
   │   │   ├── 20/
-  │   │   │   └── sub1
+  │   │   │   └── 8f
   │   │   └── 6f/
-  │   │       └── sub1
+  │   │       └── 8f
   │   ├── 70/
   │   │   └── 70/
-  │   │       └── sub2
+  │   │       └── 48
   │   └── 74/
   │       └── 20/
-  │           └── sub2
+  │           └── 48
   ├── 63/
   │   └── 75/
   │       └── 6d/
-  │           └── sub1
+  │           └── 8f
   ├── 64/
   │   └── 6f/
   │       └── 63/
-  │           └── sub1
+  │           └── 8f
   ├── 65/
   │   ├── 20/
   │   │   ├── 20/
-  │   │   │   └── sub1
+  │   │   │   └── 8f
   │   │   ├── 6c/
-  │   │   │   └── sub1
+  │   │   │   └── 8f
   │   │   ├── 6d/
-  │   │   │   └── sub2
+  │   │   │   └── 48
   │   │   ├── 74/
-  │   │   │   └── sub2
+  │   │   │   └── 48
   │   │   └── 77/
-  │   │       └── sub2
+  │   │       └── 48
   │   ├── 65/
   │   │   └── 20/
-  │   │       └── sub2
+  │   │       └── 48
   │   ├── 6e/
   │   │   ├── 73/
-  │   │   │   └── sub2
+  │   │   │   └── 48
   │   │   └── 74/
-  │   │       └── sub1
+  │   │       └── 8f
   │   ├── 72/
   │   │   └── 20/
-  │   │       └── sub1
+  │   │       └── 8f
   │   └── 73/
   │       └── 74/
-  │           └── sub1
+  │           └── 8f
   ├── 66/
   │   └── 69/
   │       └── 72/
-  │           └── sub1
+  │           └── 8f
   ├── 68/
   │   ├── 20/
   │   │   └── 6d/
-  │   │       └── sub1
+  │   │       └── 8f
   │   ├── 61/
   │   │   ├── 6e/
-  │   │   │   └── sub1
+  │   │   │   └── 8f
   │   │   ├── 70/
-  │   │   │   └── sub2
+  │   │   │   └── 48
   │   │   └── 74/
-  │   │       └── sub2
+  │   │       └── 48
   │   └── 65/
   │       └── 72/
-  │           └── sub1
+  │           └── 8f
   ├── 69/
   │   ├── 6e/
   │   │   └── 65/
-  │   │       └── sub1
+  │   │       └── 8f
   │   ├── 72/
   │   │   └── 73/
-  │   │       └── sub1
+  │   │       └── 8f
   │   └── 74/
   │       └── 68/
-  │           └── sub1
+  │           └── 8f
   ├── 6c/
   │   └── 69/
   │       └── 6e/
-  │           └── sub1
+  │           └── 8f
   ├── 6d/
   │   ├── 65/
   │   │   └── 6e/
-  │   │       └── sub1
+  │   │       └── 8f
   │   └── 6f/
   │       └── 72/
-  │           ├── sub1
-  │           └── sub2
-  ├── 6e/
-  │   ├── 20/
-  │   │   └── 20/
-  │   │       └── sub1
-  │   ├── 65/
-  │   │   └── 20/
-  │   │       ├── sub1
-  │   │       └── sub2
-  │   ├── 6f/
-  │   │   └── 74/
-  │   │       └── sub1
-  │   └── 74/
-  │       └── 20/
-  │           └── sub1
-  ├── 6f/
-  │   ├── 20/
-  │   │   └── 73/
-  │   │       └── sub2
-  │   ├── 63/
-  │   │   └── 75/
-  │   │       └── sub1
-  │   ├── 6e/
-  │   │   └── 65/
-  │   │       ├── sub1
-  │   │       └── sub2
-  │   ├── 72/
-  │   │   └── 65/
-  │   │       ├── sub1
-  │   │       └── sub2
-  │   └── 74/
-  │       └── 68/
-  │           └── sub1
-  ├── 70/
-  │   ├── 65/
-  │   │   └── 6e/
-  │   │       └── sub2
-  │   └── 70/
-  │       └── 65/
-  │           └── sub2
+  \xe2\x94\x82           \xe2\x94\x9c\xe2\x94\x80\xe2\x94\x80 48 (escaped)
+  \xe2\x94\x82           \xe2\x94\x94\xe2\x94\x80\xe2\x94\x80 8f (escaped)
+  \xe2\x94\x9c\xe2\x94\x80\xe2\x94\x80 6e/ (escaped)
+  \xe2\x94\x82   \xe2\x94\x9c\xe2\x94\x80\xe2\x94\x80 20/ (escaped)
+  \xe2\x94\x82   \xe2\x94\x82   \xe2\x94\x94\xe2\x94\x80\xe2\x94\x80 20/ (escaped)
+  \xe2\x94\x82   \xe2\x94\x82       \xe2\x94\x94\xe2\x94\x80\xe2\x94\x80 8f (escaped)
+  \xe2\x94\x82   \xe2\x94\x9c\xe2\x94\x80\xe2\x94\x80 65/ (escaped)
+  \xe2\x94\x82   \xe2\x94\x82   \xe2\x94\x94\xe2\x94\x80\xe2\x94\x80 20/ (escaped)
+  \xe2\x94\x82   \xe2\x94\x82       \xe2\x94\x9c\xe2\x94\x80\xe2\x94\x80 48 (escaped)
+  \xe2\x94\x82   \xe2\x94\x82       \xe2\x94\x94\xe2\x94\x80\xe2\x94\x80 8f (escaped)
+  \xe2\x94\x82   \xe2\x94\x9c\xe2\x94\x80\xe2\x94\x80 6f/ (escaped)
+  \xe2\x94\x82   \xe2\x94\x82   \xe2\x94\x94\xe2\x94\x80\xe2\x94\x80 74/ (escaped)
+  \xe2\x94\x82   \xe2\x94\x82       \xe2\x94\x94\xe2\x94\x80\xe2\x94\x80 8f (escaped)
+  \xe2\x94\x82   \xe2\x94\x94\xe2\x94\x80\xe2\x94\x80 74/ (escaped)
+  \xe2\x94\x82       \xe2\x94\x94\xe2\x94\x80\xe2\x94\x80 20/ (escaped)
+  \xe2\x94\x82           \xe2\x94\x94\xe2\x94\x80\xe2\x94\x80 8f (escaped)
+  \xe2\x94\x9c\xe2\x94\x80\xe2\x94\x80 6f/ (escaped)
+  \xe2\x94\x82   \xe2\x94\x9c\xe2\x94\x80\xe2\x94\x80 20/ (escaped)
+  \xe2\x94\x82   \xe2\x94\x82   \xe2\x94\x94\xe2\x94\x80\xe2\x94\x80 73/ (escaped)
+  \xe2\x94\x82   \xe2\x94\x82       \xe2\x94\x94\xe2\x94\x80\xe2\x94\x80 48 (escaped)
+  \xe2\x94\x82   \xe2\x94\x9c\xe2\x94\x80\xe2\x94\x80 63/ (escaped)
+  \xe2\x94\x82   \xe2\x94\x82   \xe2\x94\x94\xe2\x94\x80\xe2\x94\x80 75/ (escaped)
+  \xe2\x94\x82   \xe2\x94\x82       \xe2\x94\x94\xe2\x94\x80\xe2\x94\x80 8f (escaped)
+  \xe2\x94\x82   \xe2\x94\x9c\xe2\x94\x80\xe2\x94\x80 6e/ (escaped)
+  \xe2\x94\x82   \xe2\x94\x82   \xe2\x94\x94\xe2\x94\x80\xe2\x94\x80 65/ (escaped)
+  \xe2\x94\x82   \xe2\x94\x82       \xe2\x94\x9c\xe2\x94\x80\xe2\x94\x80 48 (escaped)
+  \xe2\x94\x82   \xe2\x94\x82       \xe2\x94\x94\xe2\x94\x80\xe2\x94\x80 8f (escaped)
+  \xe2\x94\x82   \xe2\x94\x9c\xe2\x94\x80\xe2\x94\x80 72/ (escaped)
+  \xe2\x94\x82   \xe2\x94\x82   \xe2\x94\x94\xe2\x94\x80\xe2\x94\x80 65/ (escaped)
+  \xe2\x94\x82   \xe2\x94\x82       \xe2\x94\x9c\xe2\x94\x80\xe2\x94\x80 48 (escaped)
+  \xe2\x94\x82   \xe2\x94\x82       \xe2\x94\x94\xe2\x94\x80\xe2\x94\x80 8f (escaped)
+  \xe2\x94\x82   \xe2\x94\x94\xe2\x94\x80\xe2\x94\x80 74/ (escaped)
+  \xe2\x94\x82       \xe2\x94\x94\xe2\x94\x80\xe2\x94\x80 68/ (escaped)
+  \xe2\x94\x82           \xe2\x94\x94\xe2\x94\x80\xe2\x94\x80 8f (escaped)
+  \xe2\x94\x9c\xe2\x94\x80\xe2\x94\x80 70/ (escaped)
+  \xe2\x94\x82   \xe2\x94\x9c\xe2\x94\x80\xe2\x94\x80 65/ (escaped)
+  \xe2\x94\x82   \xe2\x94\x82   \xe2\x94\x94\xe2\x94\x80\xe2\x94\x80 6e/ (escaped)
+  \xe2\x94\x82   \xe2\x94\x82       \xe2\x94\x94\xe2\x94\x80\xe2\x94\x80 48 (escaped)
+  \xe2\x94\x82   \xe2\x94\x94\xe2\x94\x80\xe2\x94\x80 70/ (escaped)
+  \xe2\x94\x82       \xe2\x94\x94\xe2\x94\x80\xe2\x94\x80 65/ (escaped)
+  │           └── 48
   ├── 72/
   │   ├── 20/
   │   │   └── 64/
-  │   │       └── sub1
+  │   │       └── 8f
   │   ├── 65/
   │   │   └── 20/
-  │   │       ├── sub1
-  │   │       └── sub2
-  │   └── 73/
-  │       └── 74/
-  │           └── sub1
-  ├── 73/
-  │   ├── 65/
-  │   │   └── 65/
-  │   │       └── sub2
+  \xe2\x94\x82   \xe2\x94\x82       \xe2\x94\x9c\xe2\x94\x80\xe2\x94\x80 48 (escaped)
+  \xe2\x94\x82   \xe2\x94\x82       \xe2\x94\x94\xe2\x94\x80\xe2\x94\x80 8f (escaped)
+  \xe2\x94\x82   \xe2\x94\x94\xe2\x94\x80\xe2\x94\x80 73/ (escaped)
+  \xe2\x94\x82       \xe2\x94\x94\xe2\x94\x80\xe2\x94\x80 74/ (escaped)
+  \xe2\x94\x82           \xe2\x94\x94\xe2\x94\x80\xe2\x94\x80 8f (escaped)
+  \xe2\x94\x9c\xe2\x94\x80\xe2\x94\x80 73/ (escaped)
+  \xe2\x94\x82   \xe2\x94\x9c\xe2\x94\x80\xe2\x94\x80 65/ (escaped)
+  \xe2\x94\x82   \xe2\x94\x82   \xe2\x94\x94\xe2\x94\x80\xe2\x94\x80 65/ (escaped)
+  │   │       └── 48
   │   └── 74/
   │       └── 20/
-  │           └── sub1
+  │           └── 8f
   ├── 74/
   │   ├── 20/
   │   │   ├── 64/
-  │   │   │   └── sub1
+  │   │   │   └── 8f
   │   │   ├── 68/
-  │   │   │   └── sub2
+  │   │   │   └── 48
   │   │   ├── 74/
-  │   │   │   └── sub1
+  │   │   │   └── 8f
   │   │   └── 77/
-  │   │       └── sub1
+  │   │       └── 8f
   │   ├── 65/
   │   │   └── 73/
-  │   │       └── sub1
+  │   │       └── 8f
   │   ├── 68/
   │   │   ├── 20/
-  │   │   │   └── sub1
+  │   │   │   └── 8f
   │   │   ├── 61/
-  │   │   │   └── sub1
+  │   │   │   └── 8f
   │   │   └── 65/
-  │   │       └── sub1
+  │   │       └── 8f
   │   └── 6f/
   │       └── 20/
-  │           └── sub2
+  │           └── 48
   ├── 75/
   │   └── 6d/
   │       └── 65/
-  │           └── sub1
+  │           └── 8f
   └── 77/
       ├── 68/
       │   └── 61/
-      │       └── sub2
+      │       └── 48
       └── 69/
           └── 74/
-              └── sub1
+              └── 8f
