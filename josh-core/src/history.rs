@@ -89,14 +89,19 @@ fn find_unapply_base(
     // Filtered OID to compare against
     filtered: git2::Oid,
 ) -> anyhow::Result<git2::Oid> {
-    if contained_in == git2::Oid::zero() {
-        tracing::info!("contained in zero",);
-        return Ok(git2::Oid::zero());
-    }
-
+    // Consult the running map first: during an unapply walk we insert every
+    // freshly created commit here, so a later commit can find its parent even
+    // when there is no `contained_in` hint (e.g. a no-base push of an orphan
+    // history). Checking this before the zero guard is what keeps such a push
+    // connected instead of collapsing into a single parentless commit.
     if let Some(original) = filtered_to_original.get(&filtered) {
         tracing::info!("Found in filtered_to_original",);
         return Ok(*original);
+    }
+
+    if contained_in == git2::Oid::zero() {
+        tracing::info!("contained in zero",);
+        return Ok(git2::Oid::zero());
     }
 
     let contained_in_commit = transaction.repo().find_commit(contained_in)?;
