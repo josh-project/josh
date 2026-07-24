@@ -471,7 +471,10 @@ impl Revision {
                     && let Ok(name) = std::str::from_utf8(entry.filename)
                 {
                     let separator = if parent.is_empty() { "" } else { "/" };
-                    scan.push(format!("{}{}{}", parent, separator, name));
+                    scan.push((
+                        format!("{}{}{}", parent, separator, name),
+                        entry.oid.to_owned(),
+                    ));
                 }
                 Ok(())
             })?;
@@ -480,7 +483,6 @@ impl Revision {
         let results = josh_search::search_matches(
             odb,
             &mut transaction.search_cache(),
-            x.tree_id(),
             &string,
             &candidates,
         )?;
