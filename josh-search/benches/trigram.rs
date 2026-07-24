@@ -11,6 +11,8 @@ use std::path::PathBuf;
 //   * `trigram_index_incremental` -- indexing churn commits while the parent's index is warm
 //   * `trigram_search`            -- `search_candidates` + `search_matches`, the end-to-end
 //                                    user-visible search operation (see `josh-filter --search`)
+//   * `trigram_search_history`    -- the same search against every commit of the churn chain
+//                                    in one session, as the GraphQL history+search API does
 //
 // The scaling parameter is the number of files in the tree; history stays short (a root commit
 // plus `K_CHURN` small churn commits, used only by the incremental group).
@@ -76,11 +78,14 @@ const TESTCASE: &str = if cfg!(debug_assertions) {
 const JOSH_BENCH_COMMIT_TIME: &str = "1700000000";
 
 /// One case size with everything the bench groups need: the commit chain (root first, tip last),
-/// the pre-built (and flushed) index tree of the tip, and throughput/gate bookkeeping.
+/// the pre-built (and flushed) index tree of the tip, the per-commit `(source tree, index
+/// tree)` pairs of the whole chain (for the history search group), and throughput/gate
+/// bookkeeping.
 struct Case {
     n_files: usize,
     chain: Vec<git2::Oid>,
     index_tree_oid: git2::Oid,
+    chain_indexes: Vec<(git2::Oid, git2::Oid)>,
     total_bytes: u64,
 }
 
@@ -382,16 +387,22 @@ impl TrigramBench {
             let repo = transaction.repo();
             let root_tree = repo.find_commit(chain[0])?.tree()?;
             // One indexer state for the whole chain, matching how josh keeps one per
-            // transaction.
+            // transaction. Collect the per-commit (source tree, index tree) pairs on the way:
+            // the history search group iterates them.
             let mut indexer = josh_search::Indexer::default();
-            let root_index_oid =
-                josh_search::trigram_index(repo, &transaction, &mut indexer, root_tree)?.id();
-            let mut incremental_oid = root_index_oid;
+            let mut chain_indexes = vec![(
+                root_tree.id(),
+                josh_search::trigram_index(repo, &transaction, &mut indexer, root_tree)?.id(),
+            )];
             for &oid in &chain[1..] {
                 let tree = repo.find_commit(oid)?.tree()?;
-                incremental_oid =
+                let tree_oid = tree.id();
+                let index_oid =
                     josh_search::trigram_index(repo, &transaction, &mut indexer, tree)?.id();
+                chain_indexes.push((tree_oid, index_oid));
             }
+            let root_index_oid = chain_indexes.first().expect("chain is never empty").1;
+            let incremental_oid = chain_indexes.last().expect("chain is never empty").1;
             anyhow::ensure!(
                 incremental_oid == index_tree_oid,
                 "incremental tip index {incremental_oid} != cold tip index {index_tree_oid}"
@@ -405,6 +416,7 @@ impl TrigramBench {
                 n_files,
                 chain,
                 index_tree_oid,
+                chain_indexes,
                 total_bytes,
             });
         }
@@ -524,6 +536,42 @@ fn trigram_benches(c: &mut Criterion) {
                         .expect("tip tree");
 
                     runner.run(|| search(repo, &index_tree, &source_tree, needle).expect("search"));
+                });
+            });
+        }
+    }
+    group.finish();
+
+    // History-wide search: the same end-to-end search against EVERY commit of the churn chain
+    // within one session, as one GraphQL history+search query does. Consecutive commits share
+    // almost all of their trees, so this measures how much of the per-commit work is
+    // rediscovered versus reused. Throughput::Elements reports time per searched commit.
+    let mut group = c.benchmark_group("trigram_search_history");
+    group.sample_size(10);
+    for case in &bench.cases {
+        for (kind, needle) in [
+            ("rare", NEEDLE_RARE),
+            ("common", NEEDLE_COMMON),
+            ("absent", NEEDLE_ABSENT),
+        ] {
+            group.throughput(Throughput::Elements(case.chain_indexes.len() as u64));
+            group.bench_function(BenchmarkId::new(kind, case.n_files), |b| {
+                b.iter_with_setup_wrapper(|runner| {
+                    josh_core::reset_caches().expect("reset caches");
+                    let transaction = bench.context.open().expect("open transaction");
+                    let repo = transaction.repo();
+
+                    runner.run(|| {
+                        let mut hits = 0;
+                        for (tree_oid, index_oid) in &case.chain_indexes {
+                            let source = repo.find_tree(*tree_oid).expect("find source tree");
+                            let index = repo.find_tree(*index_oid).expect("find index tree");
+                            let (_, matches) =
+                                search(repo, &index, &source, needle).expect("search");
+                            hits += matches.len();
+                        }
+                        hits
+                    });
                 });
             });
         }
