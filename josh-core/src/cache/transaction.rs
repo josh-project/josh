@@ -474,7 +474,14 @@ impl Transaction {
     }
 
     pub fn get_trigram_index(&self, tree: git2::Oid) -> Option<git2::Oid> {
-        TRIGRAM_INDEX_MAP.read().unwrap().get(&tree).cloned()
+        let oid = TRIGRAM_INDEX_MAP.read().unwrap().get(&tree).cloned()?;
+        // Only report an index as cached if it still exists in the object database: index
+        // trees not anchored by a ref (all per-subtree ones) are pruned by gc/repack, and
+        // a dangling hit must rebuild instead of erroring.
+        if self.repo.odb().ok()?.exists(oid) {
+            return Some(oid);
+        }
+        None
     }
 
     pub fn insert_populate(&self, tree: (git2::Oid, git2::Oid), result: git2::Oid) {
