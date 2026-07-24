@@ -12,6 +12,12 @@
 //! with the empty blob as the leaf marker. The subtree below a trigram's three "spine" levels
 //! mirrors the source tree's structure restricted to files containing that trigram.
 //!
+//! Mirror granularity is adaptive: small directories (see [`COARSE_MAX_FILES`] /
+//! [`COARSE_MAX_BYTES`]) appear as a single blob leaf — "some file under this directory
+//! contains the trigram" — instead of per-file structure, collapsing the per-trigram file
+//! subset variety where it is cheapest to re-verify. Search expands such a coarse hit to every
+//! file under the directory, so candidates stay a superset and verification stays exact.
+//!
 //! Indexes are built compositionally: each file gets a small trigram tree of its own, child
 //! directory indexes are lifted into the parent's namespace, and a directory's children are
 //! merged in a single pass. Memoization through [`IndexCache`] (per subtree) and the
@@ -135,13 +141,34 @@ pub struct Indexer {
     /// Source blob and entry name -> the file's wrapped trigram tree. The name is part of the
     /// key because the mirror entries inside carry it.
     blob_memo: HashMap<(git2::Oid, String), gix_hash::ObjectId>,
+    /// Source blob -> its nameless trigram spine (empty-blob leaves), the building block of
+    /// coarse indexes. Name-independent, so identical blobs share it everywhere.
+    blob_spine_memo: HashMap<git2::Oid, gix_hash::ObjectId>,
+    /// Source tree -> its coarse index (the subtree treated as one pseudo-file). Kept apart
+    /// from the fine-grained [`IndexCache`]; coarse subtrees are small by definition, so
+    /// keeping this per process is cheap enough.
+    coarse_memo: HashMap<git2::Oid, gix_hash::ObjectId>,
+    /// Source tree -> transitive `(file count, content bytes)`, for the granularity decision.
+    stats_memo: HashMap<git2::Oid, (u64, u64)>,
     wrap_memo: HashMap<(gix_hash::ObjectId, String), gix_hash::ObjectId>,
     overlay_memo: HashMap<Vec<gix_hash::ObjectId>, gix_hash::ObjectId>,
 }
 
 /// What an index run needs from the object database.
-pub trait Objects: gix_object::Find + gix_object::Exists + gix_object::Write {}
-impl<T: gix_object::Find + gix_object::Exists + gix_object::Write> Objects for T {}
+pub trait Objects:
+    gix_object::Find + gix_object::FindHeader + gix_object::Exists + gix_object::Write
+{
+}
+impl<T: gix_object::Find + gix_object::FindHeader + gix_object::Exists + gix_object::Write> Objects
+    for T
+{
+}
+
+/// Directories at or below BOTH limits are recorded at directory granularity: their mirrors
+/// hold one leaf for the whole directory instead of one per file. Search then verifies every
+/// file under a matched coarse directory, so the limits bound that extra verification work.
+const COARSE_MAX_FILES: u64 = 16;
+const COARSE_MAX_BYTES: u64 = 64 * 1024;
 
 /// One [`trigram_index`] call: the persistent [`Indexer`] state plus the per-call object
 /// source, cache and root bookkeeping.
@@ -201,6 +228,47 @@ impl Run<'_> {
         Ok(tree)
     }
 
+    /// Build the spine of `content`'s trigrams with `(leaf_mode, leaf_oid)` at every
+    /// `hex(b1)/hex(b2)/hex(b3)` leaf, or the empty tree when there are no trigrams.
+    fn content_spine(
+        &mut self,
+        content: &str,
+        leaf_mode: gix_object::tree::EntryMode,
+        leaf_oid: gix_hash::ObjectId,
+    ) -> gix_hash::ObjectId {
+        // b1 -> b2 -> [b3]; already sorted, write_tree's canonical sort is a no-op here.
+        let mut spine: BTreeMap<u8, BTreeMap<u8, Vec<u8>>> = BTreeMap::new();
+        for t in distinct_trigrams(content) {
+            spine
+                .entry(t[0])
+                .or_default()
+                .entry(t[1])
+                .or_default()
+                .push(t[2]);
+        }
+        if spine.is_empty() {
+            return empty_tree();
+        }
+
+        let mut l1 = Vec::new();
+        for (b1, l2s) in spine {
+            let mut l2 = Vec::new();
+            for (b2, b3s) in l2s {
+                let l3 = b3s
+                    .into_iter()
+                    .map(|b3| gix_object::tree::Entry {
+                        mode: leaf_mode,
+                        filename: hex_name(b3),
+                        oid: leaf_oid,
+                    })
+                    .collect();
+                l2.push(tree_entry(hex_name(b2), self.write_tree(l3)));
+            }
+            l1.push(tree_entry(hex_name(b1), self.write_tree(l2)));
+        }
+        self.write_tree(l1)
+    }
+
     /// The wrapped trigram tree of one file: its trigram spine with the one-entry mirror
     /// `{name: empty blob}` at every leaf. Building the wrapped form directly (rather than
     /// wrapping afterwards via [`wrap`](Run::wrap)) avoids an intermediate tree that would
@@ -211,43 +279,88 @@ impl Run<'_> {
             return *id;
         }
 
-        // Grouped by trigram byte and thus already sorted, so write_tree's sort is a no-op.
-        let mut spine: BTreeMap<u8, BTreeMap<u8, Vec<u8>>> = BTreeMap::new();
-        for t in distinct_trigrams(content) {
-            spine
-                .entry(t[0])
-                .or_default()
-                .entry(t[1])
-                .or_default()
-                .push(t[2]);
-        }
-
-        let id = if spine.is_empty() {
-            empty_tree()
-        } else {
-            let mirror = self.write_tree(vec![gix_object::tree::Entry {
-                mode: gix_object::tree::EntryKind::Blob.into(),
-                filename: name.into(),
-                oid: empty_blob(),
-            }]);
-
-            let mut l1 = Vec::new();
-            for (b1, l2s) in spine {
-                let mut l2 = Vec::new();
-                for (b2, b3s) in l2s {
-                    let l3 = b3s
-                        .into_iter()
-                        .map(|b3| tree_entry(hex_name(b3), mirror))
-                        .collect();
-                    l2.push(tree_entry(hex_name(b2), self.write_tree(l3)));
-                }
-                l1.push(tree_entry(hex_name(b1), self.write_tree(l2)));
-            }
-            self.write_tree(l1)
-        };
+        let mirror = self.write_tree(vec![gix_object::tree::Entry {
+            mode: gix_object::tree::EntryKind::Blob.into(),
+            filename: name.into(),
+            oid: empty_blob(),
+        }]);
+        let id = self.content_spine(content, gix_object::tree::EntryKind::Tree.into(), mirror);
 
         self.ix.blob_memo.insert(key, id);
         id
+    }
+
+    /// The nameless trigram spine of one blob: empty-blob leaves, no mirror. The building
+    /// block of coarse (directory granularity) indexes.
+    fn blob_spine(&mut self, oid: git2::Oid, content: &str) -> gix_hash::ObjectId {
+        if let Some(id) = self.ix.blob_spine_memo.get(&oid) {
+            return *id;
+        }
+        let id = self.content_spine(
+            content,
+            gix_object::tree::EntryKind::Blob.into(),
+            empty_blob(),
+        );
+        self.ix.blob_spine_memo.insert(oid, id);
+        id
+    }
+
+    /// Transitive `(file count, content bytes)` of a tree, for the granularity decision.
+    fn subtree_stats(&mut self, tree_oid: git2::Oid) -> anyhow::Result<(u64, u64)> {
+        if let Some(stats) = self.ix.stats_memo.get(&tree_oid) {
+            return Ok(*stats);
+        }
+        let tree = self.read_tree(to_gix(tree_oid))?;
+        let (mut files, mut bytes) = (0u64, 0u64);
+        for entry in tree.entries.clone() {
+            if entry.mode.is_tree() {
+                let (f, b) = self.subtree_stats(to_git2(entry.oid))?;
+                files += f;
+                bytes += b;
+            } else if !entry.mode.is_commit() {
+                files += 1;
+                bytes += self
+                    .src
+                    .try_header(&entry.oid)
+                    .map_err(|e| anyhow::anyhow!("read header {}: {}", entry.oid, e))?
+                    .ok_or_else(|| anyhow::anyhow!("object {} not found", entry.oid))?
+                    .size;
+            }
+        }
+        self.ix.stats_memo.insert(tree_oid, (files, bytes));
+        Ok((files, bytes))
+    }
+
+    /// Whether a child directory is recorded at directory granularity by its parent.
+    fn is_small(&mut self, tree_oid: git2::Oid) -> anyhow::Result<bool> {
+        let (files, bytes) = self.subtree_stats(tree_oid)?;
+        Ok(files <= COARSE_MAX_FILES && bytes <= COARSE_MAX_BYTES)
+    }
+
+    /// The coarse index of a tree: the whole subtree treated as one pseudo-file — the spine of
+    /// every trigram occurring anywhere below it, with empty-blob leaves and no mirror
+    /// structure. Wrapping it under the directory's name yields `{name: empty blob}` mirrors:
+    /// a blob leaf where the source has a directory, meaning "some file under here contains
+    /// the trigram".
+    fn coarse_index(&mut self, tree_oid: git2::Oid) -> anyhow::Result<gix_hash::ObjectId> {
+        if let Some(id) = self.ix.coarse_memo.get(&tree_oid) {
+            return Ok(*id);
+        }
+
+        let tree = self.read_tree(to_gix(tree_oid))?;
+        let mut spines = Vec::with_capacity(tree.entries.len());
+        for entry in tree.entries.clone() {
+            if entry.mode.is_tree() {
+                spines.push(self.coarse_index(to_git2(entry.oid))?);
+            } else if !entry.mode.is_commit() {
+                let content = read_blob_text(self.src, entry.oid);
+                spines.push(self.blob_spine(to_git2(entry.oid), &content));
+            }
+        }
+        let index = self.overlay_many(spines)?;
+
+        self.ix.coarse_memo.insert(tree_oid, index);
+        Ok(index)
     }
 
     /// Lift a child directory's index into its parent's namespace by nesting each mirror `M`
@@ -294,9 +407,10 @@ impl Run<'_> {
 
     /// Merge index trees, all inputs at once: entries are grouped by name across every input
     /// and each group merges recursively, so every result node is written exactly once (a
-    /// pairwise fold would rewrite the accumulated spine once per input). Entries sharing a
-    /// name are always trees: they only occur at spine levels, since the wrapped mirrors below
-    /// the spine have disjoint names across a directory's children.
+    /// pairwise fold would rewrite the accumulated spine once per input). Same-name entries
+    /// are either trees (spine levels merge recursively; below the spine the wrapped mirrors
+    /// of a directory's children have disjoint names) or identical coarse leaves (the empty
+    /// blob at the same spine position of several coarse spines), which collapse.
     fn overlay_many(
         &mut self,
         mut inputs: Vec<gix_hash::ObjectId>,
@@ -330,7 +444,8 @@ impl Run<'_> {
                     }
                     Some((mode, oids)) => {
                         anyhow::ensure!(
-                            mode.is_tree() && e.mode.is_tree(),
+                            (mode.is_tree() && e.mode.is_tree())
+                                || (*mode == e.mode && oids[0] == e.oid),
                             "overlay conflict on non-tree entry {:?}",
                             e.filename
                         );
@@ -374,7 +489,13 @@ impl Run<'_> {
             let name = std::str::from_utf8(&entry.filename)?.to_owned();
             let child_oid = to_git2(entry.oid);
             if entry.mode.is_tree() {
-                let child = self.index_tree_oid(child_oid)?;
+                // Small directories are recorded at directory granularity: one coarse
+                // leaf for the whole directory instead of per-file mirrors.
+                let child = if self.is_small(child_oid)? {
+                    self.coarse_index(child_oid)?
+                } else {
+                    self.index_tree_oid(child_oid)?
+                };
                 wrapped.push(self.wrap(&name, child)?);
             } else if !entry.mode.is_commit() {
                 let content = read_blob_text(self.src, entry.oid);
@@ -461,10 +582,10 @@ pub fn trigram_index(
     Ok(to_git2(index))
 }
 
-/// Exact candidate files for `searchstring`: files containing every trigram of the query.
+/// The candidate files for `searchstring`: those containing every trigram of the query.
 ///
-/// Queries shorter than three bytes (or without any valid-UTF-8 window) have no trigrams; every
-/// file of `source_tree` is a candidate then, and [`search_matches`] does the filtering.
+/// Queries shorter than three characters have no trigrams; every file of `source_tree` is a
+/// candidate then, and [`search_matches`] does the filtering.
 pub fn search_candidates(
     src: &dyn Objects,
     index_tree: git2::Oid,
@@ -508,21 +629,24 @@ pub fn search_candidates(
             .collect();
     }
 
-    intersect_walk(src, &roots, "", &mut results)?;
+    intersect_walk(src, &roots, source_tree, "", &mut results)?;
     Ok(results)
 }
 
-/// Emit every file path present in ALL of the mirror trees `roots`.
+/// Emit every candidate file path present in ALL of the mirror trees `roots`. Mirrors follow
+/// `source`'s structure; a blob entry where the source has a directory is a coarse leaf and
+/// expands to every file under that source directory.
 fn intersect_walk(
     src: &dyn Objects,
     roots: &[git2::Oid],
+    source: git2::Oid,
     prefix: &str,
     out: &mut Vec<String>,
 ) -> anyhow::Result<()> {
     // Content addressing fast path: identical mirrors (trigrams with the same file set)
     // intersect to themselves.
     if roots.iter().all(|oid| *oid == roots[0]) {
-        return collect_paths(src, roots[0], prefix, out);
+        return collect_mirror_paths(src, roots[0], source, prefix, out);
     }
 
     let trees = roots
@@ -534,6 +658,7 @@ fn intersect_walk(
         .min_by_key(|t| t.len())
         .expect("roots is never empty");
 
+    let source_entries = read_tree_entries(src, source)?;
     'entry: for entry in smallest {
         let name = std::str::from_utf8(&entry.filename)?;
 
@@ -549,9 +674,64 @@ fn intersect_walk(
 
         let path = join_path(prefix, name);
         if entry.mode.is_tree() {
-            intersect_walk(src, &child_roots, &path, out)?;
+            let Some(source_entry) = source_entries.iter().find(|e| e.filename == entry.filename)
+            else {
+                continue;
+            };
+            intersect_walk(src, &child_roots, to_git2(source_entry.oid), &path, out)?;
         } else if !entry.mode.is_commit() {
-            out.push(path);
+            emit_leaf(src, &source_entries, name, &path, out)?;
+        }
+    }
+    Ok(())
+}
+
+/// Emit the candidates of one mirror leaf at `path`: the file itself, or — for a coarse leaf,
+/// where the source has a directory — every file under that source directory.
+fn emit_leaf(
+    src: &dyn Objects,
+    source_entries: &[gix_object::tree::Entry],
+    name: &str,
+    path: &str,
+    out: &mut Vec<String>,
+) -> anyhow::Result<()> {
+    match source_entries
+        .iter()
+        .find(|e| e.filename == name.as_bytes())
+    {
+        Some(e) if e.mode.is_tree() => collect_paths(src, to_git2(e.oid), path, out)?,
+        Some(e) if !e.mode.is_commit() => out.push(path.to_owned()),
+        _ => {}
+    }
+    Ok(())
+}
+
+/// Emit every candidate of the single mirror `oid`, following `source` for coarse expansion.
+fn collect_mirror_paths(
+    src: &dyn Objects,
+    oid: git2::Oid,
+    source: git2::Oid,
+    prefix: &str,
+    out: &mut Vec<String>,
+) -> anyhow::Result<()> {
+    let source_entries = read_tree_entries(src, source)?;
+    for entry in read_tree_entries(src, oid)? {
+        let name = std::str::from_utf8(&entry.filename)?;
+        let path = join_path(prefix, name);
+        if entry.mode.is_tree() {
+            let Some(source_entry) = source_entries.iter().find(|e| e.filename == entry.filename)
+            else {
+                continue;
+            };
+            collect_mirror_paths(
+                src,
+                to_git2(entry.oid),
+                to_git2(source_entry.oid),
+                &path,
+                out,
+            )?;
+        } else if !entry.mode.is_commit() {
+            emit_leaf(src, &source_entries, name, &path, out)?;
         }
     }
     Ok(())
@@ -773,27 +953,33 @@ mod tests {
         // long as this oid does not change.
         assert_eq!(
             index.to_string(),
-            "169f9d05072eb25e1f1e90b4f7f11f6cfc2d3222"
+            "13344d7487ed9e2193bc08847ed14b0656a4d597"
         );
 
-        // "Tes" folds to "tes", which lives at 74/65/73 in the hex spine.
-        assert!(
-            path_entry(
-                &objects(&repo),
-                index,
-                std::path::Path::new("74/65/73/sub1/file1")
-            )
-            .unwrap()
-            .is_some()
+        // "Tes" folds to "tes", which lives at 74/65/73 in the hex spine. sub1 is a small
+        // directory, so the mirror records it as one coarse blob leaf.
+        let leaf = path_entry(
+            &objects(&repo),
+            index,
+            std::path::Path::new("74/65/73/sub1"),
+        )
+        .unwrap()
+        .unwrap();
+        assert_eq!(
+            repo.find_object(leaf, None).unwrap().kind(),
+            Some(git2::ObjectType::Blob)
         );
 
+        // Coarse hits expand to every file under the directory; verification is exact.
         let candidates = search_candidates(&objects(&repo), index, tree.id(), "document").unwrap();
         assert_eq!(candidates, vec!["sub1/file1", "sub1/file2"]);
+        let matches = search_matches(&objects(&repo), tree.id(), "document", &candidates).unwrap();
+        assert_eq!(matches.len(), 2);
 
         // Trigrams are case-folded, so candidates are a case-insensitive superset ("Test" in
-        // file1 makes it a candidate for "test") while match verification stays byte-exact.
+        // file1 makes sub1 a candidate for "test") while match verification stays byte-exact.
         let candidates = search_candidates(&objects(&repo), index, tree.id(), "test").unwrap();
-        assert_eq!(candidates, vec!["sub1/file1"]);
+        assert_eq!(candidates, vec!["sub1/file1", "sub1/file2"]);
         let matches = search_matches(&objects(&repo), tree.id(), "test", &candidates).unwrap();
         assert!(matches.is_empty());
 
@@ -805,8 +991,78 @@ mod tests {
         let candidates = search_candidates(&objects(&repo), index, tree.id(), "e").unwrap();
         assert_eq!(candidates.len(), 3);
 
-        // Indexing is deterministic and memoization-independent: a cold rebuild of the same
-        // tree yields the same oid.
+        // Indexing is deterministic and memoization-independent.
+        let cold = MapCache::default();
+        let index2 =
+            trigram_index(&objects(&repo), &cold, &mut Indexer::default(), tree.id()).unwrap();
+        assert_eq!(index, index2);
+    }
+
+    #[test]
+    fn coarse_and_fine_granularity() {
+        let (_tmp, repo) = test_repo();
+        let cache = MapCache::default();
+
+        // "big" exceeds COARSE_MAX_FILES and keeps per-file mirrors; "small" stays below both
+        // limits and is recorded as one coarse leaf.
+        let mut files: Vec<(String, String)> = (0..20)
+            .map(|i| {
+                (
+                    format!("big/file_{:02}", i),
+                    format!("uniqueword{:02} sharedcontent", i),
+                )
+            })
+            .collect();
+        files.push(("small/a".to_owned(), "needleinsmall here".to_owned()));
+        files.push(("small/b".to_owned(), "other content".to_owned()));
+        let files: Vec<(&str, &str)> = files.iter().map(|(p, c)| (&p[..], &c[..])).collect();
+        let tree = commit_tree(&repo, &files);
+
+        let index =
+            trigram_index(&objects(&repo), &cache, &mut Indexer::default(), tree.id()).unwrap();
+
+        // Fine: "d07" (from uniqueword07) mirrors big's structure down to the file.
+        let leaf = path_entry(
+            &objects(&repo),
+            index,
+            std::path::Path::new("64/30/37/big/file_07"),
+        )
+        .unwrap()
+        .unwrap();
+        assert_eq!(
+            repo.find_object(leaf, None).unwrap().kind(),
+            Some(git2::ObjectType::Blob)
+        );
+
+        // Coarse: "nee" (from needleinsmall) records small as a blob leaf, not a subtree.
+        let leaf = path_entry(
+            &objects(&repo),
+            index,
+            std::path::Path::new("6e/65/65/small"),
+        )
+        .unwrap()
+        .unwrap();
+        assert_eq!(
+            repo.find_object(leaf, None).unwrap().kind(),
+            Some(git2::ObjectType::Blob)
+        );
+
+        // Fine candidates stay per-file and exact.
+        let candidates =
+            search_candidates(&objects(&repo), index, tree.id(), "uniqueword07").unwrap();
+        assert_eq!(candidates, vec!["big/file_07"]);
+
+        // A coarse hit makes every file under the directory a candidate; verification is
+        // exact.
+        let candidates =
+            search_candidates(&objects(&repo), index, tree.id(), "needleinsmall").unwrap();
+        assert_eq!(candidates, vec!["small/a", "small/b"]);
+        let matches =
+            search_matches(&objects(&repo), tree.id(), "needleinsmall", &candidates).unwrap();
+        assert_eq!(matches.len(), 1);
+        assert_eq!(matches[0].0, "small/a");
+
+        // Determinism across memoization states, coarse dirs included.
         let cold = MapCache::default();
         let index2 =
             trigram_index(&objects(&repo), &cold, &mut Indexer::default(), tree.id()).unwrap();
@@ -844,10 +1100,10 @@ mod tests {
         );
         let index_b = trigram_index(&objects(&repo), &cache, &mut indexer, tree_b.id()).unwrap();
 
-        // Every subtree is memoized, including the fresh one — incrementality has no special
-        // path that could skip it.
-        let sub3 = tree_b.get_name("sub3").unwrap().id();
-        assert!(cache.get_index(sub3).is_some());
+        // The roots are memoized in the persistent cache. (The sub dirs are below the coarse
+        // threshold and live in the Indexer's coarse memo instead — only fine-grained indexes
+        // go through the IndexCache.)
+        assert!(cache.get_index(tree_b.id()).is_some());
 
         // Warm (incremental) and cold-built indexes agree bit for bit.
         let cold = MapCache::default();
