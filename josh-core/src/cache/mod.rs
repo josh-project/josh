@@ -15,7 +15,9 @@ mod tree_cache;
 /// the trigram index format.
 /// Version 35: small directories are recorded at directory granularity in the
 /// trigram index, changing the index format.
-pub const CACHE_VERSION: u64 = 35;
+/// Version 36: trigram mirror entries are named by a one-byte hash of the
+/// source name, changing the index format.
+pub const CACHE_VERSION: u64 = 36;
 
 pub use backend::{CacheBackend, HistoryGraphHint};
 pub use distributed::DistributedCacheBackend;
