@@ -261,6 +261,10 @@ pub struct Transaction {
     /// commits reuses the merge work of earlier commits. Its own cell because `trigram_index`
     /// borrows it for the entire call while also borrowing other caches through `t2`.
     trigram_indexer: std::cell::RefCell<josh_search::Indexer>,
+    /// josh-search search memoization, kept for the whole transaction so searching many
+    /// commits (e.g. one GraphQL query over `history { search }`) reuses candidate walks of
+    /// shared subtrees and verifies each distinct blob once.
+    search_cache: std::cell::RefCell<josh_search::SearchCache>,
     /// The primary repository view for object and ref reads. Held in its thread-safe form:
     /// a transaction crosses threads (josh-graphql requires `Send`) while a `gix::Repository`
     /// holds `Rc` snapshots of packed-refs and shallow state and does not.
@@ -374,6 +378,7 @@ impl Transaction {
                 nesting_level: 0,
             }),
             trigram_indexer: Default::default(),
+            search_cache: Default::default(),
             gix_repo,
             mem_odb,
             odb,
@@ -1461,6 +1466,12 @@ impl Transaction {
     /// alongside the [`IndexCache`] from [`Transaction::trigram_index_cache`].
     pub fn trigram_indexer(&self) -> std::cell::RefMut<'_, josh_search::Indexer> {
         self.trigram_indexer.borrow_mut()
+    }
+
+    /// The transaction-lifetime josh-search search memoization, for passing to
+    /// `josh_search::search_candidates` / `search_matches`.
+    pub fn search_cache(&self) -> std::cell::RefMut<'_, josh_search::SearchCache> {
+        self.search_cache.borrow_mut()
     }
 }
 
