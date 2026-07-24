@@ -279,12 +279,13 @@ fn recover_chain(repo: &git2::Repository, n_files: usize) -> anyhow::Result<Vec<
 /// the index tree, then exact matching over the source tree.
 fn search(
     repo: &git2::Repository,
+    cache: &mut josh_search::SearchCache,
     index_tree: &git2::Tree,
     source_tree: &git2::Tree,
     needle: &str,
 ) -> anyhow::Result<(Vec<String>, Vec<(String, Vec<(usize, String)>)>)> {
-    let candidates = josh_search::search_candidates(repo, index_tree, source_tree, needle)?;
-    let matches = josh_search::search_matches(repo, source_tree, needle, &candidates)?;
+    let candidates = josh_search::search_candidates(repo, cache, index_tree, source_tree, needle)?;
+    let matches = josh_search::search_matches(repo, cache, source_tree, needle, &candidates)?;
     Ok((candidates, matches))
 }
 
@@ -354,7 +355,9 @@ impl TrigramBench {
             // degenerated and the search numbers would be meaningless. (The bound is kept at
             // the pre-rework value of 5; the exact index should always produce exactly 1.)
             let rare_path = path_for(n_files / 2).to_string_lossy().into_owned();
-            let (candidates, matches) = search(repo, &index_tree, &tip_tree, NEEDLE_RARE)?;
+            let mut scache = josh_search::SearchCache::default();
+            let (candidates, matches) =
+                search(repo, &mut scache, &index_tree, &tip_tree, NEEDLE_RARE)?;
             anyhow::ensure!(
                 matches.len() == 1 && matches[0].0 == rare_path,
                 "rare needle not found in exactly its planted file {rare_path}: {matches:?}"
@@ -367,13 +370,13 @@ impl TrigramBench {
 
             // Gate: the common needle is found in every planted file, the absent one nowhere.
             let common_count = n_files.div_ceil(COMMON_EVERY);
-            let (_, matches) = search(repo, &index_tree, &tip_tree, NEEDLE_COMMON)?;
+            let (_, matches) = search(repo, &mut scache, &index_tree, &tip_tree, NEEDLE_COMMON)?;
             anyhow::ensure!(
                 matches.len() == common_count,
                 "common needle found in {} files, expected {common_count}",
                 matches.len()
             );
-            let (_, matches) = search(repo, &index_tree, &tip_tree, NEEDLE_ABSENT)?;
+            let (_, matches) = search(repo, &mut scache, &index_tree, &tip_tree, NEEDLE_ABSENT)?;
             anyhow::ensure!(
                 matches.is_empty(),
                 "absent needle found in {} files",
@@ -536,7 +539,14 @@ fn trigram_benches(c: &mut Criterion) {
                         .tree()
                         .expect("tip tree");
 
-                    runner.run(|| search(repo, &index_tree, &source_tree, needle).expect("search"));
+                    // A fresh cache per iteration: this group measures the uncached
+                    // single-commit search.
+                    let mut scache = josh_search::SearchCache::default();
+
+                    runner.run(|| {
+                        search(repo, &mut scache, &index_tree, &source_tree, needle)
+                            .expect("search")
+                    });
                 });
             });
         }
@@ -561,6 +571,9 @@ fn trigram_benches(c: &mut Criterion) {
                     josh_core::reset_caches().expect("reset caches");
                     let transaction = bench.context.open().expect("open transaction");
                     let repo = transaction.repo();
+                    // One cache for the whole chain, matching how josh keeps one per
+                    // transaction (a GraphQL history+search query runs in one transaction).
+                    let mut scache = josh_search::SearchCache::default();
 
                     runner.run(|| {
                         let mut hits = 0;
@@ -568,7 +581,7 @@ fn trigram_benches(c: &mut Criterion) {
                             let source = repo.find_tree(*tree_oid).expect("find source tree");
                             let index = repo.find_tree(*index_oid).expect("find index tree");
                             let (_, matches) =
-                                search(repo, &index, &source, needle).expect("search");
+                                search(repo, &mut scache, &index, &source, needle).expect("search");
                             hits += matches.len();
                         }
                         hits

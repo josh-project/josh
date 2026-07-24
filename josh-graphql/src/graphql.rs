@@ -436,6 +436,7 @@ impl Revision {
             let index_tree = filter::apply(&transaction, ifilterobj, x.clone())?;
             josh_search::search_candidates(
                 transaction.repo(),
+                &mut transaction.search_cache(),
                 index_tree.tree(),
                 x.tree(),
                 &string,
@@ -452,8 +453,13 @@ impl Revision {
             })?;
             scan
         };
-        let results =
-            josh_search::search_matches(transaction.repo(), x.tree(), &string, &candidates)?;
+        let results = josh_search::search_matches(
+            transaction.repo(),
+            &mut transaction.search_cache(),
+            x.tree(),
+            &string,
+            &candidates,
+        )?;
         /* let duration = start.elapsed(); */
 
         let mut r = vec![];
