@@ -1,33 +1,29 @@
+use josh_compose_backend::Runtime;
+
 use crate::CleanMode;
 use crate::job_cache;
-use crate::podman;
+use crate::naming;
 
-pub fn clean(mode: CleanMode) -> anyhow::Result<()> {
-    // Remove out_* volumes
-    let out_vols = podman::list_volumes_with_prefix("out_")?;
+pub fn clean(mode: CleanMode, runtime: &dyn Runtime) -> anyhow::Result<()> {
+    let out_vols = runtime.list_artifacts(naming::OUTPUT_PREFIX)?;
     for vol in out_vols {
         eprintln!("[clean] removing volume: {vol}");
-        podman::volume_rm_force(&vol)?;
+        runtime.remove_artifact(&vol, true)?;
     }
 
-    // Remove .josh/success and .josh/failed cache directories
     job_cache::clean();
 
-    // Remove ws_image_* images
-    let images = podman::list_images_with_prefix("ws_image_")?;
+    let images = runtime.list_envs(naming::ENV_PREFIX)?;
     for image in images {
         eprintln!("[clean] removing image: {image}");
-        podman::rmi(&image)?;
+        runtime.remove_env(&image)?;
     }
 
     if mode == CleanMode::CleanAll {
-        let cache_vols = podman::list_volumes_with_prefix("")?
-            .into_iter()
-            .filter(|v| v.ends_with("_cache"))
-            .collect::<Vec<_>>();
+        let cache_vols = runtime.list_artifacts(naming::CACHE_PREFIX)?;
         for vol in cache_vols {
             eprintln!("[clean] removing cache volume: {vol}");
-            podman::volume_rm(&vol)?;
+            runtime.remove_artifact(&vol, false)?;
         }
     }
 

@@ -3055,12 +3055,21 @@ name = "josh-compose"
 version = "26.7.19"
 dependencies = [
  "anyhow",
- "backon",
  "defer",
  "git2",
- "hex",
+ "josh-compose-backend",
  "josh-core",
  "josh-filter",
+ "tar",
+]
+
+[[package]]
+name = "josh-compose-backend"
+version = "26.7.19"
+dependencies = [
+ "anyhow",
+ "backon",
+ "hex",
  "libc",
  "log",
  "rand 0.10.1",
