@@ -153,11 +153,20 @@ impl Transaction {
         mem_odb_limit: Option<usize>,
         ephemeral: bool,
     ) -> Transaction {
-        // Disable libgit2's strict object creation globally: josh only ever writes objects
-        // whose referenced objects it has just produced or read, so the per-write existence
-        // checks are pure overhead. This is a process-wide C global, set exactly once.
-        static STRICT_OBJECT_CREATION_OFF: std::sync::Once = std::sync::Once::new();
-        STRICT_OBJECT_CREATION_OFF.call_once(|| git2::opts::strict_object_creation(false));
+        // Turn off libgit2's strictness checks. These are process-wide C globals, set
+        // exactly once.
+        static GIT2_OPTIONS: std::sync::Once = std::sync::Once::new();
+        GIT2_OPTIONS.call_once(|| {
+            // Don't check per write that referenced objects exist: josh only ever writes
+            // objects whose referenced objects it has just produced or read, so the checks
+            // are pure overhead.
+            git2::opts::strict_object_creation(false);
+            // Don't re-hash objects on every read: libgit2 defaults to verifying each
+            // object against its id with collision-detecting SHA1 on every lookup. josh
+            // only reads objects it wrote itself or that git verified on transfer, so this
+            // costs a full hash pass per object read and buys nothing.
+            git2::opts::strict_hash_verification(false);
+        });
 
         let mem_odb = josh_memodb::MemOdb::new(mem_odb_limit, repo.path().to_owned());
         mem_odb.register(&repo);
