@@ -283,9 +283,12 @@ fn search(
     index_tree: &git2::Tree,
     source_tree: &git2::Tree,
     needle: &str,
-) -> anyhow::Result<(Vec<String>, Vec<(String, Vec<(usize, String)>)>)> {
+) -> anyhow::Result<(
+    Vec<(String, git2::Oid)>,
+    Vec<(String, Vec<(usize, String)>)>,
+)> {
     let candidates = josh_search::search_candidates(repo, cache, index_tree, source_tree, needle)?;
-    let matches = josh_search::search_matches(repo, cache, source_tree, needle, &candidates)?;
+    let matches = josh_search::search_matches(repo, cache, needle, &candidates)?;
     Ok((candidates, matches))
 }
 
