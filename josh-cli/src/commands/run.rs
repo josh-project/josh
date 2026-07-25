@@ -1,4 +1,5 @@
 use josh_compose::{CleanMode, RunOptions};
+use josh_compose_podman::PodmanRuntime;
 
 #[derive(Debug, clap::Parser)]
 pub struct ComposeArgs {
@@ -58,6 +59,7 @@ pub fn handle_run(
         CleanMode::None
     };
 
+    let runtime = PodmanRuntime::new();
     josh_compose::run(
         transaction,
         RunOptions {
@@ -65,6 +67,7 @@ pub fn handle_run(
             input_ref: args.reference.clone(),
             clean,
         },
+        &runtime,
     )
 }
 
@@ -87,6 +90,7 @@ pub fn handle_list_images(
     args: &ListImagesArgs,
     transaction: &josh_core::cache::Transaction,
 ) -> anyhow::Result<()> {
+    let runtime = PodmanRuntime::new();
     let oids = josh_compose::plan_images(
         transaction,
         RunOptions {
@@ -95,6 +99,7 @@ pub fn handle_list_images(
             clean: CleanMode::None,
         },
         args.all,
+        &runtime,
     )?;
 
     for oid in oids {
@@ -122,6 +127,7 @@ pub fn handle_list_jobs(
     args: &ListJobsArgs,
     transaction: &josh_core::cache::Transaction,
 ) -> anyhow::Result<()> {
+    let runtime = PodmanRuntime::new();
     let oids = josh_compose::plan_jobs(
         transaction,
         RunOptions {
@@ -130,6 +136,7 @@ pub fn handle_list_jobs(
             clean: CleanMode::None,
         },
         args.all,
+        &runtime,
     )?;
 
     for oid in oids {

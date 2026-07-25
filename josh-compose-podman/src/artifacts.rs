@@ -3,7 +3,7 @@ use std::io::Write;
 use std::process::{Command, Stdio};
 
 use super::{PodmanRuntime, align_artifact};
-use crate::ArtifactBackend;
+use josh_compose_backend::ArtifactBackend;
 
 fn artifact_exists(name: &str) -> anyhow::Result<bool> {
     let status = Command::new("podman")

@@ -3,9 +3,10 @@ use std::path::Path;
 
 use josh_compose_backend::{Mount, RunArgs, Runtime, SidecarArgs, SidecarHandle};
 
+use crate::OutputMode;
 use crate::image;
 use crate::job_cache;
-use crate::meta::{self, OutputMode, SidecarSpec};
+use crate::meta::{self, SidecarSpec};
 use crate::naming;
 
 const SIDECAR_IP_PLACEHOLDER: &str = "{SIDECAR_IP}";

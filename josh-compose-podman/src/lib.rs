@@ -16,7 +16,7 @@ mod run;
 mod sidecars;
 
 /// Internal network sidecar workers and their consuming steps are attached to.
-pub(super) const SIDECAR_NETWORK: &str = "josh-sidecar-net";
+const SIDECAR_NETWORK: &str = "josh-sidecar-net";
 
 /// Podman container runtime backend.
 pub struct PodmanRuntime;
@@ -38,20 +38,20 @@ impl Default for PodmanRuntime {
 /// Host uid/gid of the invoking user — the identity container steps run as and
 /// artifacts are chowned to. This is a container mechanic; the scheduler never
 /// needs to know it.
-pub(super) fn host_uid_gid() -> (u32, u32) {
+fn host_uid_gid() -> (u32, u32) {
     let uid = unsafe { libc::getuid() };
     let gid = unsafe { libc::getgid() };
     (uid, gid)
 }
 
-pub(super) fn host_identity() -> String {
+fn host_identity() -> String {
     let (uid, gid) = host_uid_gid();
     format!("{uid}:{gid}")
 }
 
 /// Chown an artifact's contents to the invoking user via a throwaway busybox
 /// container. The mount path is arbitrary — only the contents matter.
-pub(super) fn align_artifact(artifact: &str) -> anyhow::Result<()> {
+fn align_artifact(artifact: &str) -> anyhow::Result<()> {
     let mount = "/mnt";
     let identity = host_identity();
     let status = Command::new("podman")
