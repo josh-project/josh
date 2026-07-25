@@ -1,25 +1,16 @@
-//! Execution runtime abstraction for `josh-compose`.
+//! Execution backend contracts for `josh-compose`.
 //!
-//! The scheduler in `josh-compose` needs three capabilities from a backend:
-//! prepared **environments** (cached build images/toolchains), named
-//! tar-addressable **artifacts** (data volumes), and **execution** of steps and
-//! their sidecar workers. These traits describe those capabilities in
-//! runtime-neutral terms, so a container engine (podman, see [`PodmanRuntime`])
-//! or a non-container engine (local subprocesses, sandboxes) can implement them.
+//! The scheduler needs three capabilities from a backend: prepared environments, named
+//! tar-addressable artifacts, and execution of steps and their sidecar workers. These traits
+//! describe those capabilities without coupling orchestration to a specific backend.
 //!
-//! Container-specific details the scheduler does not care about — networks,
-//! published ports, container IPs, detached containers, UID fix-ups — are not on
-//! the traits; each backend implements them internally.
-
-pub mod podman;
-
-pub use podman::PodmanRuntime;
+//! Backend-specific details the scheduler does not care about, such as networks, published ports,
+//! container addresses, detached processes, and UID fix-ups, remain private to each implementation.
 
 /// Network reachability the step itself requests (independent of sidecars).
 ///
-/// When a step has sidecar workers, the backend connects the step to them
-/// regardless of this policy (for podman that means joining the internal
-/// sidecar network).
+/// When a step has sidecar workers, the backend connects the step to them regardless of this
+/// policy.
 #[derive(Debug, Clone, PartialEq)]
 pub enum NetworkPolicy {
     /// No network access.

@@ -3023,6 +3023,7 @@ dependencies = [
  "git2",
  "josh-changes",
  "josh-compose",
+ "josh-compose-podman",
  "josh-core",
  "josh-github-auth",
  "josh-github-changes",
@@ -3068,8 +3069,16 @@ name = "josh-compose-backend"
 version = "26.7.19"
 dependencies = [
  "anyhow",
+]
+
+[[package]]
+name = "josh-compose-podman"
+version = "26.7.19"
+dependencies = [
+ "anyhow",
  "backon",
  "hex",
+ "josh-compose-backend",
  "libc",
  "log",
  "rand 0.10.1",

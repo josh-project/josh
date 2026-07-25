@@ -1,3 +1,5 @@
+use josh_compose_backend::{ArtifactBackend, Runtime};
+
 pub mod archive;
 pub mod clean;
 pub mod container;
@@ -38,13 +40,15 @@ pub struct RunOptions {
 }
 
 /// Main entry point for `josh run`.
-pub fn run(transaction: &josh_core::cache::Transaction, opts: RunOptions) -> anyhow::Result<()> {
+pub fn run(
+    transaction: &josh_core::cache::Transaction,
+    opts: RunOptions,
+    runtime: &dyn Runtime,
+) -> anyhow::Result<()> {
     josh_filter::check_experimental_features_enabled("josh run")?;
 
-    let runtime = josh_compose_backend::PodmanRuntime::new();
-
     if opts.clean != CleanMode::None {
-        return clean::clean(opts.clean, &runtime);
+        return clean::clean(opts.clean, runtime);
     }
 
     let filter_spec = opts.filter_spec.trim().to_string();
@@ -59,7 +63,7 @@ pub fn run(transaction: &josh_core::cache::Transaction, opts: RunOptions) -> any
     // uncommitted changes (input_ref == "."). For committed refs there is no
     // working tree to write back to.
     let extract_to_workdir = opts.input_ref == ".";
-    container::run_container(repo, ws_tree, &mut attempted, extract_to_workdir, &runtime)?;
+    container::run_container(repo, ws_tree, &mut attempted, extract_to_workdir, runtime)?;
 
     Ok(())
 }
@@ -75,6 +79,7 @@ pub fn plan_images(
     transaction: &josh_core::cache::Transaction,
     opts: RunOptions,
     ignore_cache: bool,
+    runtime: &dyn ArtifactBackend,
 ) -> anyhow::Result<Vec<git2::Oid>> {
     josh_filter::check_experimental_features_enabled("josh compose images")?;
 
@@ -85,8 +90,7 @@ pub fn plan_images(
 
     let (ws_tree, _safe_name) = filter::compute_ws_tree(transaction, &filter_spec, source_commit)?;
 
-    let runtime = josh_compose_backend::PodmanRuntime::new();
-    plan::collect_image_oids(repo, ws_tree, ignore_cache, &runtime)
+    plan::collect_image_oids(repo, ws_tree, ignore_cache, runtime)
 }
 
 /// Enumerate every job hash (workspace tree OID) that a `run` with the same options
@@ -100,6 +104,7 @@ pub fn plan_jobs(
     transaction: &josh_core::cache::Transaction,
     opts: RunOptions,
     ignore_cache: bool,
+    runtime: &dyn ArtifactBackend,
 ) -> anyhow::Result<Vec<git2::Oid>> {
     josh_filter::check_experimental_features_enabled("josh compose jobs")?;
 
@@ -110,6 +115,5 @@ pub fn plan_jobs(
 
     let (ws_tree, _safe_name) = filter::compute_ws_tree(transaction, &filter_spec, source_commit)?;
 
-    let runtime = josh_compose_backend::PodmanRuntime::new();
-    plan::collect_job_hashes(repo, ws_tree, ignore_cache, &runtime)
+    plan::collect_job_hashes(repo, ws_tree, ignore_cache, runtime)
 }

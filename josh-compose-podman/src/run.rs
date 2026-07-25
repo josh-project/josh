@@ -2,7 +2,7 @@ use anyhow::Context;
 use std::process::{Command, Stdio};
 
 use super::{PodmanRuntime, SIDECAR_NETWORK, align_artifact, host_identity, sidecars};
-use crate::{
+use josh_compose_backend::{
     ExecutionBackend, Mount, NetworkPolicy, RunArgs, RunOutput, SidecarArgs, SidecarHandle,
 };
 

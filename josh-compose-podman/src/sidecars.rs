@@ -5,7 +5,7 @@ use std::process::{Command, Stdio};
 use std::time::Duration;
 
 use super::SIDECAR_NETWORK;
-use crate::{SidecarArgs, SidecarHandle};
+use josh_compose_backend::{SidecarArgs, SidecarHandle};
 
 /// Start a sidecar worker and block until it is reachable.
 ///

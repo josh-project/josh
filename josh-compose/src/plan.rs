@@ -2,8 +2,9 @@ use std::collections::HashSet;
 
 use josh_compose_backend::ArtifactBackend;
 
+use crate::OutputMode;
 use crate::job_cache;
-use crate::meta::{self, OutputMode, WorkspaceMeta};
+use crate::meta::{self, WorkspaceMeta};
 use crate::naming;
 
 /// Walk the workspace tree and collect every image build-tree OID a run would touch.

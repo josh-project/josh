@@ -7,8 +7,8 @@
 
 use std::path::Path;
 
-pub use crate::OutputMode;
-pub use josh_compose_backend::NetworkPolicy;
+use crate::OutputMode;
+use josh_compose_backend::NetworkPolicy;
 
 /// Specification for a sidecar service that runs alongside a workspace step.
 ///

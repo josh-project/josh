@@ -3,7 +3,7 @@ use std::io::Write;
 use std::process::{Command, Stdio};
 
 use super::{PodmanRuntime, host_uid_gid};
-use crate::{EnvRecipe, EnvironmentBackend};
+use josh_compose_backend::{EnvRecipe, EnvironmentBackend};
 
 fn env_exists(key: &str) -> anyhow::Result<bool> {
     let status = Command::new("podman")
