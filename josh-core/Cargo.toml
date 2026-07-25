@@ -41,6 +41,14 @@ harness = false
 name = "widetree_glob"
 harness = false
 
+[[bench]]
+name = "deephistory_prefix_flush"
+harness = false
+
+[[bench]]
+name = "refs_filter_update"
+harness = false
+
 [dependencies]
 backtrace = "0.3.76"
 bitvec = "1.0.1"
