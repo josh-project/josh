@@ -82,6 +82,7 @@ tracing.workspace = true
 toml.workspace = true
 
 josh-filter.workspace = true
+josh-gix-ext.workspace = true
 josh-memodb.workspace = true
 josh-search.workspace = true
 josh-starlark.workspace = true
