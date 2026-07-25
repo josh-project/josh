@@ -368,11 +368,8 @@ fn run_filter(args: Vec<String>) -> anyhow::Result<i32> {
     josh_core::update_refs(&transaction, updated_refs.clone());
 
     if let Some(searchstring) = args.get_one::<String>("search") {
-        let ifilterobj = filterobj.chain(josh_core::filter::parse(":SQUASH:INDEX")?);
-
         let commit = repo.revparse_single(&input_ref)?.peel_to_commit()?;
 
-        let index_commit = josh_core::filter_commit(&transaction, ifilterobj, commit.id())?;
         let tree = repo
             .find_commit(josh_core::filter_commit(
                 &transaction,
@@ -380,10 +377,27 @@ fn run_filter(args: Vec<String>) -> anyhow::Result<i32> {
                 commit.id(),
             )?)?
             .tree()?;
-        let index_tree = repo.find_commit(index_commit)?.tree()?;
 
         /* let start = std::time::Instant::now(); */
-        let candidates = josh_search::search_candidates(&repo, &index_tree, &tree, searchstring)?;
+        // The trigram index is experimental; without it every file is a candidate and
+        // search_matches does all the filtering, so results are identical, just slower.
+        let candidates = if josh_core::filter::experimental_features_enabled() {
+            let ifilterobj = filterobj.chain(josh_core::filter::parse(":SQUASH:INDEX")?);
+            let index_commit = josh_core::filter_commit(&transaction, ifilterobj, commit.id())?;
+            let index_tree = repo.find_commit(index_commit)?.tree()?;
+            josh_search::search_candidates(&repo, &index_tree, &tree, searchstring)?
+        } else {
+            let mut scan = vec![];
+            tree.walk(git2::TreeWalkMode::PreOrder, |root, entry| {
+                if entry.kind() == Some(git2::ObjectType::Blob)
+                    && let Ok(name) = entry.name()
+                {
+                    scan.push(format!("{}{}", root, name));
+                }
+                0
+            })?;
+            scan
+        };
         let matches = josh_search::search_matches(&repo, &tree, searchstring, &candidates)?;
         /* let duration = start.elapsed(); */
 

@@ -91,7 +91,10 @@ fn make_filter(args: &[&str]) -> anyhow::Result<Filter> {
         }
 
         ["PATHS"] => Ok(to_filter(Op::Paths)),
-        ["INDEX"] => Ok(to_filter(Op::Index)),
+        ["INDEX"] => {
+            check_experimental_features_enabled(":INDEX filter")?;
+            Ok(to_filter(Op::Index))
+        }
         ["INVERT"] => Ok(to_filter(Op::Invert)),
         ["FOLD"] => Ok(to_filter(Op::Fold)),
         ["hook", arg] => Ok(f.hook(arg)),

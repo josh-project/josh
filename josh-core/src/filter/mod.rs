@@ -1,6 +1,7 @@
 use super::*;
 use anyhow::anyhow;
 use josh_filter::check_experimental_features_enabled;
+pub use josh_filter::experimental_features_enabled;
 
 use std::path::Path;
 use std::sync::LazyLock;
