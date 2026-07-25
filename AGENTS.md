@@ -1,59 +1,30 @@
-* Before creating commit, always run `cargo fmt`
-* When possible, keep PRs to one commit only; amend existing commit when making changes to PRs, and force push
-* All files (source code, Markdown, text, etc.) should be wrapped at 100 columns max, as long as
-  the syntax allows it (e.g. don't break URLs or code blocks that must be on one line)
+This document describes a set of rules and conventions maintainers use in this repo.
+
+## PR structure
+
+* PRs in this repo are kept to one commit only. Iterations on the PR
+  should be folded into existing commit by amending.
+
+## Commit message conventions
+
 * Use an `Assisted-By:` footer (not `Co-Authored-By:`) to attribute LLM/agent involvement in commits
-* Commit messages must not use a conventional commits prefix (e.g. no `fix:` or `feat:`)
-* Commit subject line must start with an uppercase letter and be under 79 characters
-* Commit messages must include a `Change:` footer with an alphanumeric, dash-separated identifier
-  (e.g. `Change: flatten-invert-check`)
 * The `Assisted-By:` footer must reference the actual model used, not a generic name
+  * Example footer: `Assisted-By: model-author/model-name-v1`
 
-## Running tests via "josh compose run"
+* Commit messages must not use a conventional commits prefix (e.g. no `fix:` or `feat:`)
+* Commit subject line must start with an uppercase letter and be reasonably short (around 80 characters)
 
-Tests run inside an isolated podman container. The cache key is the SHA of the filtered workspace tree, so the cache is automatically invalidated when source files change.
+* Commit messages must include a `Change:` footer with an alphanumeric, dash-separated identifier
+  * Example footer: `Change: flatten-invert-check`
 
-**Run all tests:**
-```
-josh compose run
-```
+## Committing work
 
-To test a specific commit instead of the working tree, pass it as the first argument:
-```
-josh compose run HEAD
-```
+* Always run `cargo fmt` when committing changes in Rust code.
 
-Common refs:
-- `.` (default) — working tree including uncommitted changes
-- `+` — staged files (git index); useful to test only what you've `git add`ed
-- `HEAD` — last commit, ignoring any local changes
+## Agentic work
 
-### Inspecting test output
-
-The summary is printed at the end of `josh compose run` output:
-```
-# Ran N tests, M skipped, K failed.
-```
-Followed by `SUCCESS: <sha>` or `FAILED: <name>`.
-
-For failing tests, the prysk diff format shows the command that failed, expected output (indented), and actual
-output (preceded by `+`). The updated `.t` files are written back to the working directory, so you can inspect
-them directly.
-
-### Iterating on a failing test
-
-1. Edit the `.t` test file or the relevant source code.
-2. Re-run `josh compose run` — the changed working tree produces a new SHA, so the cache is bypassed automatically.
-
-### Do not use --clean or --clean-all
-
-Never pass `--clean` or `--clean-all` to `josh compose run`. The cache is reliable;
-clearing it just forces a full rebuild and wastes time. If something seems wrong
-that you believe a cache wipe would fix, stop and ask the user to run the clean
-in a separate terminal — do not run it yourself, ever.
-
-Test files live under `tests/` and are organized by subsystem:
-- `tests/filter/` — filter language tests (largest suite)
-- `tests/proxy/` — git proxy tests
-- `tests/cli/` — CLI tests
-- `tests/experimental/` — excluded from release tests
+* For creating temporary plans, files, and experiments, use the gitignored `.agents/work/` folder
+  in the root of the repo
+* Inside, create subfolders matching to current work topic
+  * Example folder: `.agents/work/gix-port`
+  * Example file: `.agents/work/gix-port/GIX_PORT_PROGRESS.md`
