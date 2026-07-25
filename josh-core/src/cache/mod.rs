@@ -4,6 +4,7 @@ mod history_graph;
 pub mod sled;
 pub mod stack;
 mod transaction;
+mod tree_cache;
 
 /// Schema version for on-disk cache structures. Bump when the layout of the
 /// sled trees or distributed cache refs changes incompatibly.
@@ -18,3 +19,4 @@ pub use history_graph::{
 pub use sled::{SledCacheBackend, sled_clear, sled_load, sled_open_josh_trees, sled_print_stats};
 pub use stack::CacheStack;
 pub use transaction::*;
+pub use tree_cache::TreeBytes;
