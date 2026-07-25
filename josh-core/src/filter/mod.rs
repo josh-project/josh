@@ -1790,7 +1790,7 @@ fn unapply_per_rev_filter<'a, 'b>(
 
     match op {
         Op::Workspace(path) => {
-            let tree = pre_process_tree(transaction.repo(), tree)?;
+            let tree = pre_process_tree(transaction, tree)?;
             let workspace = get_filter(transaction, &tree, Path::new("workspace.josh"));
             let original_workspace =
                 get_filter(transaction, &parent_tree, &path.join("workspace.josh"));
@@ -1843,9 +1843,10 @@ fn unapply_per_rev_filter<'a, 'b>(
 }
 
 fn pre_process_tree<'a>(
-    repo: &'a git2::Repository,
+    transaction: &'a cache::Transaction,
     tree: git2::Tree<'a>,
 ) -> anyhow::Result<git2::Tree<'a>> {
+    let repo = transaction.repo();
     let path = Path::new("workspace.josh");
     let ws_file = tree::get_blob(repo, &tree, path);
     let parsed = filter::parse(&ws_file)?;

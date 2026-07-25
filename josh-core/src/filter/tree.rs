@@ -8,47 +8,70 @@ pub fn pathstree<'a>(
     transaction: &'a cache::Transaction,
 ) -> anyhow::Result<git2::Tree<'a>> {
     let repo = transaction.repo();
+    let odb = repo.odb()?;
+    let result = pathstree_inner(root, input, transaction, &odb)?;
+    Ok(repo.find_tree(result)?)
+}
+
+/// Oid-level body of [`pathstree`]; the odb is hoisted like in [`remove_pred_inner`].
+fn pathstree_inner(
+    root: &str,
+    input: git2::Oid,
+    transaction: &cache::Transaction,
+    odb: &git2::Odb,
+) -> anyhow::Result<git2::Oid> {
     if let Some(cached) = transaction.get_paths((input, root.to_string())) {
-        return Ok(repo.find_tree(cached)?);
+        return Ok(cached);
     }
 
-    let tree = repo.find_tree(input)?;
-    let mut builder = repo.treebuilder(None)?;
+    let repo = transaction.repo();
+    let bytes = transaction
+        .read_tree_bytes(odb, input)?
+        .ok_or_else(|| anyhow!("pathstree: {} is not a tree", input))?;
+    let tree = gix_object::TreeRef::from_bytes(&bytes)?;
+    let mut rebuild = TreeRebuild::new(tree.entries.len());
 
-    for entry in tree.iter() {
-        let name = entry.name().ok_or_else(|| anyhow!("no name"))?;
-        if entry.kind() == Some(git2::ObjectType::Blob) {
+    for entry in &tree.entries {
+        let name = std::str::from_utf8(entry.filename).map_err(|_| anyhow!("no name"))?;
+        if entry.mode.is_tree() {
+            let s = pathstree_inner(
+                &format!("{}{}{}", root, if root.is_empty() { "" } else { "/" }, name),
+                objects::git2_oid(entry.oid),
+                transaction,
+                odb,
+            )?;
+
+            if s != empty_id() && objects::tree_entry_name_valid(entry.filename) {
+                rebuild.keep(gix_object::tree::Entry {
+                    mode: gix_object::tree::EntryKind::Tree.into(),
+                    filename: entry.filename.to_owned(),
+                    oid: objects::gix_oid(s),
+                });
+            }
+        } else if !entry.mode.is_commit() {
+            // Blob-classified entries (including symlinks); gitlinks are skipped.
             let path = normalize_path(&Path::new(root).join(name));
             let path_string = path.to_str().ok_or_else(|| anyhow!("no name"))?;
             let file_contents = if name == "workspace.josh" {
                 format!(
                     "#{}\n{}",
                     path_string,
-                    get_blob(repo, &tree, Path::new(&name))
+                    blob_text(repo, objects::git2_oid(entry.oid))
                 )
             } else {
                 path_string.to_string()
             };
-            builder
-                .insert(name, repo.blob(file_contents.as_bytes())?, 0o0100644)
-                .ok();
-        }
-
-        if entry.kind() == Some(git2::ObjectType::Tree) {
-            let s = pathstree(
-                &format!("{}{}{}", root, if root.is_empty() { "" } else { "/" }, name),
-                entry.id(),
-                transaction,
-            )?
-            .id();
-
-            if s != empty_id() {
-                builder.insert(name, s, 0o0040000).ok();
+            if objects::tree_entry_name_valid(entry.filename) {
+                rebuild.keep(gix_object::tree::Entry {
+                    mode: gix_object::tree::EntryKind::Blob.into(),
+                    filename: entry.filename.to_owned(),
+                    oid: objects::gix_oid(repo.blob(file_contents.as_bytes())?),
+                });
             }
         }
     }
-    let result = repo.find_tree(builder.write()?)?;
-    transaction.insert_paths((input, root.to_string()), result.id());
+    let result = objects::write_tree_now(odb, rebuild.out)?;
+    transaction.insert_paths((input, root.to_string()), result);
     Ok(result)
 }
 
@@ -59,30 +82,75 @@ pub fn regex_replace<'a>(
     transaction: &'a cache::Transaction,
 ) -> anyhow::Result<git2::Tree<'a>> {
     let repo = transaction.repo();
+    let odb = repo.odb()?;
+    let result = regex_replace_inner(input, regex, replacement, transaction, &odb)?;
+    Ok(repo.find_tree(result)?)
+}
 
-    let tree = repo.find_tree(input)?;
-    let mut builder = repo.treebuilder(None)?;
+/// Oid-level body of [`regex_replace`]; the odb is hoisted like in [`remove_pred_inner`].
+fn regex_replace_inner(
+    input: git2::Oid,
+    regex: &regex::Regex,
+    replacement: &str,
+    transaction: &cache::Transaction,
+    odb: &git2::Odb,
+) -> anyhow::Result<git2::Oid> {
+    let repo = transaction.repo();
+    let bytes = transaction
+        .read_tree_bytes(odb, input)?
+        .ok_or_else(|| anyhow!("regex_replace: {} is not a tree", input))?;
+    let tree = gix_object::TreeRef::from_bytes(&bytes)?;
+    let mut rebuild = TreeRebuild::new(tree.entries.len());
 
-    for entry in tree.iter() {
-        let name = entry.name().ok_or(anyhow!("no name"))?;
-        if entry.kind() == Some(git2::ObjectType::Blob) {
-            let file_contents = get_blob(repo, &tree, std::path::Path::new(&name));
+    for entry in &tree.entries {
+        // Non-UTF-8 entry names stay an error even though the name is otherwise unused here.
+        std::str::from_utf8(entry.filename).map_err(|_| anyhow!("no name"))?;
+        let raw_mode = entry.mode.value();
+        if entry.mode.is_tree() {
+            let s = regex_replace_inner(
+                objects::git2_oid(entry.oid),
+                regex,
+                replacement,
+                transaction,
+                odb,
+            )?;
+
+            if s != tree::empty_id() && objects::tree_entry_name_valid(entry.filename) {
+                rebuild.keep(gix_object::tree::Entry {
+                    mode: gix_object::tree::EntryKind::Tree.into(),
+                    filename: entry.filename.to_owned(),
+                    oid: objects::gix_oid(s),
+                });
+            }
+        } else if !entry.mode.is_commit() {
+            let file_contents = blob_text(repo, objects::git2_oid(entry.oid));
             let replaced = regex.replacen(&file_contents, 0, replacement);
 
-            builder
-                .insert(name, repo.blob(replaced.as_bytes())?, entry.filemode())
-                .ok();
-        }
-
-        if entry.kind() == Some(git2::ObjectType::Tree) {
-            let s = regex_replace(entry.id(), regex, replacement, transaction)?.id();
-
-            if s != tree::empty_id() {
-                builder.insert(name, s, 0o0040000).ok();
+            if objects::tree_entry_name_valid(entry.filename) {
+                rebuild.keep(gix_object::tree::Entry {
+                    mode: entry_mode(objects::normalize_filemode(raw_mode)),
+                    filename: entry.filename.to_owned(),
+                    oid: objects::gix_oid(repo.blob(replaced.as_bytes())?),
+                });
             }
         }
     }
-    Ok(repo.find_tree(builder.write()?)?)
+    objects::write_tree_now(odb, rebuild.out)
+}
+
+/// The text content of the blob `oid`, or the empty string when the blob is missing, binary, or
+/// not valid UTF-8 -- the same tolerant semantics as [`get_blob`], minus the path lookup.
+fn blob_text(repo: &git2::Repository, oid: git2::Oid) -> String {
+    let blob = ok_or!(repo.find_blob(oid), {
+        return "".to_owned();
+    });
+    if blob.is_binary() {
+        return "".to_owned();
+    }
+    let content = ok_or!(std::str::from_utf8(blob.content()), {
+        return "".to_owned();
+    });
+    content.to_owned()
 }
 
 /// Compare two tree entry names in canonical git tree order: byte-wise, with tree entries
@@ -669,23 +737,103 @@ fn intersect_inner(
     Ok(result)
 }
 
-fn replace_child<'a>(
-    repo: &'a git2::Repository,
-    child: &Path,
+/// The raw bytes of a path component, for matching against tree entry names.
+fn component_bytes(c: &std::ffi::OsStr) -> &[u8] {
+    std::os::unix::ffi::OsStrExt::as_bytes(c)
+}
+
+/// Read `oid` as a raw tree object, or `None` if it is missing or not a tree. Uncached: the
+/// insert path is used from repository-only contexts (josh-link, josh-changes) that have no
+/// transaction to hang the tree cache off.
+fn tree_object<'a>(odb: &'a git2::Odb, oid: git2::Oid) -> Option<git2::OdbObject<'a>> {
+    match odb.read(oid) {
+        Ok(obj) if obj.kind() == git2::ObjectType::Tree => Some(obj),
+        _ => None,
+    }
+}
+
+/// Rebuild the tree `tree_oid` with the single-component `child` replaced by (`oid`, `mode`), or
+/// removed when `oid` is the zero or empty-tree oid. Like a seeded libgit2 treebuilder: other
+/// entries keep their raw modes, the inserted mode is normalized, and an invalid child name
+/// silently leaves the tree unchanged.
+fn replace_child_inner(
+    odb: &git2::Odb,
+    child: &[u8],
     oid: git2::Oid,
     mode: i32,
-    full_tree: &git2::Tree,
-) -> anyhow::Result<git2::Tree<'a>> {
-    let full_tree_id = {
-        let mut builder = repo.treebuilder(Some(full_tree))?;
-        if oid == git2::Oid::zero() || oid == empty_id() {
-            builder.remove(child).ok();
-        } else {
-            builder.insert(child, oid, mode).ok();
-        }
-        builder.write()?
+    tree_oid: git2::Oid,
+) -> anyhow::Result<git2::Oid> {
+    let mut out = match tree_object(odb, tree_oid) {
+        Some(obj) => seed_entries(&gix_object::TreeRef::from_bytes(obj.data())?),
+        None => Vec::new(),
     };
-    return Ok(repo.find_tree(full_tree_id)?);
+    let remove = oid == git2::Oid::zero() || oid == empty_id();
+    let existing = out.iter().position(|e| &*e.filename == child);
+    if remove {
+        if let Some(pos) = existing {
+            out.remove(pos);
+        }
+    } else if objects::tree_entry_name_valid(child) {
+        let entry = gix_object::tree::Entry {
+            mode: entry_mode(objects::normalize_filemode(mode as u16)),
+            filename: child.into(),
+            oid: objects::gix_oid(oid),
+        };
+        if let Some(pos) = existing {
+            out[pos] = entry;
+        } else {
+            out.push(entry);
+        }
+    }
+    objects::write_tree_now(odb, out)
+}
+
+/// Oid-level body of [`insert`]: replace whatever is at `path` inside the tree `full_tree` with
+/// (`oid`, `mode`), creating intermediate trees as needed and treating blobs on the way as
+/// overwritable.
+fn insert_inner(
+    odb: &git2::Odb,
+    full_tree: git2::Oid,
+    path: &Path,
+    oid: git2::Oid,
+    mode: i32,
+) -> anyhow::Result<git2::Oid> {
+    let mut components = path.components();
+    let Some(first) = components.next() else {
+        return Err(anyhow!("file_name"));
+    };
+    if components.next().is_none() {
+        return replace_child_inner(
+            odb,
+            component_bytes(first.as_os_str()),
+            oid,
+            mode,
+            full_tree,
+        );
+    }
+    let name = path.file_name().ok_or_else(|| anyhow!("file_name"))?;
+    let parent = path.parent().ok_or_else(|| anyhow!("path.parent"))?;
+
+    // The subtree at `parent`, or the empty tree when the path is missing or passes through a
+    // non-tree entry.
+    let mut st = full_tree;
+    for c in parent.components() {
+        let cb = component_bytes(c.as_os_str());
+        st = match tree_object(odb, st) {
+            Some(obj) => {
+                let tree = gix_object::TreeRef::from_bytes(obj.data())?;
+                match lookup_entry(&tree, cb.into()) {
+                    Some(e) => objects::git2_oid(e.oid),
+                    None => empty_id(),
+                }
+            }
+            None => empty_id(),
+        };
+    }
+
+    let subtree = replace_child_inner(odb, component_bytes(name), oid, mode, st)?;
+
+    insert_inner(odb, full_tree, parent, subtree, 0o0040000)
 }
 
 pub fn insert<'a>(
@@ -695,22 +843,9 @@ pub fn insert<'a>(
     oid: git2::Oid,
     mode: i32,
 ) -> anyhow::Result<git2::Tree<'a>> {
-    if path.components().count() == 1 {
-        replace_child(repo, path, oid, mode, full_tree)
-    } else {
-        let name = Path::new(path.file_name().ok_or_else(|| anyhow!("file_name"))?);
-        let path = path.parent().ok_or_else(|| anyhow!("path.parent"))?;
-
-        let st = if let Ok(st) = full_tree.get_path(path) {
-            repo.find_tree(st.id()).unwrap_or(empty(repo))
-        } else {
-            empty(repo)
-        };
-
-        let tree = replace_child(repo, name, oid, mode, &st)?;
-
-        insert(repo, full_tree, path, tree.id(), 0o0040000)
-    }
+    let odb = repo.odb()?;
+    let result = insert_inner(&odb, full_tree.id(), path, oid, mode)?;
+    Ok(repo.find_tree(result)?)
 }
 
 pub fn diff_paths(
