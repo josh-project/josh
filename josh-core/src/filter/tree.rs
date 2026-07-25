@@ -202,6 +202,36 @@ impl TreeRebuild {
     }
 }
 
+/// Clone a parsed tree's entries for use as the starting set of a rebuild, replicating what
+/// seeding a libgit2 treebuilder from a tree did: entry names and raw modes are taken over
+/// unvalidated and unnormalized, but duplicate names collapse to the last occurrence (the
+/// treebuilder was a name-keyed map). [`TreeRebuild::keep`] owns that dedup and the
+/// order-violation detection arming it; `keep` is usable standalone here because seeded
+/// rebuilds always write via `write_tree_now` and never consult the `changed` flag it also
+/// maintains.
+fn seed_entries(tree: &gix_object::TreeRef) -> Vec<gix_object::tree::Entry> {
+    let mut rebuild = TreeRebuild::new(tree.entries.len());
+    for entry in &tree.entries {
+        rebuild.keep((*entry).into());
+    }
+    rebuild.out
+}
+
+/// Look up an entry by name irrespective of its kind, like libgit2's `git_tree_entry_byname`.
+/// Canonical order sorts a blob before a same-named tree, so the blob probe comes first.
+fn lookup_entry<'a>(
+    tree: &gix_object::TreeRef<'a>,
+    name: &gix_object::bstr::BStr,
+) -> Option<gix_object::tree::EntryRef<'a>> {
+    tree.bisect_entry(name, false)
+        .or_else(|| tree.bisect_entry(name, true))
+}
+
+/// The [`gix_object::tree::EntryMode`] for a libgit2-normalized mode value.
+fn entry_mode(norm: u16) -> gix_object::tree::EntryMode {
+    gix_object::tree::EntryMode::try_from(norm as u32).expect("normalized modes are valid")
+}
+
 /// Rebuild `input` keeping only blob entries accepted by `pred`. `path` is a reusable buffer
 /// holding the slash-separated path of the tree currently being visited; it is restored to its
 /// incoming length before returning. Gitlink (submodule) entries are always dropped.
@@ -216,6 +246,20 @@ pub fn remove_pred(
     pred: &dyn Fn(&str, bool) -> bool,
     key: git2::Oid,
 ) -> anyhow::Result<git2::Oid> {
+    let odb = transaction.repo().odb()?;
+    remove_pred_inner(transaction, &odb, path, input, pred, key)
+}
+
+/// Recursive body of [`remove_pred`], with the odb handle created once at the entry point --
+/// creating one per recursion level costs an FFI round-trip per tree node.
+fn remove_pred_inner(
+    transaction: &cache::Transaction,
+    odb: &git2::Odb,
+    path: &mut String,
+    input: git2::Oid,
+    pred: &dyn Fn(&str, bool) -> bool,
+    key: git2::Oid,
+) -> anyhow::Result<git2::Oid> {
     let root_key = git2::Oid::hash_object(
         git2::ObjectType::Blob,
         format!("glob-fallback:{:?}:{}", key, path).as_bytes(),
@@ -224,12 +268,10 @@ pub fn remove_pred(
         return Ok(cached);
     }
 
-    let odb = transaction.repo().odb()?;
-    let obj = odb.read(input)?;
-    if obj.kind() != git2::ObjectType::Tree {
-        return Err(anyhow!("remove_pred: {} is not a tree", input));
-    }
-    let tree = gix_object::TreeRef::from_bytes(obj.data())?;
+    let bytes = transaction
+        .read_tree_bytes(odb, input)?
+        .ok_or_else(|| anyhow!("remove_pred: {} is not a tree", input))?;
+    let tree = gix_object::TreeRef::from_bytes(&bytes)?;
     let mut rebuild = TreeRebuild::new(tree.entries.len());
     let empty = empty_id();
 
@@ -243,7 +285,14 @@ pub fn remove_pred(
 
         let raw_mode = entry.mode.value();
         if entry.mode.is_tree() {
-            let s = remove_pred(transaction, path, objects::git2_oid(entry.oid), pred, key)?;
+            let s = remove_pred_inner(
+                transaction,
+                odb,
+                path,
+                objects::git2_oid(entry.oid),
+                pred,
+                key,
+            )?;
             // `entry.mode` compares by the serialized form, so the fsck-invalid "040000"
             // spelling also counts as changed (libgit2 could not distinguish it).
             if s != objects::git2_oid(entry.oid)
@@ -296,7 +345,7 @@ pub fn remove_pred(
         path.truncate(base);
     }
 
-    let result = rebuild.finish(&odb, input)?;
+    let result = rebuild.finish(odb, input)?;
     transaction.insert_glob((input, root_key, 0), result);
     Ok(result)
 }
@@ -316,6 +365,19 @@ pub use josh_filter::pattern::{CompiledPattern, PATTERN_MATCH_OPTIONS, PatternCo
 /// a literal prefix) stay separate.
 pub fn remove_pattern(
     transaction: &cache::Transaction,
+    input: git2::Oid,
+    cp: &CompiledPattern,
+    key: git2::Oid,
+    state: u64,
+) -> anyhow::Result<git2::Oid> {
+    let odb = transaction.repo().odb()?;
+    remove_pattern_inner(transaction, &odb, input, cp, key, state)
+}
+
+/// Recursive body of [`remove_pattern`]; see [`remove_pred_inner`] for why the odb is hoisted.
+fn remove_pattern_inner(
+    transaction: &cache::Transaction,
+    odb: &git2::Odb,
     input: git2::Oid,
     cp: &CompiledPattern,
     key: git2::Oid,
@@ -342,12 +404,10 @@ pub fn remove_pattern(
         }
     }
 
-    let odb = transaction.repo().odb()?;
-    let obj = odb.read(input)?;
-    if obj.kind() != git2::ObjectType::Tree {
-        return Err(anyhow!("remove_pattern: {} is not a tree", input));
-    }
-    let tree = gix_object::TreeRef::from_bytes(obj.data())?;
+    let bytes = transaction
+        .read_tree_bytes(odb, input)?
+        .ok_or_else(|| anyhow!("remove_pattern: {} is not a tree", input))?;
+    let tree = gix_object::TreeRef::from_bytes(&bytes)?;
     let mut rebuild = TreeRebuild::new(tree.entries.len());
     let empty = empty_id();
 
@@ -383,7 +443,14 @@ pub fn remove_pattern(
             let s = if next == 0 {
                 empty
             } else {
-                remove_pattern(transaction, objects::git2_oid(entry.oid), cp, key, next)?
+                remove_pattern_inner(
+                    transaction,
+                    odb,
+                    objects::git2_oid(entry.oid),
+                    cp,
+                    key,
+                    next,
+                )?
             };
             if s != objects::git2_oid(entry.oid)
                 || s == empty
@@ -444,7 +511,7 @@ pub fn remove_pattern(
     }
 
     // See remove_pred: an untouched entry set reproduces `input` bit-identically.
-    let result = rebuild.finish(&odb, input)?;
+    let result = rebuild.finish(odb, input)?;
     transaction.insert_glob((input, key, state), result);
     Ok(result)
 }
@@ -454,7 +521,17 @@ pub fn subtract(
     input1: git2::Oid,
     input2: git2::Oid,
 ) -> anyhow::Result<git2::Oid> {
-    let repo = transaction.repo();
+    let odb = transaction.repo().odb()?;
+    subtract_inner(transaction, &odb, input1, input2)
+}
+
+/// Recursive body of [`subtract`]; see [`remove_pred_inner`] for why the odb is hoisted.
+fn subtract_inner(
+    transaction: &cache::Transaction,
+    odb: &git2::Odb,
+    input1: git2::Oid,
+    input2: git2::Oid,
+) -> anyhow::Result<git2::Oid> {
     if input1 == input2 {
         return Ok(empty_id());
     }
@@ -466,26 +543,46 @@ pub fn subtract(
         return Ok(cached);
     }
 
-    if let (Ok(tree1), Ok(tree2)) = (repo.find_tree(input1), repo.find_tree(input2)) {
+    let bytes1 = transaction.read_tree_bytes(odb, input1)?;
+    let bytes2 = transaction.read_tree_bytes(odb, input2)?;
+    if let (Some(bytes1), Some(bytes2)) = (bytes1, bytes2) {
         if input2 == empty_id() {
             return Ok(input1);
         }
+        let tree1 = gix_object::TreeRef::from_bytes(&bytes1)?;
+        let tree2 = gix_object::TreeRef::from_bytes(&bytes2)?;
         // Start from `tree1` and drop or replace each path that also appears in `tree2`.
-        let mut builder = repo.treebuilder(Some(&tree1))?;
-
-        for entry in tree2.iter() {
-            let name = entry.name().ok_or_else(|| anyhow!("no name"))?;
-            if let Some(e) = tree1.get_name(name) {
-                let sub = subtract(transaction, e.id(), entry.id())?;
+        // Modifications are collected by name first and applied in one pass, mirroring the
+        // name-keyed libgit2 treebuilder: `None` removes the entry, `Some` replaces its oid with
+        // the subtraction result (a tree, hence the normalized tree mode). Names that libgit2's
+        // insert would have rejected silently keep their original entry.
+        let mut mods: std::collections::HashMap<&[u8], Option<git2::Oid>> =
+            std::collections::HashMap::new();
+        for entry in &tree2.entries {
+            if let Some(e1) = lookup_entry(&tree1, entry.filename) {
+                let sub = subtract_inner(
+                    transaction,
+                    odb,
+                    objects::git2_oid(e1.oid),
+                    objects::git2_oid(entry.oid),
+                )?;
                 if sub == empty_id() || sub == git2::Oid::zero() {
-                    builder.remove(name).ok();
-                } else {
-                    builder.insert(name, sub, e.filemode()).ok();
+                    mods.insert(&**entry.filename, None);
+                } else if objects::tree_entry_name_valid(entry.filename) {
+                    mods.insert(&**entry.filename, Some(sub));
                 }
             }
         }
 
-        let result = builder.write()?;
+        let mut out = seed_entries(&tree1);
+        out.retain(|e| mods.get(e.filename.as_slice()) != Some(&None));
+        for entry in &mut out {
+            if let Some(Some(sub)) = mods.get(entry.filename.as_slice()) {
+                entry.mode = gix_object::tree::EntryKind::Tree.into();
+                entry.oid = objects::gix_oid(*sub);
+            }
+        }
+        let result = objects::write_tree_now(odb, out)?;
 
         transaction.insert_subtract((input1, input2), result);
 
@@ -509,7 +606,17 @@ pub fn intersect(
     input1: git2::Oid,
     input2: git2::Oid,
 ) -> anyhow::Result<git2::Oid> {
-    let repo = transaction.repo();
+    let odb = transaction.repo().odb()?;
+    intersect_inner(transaction, &odb, input1, input2)
+}
+
+/// Recursive body of [`intersect`]; see [`remove_pred_inner`] for why the odb is hoisted.
+fn intersect_inner(
+    transaction: &cache::Transaction,
+    odb: &git2::Odb,
+    input1: git2::Oid,
+    input2: git2::Oid,
+) -> anyhow::Result<git2::Oid> {
     // Identical (sub)trees intersect to themselves; an empty side leaves nothing to keep.
     if input1 == input2 {
         return Ok(input1);
@@ -522,20 +629,35 @@ pub fn intersect(
         return Ok(cached);
     }
 
-    let result = if let (Ok(tree1), Ok(tree2)) = (repo.find_tree(input1), repo.find_tree(input2)) {
+    let bytes1 = transaction.read_tree_bytes(odb, input1)?;
+    let bytes2 = transaction.read_tree_bytes(odb, input2)?;
+    let result = if let (Some(bytes1), Some(bytes2)) = (bytes1, bytes2) {
+        let tree1 = gix_object::TreeRef::from_bytes(&bytes1)?;
+        let tree2 = gix_object::TreeRef::from_bytes(&bytes2)?;
         // Iterate the selector (`input2`), keeping each of its paths that also exists in `tree1`
-        // with `tree1`'s content; cost tracks the size of the selected set.
-        let mut builder = repo.treebuilder(None)?;
-        for entry in tree2.iter() {
-            let name = entry.name().ok_or_else(|| anyhow!("no name"))?;
-            if let Some(e1) = tree1.get_name(name) {
-                let child = intersect(transaction, e1.id(), entry.id())?;
-                if child != empty_id() && child != git2::Oid::zero() {
-                    builder.insert(name, child, e1.filemode()).ok();
+        // with `tree1`'s content and normalized mode; cost tracks the size of the selected set.
+        // Entries with invalid names are dropped silently (libgit2 insert-name parity).
+        let mut rebuild = TreeRebuild::new(0);
+        for entry in &tree2.entries {
+            if let Some(e1) = lookup_entry(&tree1, entry.filename) {
+                let child = intersect(
+                    transaction,
+                    objects::git2_oid(e1.oid),
+                    objects::git2_oid(entry.oid),
+                )?;
+                if child != empty_id()
+                    && child != git2::Oid::zero()
+                    && objects::tree_entry_name_valid(entry.filename)
+                {
+                    rebuild.keep(gix_object::tree::Entry {
+                        mode: entry_mode(objects::normalize_filemode(e1.mode.value())),
+                        filename: entry.filename.to_owned(),
+                        oid: objects::gix_oid(child),
+                    });
                 }
             }
         }
-        builder.write()?
+        objects::write_tree_now(odb, rebuild.out)?
     } else {
         // At least one side is a blob at this already-name-matched path, so the path exists in both;
         // keep `input1`'s content, matching the path-based semantics of the tree case.
@@ -687,10 +809,20 @@ pub fn overlay(
     input1: git2::Oid,
     input2: git2::Oid,
 ) -> anyhow::Result<git2::Oid> {
+    let odb = transaction.repo().odb()?;
+    overlay_inner(transaction, &odb, input1, input2)
+}
+
+/// Recursive body of [`overlay`]; see [`remove_pred_inner`] for why the odb is hoisted.
+fn overlay_inner(
+    transaction: &cache::Transaction,
+    odb: &git2::Odb,
+    input1: git2::Oid,
+    input2: git2::Oid,
+) -> anyhow::Result<git2::Oid> {
     if let Some(cached) = transaction.get_overlay((input1, input2)) {
         return Ok(cached);
     }
-    let repo = transaction.repo();
     if input1 == input2 {
         return Ok(input1);
     }
@@ -701,25 +833,61 @@ pub fn overlay(
         return Ok(input1);
     }
 
-    if let (Ok(tree1), Ok(tree2)) = (repo.find_tree(input1), repo.find_tree(input2)) {
-        let mut builder = repo.treebuilder(Some(&tree1))?;
-
-        for entry in tree2.iter() {
-            let (id, mode) =
-                if let Some(e) = tree1.get_name(entry.name().ok_or_else(|| anyhow!("no name"))?) {
-                    (overlay(transaction, e.id(), entry.id())?, e.filemode())
-                } else {
-                    (entry.id(), entry.filemode())
-                };
-
-            builder.insert(
-                Path::new(entry.name().ok_or_else(|| anyhow!("no name"))?),
-                id,
-                mode,
-            )?;
+    let bytes1 = transaction.read_tree_bytes(odb, input1)?;
+    let bytes2 = transaction.read_tree_bytes(odb, input2)?;
+    if let (Some(bytes1), Some(bytes2)) = (bytes1, bytes2) {
+        let tree1 = gix_object::TreeRef::from_bytes(&bytes1)?;
+        let tree2 = gix_object::TreeRef::from_bytes(&bytes2)?;
+        // Start from `tree1` and insert every entry of `tree2`: recursively overlaid where the
+        // name exists in `tree1` (with `tree1` winning on blob collisions), taken over as-is
+        // otherwise. Every inserted entry gets the normalized mode, and -- unlike the other tree
+        // ops -- an invalid entry name is an error.
+        let mut mods: std::collections::HashMap<&[u8], (git2::Oid, gix_object::tree::EntryMode)> =
+            std::collections::HashMap::new();
+        // Name-keyed, so duplicate names in `tree2` collapse to the last occurrence; the
+        // canonical sort in write_tree_now restores order.
+        let mut new_entries: std::collections::HashMap<&[u8], gix_object::tree::Entry> =
+            std::collections::HashMap::new();
+        for entry in &tree2.entries {
+            if !objects::tree_entry_name_valid(entry.filename) {
+                return Err(anyhow!(
+                    "overlay: invalid entry name {:?}",
+                    entry.filename.to_owned()
+                ));
+            }
+            if let Some(e1) = lookup_entry(&tree1, entry.filename) {
+                let id = overlay_inner(
+                    transaction,
+                    odb,
+                    objects::git2_oid(e1.oid),
+                    objects::git2_oid(entry.oid),
+                )?;
+                mods.insert(
+                    &**entry.filename,
+                    (id, entry_mode(objects::normalize_filemode(e1.mode.value()))),
+                );
+            } else {
+                new_entries.insert(
+                    &**entry.filename,
+                    gix_object::tree::Entry {
+                        mode: entry_mode(objects::normalize_filemode(entry.mode.value())),
+                        filename: entry.filename.to_owned(),
+                        oid: entry.oid.to_owned(),
+                    },
+                );
+            }
         }
 
-        let rid = builder.write()?;
+        let mut out = seed_entries(&tree1);
+        for entry in &mut out {
+            if let Some((id, mode)) = mods.get(entry.filename.as_slice()) {
+                entry.oid = objects::gix_oid(*id);
+                entry.mode = *mode;
+            }
+        }
+        out.extend(new_entries.into_values());
+
+        let rid = objects::write_tree_now(odb, out)?;
 
         transaction.insert_overlay((input1, input2), rid);
         return Ok(rid);
@@ -1387,5 +1555,73 @@ mod tests {
             added,
             vec![("dir/file1".to_string(), 1), ("dir/file2".to_string(), 1)]
         );
+    }
+
+    // Subtract starts from tree1's entries the way the seeded treebuilder did: untouched entries
+    // keep their raw (even fsck-invalid legacy) modes, while matched paths are removed or
+    // replaced by the recursive subtraction result.
+    #[test]
+    fn subtract_preserves_untouched_raw_modes() {
+        let td = tempfile::tempdir().unwrap();
+        let repo = git2::Repository::init_bare(td.path()).unwrap();
+
+        let blob = repo.blob(b"legacy").unwrap();
+        let sub_tree = make_tree(&repo, &["dir/a.txt", "dir/b.txt"]);
+        let dir = repo
+            .find_tree(sub_tree)
+            .unwrap()
+            .get_name("dir")
+            .unwrap()
+            .id();
+        let input1 = write_raw_tree(
+            &repo,
+            &[("40000", "dir", dir), ("100664", "legacy.rs", blob)],
+        );
+        let input2 = make_tree(&repo, &["dir/a.txt"]);
+
+        let t = open_transaction(&td);
+        let out = subtract(&t, input1, input2).unwrap();
+
+        let out_tree = t.repo().find_tree(out).unwrap();
+        assert_eq!(
+            out_tree.get_name("legacy.rs").unwrap().filemode_raw(),
+            0o100664,
+            "untouched entries must keep their raw mode, like the seeded treebuilder"
+        );
+        let out_dir = t
+            .repo()
+            .find_tree(out_tree.get_name("dir").unwrap().id())
+            .unwrap();
+        assert!(out_dir.get_name("a.txt").is_none(), "matched path removed");
+        assert!(out_dir.get_name("b.txt").is_some(), "unmatched path kept");
+    }
+
+    // Overlay resolves blob collisions in favor of input1 and takes over input2-only entries
+    // with normalized modes, while input1-only entries keep their raw modes (seeded rebuild).
+    #[test]
+    fn overlay_keeps_input1_on_collision() {
+        let td = tempfile::tempdir().unwrap();
+        let repo = git2::Repository::init_bare(td.path()).unwrap();
+
+        let ours = repo.blob(b"ours").unwrap();
+        let theirs = repo.blob(b"theirs").unwrap();
+        let input1 = write_raw_tree(&repo, &[("100664", "shared.rs", ours)]);
+        let mut b = repo.treebuilder(None).unwrap();
+        b.insert("new.rs", theirs, 0o100644).unwrap();
+        b.insert("shared.rs", theirs, 0o100644).unwrap();
+        let input2 = b.write().unwrap();
+
+        let t = open_transaction(&td);
+        let out = overlay(&t, input1, input2).unwrap();
+
+        let out_tree = t.repo().find_tree(out).unwrap();
+        let shared = out_tree.get_name("shared.rs").unwrap();
+        assert_eq!(shared.id(), ours, "input1 wins blob collisions");
+        assert_eq!(
+            shared.filemode_raw(),
+            0o100644,
+            "collision entries are re-inserted with the normalized mode"
+        );
+        assert_eq!(out_tree.get_name("new.rs").unwrap().id(), theirs);
     }
 }

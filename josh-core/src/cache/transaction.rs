@@ -2,6 +2,7 @@ use super::backend::HistoryGraphHint;
 use super::history_graph::compute_history_hint;
 use super::sled::sled_open_josh_trees;
 use super::stack::CacheStack;
+use super::tree_cache::{TreeBytes, TreeCache};
 use anyhow::anyhow;
 
 use std::collections::HashMap;
@@ -113,6 +114,7 @@ struct Transaction2 {
     downstack_deps_map: HashMap<git2::Oid, std::collections::HashSet<crate::filter::DownstackDep>>,
     merge_trees_map: HashMap<(git2::Oid, git2::Oid, git2::Oid), git2::Oid>,
     last_written_commit: Option<(git2::Oid, git2::Oid)>,
+    tree_cache: TreeCache,
 
     cache: std::sync::Arc<CacheStack>,
     path_tree: sled::Tree,
@@ -192,6 +194,7 @@ impl Transaction {
                 downstack_deps_map: HashMap::new(),
                 merge_trees_map: HashMap::new(),
                 last_written_commit: None,
+                tree_cache: Default::default(),
                 cache,
                 path_tree,
                 invert_tree,
@@ -223,6 +226,30 @@ impl Transaction {
 
     pub fn repo(&self) -> &git2::Repository {
         &self.repo
+    }
+
+    /// Read the raw bytes of the tree `oid` through the per-transaction [`TreeCache`]
+    /// (see there for the promotion and eviction policy). `Ok(None)` means the object exists
+    /// but is not a tree; a missing object is an error, like a plain odb read.
+    pub fn read_tree_bytes<'a>(
+        &self,
+        odb: &'a git2::Odb,
+        oid: git2::Oid,
+    ) -> anyhow::Result<Option<TreeBytes<'a>>> {
+        if let Some(bytes) = self.t2.borrow().tree_cache.get(oid) {
+            return Ok(Some(TreeBytes::Cached(bytes)));
+        }
+        let obj = odb.read(oid)?;
+        if obj.kind() != git2::ObjectType::Tree {
+            return Ok(None);
+        }
+        let mut t2 = self.t2.borrow_mut();
+        if t2.tree_cache.should_promote(oid) {
+            let bytes: std::sync::Arc<[u8]> = obj.data().into();
+            t2.tree_cache.insert(oid, bytes.clone());
+            return Ok(Some(TreeBytes::Cached(bytes)));
+        }
+        Ok(Some(TreeBytes::Odb(obj)))
     }
 
     // TODO: remove and rework proxy git launch path to use spawn_git
