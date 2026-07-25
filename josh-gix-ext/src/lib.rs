@@ -55,6 +55,106 @@ pub fn git2_oid(oid: &gix_hash::oid) -> git2::Oid {
     git2::Oid::from_bytes(oid.as_bytes()).expect("oid sizes match")
 }
 
+/// Whether `name` is acceptable as a tree entry name, replicating libgit2's `valid_entry_name`
+/// under default configuration. gix by design performs no name validation when writing trees, so
+/// josh owns this check; tree rewriting drops entries with invalid names (and marks the tree as
+/// changed), exactly like the failed `git_treebuilder_insert` did before the gix port.
+///
+/// Rejected are: the empty name, names containing `/`, `.` and `..`, and `.git` including its
+/// NTFS-style aliases (`.git.`, `.git `, `.git:x`, `.git\x`, case-insensitive) and HFS-style
+/// aliases (`.git` with HFS-ignorable code points interspersed). libgit2 applies the NTFS check
+/// everywhere (`core.protectNTFS` defaults to true) but the HFS check only on Apple platforms;
+/// josh applies both everywhere so filtered output does not depend on the host OS -- for the
+/// HFS-alias corner case on non-Apple hosts this is deliberately stricter than libgit2 was.
+pub fn tree_entry_name_valid(name: &[u8]) -> bool {
+    if name.is_empty() || name == b"." || name == b".." {
+        return false;
+    }
+    if name.contains(&b'/') {
+        return false;
+    }
+    // NTFS protection: a name starting with ".git" (case-insensitive) is invalid if what follows
+    // could still address the ".git" directory on Windows: a `\` path separator, a `:` alternate
+    // data stream, or nothing but trailing spaces and dots (which NTFS strips).
+    if name.len() >= 4 && name[..4].eq_ignore_ascii_case(b".git") {
+        let rest = &name[4..];
+        if matches!(rest.first(), Some(b'\\') | Some(b':'))
+            || rest.iter().all(|&c| c == b' ' || c == b'.')
+        {
+            return false;
+        }
+    }
+    // HFS protection: the name must not read as ".git" (case-insensitive) after removing the
+    // code points HFS+ ignores in filenames.
+    if hfs_reads_as_dotgit(name) {
+        return false;
+    }
+    true
+}
+
+/// True if `name` equals ".git" case-insensitively once HFS-ignorable code points are removed.
+/// Mirrors libgit2's `validate_dotgit_hfs`. Non-UTF-8 names cannot alias ".git" this way.
+fn hfs_reads_as_dotgit(name: &[u8]) -> bool {
+    let Ok(s) = std::str::from_utf8(name) else {
+        return false;
+    };
+    let mut chars = s.chars().filter(|c| {
+        !matches!(c,
+            '\u{200c}' | '\u{200d}' | '\u{200e}' | '\u{200f}'
+            | '\u{202a}'..='\u{202e}'
+            | '\u{206a}'..='\u{206f}'
+            | '\u{feff}')
+    });
+    let mut expected = ".git".chars();
+    loop {
+        match (chars.next(), expected.next()) {
+            (None, None) => return true,
+            (Some(c), Some(e)) if c.to_ascii_lowercase() == e => {}
+            _ => return false,
+        }
+    }
+}
+
+/// Normalize a raw tree entry mode exactly like libgit2's `normalize_filemode` (which every
+/// `git_treebuilder_insert` applied): trees stay trees, any exec bit makes an executable blob,
+/// gitlinks and symlinks keep their type, everything else becomes a plain blob. Note the exec
+/// check precedes the gitlink/symlink checks and tests all three exec bits -- both quirks are
+/// libgit2's, kept for byte-identical rebuilt trees.
+pub fn normalize_filemode(raw: u16) -> u16 {
+    if raw & 0o170000 == 0o040000 {
+        0o040000
+    } else if raw & 0o111 != 0 {
+        0o100755
+    } else if raw & 0o170000 == 0o160000 {
+        0o160000
+    } else if raw & 0o170000 == 0o120000 {
+        0o120000
+    } else {
+        0o100644
+    }
+}
+
+/// Serialize `entries` as a git tree in canonical order and write it straight to `odb`. Used on
+/// hot paths while git2 still owns all I/O: the write is immediately visible to every reader of
+/// the repository (and lands in the in-memory memodb store when one is registered), so ported and
+/// unported code can interleave freely.
+///
+/// TODO(byte-preservation): the unconditional sort is part of the libgit2-parity normalization
+/// of fsck-invalid input trees described on `TreeRebuild` in josh-core's filter/tree.rs. Once
+/// filters preserve non-canonical trees byte-for-byte, rebuilds seeded from such trees will need
+/// an order-preserving variant of this function (callers building entry sets from scratch keep
+/// the sort).
+pub fn write_tree_now(
+    odb: &git2::Odb,
+    mut entries: Vec<gix_object::tree::Entry>,
+) -> anyhow::Result<git2::Oid> {
+    entries.sort();
+    let tree = gix_object::Tree { entries };
+    let mut buffer = Vec::with_capacity(tree.size() as usize);
+    tree.write_to(&mut buffer)?;
+    Ok(odb.write(git2::ObjectType::Tree, &buffer)?)
+}
+
 /// An in-memory staging store over an optional read-through object database.
 ///
 /// Writes stage objects in a hash map; reads (via the [`gix_object::Find`] family) consult the
@@ -210,5 +310,72 @@ impl gix_object::Exists for StagingOdb<'_> {
                 .odb
                 .as_ref()
                 .is_some_and(|odb| odb.exists(git2_oid(id)))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn entry_name_validation() {
+        for valid in [
+            &b"foo"[..],
+            b"git",
+            b".gitignore",
+            b".github",
+            b".git0",
+            b"a.git",
+            b"..a",
+            b"...",
+            b".git.a",
+        ] {
+            assert!(tree_entry_name_valid(valid), "{valid:?} should be valid");
+        }
+        for invalid in [
+            &b""[..],
+            b".",
+            b"..",
+            b"a/b",
+            b".git",
+            b".GIT",
+            b".GiT",
+            b".git.",
+            b".git ",
+            b".git . .",
+            b".git\\evil",
+            b".GIT:stream",
+            ".g\u{200c}it".as_bytes(),
+            ".\u{feff}GIT".as_bytes(),
+        ] {
+            assert!(
+                !tree_entry_name_valid(invalid),
+                "{invalid:?} should be invalid"
+            );
+        }
+    }
+
+    #[test]
+    fn filemode_normalization() {
+        for (raw, norm) in [
+            (0o100644, 0o100644),
+            (0o100664, 0o100644),
+            (0o100600, 0o100644),
+            (0o100755, 0o100755),
+            (0o100775, 0o100755),
+            (0o100700, 0o100755),
+            (0o100010, 0o100755),
+            (0o040000, 0o040000),
+            (0o040755, 0o040000),
+            (0o120000, 0o120000),
+            (0o160000, 0o160000),
+            // libgit2 quirks: exec bits win over the gitlink/symlink type checks.
+            (0o120755, 0o100755),
+            (0o160755, 0o100755),
+            // Garbage type bits collapse to a plain blob.
+            (0o110644, 0o100644),
+        ] {
+            assert_eq!(normalize_filemode(raw), norm, "raw mode {raw:o}");
+        }
     }
 }
