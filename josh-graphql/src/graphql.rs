@@ -430,19 +430,34 @@ impl Revision {
 
     fn search(&self, string: String, context: &Context) -> FieldResult<Option<Vec<SearchResult>>> {
         let transaction = context.transaction.lock().unwrap();
-        let ifilterobj = filter::parse(":SQUASH:INDEX")?;
         let tree = transaction.repo().find_commit(self.commit_id)?.tree()?;
 
         let x = filter::apply(&transaction, self.filter, Rewrite::from_tree(tree))?;
-        let index_tree = filter::apply(&transaction, ifilterobj, x.clone())?;
 
         /* let start = std::time::Instant::now(); */
-        let candidates = josh_search::search_candidates(
-            transaction.repo(),
-            index_tree.tree(),
-            x.tree(),
-            &string,
-        )?;
+        // The trigram index is experimental; without it every file is a candidate and
+        // search_matches does all the filtering, so results are identical, just slower.
+        let candidates = if filter::experimental_features_enabled() {
+            let ifilterobj = filter::parse(":SQUASH:INDEX")?;
+            let index_tree = filter::apply(&transaction, ifilterobj, x.clone())?;
+            josh_search::search_candidates(
+                transaction.repo(),
+                index_tree.tree(),
+                x.tree(),
+                &string,
+            )?
+        } else {
+            let mut scan = vec![];
+            x.tree().walk(git2::TreeWalkMode::PreOrder, |root, entry| {
+                if entry.kind() == Some(git2::ObjectType::Blob)
+                    && let Ok(name) = entry.name()
+                {
+                    scan.push(format!("{}{}", root, name));
+                }
+                0
+            })?;
+            scan
+        };
         let results =
             josh_search::search_matches(transaction.repo(), x.tree(), &string, &candidates)?;
         /* let duration = start.elapsed(); */
