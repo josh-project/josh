@@ -463,7 +463,7 @@ pub fn handle_sync(
                     };
 
                     match api
-                        .find_pull_request_by_head(&owner, &repo_name, &pr.head_ref_name)
+                        .find_pull_request_by_head(&owner, &repo_name, &pr.head_ref_name, None)
                         .await
                     {
                         Ok(Some((pr_node_id, _, _))) => {

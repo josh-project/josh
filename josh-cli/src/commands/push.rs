@@ -286,9 +286,13 @@ fn push_refs(
 }
 
 /// Create or update GitHub PRs for the collected push refs.
+///
+/// `url` is the PR target (upstream). `fork_url`, when set, is the repo the
+/// change branches were pushed to; PRs are then opened with a cross-fork head.
 fn create_prs(
     pr_infos: &[josh_github_changes::PrInfo],
     url: &str,
+    fork_url: Option<&str>,
     dry_run: bool,
 ) -> anyhow::Result<()> {
     if pr_infos.is_empty() {
@@ -303,7 +307,8 @@ fn create_prs(
         let api_connection = github::make_api_connection().await;
         let api_connection = api_connection.with_context(|| github::api_connection_hint())?;
 
-        josh_github_changes::create_or_update_prs(&api_connection, url, pr_infos, dry_run).await
+        josh_github_changes::create_or_update_prs(&api_connection, url, fork_url, pr_infos, dry_run)
+            .await
     }) {
         eprintln!("Warning: failed to create/update GitHub PRs: {}", e);
     }
@@ -330,7 +335,16 @@ fn orchestrate_push(
     let config = read_remote_config(&repo_path, remote_name)
         .with_context(|| format!("Failed to read remote config for '{}'", remote_name))?;
     let filter = config.semantic_filter();
-    let RemoteConfig { url, forge, .. } = config;
+    let RemoteConfig {
+        url,
+        forge,
+        push_url,
+        ..
+    } = config;
+
+    // Branches go to the fork (push_url) when configured; otherwise to `url`.
+    // PRs are always opened against `url`.
+    let push_target = push_url.as_deref().unwrap_or(&url);
 
     let refspecs = if refspecs_arg.is_empty() {
         let head = repo.head().context("Failed to get HEAD")?;
@@ -384,13 +398,13 @@ fn orchestrate_push(
         transaction,
         remote_name,
         &to_push,
-        &url,
+        push_target,
         force,
         atomic,
         dry_run,
     )?;
 
-    create_prs(&pr_infos, &url, dry_run)?;
+    create_prs(&pr_infos, &url, push_url.as_deref(), dry_run)?;
 
     Ok(())
 }
