@@ -195,6 +195,31 @@ pull requests base on the upstream **default branch** rather than on an intermed
 **draft** — its diff temporarily includes those predecessors — and is promoted to ready
 automatically once they merge and you re-publish.
 
+## Publishing to Gerrit
+
+Select the Gerrit forge when cloning (it cannot be auto-detected from the URL):
+
+```shell
+josh clone https://gerrit.example.com/repo :/ work --forge gerrit
+```
+
+`josh changes publish` then pushes to Gerrit's magic ref `refs/for/<branch>`, where the
+push itself creates or updates the review. No `@changes/@base` refs are written and no
+forge API is called, so there is nothing to `josh auth login`: authentication is handled
+by git (your SSH key or HTTP credential helper).
+
+Two publish modes are available, selected with `--gerrit-mode` and stored per-remote:
+
+- **`independent`** (default) publishes only the changes that have no unmerged
+  dependencies, each as its own separately-submittable review; dependent changes wait
+  until their predecessors merge.
+- **`stack`** publishes the whole history at once as a single Gerrit relation chain.
+
+Josh generates the required `Change-Id: I<40 hex>` trailer for every pushed commit,
+deterministically derived from the change's josh id — re-publishing therefore lands as a
+new patchset on the same Gerrit change rather than a duplicate. See the
+[forge reference](../reference/forge.md#gerrit) for details.
+
 ## Without forge integration
 
 `josh changes publish` works without [forge integration](../reference/forge.md). Josh still

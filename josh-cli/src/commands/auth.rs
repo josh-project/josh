@@ -35,14 +35,28 @@ pub fn handle_auth(args: &AuthArgs) -> anyhow::Result<()> {
                     tokio::runtime::Runtime::new().context("failed to create tokio runtime")?;
                 rt.block_on(crate::forge::github::login())
             }
+            Forge::Gerrit => gerrit_auth_not_needed(),
         },
         AuthCommand::Logout(forge_args) => match forge_args.forge {
             Forge::Github => crate::forge::github::logout(),
+            Forge::Gerrit => gerrit_auth_not_needed(),
         },
         AuthCommand::Debug(forge_args) => match forge_args.forge {
             Forge::Github => handle_debug_github_auth(),
+            Forge::Gerrit => gerrit_auth_not_needed(),
         },
     }
+}
+
+/// Gerrit publishing is a plain `git push` to `refs/for/<branch>`, so josh does
+/// not manage Gerrit credentials -- authentication is handled by git itself
+/// (SSH keys or an HTTP credential helper).
+fn gerrit_auth_not_needed() -> anyhow::Result<()> {
+    println!(
+        "Gerrit needs no josh login: publishing pushes over git, so authentication \
+         is handled by your SSH key or git credential helper."
+    );
+    Ok(())
 }
 
 fn handle_debug_github_auth() -> anyhow::Result<()> {
