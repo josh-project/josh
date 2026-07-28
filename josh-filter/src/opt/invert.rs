@@ -13,6 +13,9 @@ pub fn invert(filter: Filter) -> anyhow::Result<Filter> {
         let result = match to_op_ref(filter) {
             Op::Nop => Some(Op::Nop),
             Op::Message(..) => Some(Op::Nop),
+            // `:SQUASH` only rewrites history; at tree level it is identity,
+            // so content pushed through it maps back unchanged.
+            Op::Squash(None) => Some(Op::Nop),
             Op::Prune => Some(Op::Prune),
             Op::Export => Some(Op::Export),
             Op::Empty => Some(Op::Empty),

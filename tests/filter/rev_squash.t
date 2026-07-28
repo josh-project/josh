@@ -73,6 +73,47 @@ of the post-cutoff commit
   post
   subfile
 
+A branch rooted at the identity-preserved tip itself can be merged and pushed:
+the unapply base for that tip may be a squashed original, whose `:SQUASH`
+resolution must reverse like a fall-through commit
+  $ git checkout -q -b tipbranch $SUBTREE_TIP
+  $ echo note > tip-note.md
+  $ git add .
+  $ git commit -m "tip branch work" 1>/dev/null
+  $ git checkout -q -b fwork refs/heads/filtered
+  $ git merge --no-ff tipbranch -m "merge tip branch" 1>/dev/null
+  $ git update-ref refs/heads/filtered HEAD
+  $ josh-filter -s "$FILTER" refs/heads/master --update refs/heads/filtered --reverse --check-roundtrip
+  502c4f2c20e968f20dc97f4bb54b6a1598f690fd
+  [4] :/subtree
+  [4] :~(
+      history="keep-trivial-merges,no-splice"
+  )[
+      :rev(<=104346ac7daf00a08bef19a999e4c7601aae519a:prefix=subtree,<=75a11dcdd41d68e57d9d9f07862bd284a99da6f0:SQUASH)
+  ]
+  [15] reachable_roots
+  [15] sequence_number
+
+  $ git ls-tree --name-only -r refs/heads/master
+  rustfile
+  subtree/post
+  subtree/subfile
+  subtree/tip-note.md
+  $ git log --graph --pretty=%s refs/heads/master
+  *   merge tip branch
+  |\  
+  | * tip branch work
+  * | post cutoff change
+  |/  
+  *   bors merge
+  |\  
+  | * rollup merge
+  |/| 
+  | * sync merge
+  |/| 
+  | * s1
+  * m1
+
 Squashing away a merge that is the only join between two preserved lineages
 would disconnect one of them: the filter fails loudly instead
   $ git checkout -q --orphan sub2
@@ -89,18 +130,18 @@ would disconnect one of them: the filter fails loudly instead
   $ export R2=$(git rev-parse HEAD)
 
   $ josh-filter -s ":~(history=\"keep-trivial-merges,no-splice\")[:rev(<=$SUBTREE_TIP:prefix=subtree,<=$SUB2_TIP:prefix=subtree2,<=$R2:SQUASH)]" refs/heads/master --update refs/heads/broken
-  [2] :/subtree
   [2] :~(
       history="keep-trivial-merges,no-splice"
   )[
-      :rev(<=104346ac7daf00a08bef19a999e4c7601aae519a:prefix=subtree,<=64eeef227e94b848388854ea5e8b86a043c7ac12:prefix=subtree2,<=e18fef9705f6a52d6fc63f8b98aa25a45f8866b7:SQUASH)
+      :rev(<=104346ac7daf00a08bef19a999e4c7601aae519a:prefix=subtree,<=64eeef227e94b848388854ea5e8b86a043c7ac12:prefix=subtree2,<=2019cb20591f675b8600a09209e884ccaaf8d1cd:SQUASH)
   ]
-  [2] :~(
+  [4] :/subtree
+  [4] :~(
       history="keep-trivial-merges,no-splice"
   )[
       :rev(<=104346ac7daf00a08bef19a999e4c7601aae519a:prefix=subtree,<=75a11dcdd41d68e57d9d9f07862bd284a99da6f0:SQUASH)
   ]
-  [11] reachable_roots
-  [11] sequence_number
-  ERROR: cannot squash e18fef9705f6a52d6fc63f8b98aa25a45f8866b7: its filtered parents 8d43373df2033c39f110dd8066eb4a78e9d4866d and 308067b73b0fa23ba642aa27603e6b6b4a63dbf4 do not descend from one another. `:SQUASH` can only preserve a single lineage
+  [18] reachable_roots
+  [18] sequence_number
+  ERROR: cannot squash 2019cb20591f675b8600a09209e884ccaaf8d1cd: its filtered parents 8d43373df2033c39f110dd8066eb4a78e9d4866d and 308067b73b0fa23ba642aa27603e6b6b4a63dbf4 do not descend from one another. `:SQUASH` can only preserve a single lineage
   [1]
