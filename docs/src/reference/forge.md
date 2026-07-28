@@ -1,17 +1,21 @@
 # Forge Integration
 
 Forge integration is an **optional** feature that connects `josh` to a code hosting
-platform (a "forge") such as GitHub. It is not required for normal git operations —
-cloning, pushing, and pulling all work without it, even with private repositories.
+platform (a "forge") such as GitHub or Gerrit. It is not required for normal git
+operations — cloning, pushing, and pulling all work without it, even with private
+repositories.
 
-Forge integration is specifically used for **automatic pull request management** during
-[stacked changes](../guide/stacked-changes.md) workflows. When you push a stack of
-commits with `josh changes publish`, `josh` can automatically
-create or update one pull request per commit on the forge.
+Forge integration shapes how `josh changes publish` turns a stack of commits into
+reviews. On GitHub it manages one pull request per commit; on Gerrit it pushes each
+change to the server's magic `refs/for/<branch>` ref, where the push itself creates or
+updates the review.
+
+The forge is chosen per remote with `--forge <github|gerrit>` on `josh clone` /
+`josh remote add`. GitHub is auto-detected from the URL; Gerrit is not identifiable from
+a URL and must be selected explicitly. It is stored as a `forge` meta key in the remote
+config file (`<git-common-dir>/josh/remotes/<name>.josh`).
 
 ## GitHub
-
-GitHub is currently the only supported forge.
 
 ### Authentication
 
@@ -77,3 +81,48 @@ against, fork PRs always target the upstream **default branch**. A change that s
 depends on unmerged predecessors is opened as a **draft** (its diff temporarily includes
 those dependencies) and is automatically promoted to "ready for review" once they merge
 and you re-publish.
+
+## Gerrit
+
+Gerrit is selected explicitly, since a Gerrit server cannot be recognized from its URL:
+
+```shell
+josh clone https://gerrit.example.com/repo :/ work --forge gerrit
+```
+
+### Authentication
+
+Gerrit publishing is a plain `git push` to the server's magic `refs/for/<branch>` ref,
+so `josh` manages **no** Gerrit credentials — authentication is handled by git itself
+(an SSH key, or an HTTP credential helper with your Gerrit HTTP password). There is
+nothing to `josh auth login`.
+
+### What forge integration enables
+
+With the Gerrit forge selected, `josh changes publish` pushes to `refs/for/<branch>`
+instead of GitHub's `@changes`/`@base` ref pairs. No API call is made — the push itself
+creates or updates the reviews.
+
+### Publish modes
+
+Because Gerrit keys a change by its `Change-Id` and expects it to appear exactly once
+with a single parent, josh's `downstack` model (where one change can belong to several
+stacks with differing ancestry) cannot be mapped onto Gerrit one-to-one. Two modes
+resolve this, selected per remote with `--gerrit-mode` on `josh clone` /
+`josh remote add` and stored as a `gerrit-mode` meta key:
+
+- **`independent`** (default) — push only the changes that have **no dependencies**:
+  those sitting directly on the target base. Each becomes its own independent, separately
+  submittable review (one `git push` per change). A change that still depends on unmerged
+  work is skipped until its dependencies merge and it becomes a root itself. Because only
+  roots are pushed, no change is ever duplicated across stacks.
+- **`stack`** — push the entire commit history once as a single Gerrit **relation
+  chain**: one change per commit, each with exactly one parent. This publishes the whole
+  stack at once, at the cost of Gerrit ordering the changes (they submit bottom-up).
+
+In both modes, Gerrit requires every pushed commit to carry a `Change-Id: I<40 hex>`
+trailer. `josh` generates one automatically, derived deterministically from the change's
+josh id (and reused as-is if the commit already carries a valid Gerrit Change-Id). The
+deterministic derivation is what makes re-publishing land as a **new patchset on the same
+Gerrit change** rather than creating a duplicate. The trailer is written only onto the
+commits that are pushed; your local history is left untouched.

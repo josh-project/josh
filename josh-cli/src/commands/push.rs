@@ -4,7 +4,7 @@ use josh_changes::{PushMode, PushRef, StackedChangeRef, StackedRef, build_to_pus
 use josh_core::git::normalize_repo_path;
 
 use crate::config::{RemoteConfig, read_remote_config};
-use crate::forge::Forge;
+use crate::forge::{Forge, GerritMode};
 use crate::porcelain::PushRefUpdate;
 
 #[derive(Debug, clap::Parser)]
@@ -107,6 +107,7 @@ fn prepare_push(
     filter: josh_core::filter::Filter,
     push_mode: &PushMode,
     forge: &Option<Forge>,
+    gerrit_mode: GerritMode,
     dry_run: bool,
 ) -> anyhow::Result<PreparedPush> {
     let repo = transaction.repo();
@@ -207,16 +208,37 @@ fn prepare_push(
 
     log::debug!("unfiltered_oid: {:?}", unfiltered_oid);
 
-    let to_push = build_to_push(
-        repo,
-        transaction,
-        &push_mode,
-        remote_ref,
-        remote_ref,
-        unfiltered_oid,
-        original_target,
-    )
-    .context("Failed to build to push")?;
+    // Gerrit publishing pushes to the magic ref `refs/for/<branch>` instead of
+    // josh's `@changes`/`@base` ref pairs, and needs no PR API call. The mode
+    // decides the mapping: `independent` (default) pushes only dependency-free
+    // changes as separate reviews; `stack` pushes the whole history as one
+    // relation chain.
+    let to_push = match (forge, push_mode) {
+        (Some(Forge::Gerrit), PushMode::Publish(_)) => match gerrit_mode {
+            GerritMode::Independent => josh_changes::build_gerrit_independent_push(
+                repo,
+                transaction,
+                remote_ref,
+                unfiltered_oid,
+                original_target,
+            )
+            .context("Failed to build Gerrit push")?,
+            GerritMode::Stack => {
+                josh_changes::build_gerrit_push(repo, remote_ref, unfiltered_oid, original_target)
+                    .context("Failed to build Gerrit push")?
+            }
+        },
+        _ => build_to_push(
+            repo,
+            transaction,
+            push_mode,
+            remote_ref,
+            remote_ref,
+            unfiltered_oid,
+            original_target,
+        )
+        .context("Failed to build to push")?,
+    };
 
     log::debug!("to_push: {:?}", to_push);
 
@@ -313,7 +335,48 @@ pub fn render_push_summary(
     Ok(lines)
 }
 
-/// Push all refs to the remote in a single bundled `git push` invocation.
+/// Push each change to a change-based forge (Gerrit), one `git push` per ref.
+///
+/// Every change targets the same magic ref `refs/for/<branch>`, so a single
+/// bundled push (multiple source commits, one destination ref) is not
+/// possible -- each ref goes in its own invocation. `refs/for` refs are never
+/// force-pushed; the forge keys patchsets by Change-Id instead.
+fn push_change_based(
+    transaction: &josh_core::cache::Transaction,
+    remote_name: &str,
+    to_push: &[PushRef],
+    url: &str,
+    atomic: bool,
+    dry_run: bool,
+) -> anyhow::Result<()> {
+    if to_push.is_empty() {
+        return Ok(());
+    }
+
+    for push_ref in to_push {
+        eprintln!(
+            "Pushing {} to {}/{}",
+            push_ref.oid, remote_name, push_ref.ref_name
+        );
+        let mut git_push_args = vec!["push"];
+        if atomic {
+            git_push_args.push("--atomic");
+        }
+        if dry_run {
+            git_push_args.push("--dry-run");
+        }
+        git_push_args.push(url);
+        let refspec = format!("{}:{}", push_ref.oid, push_ref.ref_name);
+        git_push_args.push(&refspec);
+        transaction
+            .spawn_git(&git_push_args, &[])
+            .with_context(|| format!("Failed to push to {}", remote_name))?;
+    }
+    eprintln!("Pushed {} ref(s) to {}", to_push.len(), remote_name);
+    Ok(())
+}
+
+/// Push all refs to a branch-based forge in a single bundled `git push` invocation.
 ///
 /// Every ref shares one remote URL and a uniform set of flags, so they are pushed together
 /// rather than one process per ref. This also makes `--atomic` meaningful across the whole
@@ -323,7 +386,7 @@ pub fn render_push_summary(
 /// stdout is captured and rendered as a summary via `render_push_summary`,
 /// while stderr keeps the default handling (inherited on a TTY, forwarded
 /// otherwise) so progress/errors reach the user.
-fn push_refs(
+fn push_branch_based(
     transaction: &josh_core::cache::Transaction,
     remote_name: &str,
     to_push: &[PushRef],
@@ -449,6 +512,7 @@ fn orchestrate_push(
         url,
         forge,
         push_url,
+        gerrit_mode,
         ..
     } = config;
 
@@ -479,21 +543,24 @@ fn orchestrate_push(
                 filter,
                 &push_mode,
                 &forge,
+                gerrit_mode,
                 dry_run,
             )
         })
         .collect::<anyhow::Result<Vec<_>>>()?;
 
-    // Phase 2: Flatten the prepared pushes into one bundled set. Dedup by destination ref
-    // name (keep first) to tolerate duplicate or colliding refspec arguments, which an
-    // atomic push would otherwise reject.
+    // Phase 2: Flatten the prepared pushes into one bundled set. Dedup by
+    // (destination ref, oid) (keep first) to tolerate duplicate or colliding
+    // refspec arguments, which an atomic push would otherwise reject. The oid is
+    // part of the key because Gerrit publishing intentionally routes several
+    // distinct change commits to the same `refs/for/<branch>` ref.
     let mut seen = std::collections::HashSet::new();
     let mut to_push: Vec<PushRef> = Vec::new();
     let mut pr_infos: Vec<josh_github_changes::PrInfo> = Vec::new();
 
     for prepared in prepared_pushes {
         for push_ref in prepared.to_push {
-            if seen.insert(push_ref.ref_name.clone()) {
+            if seen.insert((push_ref.ref_name.clone(), push_ref.oid)) {
                 to_push.push(push_ref);
             }
         }
@@ -507,17 +574,30 @@ fn orchestrate_push(
     // git output.
     let curated = matches!(push_mode, PushMode::Publish(_));
 
-    // Phase 3: Execute the side effects.
-    push_refs(
-        transaction,
-        remote_name,
-        &to_push,
-        push_target,
-        force,
-        atomic,
-        dry_run,
-        curated,
-    )?;
+    // Phase 3: Execute the side effects. Publishing to a change-based forge
+    // (Gerrit) pushes magic `refs/for/<branch>` refs; everything else is a
+    // branch push. This mirrors the dispatch in `prepare_push`.
+    if forge == Some(Forge::Gerrit) && matches!(push_mode, PushMode::Publish(_)) {
+        push_change_based(
+            transaction,
+            remote_name,
+            &to_push,
+            push_target,
+            atomic,
+            dry_run,
+        )?;
+    } else {
+        push_branch_based(
+            transaction,
+            remote_name,
+            &to_push,
+            push_target,
+            force,
+            atomic,
+            dry_run,
+            curated,
+        )?;
+    }
 
     create_prs(&pr_infos, &url, push_url.as_deref(), dry_run)?;
 
