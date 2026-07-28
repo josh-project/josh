@@ -888,10 +888,23 @@ fn create_filtered_commit2<'a>(
         // An "initial merge" is a merge whose parents have no common ancestor.
         // Cheaper than `repo.merge_base_many(...).is_err()`: ask whether the
         // parents' reachable-root sets intersect, which is cached per-commit.
-        let is_initial_merge = filtered_parent_ids.len() > 1
-            && !cache::parents_share_root(transaction, &filtered_parent_ids)?;
+        // Elided (zero) parents don't make a commit a merge, so only the
+        // surviving parents count here.
+        let nonzero_parent_ids: Vec<_> = filtered_parent_ids
+            .iter()
+            .copied()
+            .filter(|x| *x != git2::Oid::zero())
+            .collect();
+        let is_initial_merge = nonzero_parent_ids.len() > 1
+            && !cache::parents_share_root(transaction, &nonzero_parent_ids)?;
 
-        if is_initial_merge {
+        // Pruning must not leave the commit parentless: a sole surviving
+        // empty-tree parent may carry real history behind it.
+        if is_initial_merge
+            && filtered_parents
+                .iter()
+                .any(|(_, tree_id)| *tree_id != filter::tree::empty_id())
+        {
             filtered_parents.retain(|(_, tree_id)| *tree_id != filter::tree::empty_id());
         }
     }
