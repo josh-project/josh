@@ -1,6 +1,6 @@
 [package]
 name = "josh-cq-test-components"
-version = "26.7.19"
+version = "26.7.28"
 edition = "2024"
 license-file = "../../LICENSE"
 
