@@ -1,6 +1,6 @@
 #![warn(unused_extern_crates)]
 
-use anyhow::Context;
+use anyhow::{Context, anyhow};
 use std::fs::read_to_string;
 use std::io::Write;
 
@@ -125,6 +125,11 @@ fn make_app() -> clap::Command {
         .arg(
             clap::Arg::new("check-roundtrip").action(clap::ArgAction::SetTrue).long("check-roundtrip").help(
                 "If --reverse is also set, check if applying the filter to the result of the reverse filter gives back the input",
+            ),
+        )
+        .arg(
+            clap::Arg::new("force").action(clap::ArgAction::SetTrue).long("force").help(
+                "Allow --reverse to move the input reference to a non-fast-forward result, discarding commits made on it since the filtered reference was created",
             ),
         )
         .arg(
@@ -416,6 +421,20 @@ fn run_filter(args: Vec<String>) -> anyhow::Result<i32> {
             None,
         ) {
             Ok(rewritten) => {
+                // Concurrent commits on the input reference that are not
+                // represented in the pushed filtered state would be silently
+                // discarded by the ref update: require fast-forward like git.
+                if rewritten != unfiltered_old
+                    && !repo.graph_descendant_of(rewritten, unfiltered_old)?
+                    && !args.get_flag("force")
+                {
+                    return Err(anyhow!(
+                        "refusing non-fast-forward update of {} -- it contains commits that \
+                         the reverse apply would discard. Re-apply the filter and rebase the \
+                         filtered changes onto the result, or pass --force",
+                        input_ref
+                    ));
+                }
                 repo.reference(&input_ref, rewritten, true, "unapply_filter")?;
                 rewritten
             }

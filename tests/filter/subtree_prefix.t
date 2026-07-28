@@ -256,7 +256,7 @@ taken back into the main history.
   $ git checkout master
   Switched to branch 'master'
 
-  $ josh-filter -s $FILTER refs/heads/master --update refs/heads/subtree --reverse
+  $ josh-filter -s $FILTER refs/heads/master --update refs/heads/subtree --reverse --force
   b0a4107ddd6054442a8eaac89a2af0ab375607eb
   [11] :/subtree
   [11] :~(
