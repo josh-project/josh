@@ -278,7 +278,7 @@ taken back into the main history.
   $ git checkout master
   Switched to branch 'master'
 
-  $ josh-filter -s $FILTER refs/heads/master --update refs/heads/subtree --reverse
+  $ josh-filter -s $FILTER refs/heads/master --update refs/heads/subtree --reverse --force
   f814033dd0148da19a3199cd3cb2d21464ce85a3
   [13] :~(
       history="keep-trivial-merges"
