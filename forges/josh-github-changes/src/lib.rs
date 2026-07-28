@@ -73,41 +73,112 @@ pub fn collect_pr_infos(repo: &git2::Repository, to_push: &[josh_changes::PushRe
         .collect()
 }
 
+/// The base branch, draft state, and head ref chosen for a single PR.
+#[derive(Debug, PartialEq)]
+struct PrPlan {
+    base_branch: String,
+    draft: bool,
+    head_ref: String,
+}
+
+/// Decide how a change's PR should be targeted.
+///
+/// `default_branch` is the target repo's `(name, tip_oid)`, if known. `fork_owner`
+/// is set when the head branch lives in a fork, in which case the head is
+/// namespaced as `fork_owner:branch` and the PR must base on the target's
+/// default branch (a PR base cannot live in a fork). Returns `None` when a
+/// cross-fork PR is requested but the target default branch is unknown.
+fn plan_pr(
+    info: &PrInfo,
+    default_branch: Option<&(String, String)>,
+    fork_owner: Option<&str>,
+) -> Option<PrPlan> {
+    let head_ref = match fork_owner {
+        Some(fork_owner) => format!("{}:{}", fork_owner, info.head_branch),
+        None => info.head_branch.clone(),
+    };
+
+    // Fork-mode PRs can only base on a branch that exists in the target repo,
+    // so they always base on its default branch; the change is a draft while its
+    // base still lags the default branch tip (i.e. it depends on unmerged work).
+    if fork_owner.is_some() {
+        let (default_name, default_oid) = default_branch?;
+        return Some(PrPlan {
+            base_branch: default_name.clone(),
+            draft: info.base_oid.to_string() != *default_oid,
+            head_ref,
+        });
+    }
+
+    // Same-repo PRs may base on the synthetic `@base/…` branch pushed alongside.
+    let base_branch = match default_branch {
+        Some((default_name, default_oid)) if info.base_oid.to_string() == *default_oid => {
+            default_name.clone()
+        }
+        _ => info.base_branch.clone(),
+    };
+    let draft = match default_branch {
+        Some((default_name, _)) => base_branch != *default_name,
+        None => base_branch == info.base_branch,
+    };
+    Some(PrPlan {
+        base_branch,
+        draft,
+        head_ref,
+    })
+}
+
+/// Create or update GitHub PRs for a set of changes.
+///
+/// `url` is the PR target (upstream). When `fork_url` is `Some`, the change
+/// branches live in that fork and PRs are opened with a cross-fork head
+/// (`fork_owner:branch`). Because a PR's base branch must live in the target
+/// repo, fork-mode PRs always base on the target's default branch; a change
+/// whose base is not yet the default branch tip (i.e. it still depends on
+/// unmerged changes) is opened as a draft.
 pub async fn create_or_update_prs(
     connection: &GithubApiConnection,
     url: &str,
+    fork_url: Option<&str>,
     pr_infos: &[PrInfo],
     dry_run: bool,
 ) -> anyhow::Result<()> {
     let (owner, repo_name) = crate::repo::parse_owner_repo(url)?;
 
+    let fork = fork_url.map(crate::repo::parse_owner_repo).transpose()?;
+    let fork_owner = fork.as_ref().map(|(o, _)| o.as_str());
+
     let repository_id = connection.get_repo_id(&owner, &repo_name).await?;
     let default_branch = connection.get_default_branch(&owner, &repo_name).await?;
 
     for info in pr_infos {
-        let effective_base_branch = match &default_branch {
-            Some((default_name, default_oid)) if info.base_oid.to_string() == *default_oid => {
-                default_name.as_str()
+        let plan = match plan_pr(info, default_branch.as_ref(), fork_owner) {
+            Some(plan) => plan,
+            None => {
+                eprintln!(
+                    "Skipping PR for {}: target default branch is unknown, \
+                     cannot open a cross-fork PR",
+                    info.head_branch
+                );
+                continue;
             }
-            _ => info.base_branch.as_str(),
         };
-        let desired_draft = match &default_branch {
-            Some((default_name, _)) => effective_base_branch != default_name.as_str(),
-            None => effective_base_branch == info.base_branch.as_str(),
-        };
+        let effective_base_branch = plan.base_branch.as_str();
+        let desired_draft = plan.draft;
+        let head_ref_for_create = plan.head_ref;
 
         if dry_run {
             match connection
-                .find_pull_request_by_head(&owner, &repo_name, &info.head_branch)
+                .find_pull_request_by_head(&owner, &repo_name, &info.head_branch, fork_owner)
                 .await
             {
                 Ok(Some((_, number, is_draft))) => eprintln!(
                     "Would update PR #{}: {} → {} (draft: {} → {})",
-                    number, info.head_branch, effective_base_branch, is_draft, desired_draft
+                    number, head_ref_for_create, effective_base_branch, is_draft, desired_draft
                 ),
                 Ok(None) => eprintln!(
                     "Would create PR: {} → {} (draft: {})",
-                    info.head_branch, effective_base_branch, desired_draft
+                    head_ref_for_create, effective_base_branch, desired_draft
                 ),
                 Err(e) => eprintln!("Failed to look up PR for {}: {}", info.head_branch, e),
             }
@@ -115,7 +186,7 @@ pub async fn create_or_update_prs(
         }
 
         match connection
-            .find_pull_request_by_head(&owner, &repo_name, &info.head_branch)
+            .find_pull_request_by_head(&owner, &repo_name, &info.head_branch, fork_owner)
             .await
         {
             Ok(Some((pr_id, number, is_draft))) => {
@@ -166,7 +237,7 @@ pub async fn create_or_update_prs(
                     .create_pull_request(
                         &repository_id,
                         effective_base_branch,
-                        &info.head_branch,
+                        &head_ref_for_create,
                         &info.title,
                         &info.body,
                         desired_draft,
@@ -279,7 +350,7 @@ pub async fn sync_change_comments(
     };
 
     let pr = match connection
-        .find_pull_request_by_head(owner, repo_name, head_ref)
+        .find_pull_request_by_head(owner, repo_name, head_ref, None)
         .await?
     {
         Some((_node_id, number, _draft)) => {
@@ -489,4 +560,68 @@ pub async fn post_local_votes(
     josh_changes::cleanup_posted_outbox_votes(repo, change_id, remote_scope)?;
 
     Ok(posted)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const TIP: &str = "1111111111111111111111111111111111111111";
+    const OTHER: &str = "2222222222222222222222222222222222222222";
+
+    fn pr_info(base_oid: &str) -> PrInfo {
+        PrInfo {
+            head_branch: "@changes/main/a@b.com/feature".to_string(),
+            base_branch: "@base/main/a@b.com/feature".to_string(),
+            base_oid: git2::Oid::from_str(base_oid).unwrap(),
+            title: "t".to_string(),
+            body: "b".to_string(),
+        }
+    }
+
+    fn default_branch() -> (String, String) {
+        ("main".to_string(), TIP.to_string())
+    }
+
+    #[test]
+    fn fork_change_on_default_is_ready_against_default() {
+        let info = pr_info(TIP);
+        let plan = plan_pr(&info, Some(&default_branch()), Some("forkowner")).unwrap();
+        assert_eq!(plan.base_branch, "main");
+        assert!(!plan.draft);
+        assert_eq!(plan.head_ref, "forkowner:@changes/main/a@b.com/feature");
+    }
+
+    #[test]
+    fn fork_dependent_change_is_draft_against_default() {
+        let info = pr_info(OTHER);
+        let plan = plan_pr(&info, Some(&default_branch()), Some("forkowner")).unwrap();
+        assert_eq!(plan.base_branch, "main");
+        assert!(plan.draft);
+        assert_eq!(plan.head_ref, "forkowner:@changes/main/a@b.com/feature");
+    }
+
+    #[test]
+    fn fork_without_known_default_is_skipped() {
+        let info = pr_info(TIP);
+        assert_eq!(plan_pr(&info, None, Some("forkowner")), None);
+    }
+
+    #[test]
+    fn same_repo_bottom_change_bases_on_default() {
+        let info = pr_info(TIP);
+        let plan = plan_pr(&info, Some(&default_branch()), None).unwrap();
+        assert_eq!(plan.base_branch, "main");
+        assert!(!plan.draft);
+        assert_eq!(plan.head_ref, "@changes/main/a@b.com/feature");
+    }
+
+    #[test]
+    fn same_repo_stacked_change_bases_on_synthetic_branch_as_draft() {
+        let info = pr_info(OTHER);
+        let plan = plan_pr(&info, Some(&default_branch()), None).unwrap();
+        assert_eq!(plan.base_branch, "@base/main/a@b.com/feature");
+        assert!(plan.draft);
+        assert_eq!(plan.head_ref, "@changes/main/a@b.com/feature");
+    }
 }

@@ -75,11 +75,17 @@ pub struct PrSummary {
 
 impl GithubApiConnection {
     /// Find an open PR by head branch name. Returns (node_id, number, is_draft) if found.
+    ///
+    /// `head_owner`, when set, restricts the match to a PR whose head lives in
+    /// that owner's repository — needed to disambiguate cross-fork PRs, where
+    /// several forks may push the same head branch name. When `None`, the first
+    /// open PR with the given head branch name is returned.
     pub async fn find_pull_request_by_head(
         &self,
         owner: &str,
         name: &str,
         head_ref_name: &str,
+        head_owner: Option<&str>,
     ) -> anyhow::Result<Option<(String, i64, bool)>> {
         let variables = get_pr_by_head::Variables {
             owner: owner.to_string(),
@@ -92,7 +98,13 @@ impl GithubApiConnection {
             None => return Ok(None),
         };
         let nodes = repo.pull_requests.nodes.unwrap_or_default();
-        let pr = nodes.into_iter().flatten().next();
+        let pr = nodes.into_iter().flatten().find(|n| match head_owner {
+            Some(head_owner) => n
+                .head_repository_owner
+                .as_ref()
+                .is_some_and(|o| o.login == head_owner),
+            None => true,
+        });
         Ok(pr.map(|n| (n.id, n.number, n.is_draft)))
     }
 

@@ -56,3 +56,24 @@ Once authenticated, `josh changes publish` will, in addition to pushing the git 
   once they target the default branch directly.
 
 See the [Stacked changes](../guide/stacked-changes.md) guide for a full walkthrough.
+
+### Publishing from a fork
+
+When you do not have push access to the target repository, configure a separate **push
+URL** (your fork) with `--push-url` on `josh remote add` (or `josh clone`):
+
+```shell
+josh clone https://github.com/UPSTREAM/repo :/ work --push-url https://github.com/ME/repo
+```
+
+Change branches are then pushed to your fork while the pull requests — including upstack
+drafts — are opened against the upstream repository with a cross-fork head
+(`ME:@changes/…`). The push URL is stored as a `push` meta key in the remote config file
+(`<git-common-dir>/josh/remotes/<name>.josh`), analogous to git's
+`remote.<name>.pushurl`.
+
+Because a GitHub pull request's base branch must live in the repository the PR is opened
+against, fork PRs always target the upstream **default branch**. A change that still
+depends on unmerged predecessors is opened as a **draft** (its diff temporarily includes
+those dependencies) and is automatically promoted to "ready for review" once they merge
+and you re-publish.

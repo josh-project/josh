@@ -97,6 +97,12 @@ pub struct CloneArgs {
     #[arg(short = 'b', long = "branch", default_value = "HEAD")]
     pub branch: String,
 
+    /// Separate push destination (a fork) for `josh changes publish`.
+    ///
+    /// See `josh remote add --push-url`.
+    #[arg(long = "push-url")]
+    pub push_url: Option<String>,
+
     #[command(flatten)]
     pub forge_args: ForgeArgs,
 }
@@ -175,6 +181,14 @@ pub struct RemoteAddArgs {
     /// Workspace/projection identifier or path to spec
     #[arg()]
     pub filter: String,
+
+    /// Separate push destination (a fork) for `josh changes publish`.
+    ///
+    /// When set, change branches are pushed here while the main URL stays the
+    /// fetch source and pull-request target. Pull requests (including upstack
+    /// drafts) are opened against the main URL with a cross-fork head.
+    #[arg(long = "push-url")]
+    pub push_url: Option<String>,
 
     #[command(flatten)]
     pub forge_args: ForgeArgs,
@@ -337,6 +351,7 @@ fn clone_repo(args: &CloneArgs) -> anyhow::Result<std::path::PathBuf> {
         name: "origin".to_string(),
         url: to_absolute_remote_url(&args.url)?,
         filter: args.filter.clone(),
+        push_url: args.push_url.clone(),
         forge_args: args.forge_args.clone(),
     };
 
@@ -567,6 +582,12 @@ fn handle_remote_add_repo(args: &RemoteAddArgs, repo_path: &std::path::Path) -> 
             .or_else(|| josh_cli::forge::guess_forge(&remote_url))
     };
 
+    let push_url = args
+        .push_url
+        .as_deref()
+        .map(to_absolute_remote_url)
+        .transpose()?;
+
     // Write remote config to .git/josh/remotes/<name>.josh
     write_remote_config(
         repo_path,
@@ -575,6 +596,7 @@ fn handle_remote_add_repo(args: &RemoteAddArgs, repo_path: &std::path::Path) -> 
         &filter_to_store,
         &refspec,
         forge,
+        push_url.as_deref(),
     )
     .context("Failed to write remote config file")?;
 

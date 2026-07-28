@@ -174,6 +174,27 @@ This rebases your remaining local commits on top of the updated upstream state.
 pulling, the next `josh changes publish` will retarget and promote the next PR in the stack
 from draft to ready for review.
 
+## Publishing from a fork
+
+If you cannot push to the target repository, point Josh at your own fork as a separate
+push destination while still opening all pull requests against the target. Configure the
+fork when adding the remote:
+
+```shell
+josh clone https://github.com/UPSTREAM/repo :/ work --push-url https://github.com/ME/repo
+```
+
+(or `josh remote add <name> <upstream-url> <filter> --push-url <fork-url>` for an existing
+repository). `josh changes publish` then pushes the `@changes/…` refs to your fork, and
+opens each pull request against the upstream repository with a cross-fork head
+(`ME:@changes/…`).
+
+Because a pull request's base branch must live in the repository the PR targets, fork
+pull requests base on the upstream **default branch** rather than on an intermediate
+`@base/…` branch. A change that still depends on unmerged predecessors is opened as a
+**draft** — its diff temporarily includes those predecessors — and is promoted to ready
+automatically once they merge and you re-publish.
+
 ## Without forge integration
 
 `josh changes publish` works without [forge integration](../reference/forge.md). Josh still
