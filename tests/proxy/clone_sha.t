@@ -94,7 +94,7 @@ Check (2) and (3) but with a branch ref
   .
   |-- josh
   |   `-- cache
-  |       `-- 31
+  |       `-- 32
   |           `-- sled
   |               |-- blobs
   |               |-- conf

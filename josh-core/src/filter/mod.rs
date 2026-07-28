@@ -2162,6 +2162,52 @@ fn per_rev_filter(
 
     let filtered_parent_ids: Vec<_> = normal_parents.into_iter().chain(splice_parents).collect();
 
+    if let Op::Squash(None) = to_op(commit_filter.peel()) {
+        // `:SQUASH` as a per-commit filter squashes the commit away, mapping it
+        // to the surviving filtered parent with the largest sequence number.
+        // Ancestors have strictly smaller sequence numbers, so a parent that
+        // has all others as ancestors always wins and nothing gets
+        // disconnected; a fixed parent position would instead strand lineages
+        // that only join through other parents (subtree sync merges carry the
+        // newer subtree tip as their second parent).
+        let mut target = None;
+        for id in filtered_parent_ids
+            .iter()
+            .filter(|x| **x != git2::Oid::zero())
+        {
+            let seq = cache::compute_sequence_number(transaction, *id)?;
+            if target.map(|(top, _)| seq > top).unwrap_or(true) {
+                target = Some((seq, *id));
+            }
+        }
+        // Squashing a merge is only lossless when the chosen parent has every
+        // other surviving parent in its ancestry; incomparable parents mean
+        // two preserved lineages join only inside the squashed region and one
+        // of them would silently become unreachable. Fail instead.
+        if let Some((_, target_id)) = target {
+            for id in filtered_parent_ids
+                .iter()
+                .filter(|x| **x != git2::Oid::zero() && **x != target_id)
+            {
+                if !transaction.repo().graph_descendant_of(target_id, *id)? {
+                    return Err(anyhow!(
+                        "cannot squash {}: its filtered parents {} and {} do not descend \
+                         from one another. `:SQUASH` can only preserve a single lineage",
+                        commit.id(),
+                        target_id,
+                        id
+                    ));
+                }
+            }
+        }
+        return Ok(Some(history::drop_commit(
+            commit,
+            target.map(|(_, id)| id).into_iter().collect(),
+            transaction,
+            filter,
+        )?));
+    }
+
     let mut tree_data = apply(transaction, commit_filter, Rewrite::from_commit(commit)?)?;
 
     if let Some((pin_subtract, pin_overlay)) = pin_details {
