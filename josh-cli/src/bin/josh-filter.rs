@@ -186,33 +186,34 @@ impl josh_core::cache::FilterHook for GitNotesFilterHook {
 /// The change detection lives in josh_search::ChangeSweep; this walks the filtered graph
 /// parents-first and prints one line per change event.
 fn search_changes(
-    repo: &git2::Repository,
     transaction: &josh_core::cache::Transaction,
     filterobj: josh_core::filter::Filter,
     input_ref: &str,
     searchstring: &str,
 ) -> anyhow::Result<()> {
-    let commit = repo.revparse_single(input_ref)?.peel_to_commit()?;
-    let filtered_id = josh_core::filter_commit(transaction, filterobj, commit.id())?;
+    let commit = transaction
+        .rev_parse(input_ref)?
+        .ok_or_else(|| anyhow!("no such revision: {}", input_ref))?;
+    let filtered_id = josh_core::filter_commit(transaction, filterobj, commit)?;
     let ifilterobj = josh_core::filter::parse(":INDEX")?;
-    let odb = transaction.odb()?;
+    let odb = transaction.odb();
 
     let mut sweep = josh_search::ChangeSweep::new(searchstring);
     let mut scache = transaction.search_cache();
 
     // Parents before children, so a commit can always reuse its parent's state.
-    let mut walk = josh_core::objects::RevWalk::new(&odb);
+    let mut walk = josh_core::objects::RevWalk::new(odb);
     walk.push(filtered_id)?;
     for id in walk.into_topo_vec(|_| false)?.into_iter().rev() {
-        let tree = josh_core::objects::CommitData::read(&odb, id)?.tree_id()?;
+        let tree = josh_core::objects::CommitData::read(odb, id)?.tree_id()?;
         let index_tree = josh_core::filter::apply(
             transaction,
             ifilterobj,
             josh_core::filter::Rewrite::from_tree(tree),
         )?
         .tree_id();
-        let parents = josh_core::git::read_parent_ids(&odb, id)?;
-        for event in sweep.process(&odb, &mut scache, id, &parents, tree, index_tree)? {
+        let parents = josh_core::git::read_parent_ids(odb, id)?;
+        for event in sweep.process(odb, &mut scache, id, &parents, tree, index_tree)? {
             println!("{} {} {} -> {}", id, event.path, event.before, event.after);
         }
     }
@@ -397,12 +398,11 @@ fn run_filter(args: Vec<String>) -> anyhow::Result<i32> {
     josh_core::update_refs(&transaction, updated_refs.clone());
 
     if let Some(searchstring) = args.get_one::<String>("search") {
-        // PORT: rev-parse stays on the git2 handle until flag day (gix rev_parse then).
         if args.get_flag("search-changes") {
             if !josh_core::filter::experimental_features_enabled() {
                 anyhow::bail!("--search-changes requires JOSH_EXPERIMENTAL_FEATURES=1");
             }
-            search_changes(&repo, &transaction, filterobj, &input_ref, searchstring)?;
+            search_changes(&transaction, filterobj, &input_ref, searchstring)?;
             return Ok(0);
         }
         if args.get_flag("search-history") {
