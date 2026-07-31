@@ -83,8 +83,16 @@ jobs:
         AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
       run: |
         set -o pipefail
-        target/release/josh compose run HEAD \
-          ":[::sidecars.josh=ci-sidecars.josh,:/]:+compose" 2>&1 \
+        # Inject sidecars (sccache S3 proxy) only when R2 credentials are
+        # available. Fork PRs and Dependabot PRs run without secrets, so they
+        # use the default filter which omits the sidecar and lets sccache fall
+        # back to the local disk cache.
+        if [[ -n "${AWS_ACCESS_KEY_ID:-}" ]]; then
+          COMPOSE_FILTER=":[::sidecars.josh=ci-sidecars.josh,:/]:+compose"
+        else
+          COMPOSE_FILTER=":/:+compose"
+        fi
+        target/release/josh compose run HEAD "$COMPOSE_FILTER" 2>&1 \
           | tee /tmp/compose-run.log
         if [[ -n "${AWS_ACCESS_KEY_ID:-}" ]] && grep -q SCCACHE_REMOTE_CACHE_MISSING /tmp/compose-run.log; then
           echo "::error::sccache remote cache was not used during the build"
