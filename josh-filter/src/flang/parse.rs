@@ -201,7 +201,7 @@ fn parse_item(pair: pest::iterators::Pair<Rule>) -> anyhow::Result<Filter> {
                         arg
                     ));
                 }
-                Ok(f.pattern(arg))
+                f.pattern(arg)
             } else {
                 // File case - error if source contains * (patterns not supported in source)
                 if let Some(ref source_arg) = second_arg

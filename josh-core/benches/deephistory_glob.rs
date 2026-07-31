@@ -173,7 +173,7 @@ impl GlobBench {
             }
 
             for pattern in [PATTERN_RECURSIVE, PATTERN_PREFIX, PATTERN_LITERAL] {
-                let filter = Filter::new().pattern(pattern);
+                let filter = Filter::new().pattern(pattern).expect("valid glob");
                 let filtered = josh_core::filter_commit(&transaction, filter, case.head)?;
                 let got = repo.find_commit(filtered)?.tree_id();
                 let (want, kept) = expected_tree(repo, case.head, &glob_pred(pattern))?;
@@ -191,7 +191,7 @@ impl GlobBench {
             // result must be exactly one top-level entry, `PREFIX_DIR`, whose oid equals the raw
             // head's subtree oid ("original path preserved, subtree taken wholesale") -- the shape
             // an identity/subtree fast path must reproduce bit-identically.
-            let filter = Filter::new().pattern(PATTERN_PREFIX);
+            let filter = Filter::new().pattern(PATTERN_PREFIX).expect("valid glob");
             let filtered = josh_core::filter_commit(&transaction, filter, case.head)?;
             let got_tree = repo.find_commit(filtered)?.tree()?;
             anyhow::ensure!(
@@ -365,7 +365,9 @@ fn deephistory_glob(c: &mut Criterion) {
     let bench = GlobBench::setup().expect("set up benchmark");
 
     // Group 1: cold-cache history scaling of the broad recursive pattern.
-    let filter = Filter::new().pattern(PATTERN_RECURSIVE);
+    let filter = Filter::new()
+        .pattern(PATTERN_RECURSIVE)
+        .expect("valid glob");
     let mut group = c.benchmark_group("deephistory_glob_recursive");
     // The longest history costs seconds per iteration, so keep Criterion at its minimum sample
     // count to bound the total wall-clock of a run.
@@ -398,7 +400,7 @@ fn deephistory_glob(c: &mut Criterion) {
     group.finish();
 
     // Group 2: cold-cache history scaling of the prefix-prunable pattern.
-    let filter = Filter::new().pattern(PATTERN_PREFIX);
+    let filter = Filter::new().pattern(PATTERN_PREFIX).expect("valid glob");
     let mut group = c.benchmark_group("deephistory_glob_prefix");
     group.sample_size(10);
     for case in &bench.cases {
@@ -424,7 +426,7 @@ fn deephistory_glob(c: &mut Criterion) {
 
     // Group 3: cold-cache history scaling of the literal-prefix pattern (only the final component
     // globs).
-    let filter = Filter::new().pattern(PATTERN_LITERAL);
+    let filter = Filter::new().pattern(PATTERN_LITERAL).expect("valid glob");
     let mut group = c.benchmark_group("deephistory_glob_literal");
     group.sample_size(10);
     for case in &bench.cases {
@@ -462,7 +464,7 @@ fn deephistory_glob(c: &mut Criterion) {
         let case = bench.cases.first().expect("at least one case");
         let transaction = bench.context.open().expect("open transaction");
         for (i, &(_, pattern)) in patterns.iter().enumerate() {
-            let filter = Filter::new().pattern(pattern);
+            let filter = Filter::new().pattern(pattern).expect("valid glob");
             let probe = make_edit_commit(&bench.repo.repo, case.head, u64::MAX - i as u64)
                 .expect("probe commit");
             let filtered =
@@ -482,7 +484,7 @@ fn deephistory_glob(c: &mut Criterion) {
     // throughput: the metric is time per incremental commit, not per history commit.
     group.sample_size(20);
     for &(label, pattern) in patterns {
-        let filter = Filter::new().pattern(pattern);
+        let filter = Filter::new().pattern(pattern).expect("valid glob");
         for case in &bench.cases {
             // Group-level warmup (once per id, NOT reset afterwards): filter the whole case
             // history so the per-iteration work is only the new tip. The cold groups above reset

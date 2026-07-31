@@ -88,7 +88,7 @@ fn filter_methods(builder: &mut MethodsBuilder) {
         this.starlark(path, *subfilter)
     }
     fn pattern(this: &StarlarkFilter, pattern: StringValue) -> anyhow::Result<StarlarkFilter> {
-        Ok(this.pattern(pattern))
+        this.pattern(pattern)
     }
     fn workspace(this: &StarlarkFilter, path: StringValue) -> anyhow::Result<StarlarkFilter> {
         Ok(this.workspace(path))
@@ -241,10 +241,10 @@ impl StarlarkFilter {
     }
 
     /// Pattern filter
-    pub fn pattern(&self, pattern: StringValue) -> StarlarkFilter {
-        StarlarkFilter {
-            filter: self.filter.pattern(pattern.as_str()),
-        }
+    pub fn pattern(&self, pattern: StringValue) -> anyhow::Result<StarlarkFilter> {
+        Ok(StarlarkFilter {
+            filter: self.filter.pattern(pattern.as_str())?,
+        })
     }
 
     /// Workspace filter

@@ -10,6 +10,7 @@ readme = "../README.md"
 edition = "2024"
 
 [dependencies]
+glob = "0.3.1"
 smallvec = "1.15.1"
 pest = "2.8.6"
 pest_derive = "2.8.6"

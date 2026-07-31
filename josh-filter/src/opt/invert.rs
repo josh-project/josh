@@ -25,7 +25,7 @@ pub fn invert(filter: Filter) -> anyhow::Result<Filter> {
                 Some(Op::File(source_path.clone(), dest_path.clone()))
             }
             Op::Prefix(path) => Some(Op::Subdir(path.clone())),
-            Op::Pattern(pattern) => Some(Op::Pattern(pattern.clone())),
+            Op::Pattern(glob) => Some(Op::Pattern(glob.clone())),
             Op::RegexReplace(_) => Some(Op::Nop),
             Op::Pin(_) => Some(Op::Nop),
             // Insert and TreeId are generative: they fabricate tree entries and consume no
