@@ -5,6 +5,7 @@
 
 :#image[:+images/sccache-proxy]
 :$port="3000"
+:$optional="true"
 
 env = :[
     :$PORT="3000"

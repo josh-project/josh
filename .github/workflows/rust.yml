@@ -86,7 +86,7 @@ jobs:
         target/release/josh compose run HEAD \
           ":[::sidecars.josh=ci-sidecars.josh,:/]:+compose" 2>&1 \
           | tee /tmp/compose-run.log
-        if grep -q SCCACHE_REMOTE_CACHE_MISSING /tmp/compose-run.log; then
+        if [[ -n "${AWS_ACCESS_KEY_ID:-}" ]] && grep -q SCCACHE_REMOTE_CACHE_MISSING /tmp/compose-run.log; then
           echo "::error::sccache remote cache was not used during the build"
           exit 1
         fi

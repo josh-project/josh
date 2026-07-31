@@ -40,25 +40,34 @@ fn resolve_passthrough(
 /// Start a sidecar worker via the runtime, which blocks until it is reachable.
 /// Any failure — missing passthrough credentials, environment preparation, worker
 /// start, or readiness timeout — is a hard error surfaced by the runtime; there is
-/// no soft-skip path.
+/// no soft-skip path, unless the sidecar is marked `optional`, in which case missing
+/// passthrough vars cause the sidecar to be skipped (returns `Ok(None)`).
 fn start_sidecar(
     repo: &git2::Repository,
     spec: &SidecarSpec,
     runtime: &dyn Runtime,
-) -> anyhow::Result<SidecarHandle> {
+) -> anyhow::Result<Option<SidecarHandle>> {
     let env_key = image::ensure_image(repo, spec.image, runtime)?;
 
-    let passthrough_env = resolve_passthrough(&spec.name, &spec.passthrough)?;
+    let passthrough_env = match resolve_passthrough(&spec.name, &spec.passthrough) {
+        Ok(env) => env,
+        Err(e) if spec.optional => {
+            eprintln!("optional sidecar '{}' skipped: {e}", spec.name);
+            return Ok(None);
+        }
+        Err(e) => return Err(e),
+    };
 
     let mut env_vars: Vec<(String, String)> = spec.env.clone();
     env_vars.extend(passthrough_env);
 
-    runtime.start_sidecar(SidecarArgs {
+    let handle = runtime.start_sidecar(SidecarArgs {
         name: spec.name.clone(),
         env: env_key,
         port: spec.port,
         env_vars,
-    })
+    })?;
+    Ok(Some(handle))
 }
 
 /// Run a workspace identified by `ws_tree`, recursively running all dependencies
@@ -166,12 +175,13 @@ pub fn run_container(
     // Start any declared sidecars and inject their addresses into the main container's env.
     // Any sidecar failure (missing creds, start error, readiness timeout) is fatal: tear
     // down already-started sidecars and bail so the misconfiguration surfaces equally
-    // on dev machines and in CI.
+    // on dev machines and in CI. Optional sidecars (optional=true) that are missing their
+    // passthrough vars are silently skipped instead of failing.
     let mut started_sidecars: Vec<SidecarHandle> = vec![];
     if !workspace_meta.sidecars.is_empty() {
         for spec in &workspace_meta.sidecars {
             match start_sidecar(repo, spec, runtime) {
-                Ok(handle) => {
+                Ok(Some(handle)) => {
                     for (k, v) in &spec.inject {
                         env_vars.push((
                             k.clone(),
@@ -179,6 +189,9 @@ pub fn run_container(
                         ));
                     }
                     started_sidecars.push(handle);
+                }
+                Ok(None) => {
+                    // Optional sidecar skipped due to missing passthrough vars.
                 }
                 Err(e) => {
                     for handle in &started_sidecars {

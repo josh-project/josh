@@ -28,6 +28,10 @@ pub struct SidecarSpec {
     /// starts (e.g. `{SIDECAR_IP}` is replaced with the sidecar's address).
     pub inject: Vec<(String, String)>,
     pub port: u16,
+    /// When true, missing passthrough env vars cause the sidecar to be skipped
+    /// rather than failing the build. Useful for optional services (e.g. a remote
+    /// cache proxy) that gracefully degrade when credentials are unavailable.
+    pub optional: bool,
 }
 
 pub struct WorkspaceMeta {
@@ -172,6 +176,9 @@ pub fn read_sidecars(
         let port: u16 = port_str
             .parse()
             .map_err(|_| anyhow::anyhow!("sidecar {name}: invalid port {port_str:?}"))?;
+        let optional = read_blob(repo, sidecar_tree, "optional")
+            .map(|s| s == "true")
+            .unwrap_or(false);
         out.push(SidecarSpec {
             name,
             image,
@@ -179,6 +186,7 @@ pub fn read_sidecars(
             passthrough: read_blob_entries(repo, sidecar_tree, "passthrough"),
             inject: read_blob_entries(repo, sidecar_tree, "inject"),
             port,
+            optional,
         });
     }
     Ok(out)
