@@ -209,8 +209,8 @@ impl Filter {
 
     /// Chain a filter that matches files by glob pattern
     /// Only files matching the pattern are included in the result
-    pub fn pattern(self, p: impl Into<String>) -> Filter {
-        self.chain(to_filter(Op::Pattern(p.into())))
+    pub fn pattern(self, p: impl AsRef<str>) -> anyhow::Result<Filter> {
+        Ok(self.chain(to_filter(Op::pattern(p.as_ref())?)))
     }
 
     /// Chain a filter that loads a workspace filter from a `workspace.josh` file

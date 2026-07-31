@@ -14,7 +14,7 @@ pub use josh_filter::flang::parse::{get_comments, parse};
 pub use josh_filter::opt;
 pub use josh_filter::opt::invert;
 pub use josh_filter::persist::{as_tree, from_tree};
-pub use josh_filter::persist::{peel_op, to_filter, to_op, to_ops};
+pub use josh_filter::persist::{peel_filter, peel_op, to_filter, to_op, to_ops};
 pub use josh_filter::{Filter, InsertContent, LazyRef, Op, RevMatch};
 pub use josh_filter::{as_file, pretty, spec};
 
@@ -1150,7 +1150,7 @@ fn get_link_roots<'a>(
     transaction: &'a cache::Transaction,
     tree: &'a git2::Tree<'a>,
 ) -> anyhow::Result<Vec<std::path::PathBuf>> {
-    let link_filter = to_filter(Op::Pattern("**/.link.josh".to_string()));
+    let link_filter = to_filter(Op::pattern("**/.link.josh")?);
     let link_tree = apply(transaction, link_filter, Rewrite::from_tree(tree.clone()))?;
 
     let mut roots = vec![];
@@ -1362,8 +1362,7 @@ pub fn apply<'a>(
             Ok(x.with_tree(t))
         }
 
-        Op::Pattern(pattern) => {
-            let pattern = glob::Pattern::new(pattern)?;
+        Op::Pattern(glob) => {
             let options = glob::MatchOptions {
                 case_sensitive: true,
                 require_literal_separator: true,
@@ -1373,8 +1372,8 @@ pub fn apply<'a>(
                 transaction,
                 "",
                 x.tree().id(),
-                &|path, isblob| isblob && (pattern.matches_path_with(path, options)),
-                to_filter(op.clone()).id(),
+                &|path, isblob| isblob && (glob.matches_path_with(path, options)),
+                peel_filter(filter).id(),
             )?))
         }
         Op::Insert(dest_path, content) => {

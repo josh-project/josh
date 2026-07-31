@@ -26,11 +26,16 @@ pub fn peel_op(filter: Filter) -> Op {
 }
 
 pub fn peel_op_ref(filter: Filter) -> &'static Op {
-    let op = to_op_ref(filter);
-    if let Op::Meta(_, f) = op {
-        peel_op_ref(*f)
+    to_op_ref(peel_filter(filter))
+}
+
+/// The filter stripped of `Meta` wrappers: the node whose op `peel_op_ref` returns. Its id is
+/// the meta-independent identity of the filter, e.g. the glob cache key of a `Pattern` op.
+pub fn peel_filter(filter: Filter) -> Filter {
+    if let Op::Meta(_, f) = to_op_ref(filter) {
+        peel_filter(*f)
     } else {
-        op
+        filter
     }
 }
 
@@ -443,8 +448,8 @@ impl<'a> InMemoryBuilder<'a> {
                 let params_tree = self.build_str_params(&[path.to_string_lossy().as_ref()]);
                 push_tree_entries(&mut entries, [("embed", params_tree)]);
             }
-            Op::Pattern(pattern) => {
-                let params_tree = self.build_str_params(&[pattern.as_ref()]);
+            Op::Pattern(glob) => {
+                let params_tree = self.build_str_params(&[glob.as_str()]);
                 push_tree_entries(&mut entries, [("pattern", params_tree)]);
             }
             Op::Workspace(path) => {
@@ -849,8 +854,7 @@ fn from_tree2(repo: &git2::Repository, tree_oid: git2::Oid) -> anyhow::Result<Op
                     .context("pattern: missing pattern")?
                     .id(),
             )?;
-            let pattern = std::str::from_utf8(pattern_blob.content())?.to_string();
-            Ok(Op::Pattern(pattern))
+            Op::pattern(std::str::from_utf8(pattern_blob.content())?)
         }
         "workspace" => {
             let inner = repo.find_tree(entry.id())?;

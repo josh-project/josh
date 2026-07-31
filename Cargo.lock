@@ -3202,6 +3202,7 @@ dependencies = [
  "git2",
  "gix-hash",
  "gix-object",
+ "glob",
  "indoc",
  "itertools 0.14.0",
  "josh-gix-ext",
