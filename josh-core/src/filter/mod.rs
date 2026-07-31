@@ -1368,13 +1368,19 @@ pub fn apply<'a>(
                 require_literal_separator: true,
                 require_literal_leading_dot: true,
             };
-            Ok(x.clone().with_tree(tree::remove_pred(
+            let input = x.tree().id();
+            let t = tree::remove_pred(
                 transaction,
-                "",
-                x.tree().id(),
-                &|path, isblob| isblob && (glob.matches_path_with(path, options)),
+                &mut String::new(),
+                input,
+                &|path, isblob| isblob && glob.matches_with(path, options),
                 peel_filter(filter).id(),
-            )?))
+            )?;
+            Ok(if t == input {
+                x
+            } else {
+                x.with_tree(repo.find_tree(t)?)
+            })
         }
         Op::Insert(dest_path, content) => {
             let (oid, mode, is_tree) = match content {
