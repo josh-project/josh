@@ -1,7 +1,6 @@
 use anyhow::{Context, anyhow};
 use std::io::IsTerminal;
 use std::path::PathBuf;
-use std::process::Stdio;
 
 /// Resolve the `input_ref` argument to a commit OID.
 ///
@@ -138,70 +137,105 @@ pub fn normalize_repo_path(repo_path: &std::path::Path) -> PathBuf {
     }
 }
 
-/// Spawn a git command directly to the terminal so users can see progress
-/// Falls back to captured output if not in a TTY environment
-pub fn spawn_git_command(
-    repo_path: &std::path::Path,
-    args: &[&str],
-    env: &[(&str, &str)],
-) -> anyhow::Result<()> {
-    log::debug!("spawn_git_command: {:?}", args);
+/// Spawn a git command. By default, when used in TTY environment,
+/// forwards stdout/stderr to user's TTY
+pub struct GitCommand {
+    repo_path: PathBuf,
+    args: Vec<String>,
+    env: Vec<(String, String)>,
+    stderr: Option<std::process::Stdio>,
+    stdout: Option<std::process::Stdio>,
 
-    // Does not flush any in-memory ODB; callers with a transaction in scope must use
-    // `Transaction::spawn_git` instead so the spawned `git` can see in-flight objects.
-    let cwd = normalize_repo_path(repo_path);
+    // Temp folder used in tests: used for having predictable output in prysk harnesses
+    test_tmp: Option<String>,
+}
 
-    let mut command = std::process::Command::new("git");
-    command.current_dir(cwd).args(args);
+impl GitCommand {
+    pub fn new(
+        repo_path: impl AsRef<std::path::Path>,
+        args: impl IntoIterator<Item = impl AsRef<str>>,
+        env: impl IntoIterator<Item = (impl AsRef<str>, impl AsRef<str>)>,
+    ) -> GitCommand {
+        static TEST_TMP: std::sync::OnceLock<Option<String>> = std::sync::OnceLock::new();
+        let test_tmp = TEST_TMP.get_or_init(|| std::env::var("TESTTMP").ok());
 
-    for (key, value) in env {
-        command.env(key, value);
+        GitCommand {
+            repo_path: repo_path.as_ref().into(),
+            args: args.into_iter().map(|a| a.as_ref().to_owned()).collect(),
+            env: env
+                .into_iter()
+                .map(|(a, b)| (a.as_ref().to_owned(), b.as_ref().to_owned()))
+                .collect(),
+            stderr: None,
+            stdout: None,
+            test_tmp: test_tmp.clone(),
+        }
     }
 
-    // Check if we're in a TTY environment
-    let is_tty = std::io::stdin().is_terminal() && std::io::stdout().is_terminal();
+    pub fn with_stdout(mut self, stdout: std::process::Stdio) -> Self {
+        self.stdout = Some(stdout);
+        self
+    }
 
-    let status = if is_tty {
-        // In TTY: inherit stdio so users can see progress
-        command
-            .stdin(Stdio::inherit())
-            .stdout(Stdio::inherit())
-            .stderr(Stdio::inherit());
+    pub fn with_stderr(mut self, stderr: std::process::Stdio) -> Self {
+        self.stderr = Some(stderr);
+        self
+    }
 
-        command.status()?.code()
-    } else {
-        // Not in TTY: capture output and print stderr (for tests, CI, etc.)
-        let output = command
-            .stdin(Stdio::null())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .output()
-            .context("failed to execute git command")?;
+    pub fn spawn(self) -> anyhow::Result<std::process::Output> {
+        tracing::debug!(args = ?self.args, "spawn");
 
-        // Print stderr if there's any output
-        if !output.stderr.is_empty() {
-            let output_str = String::from_utf8_lossy(&output.stderr);
-            let output_str = if let Ok(testtmp) = std::env::var("TESTTMP") {
-                output_str.replace(&testtmp, "${TESTTMP}")
-            } else {
-                output_str.to_string()
-            };
+        // Does not flush any in-memory ODB; callers with a transaction in scope must use
+        // `Transaction::spawn_git` instead so the spawned `git` can see in-flight objects.
+        let cwd = normalize_repo_path(&self.repo_path);
 
-            eprintln!("{}", output_str);
+        let mut command = std::process::Command::new("git");
+        command.current_dir(cwd).args(&self.args);
+
+        for (key, value) in self.env {
+            command.env(key, value);
         }
 
-        output.status.code()
-    };
+        let is_tty = std::io::stdin().is_terminal() && std::io::stdout().is_terminal();
 
-    match status.unwrap_or(1) {
-        0 => Ok(()),
-        code => {
-            let command = args.join(" ");
-            Err(anyhow!(
-                "Command exited with code {}: git {}",
-                code,
-                command
-            ))
+        let stdout = match self.stdout {
+            Some(stdout) => stdout,
+            None if is_tty => std::process::Stdio::inherit(),
+            None => std::process::Stdio::piped(),
+        };
+
+        let stderr = match self.stderr {
+            Some(stderr) => stderr,
+            None if is_tty => std::process::Stdio::inherit(),
+            None => std::process::Stdio::piped(),
+        };
+
+        command.stdout(stdout);
+        command.stderr(stderr);
+
+        let completion = command.output().context("failed to execute git command")?;
+
+        if !is_tty && !completion.stderr.is_empty() {
+            let stderr = String::from_utf8_lossy(&completion.stderr);
+            let stderr = if let Some(test_tmp) = self.test_tmp {
+                stderr.replace(&test_tmp, "${TESTTMP}")
+            } else {
+                stderr.to_string()
+            };
+
+            eprintln!("{}", stderr);
+        }
+
+        match completion.status.code().unwrap_or(1) {
+            0 => Ok(completion),
+            code => {
+                let command = self.args.join(" ");
+                Err(anyhow!(
+                    "Command exited with code {}: git {}",
+                    code,
+                    command
+                ))
+            }
         }
     }
 }

@@ -11,7 +11,7 @@ use josh_cli::commands::run::ComposeArgs;
 use josh_cli::commands::sync::SyncArgs;
 use josh_cli::config::{RemoteConfig, read_remote_config, write_remote_config};
 use josh_cli::forge::Forge;
-use josh_core::git::{normalize_repo_path, spawn_git_command};
+use josh_core::git::{GitCommand, normalize_repo_path};
 
 #[derive(Debug, clap::Parser)]
 #[command(
@@ -603,26 +603,28 @@ fn handle_remote_add_repo(args: &RemoteAddArgs, repo_path: &std::path::Path) -> 
     // Set up a git remote that points to "." with a refspec to fetch filtered refs
     // Add remote pointing to current directory
     let repo_remote = to_absolute_remote_url(&workdir.display().to_string())?;
-    spawn_git_command(
+    GitCommand::new(
         repo.path(),
-        &["remote", "add", &args.name, &repo_remote],
-        &[],
+        ["remote", "add", &args.name, &repo_remote],
+        std::iter::empty::<(&str, &str)>(),
     )
+    .spawn()
     .context("Failed to add git remote")?;
 
     // Set up namespace configuration for the remote
     let namespace = format!("josh-{}", args.name);
     let uploadpack_cmd = format!("env GIT_NAMESPACE={} git upload-pack", namespace);
 
-    spawn_git_command(
+    GitCommand::new(
         repo.path(),
-        &[
+        [
             "config",
             &format!("remote.{}.uploadpack", args.name),
             &uploadpack_cmd,
         ],
-        &[],
+        std::iter::empty::<(&str, &str)>(),
     )
+    .spawn()
     .context("Failed to set remote uploadpack")?;
 
     eprintln!(

@@ -231,13 +231,26 @@ impl Transaction {
         Ok(())
     }
 
-    /// Flush this transaction's in-memory objects, then run a `git` subprocess against its repo. Use
-    /// this in place of [`crate::git::spawn_git_command`] whenever a transaction is in scope: the
+    /// Flush this transaction's in-memory objects, then build a `git` subprocess against its repo.
+    /// Use this in place of [`crate::git::GitCommand::new`] whenever a transaction is in scope: the
     /// spawned `git` reads objects from disk and cannot see the in-memory backend, so the store must
     /// be flushed first.
-    pub fn spawn_git(&self, args: &[&str], env: &[(&str, &str)]) -> anyhow::Result<()> {
+    pub fn git_command(
+        &self,
+        args: &[&str],
+        env: &[(&str, &str)],
+    ) -> anyhow::Result<crate::git::GitCommand> {
         self.flush_mem_odb()?;
-        crate::git::spawn_git_command(self.repo.path(), args, env)
+        Ok(crate::git::GitCommand::new(
+            self.repo.path(),
+            args,
+            env.iter().copied(),
+        ))
+    }
+
+    /// Run a `git` subprocess with default stdio handling. See [`Transaction::git_command`].
+    pub fn spawn_git(&self, args: &[&str], env: &[(&str, &str)]) -> anyhow::Result<()> {
+        self.git_command(args, env)?.spawn().map(|_| ())
     }
 
     pub fn refname(&self, r: &str) -> String {
