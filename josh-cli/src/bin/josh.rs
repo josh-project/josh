@@ -5,11 +5,13 @@ use josh_cli::commands::auth::AuthArgs;
 use josh_cli::commands::cache::CacheArgs;
 use josh_cli::commands::changes::ListArgs;
 use josh_cli::commands::comment::CommentArgs;
+use josh_cli::commands::fetch::FetchArgs;
 use josh_cli::commands::link::LinkArgs;
+use josh_cli::commands::pull::PullArgs;
 use josh_cli::commands::push::{PublishArgs, PushArgs};
 use josh_cli::commands::run::ComposeArgs;
 use josh_cli::commands::sync::SyncArgs;
-use josh_cli::config::{RemoteConfig, read_remote_config, write_remote_config};
+use josh_cli::config::{read_remote_config, write_remote_config};
 use josh_cli::forge::Forge;
 use josh_core::git::{GitCommand, normalize_repo_path};
 
@@ -46,9 +48,6 @@ pub enum RepoCommand {
 
     /// Fetch from a remote (like `git fetch`) with projection-aware options
     Fetch(FetchArgs),
-
-    /// Fetch & integrate from a remote (like `git pull`) with projection-aware options
-    Pull(PullArgs),
 
     /// Push refs to a remote (like `git push`) with projection-aware options
     Push(PushArgs),
@@ -108,36 +107,6 @@ pub struct CloneArgs {
 }
 
 #[derive(Debug, clap::Parser)]
-pub struct PullArgs {
-    /// Remote name (or URL) to pull from
-    #[arg(short = 'r', long = "remote", default_value = "origin")]
-    pub remote: String,
-
-    /// Ref to pull (branch, tag, or commit-ish)
-    #[arg(short = 'R', long = "ref", default_value = "HEAD")]
-    pub rref: String,
-
-    /// Rebase the current branch on top of the upstream branch
-    #[arg(long = "rebase", action = clap::ArgAction::SetTrue)]
-    pub rebase: bool,
-
-    /// Automatically stash local changes before rebase
-    #[arg(long = "autostash", action = clap::ArgAction::SetTrue)]
-    pub autostash: bool,
-}
-
-#[derive(Debug, clap::Parser)]
-pub struct FetchArgs {
-    /// Remote name (or URL) to fetch from
-    #[arg(short = 'r', long = "remote", default_value = "origin")]
-    pub remote: String,
-
-    /// Ref to fetch (branch, tag, or commit-ish)
-    #[arg(short = 'R', long = "ref", default_value = "HEAD")]
-    pub rref: String,
-}
-
-#[derive(Debug, clap::Parser)]
 pub struct ChangesArgs {
     #[command(subcommand)]
     pub command: ChangesCommand,
@@ -147,6 +116,8 @@ pub struct ChangesArgs {
 pub enum ChangesCommand {
     /// Push each commit as an independent, minimal diff (stacked changes workflow)
     Publish(PublishArgs),
+    /// Fetch & integrate from a remote, rebase-style with autostash (stacked changes workflow)
+    Pull(PullArgs),
     /// List local changes that would be published (read-only)
     List(ListArgs),
     /// Add a comment to a change
@@ -283,14 +254,26 @@ fn run_repo(cmd: &RepoCommand, distributed_cache: bool) -> anyhow::Result<()> {
 
     match cmd {
         RepoCommand::Clone(args) => handle_clone(args, &transaction, distributed_cache),
-        RepoCommand::Fetch(args) => handle_fetch(args, &transaction, distributed_cache),
-        RepoCommand::Pull(args) => handle_pull(args, &transaction, distributed_cache),
+        RepoCommand::Fetch(args) => {
+            let remote = args.remote.clone();
+            let updates =
+                josh_cli::commands::fetch::handle_fetch(args, &transaction, distributed_cache)?;
+            for line in josh_cli::commands::pull::render_fetch_summary(
+                &updates,
+                &remote,
+                Some(&transaction),
+            )? {
+                eprintln!("{}", line);
+            }
+            eprintln!("Fetched from remote: {}", remote);
+            Ok(())
+        }
         RepoCommand::Push(args) => josh_cli::commands::push::handle_push(args, &transaction),
         RepoCommand::Changes(args) => match &args.command {
             ChangesCommand::Publish(publish_args) => {
                 josh_cli::commands::push::handle_publish(publish_args, &transaction)?;
                 let remote = publish_args.remote.as_deref().unwrap_or("origin");
-                handle_fetch(
+                josh_cli::commands::fetch::handle_fetch(
                     &FetchArgs {
                         remote: remote.to_string(),
                         rref: "HEAD".to_string(),
@@ -298,9 +281,13 @@ fn run_repo(cmd: &RepoCommand, distributed_cache: bool) -> anyhow::Result<()> {
                     &transaction,
                     distributed_cache,
                 )
+                .map(|_| ())
             }
             ChangesCommand::List(list_args) => {
                 josh_cli::commands::changes::handle_list(list_args, &transaction)
+            }
+            ChangesCommand::Pull(pull_args) => {
+                josh_cli::commands::pull::handle_pull(pull_args, &transaction, distributed_cache)
             }
             ChangesCommand::Comment(comment_args) => {
                 josh_cli::commands::comment::handle_comment(comment_args, &transaction)
@@ -374,7 +361,7 @@ fn handle_clone(
     };
 
     // Use handle_fetch to do the actual fetching and filtering
-    handle_fetch(&fetch_args, transaction, distributed_cache)?;
+    josh_cli::commands::fetch::handle_fetch(&fetch_args, transaction, distributed_cache)?;
 
     // Get the default branch name from the remote HEAD symref
     let default_branch = if args.branch == "HEAD" {
@@ -434,117 +421,6 @@ fn handle_clone(
     };
 
     println!("Cloned repository to: {}", output_dir);
-    Ok(())
-}
-
-fn handle_pull(
-    args: &PullArgs,
-    transaction: &josh_core::cache::Transaction,
-    distributed_cache: bool,
-) -> anyhow::Result<()> {
-    // Create FetchArgs from PullArgs
-    let fetch_args = FetchArgs {
-        remote: args.remote.clone(),
-        rref: args.rref.clone(),
-    };
-
-    // Use handle_fetch to do the actual fetching and filtering
-    handle_fetch(&fetch_args, transaction, distributed_cache)?;
-
-    // Now use actual git pull to integrate the changes
-    let mut git_args = vec!["pull"];
-
-    if args.rebase {
-        git_args.push("--rebase");
-    }
-
-    if args.autostash {
-        git_args.push("--autostash");
-    }
-
-    git_args.push(&args.remote);
-
-    transaction
-        .spawn_git(&git_args, &[])
-        .context("git pull failed")?;
-
-    eprintln!("Pulled from remote: {}", args.remote);
-
-    Ok(())
-}
-
-fn try_parse_symref(remote: &str, output: &str) -> Option<(String, String)> {
-    josh_cli::remote_ops::try_parse_symref(remote, output)
-}
-
-fn handle_fetch(
-    args: &FetchArgs,
-    transaction: &josh_core::cache::Transaction,
-    distributed_cache: bool,
-) -> anyhow::Result<()> {
-    let repo = transaction.repo();
-    let repo_path = normalize_repo_path(repo.path());
-
-    // Read the remote configuration from .git/josh/remotes/<name>.josh
-    let config = read_remote_config(&repo_path, &args.remote)
-        .with_context(|| format!("Failed to read remote config for '{}'", args.remote))?;
-    let filter = config.semantic_filter();
-    let RemoteConfig { url, ref_spec, .. } = config;
-
-    // First, fetch unfiltered refs to refs/josh/remotes/*
-    transaction
-        .spawn_git(&["fetch", &url, &ref_spec], &[])
-        .context("git fetch to josh/remotes failed")?;
-
-    // Warm the local cache from the remote before filtering
-    if distributed_cache {
-        if let Err(e) = josh_cli::commands::cache::fetch_remote_cache(transaction, &url, filter) {
-            eprintln!("Warning: could not fetch remote cache: {e}");
-        }
-    }
-
-    // Set up remote HEAD reference using git ls-remote
-    // This is the proper way to get the default branch from the remote
-    let head_ref = format!("refs/remotes/{}/HEAD", args.remote);
-
-    // Use git ls-remote --symref to get the default branch
-    // Parse the output to get the default branch name
-    // Output format: "ref: refs/heads/main\t<commit-hash>"
-    let output = std::process::Command::new("git")
-        .args(["ls-remote", "--symref", &url, "HEAD"])
-        .current_dir(normalize_repo_path(repo.path()))
-        .output()?;
-
-    if !output.status.success() {
-        return Err(anyhow::anyhow!(
-            "Failed to determine default branch: git ls-remote --symref failed for '{}'",
-            args.remote
-        ));
-    }
-
-    let ls_output = String::from_utf8(output.stdout)?;
-    let (default_branch, default_branch_ref) = try_parse_symref(&args.remote, &ls_output)
-        .ok_or_else(|| {
-            anyhow::anyhow!(
-                "Could not determine default branch from remote '{}': \
-                 no symref for HEAD in ls-remote output",
-                args.remote
-            )
-        })?;
-
-    repo.reference_symbolic(&head_ref, &default_branch_ref, true, "josh remote HEAD")?;
-    repo.reference_symbolic(
-        &format!("refs/namespaces/josh-{}/{}", args.remote, "HEAD"),
-        &format!("refs/heads/{}", default_branch),
-        true,
-        "josh remote HEAD",
-    )?;
-
-    josh_cli::remote_ops::apply_josh_filtering(transaction, filter, &args.remote, &default_branch)?;
-
-    // Note: fetch doesn't checkout, it just updates the refs
-    eprintln!("Fetched from remote: {}", args.remote);
-
     Ok(())
 }
 

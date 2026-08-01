@@ -66,7 +66,7 @@ Then push and pull to sync the workspace:
 
 ```shell
 josh push
-josh pull
+josh changes pull
 ```
 
 The mapped library has now appeared in the workspace:
@@ -124,7 +124,7 @@ Commit, push, and pull:
 git add workspace.josh
 git commit -m "Create workspace for application2"
 josh push
-josh pull
+josh changes pull
 ```
 
 The workspace now contains both libraries:
@@ -171,7 +171,7 @@ A developer working in `application1` can now pull the fix:
 
 ```shell
 cd ../application1
-josh pull
+josh changes pull
 ```
 
 The fix appears in `modules/lib1/` exactly as if it had been committed there directly:

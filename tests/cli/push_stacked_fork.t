@@ -24,13 +24,6 @@ Clone with a filter and a separate push-url pointing at the fork
 
   $ josh clone ${TESTTMP}/upstream :/sub1 filtered --push-url ${TESTTMP}/fork
   Added remote 'origin' with filter ':/sub1'
-  From file://${TESTTMP}/upstream
-   * [new branch]      master     -> refs/josh/remotes/origin/master
-  
-  From file://${TESTTMP}/filtered
-   * [new branch]      master     -> origin/master
-  
-  Fetched from remote: origin
   Already on 'master'
   
   Cloned repository to: ${TESTTMP}/filtered/
@@ -63,7 +56,6 @@ Publish the stack; branches are routed to the fork
    * [new branch]      39844a5762c65ef897eb0d7efcfa446d5d99fcea -> @heads/master/josh@example.com
   
   Pushed 5 ref(s) to origin
-  Fetched from remote: origin
 
 The upstream repo must NOT have received any change refs (only master)
 

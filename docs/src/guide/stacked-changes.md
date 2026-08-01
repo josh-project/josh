@@ -166,13 +166,13 @@ Once a PR is approved and its required checks pass, merge it through the forge's
 UI. Then sync your local branch to account for the merged commit:
 
 ```shell
-josh pull --rebase --autostash
+josh changes pull
 ```
 
-This rebases your remaining local commits on top of the updated upstream state.
-`--autostash` ensures any uncommitted changes are preserved across the operation. After
-pulling, the next `josh changes publish` will retarget and promote the next PR in the stack
-from draft to ready for review.
+This fast-forwards your branch to the updated upstream state, skipping local commits
+whose `Change:` footer already appears upstream (i.e. merged changes) and restacking
+your remaining changes on top. After pulling, the next `josh changes publish` will
+retarget and promote the next PR in the stack from draft to ready for review.
 
 ## Publishing from a fork
 

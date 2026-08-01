@@ -50,10 +50,10 @@ appear exactly as if they had been pushed directly to the monorepo.
 
 ## Pulling changes
 
-Use `josh pull` to fetch and integrate updates from upstream:
+Use `josh changes pull` to fetch and integrate updates from upstream:
 
 ```shell
-josh pull
+josh changes pull
 ```
 
 ## Cloning a part of a repository

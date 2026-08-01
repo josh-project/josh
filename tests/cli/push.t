@@ -27,13 +27,6 @@ Clone with josh filter
 
   $ josh clone ${TESTTMP}/remote :/sub1 filtered
   Added remote 'origin' with filter ':/sub1'
-  From file://${TESTTMP}/remote
-   * [new branch]      master     -> refs/josh/remotes/origin/master
-  
-  From file://${TESTTMP}/filtered
-   * [new branch]      master     -> origin/master
-  
-  Fetched from remote: origin
   Already on 'master'
   
   Cloned repository to: ${TESTTMP}/filtered/

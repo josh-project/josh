@@ -29,13 +29,6 @@ Test josh clone via SSH (no filter)
 
   $ josh clone ssh://git@127.0.0.1:9001/$(pwd)/repo1-bare.git :/ repo1-clone-josh
   Added remote 'origin' with filter ':/'
-  From ssh://127.0.0.1:9001/${TESTTMP}/repo1-bare
-   * [new branch]      master     -> refs/josh/remotes/origin/master
-  
-  From file://${TESTTMP}/repo1-clone-josh
-   * [new branch]      master     -> origin/master
-  
-  Fetched from remote: origin
   Already on 'master'
   
   Cloned repository to: ${TESTTMP}/repo1-clone-josh/
@@ -54,13 +47,6 @@ Test josh clone via SSH (with filter)
 
   $ josh clone ssh://git@127.0.0.1:9001/$(pwd)/repo1-bare.git :/subdir repo1-clone-josh-filtered
   Added remote 'origin' with filter ':/subdir'
-  From ssh://127.0.0.1:9001/${TESTTMP}/repo1-bare
-   * [new branch]      master     -> refs/josh/remotes/origin/master
-  
-  From file://${TESTTMP}/repo1-clone-josh-filtered
-   * [new branch]      master     -> origin/master
-  
-  Fetched from remote: origin
   Already on 'master'
   
   Cloned repository to: ${TESTTMP}/repo1-clone-josh-filtered/
@@ -76,13 +62,6 @@ Test josh clone via SSH (with explicit filter argument)
 
   $ josh clone ssh://git@127.0.0.1:9001/$(pwd)/repo1-bare.git :/subdir repo1-clone-josh-explicit
   Added remote 'origin' with filter ':/subdir'
-  From ssh://127.0.0.1:9001/${TESTTMP}/repo1-bare
-   * [new branch]      master     -> refs/josh/remotes/origin/master
-  
-  From file://${TESTTMP}/repo1-clone-josh-explicit
-   * [new branch]      master     -> origin/master
-  
-  Fetched from remote: origin
   Already on 'master'
   
   Cloned repository to: ${TESTTMP}/repo1-clone-josh-explicit/

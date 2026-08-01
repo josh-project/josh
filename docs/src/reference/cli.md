@@ -66,25 +66,6 @@ josh fetch [options]
 
 ---
 
-## josh pull
-
-Fetch and integrate changes from a remote. Equivalent to `git pull` but filter-aware.
-
-```
-josh pull [options]
-```
-
-**Options:**
-
-| Flag | Description |
-|------|-------------|
-| `-r`, `--remote <name>` | Remote name or URL to pull from (default: `origin`) |
-| `-R`, `--ref <ref>` | Ref to pull (default: `HEAD`) |
-| `--rebase` | Rebase the current branch on top of the upstream branch |
-| `--autostash` | Automatically stash local changes before rebasing |
-
----
-
 ## josh push
 
 Push commits back to the upstream repository. Josh reverses the filter and reconstructs
@@ -131,6 +112,42 @@ josh changes publish [<remote>] [<refspecs>...] [options]
 | `-f`, `--force` | Force-push (non-fast-forward) |
 | `--atomic` | Atomic push (all-or-nothing) |
 | `--dry-run` | Show what would be pushed without actually pushing |
+
+---
+
+## josh changes pull
+
+Fetch and integrate changes from a remote (stacked changes workflow). Like `git pull
+--rebase --autostash`, but filter-aware and change-aware.
+
+The fetch uses `git fetch --porcelain` (requires git >= 2.41) and prints a curated
+summary instead of git's per-ref noise: one line per updated branch, plus a change
+count for stacked-changes refs (`@changes/…`). A republished change only counts as
+updated when its content actually changed — compared via `git patch-id --stable` —
+so restacking without edits does not inflate the count.
+
+Integration is rebase-style and linear-only:
+
+- If the local branch can be fast-forwarded, it is fast-forwarded.
+- Local commits whose `Change-Id` trailer already appears in the updated upstream
+  history (e.g. landed by a merge queue) are skipped; the remaining changes are
+  restacked (cherry-picked) on top of the upstream tip.
+- Uncommitted changes are stashed before integrating and re-applied afterwards
+  (autostash).
+- Anything more complex — merge commits in the local stack, diverged commits
+  without a `Change-Id`, or restack conflicts — fails with an error and leaves the
+  branch untouched.
+
+```
+josh changes pull [options]
+```
+
+**Options:**
+
+| Flag | Description |
+|------|-------------|
+| `-r`, `--remote <name>` | Remote name or URL to pull from (default: `origin`) |
+| `-R`, `--ref <ref>` | Ref to pull (default: `HEAD`) |
 
 ---
 

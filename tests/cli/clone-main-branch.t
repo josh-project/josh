@@ -52,15 +52,6 @@ Test josh clone with main branch as default
 
   $ josh clone remote.git :/sub1 filtered-repo
   Added remote 'origin' with filter ':/sub1'
-  From file://${TESTTMP}/remote
-   * [new branch]      feature-branch -> refs/josh/remotes/origin/feature-branch
-   * [new branch]      main           -> refs/josh/remotes/origin/main
-  
-  From file://${TESTTMP}/filtered-repo
-   * [new branch]      feature-branch -> origin/feature-branch
-   * [new branch]      main           -> origin/main
-  
-  Fetched from remote: origin
   Switched to a new branch 'main'
   
   Cloned repository to: ${TESTTMP}/filtered-repo/
