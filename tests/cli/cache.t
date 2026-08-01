@@ -35,12 +35,7 @@ Initialize a local workspace and add the josh remote (no fetch yet)
 Build the distributed cache (applies the filter to already-fetched refs)
 
   $ josh fetch
-  From file://${TESTTMP}/remote/libs
-   * [new branch]      master     -> refs/josh/remotes/origin/master
-  
-  From file://${TESTTMP}/local1
-   * [new branch]      master     -> origin/master
-  
+  new branch master
   Fetched from remote: origin
 
   $ josh cache build

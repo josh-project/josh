@@ -86,13 +86,7 @@ Round-trip: filtering the pushed branch back through `:/libs/vendored`
 reproduces the original vendor commits exactly — same OIDs, lossless.
 
   $ josh fetch --remote central
-  From file://${TESTTMP}/central
-   * [new branch]      master      -> refs/josh/remotes/central/master
-   * [new branch]      vendored-in -> refs/josh/remotes/central/vendored-in
-  
-  From file://${TESTTMP}/vendored
-   * [new branch]      vendored-in -> central/vendored-in
-  
+  new branch vendored-in
   Fetched from remote: central
 
 

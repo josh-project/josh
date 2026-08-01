@@ -42,13 +42,6 @@
 
   $ josh clone ${TESTTMP}/remote1/libs :/sub1 libs
   Added remote 'origin' with filter ':/sub1'
-  From file://${TESTTMP}/remote1/libs
-   * [new branch]      master     -> refs/josh/remotes/origin/master
-  
-  From file://${TESTTMP}/libs
-   * [new branch]      master     -> origin/master
-  
-  Fetched from remote: origin
   Already on 'master'
   
   Cloned repository to: ${TESTTMP}/libs/
@@ -65,21 +58,10 @@
   $ josh remote add remote2 ${TESTTMP}/remote2/libs :/sub2
   Added remote 'remote2' with filter ':/sub2'
 
-  $ josh pull --remote remote2
-  From file://${TESTTMP}/remote2/libs
-   * [new branch]      master     -> refs/josh/remotes/remote2/master
-  
-  From file://${TESTTMP}/libs
-   * [new branch]      master     -> remote2/master
-  
-  Fetched from remote: remote2
-  You asked to pull from the remote 'remote2', but did not specify
-  a branch. Because this is not the default configured remote
-  for your current branch, you must specify a branch on the command line.
-  
-  Error: git pull failed
-  git pull failed
-  Command exited with code 1: git pull remote2
+  $ josh changes pull --remote remote2
+  new branch master
+  Error: the current branch tracks 'refs/remotes/origin/master', which does not belong to remote 'remote2'
+  the current branch tracks 'refs/remotes/origin/master', which does not belong to remote 'remote2'
   [1]
 
   $ tree
@@ -89,9 +71,8 @@
   
   1 directory, 2 files
 
-  $ josh pull
-  Fetched from remote: origin
-  Pulled from remote: origin
+  $ josh changes pull
+  Already up to date.
 
   $ tree
   .
