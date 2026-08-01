@@ -32,14 +32,22 @@ pub fn collect_pr_infos(repo: &git2::Repository, to_push: &[josh_changes::PushRe
     let mut by_change_id: HashMap<String, ByIdEntry> = HashMap::new();
     for push_ref in to_push {
         let branch = branch_name(&push_ref.ref_name).to_string();
-        if push_ref.ref_name.contains("@changes") {
-            let entry = by_change_id.entry(push_ref.change_id.clone()).or_default();
-            entry.head_branch = Some(branch);
-            entry.head_oid = Some(push_ref.oid);
-        } else if push_ref.ref_name.contains("@base") {
-            let entry = by_change_id.entry(push_ref.change_id.clone()).or_default();
-            entry.base_branch = Some(branch);
-            entry.base_oid = Some(push_ref.oid);
+        match josh_changes::StackedRef::parse(&push_ref.ref_name) {
+            Some(josh_changes::StackedRef::ChangeRef(josh_changes::StackedChangeRef::Change {
+                ..
+            })) => {
+                let entry = by_change_id.entry(push_ref.change_id.clone()).or_default();
+                entry.head_branch = Some(branch);
+                entry.head_oid = Some(push_ref.oid);
+            }
+            Some(josh_changes::StackedRef::ChangeRef(josh_changes::StackedChangeRef::Base {
+                ..
+            })) => {
+                let entry = by_change_id.entry(push_ref.change_id.clone()).or_default();
+                entry.base_branch = Some(branch);
+                entry.base_oid = Some(push_ref.oid);
+            }
+            _ => {}
         }
     }
 

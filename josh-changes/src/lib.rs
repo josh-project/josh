@@ -1,6 +1,9 @@
 use anyhow::anyhow;
 pub use josh_core::trailers::{commit_change_meta, parse_change_meta};
 
+mod refs;
+pub use refs::{StackedChangeRef, StackedRef};
+
 /// Which `refs/josh/...` ref holds a piece of change metadata.
 ///
 /// Scoped by the target branch of the change, so a single repo can host
@@ -296,21 +299,19 @@ fn changes_to_refs(
     let mut refs = vec![];
     for change in changes {
         if let Some(change_id) = change.id {
-            let ref_name = format!(
-                "refs/heads/@changes/{}/{}/{}",
-                baseref.replacen("refs/heads/", "", 1),
-                change.author,
-                change_id,
-            );
-            let base_ref_name = ref_name.replacen("refs/heads/@changes", "refs/heads/@base", 1);
+            let change_ref = StackedChangeRef::Change {
+                target: baseref.replacen("refs/heads/", "", 1),
+                author: change.author,
+                change_id: change_id.clone(),
+            };
             refs.push(PushRef {
-                ref_name,
+                ref_name: StackedRef::ChangeRef(change_ref.clone()).ref_name(),
                 oid: change.commit,
                 change_id: change_id.clone(),
             });
             if let Some(parent_sha) = repo.find_commit(change.commit)?.parent_ids().next() {
                 refs.push(PushRef {
-                    ref_name: base_ref_name,
+                    ref_name: StackedRef::ChangeRef(change_ref.as_base()).ref_name(),
                     oid: parent_sha,
                     change_id,
                 });
@@ -363,14 +364,15 @@ pub fn build_to_push(
 
             let mut push_refs = changes_to_refs(repo, baseref, author, changes)?;
 
+            let target = baseref.replacen("refs/heads/", "", 1);
             push_refs.push(PushRef {
-                ref_name: format!(
-                    "refs/heads/@heads/{}/{}",
-                    baseref.replacen("refs/heads/", "", 1),
-                    author,
-                ),
+                ref_name: StackedRef::StackHead {
+                    target: target.clone(),
+                    author: author.clone(),
+                }
+                .ref_name(),
                 oid: oid_to_push,
-                change_id: baseref.replacen("refs/heads/", "", 1),
+                change_id: target,
             });
 
             push_refs.sort_by(|a, b| a.ref_name.cmp(&b.ref_name));
