@@ -2319,10 +2319,17 @@ pub fn downstack(
     )?;
     let new_tree = repo.find_tree(new_tree_oid)?;
 
+    // First-parent is remapped onto the minimal base; any further parents are
+    // carried through untouched. A merge commit in the stack is treated as an
+    // ordinary linear change (diffed against its first parent), but the rebuilt
+    // change keeps its second-parent link so the merge survives the rewrite.
+    let mut new_parents = vec![current_base.id()];
+    new_parents.extend(change_commit.parent_ids().skip(1));
+
     let new_oid = history::rewrite_commit(
         repo,
         &change_commit,
-        &[current_base.id()],
+        &new_parents,
         Rewrite::from_tree(new_tree),
         history::GpgsigMode::Preserve,
     )?;
@@ -2719,5 +2726,77 @@ mod tests {
                 }
             }
         }
+    }
+
+    // `downstack` minimizes a change against a base by reparenting it onto a
+    // rebuilt minimal base. A merge commit in the stack is treated as an
+    // ordinary linear change (diffed against its first parent), but the rewrite
+    // must carry its remaining parents through so the merge survives. Non-merge
+    // changes stay single-parent.
+    #[test]
+    fn downstack_keeps_merge_second_parent() {
+        let td = tempfile::tempdir().unwrap();
+        let repo = git2::Repository::init_bare(td.path()).unwrap();
+
+        let mk_tree = |files: &[(&str, &str)]| -> git2::Oid {
+            let mut b = git2::build::TreeUpdateBuilder::new();
+            for (p, c) in files {
+                let oid = repo.blob(c.as_bytes()).unwrap();
+                b.upsert(*p, oid, git2::FileMode::Blob);
+            }
+            let empty = repo.treebuilder(None).unwrap().write().unwrap();
+            b.create_updated(&repo, &repo.find_tree(empty).unwrap())
+                .unwrap()
+        };
+
+        let sig = git2::Signature::new("t", "t@e", &git2::Time::new(0, 0)).unwrap();
+        let mk_commit = |tree: git2::Oid, parents: &[git2::Oid], msg: &str| -> git2::Oid {
+            let tree = repo.find_tree(tree).unwrap();
+            let parent_commits: Vec<git2::Commit> = parents
+                .iter()
+                .map(|p| repo.find_commit(*p).unwrap())
+                .collect();
+            let parent_refs: Vec<&git2::Commit> = parent_commits.iter().collect();
+            repo.commit(None, &sig, &sig, msg, &tree, &parent_refs)
+                .unwrap()
+        };
+
+        // base <- side, and a merge of the two is the change being published.
+        let base = mk_commit(mk_tree(&[("a", "1")]), &[], "base");
+        let side = mk_commit(mk_tree(&[("a", "1"), ("s", "s")]), &[base], "side work");
+        let merge = mk_commit(
+            mk_tree(&[("a", "1"), ("m", "m")]),
+            &[base, side],
+            "merge change",
+        );
+
+        cache::sled_load(td.path()).unwrap();
+        let cachestack = std::sync::Arc::new(
+            cache::CacheStack::new().with_backend(cache::SledCacheBackend::default()),
+        );
+        let ctx = cache::TransactionContext::new(td.path(), cachestack);
+        let t = ctx.open().unwrap();
+
+        let out = repo
+            .find_commit(downstack(t.repo(), &t, merge, base).unwrap())
+            .unwrap();
+        assert_eq!(out.parent_count(), 2, "merge change lost its second parent");
+        assert_eq!(
+            out.parent_id(0).unwrap(),
+            base,
+            "first parent should be the minimal base"
+        );
+        assert_eq!(
+            out.parent_id(1).unwrap(),
+            side,
+            "second parent should be carried through"
+        );
+
+        // A single-parent change is unaffected by the parent-preserving rewrite.
+        let linear = mk_commit(mk_tree(&[("a", "1"), ("n", "n")]), &[base], "linear change");
+        let out_linear = repo
+            .find_commit(downstack(t.repo(), &t, linear, base).unwrap())
+            .unwrap();
+        assert_eq!(out_linear.parent_count(), 1);
     }
 }
