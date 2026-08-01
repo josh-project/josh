@@ -35,7 +35,7 @@ members = [
     "deployment/josh-command-middleware",
 ]
 
-exclude = ["josh-gui", "devtools"]
+exclude = ["josh-gui", "devtools", "vendor/rust-lang/glob"]
 
 [profile.release]
 lto = "thin"
@@ -184,6 +184,7 @@ version = "0.4"
 # causing cargo to resolve josh-* crates from crates.io instead of locally.
 # This section forces cargo to always use the local versions.
 [patch.crates-io]
+glob = { path = "vendor/rust-lang/glob" }
 axum-cgi = { path = "axum-cgi" }
 josh-filter = { path = "josh-filter" }
 josh-gix-ext = { path = "josh-gix-ext" }
