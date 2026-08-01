@@ -134,11 +134,11 @@ pub fn handle_sync(
             let mut target_branch_shas: std::collections::HashMap<String, git2::Oid> =
                 std::collections::HashMap::new();
             {
-                let mut seen_targets: std::collections::HashSet<&str> =
+                let mut seen_targets: std::collections::HashSet<String> =
                     std::collections::HashSet::new();
                 for pr in &prs {
                     if let Some(target) = parse_changes_target(&pr.head_ref_name) {
-                        if seen_targets.insert(target) {
+                        if seen_targets.insert(target.clone()) {
                             let refspec = format!("refs/heads/{}", target);
                             let fetch_args: Vec<&str> =
                                 vec!["fetch", &github_url, "--no-tags", &refspec];
@@ -154,7 +154,7 @@ pub fn handle_sync(
                                 )?;
                             let sha_str = String::from_utf8(output.stdout)?.trim().to_string();
                             let oid = git2::Oid::from_str(&sha_str)?;
-                            target_branch_shas.insert(target.to_string(), oid);
+                            target_branch_shas.insert(target, oid);
                         }
                     }
                 }
@@ -230,9 +230,11 @@ pub fn handle_sync(
                 // Target branch for scoping: stacked changes encode the ultimate target
                 // in the head ref (@changes/<target>/...); otherwise fall back to the
                 // PR's immediate base.
-                let target_branch = parse_changes_target(&pr.head_ref_name)
-                    .unwrap_or_else(|| pr.base_ref_name.trim_start_matches("refs/heads/"))
-                    .to_string();
+                let target_branch = parse_changes_target(&pr.head_ref_name).unwrap_or_else(|| {
+                    pr.base_ref_name
+                        .trim_start_matches("refs/heads/")
+                        .to_string()
+                });
                 let remote_scope = josh_changes::ChangesRef::Remote {
                     remote: remote_name.clone(),
                     branch: target_branch.clone(),
@@ -242,7 +244,7 @@ pub fn handle_sync(
                     let change = if existing_change_id.is_some() {
                         let mut change = josh_changes::Change::new(repo, &pr_head);
                         let base = match parse_changes_target(&pr.head_ref_name)
-                            .and_then(|t| target_branch_shas.get(t))
+                            .and_then(|t| target_branch_shas.get(&t))
                         {
                             Some(tip) => repo.merge_base(*tip, pr_head.id())?,
                             None => repo.merge_base(target.id(), pr_head.id())?,
@@ -454,9 +456,12 @@ pub fn handle_sync(
                         .unwrap_or_else(|| format!("{}/{}/pull/{}", owner, repo_name, pr.number));
 
                     // Same target-branch derivation as the per-PR sync above.
-                    let target_branch = parse_changes_target(&pr.head_ref_name)
-                        .unwrap_or_else(|| pr.base_ref_name.trim_start_matches("refs/heads/"))
-                        .to_string();
+                    let target_branch =
+                        parse_changes_target(&pr.head_ref_name).unwrap_or_else(|| {
+                            pr.base_ref_name
+                                .trim_start_matches("refs/heads/")
+                                .to_string()
+                        });
                     let remote_scope = josh_changes::ChangesRef::Remote {
                         remote: remote_name.clone(),
                         branch: target_branch.clone(),
@@ -547,19 +552,12 @@ pub fn handle_sync(
     Ok(())
 }
 
-/// Extract the target branch name from a `@changes/<target>/<author>/<change-id>` ref name.
-fn parse_changes_target(head_ref_name: &str) -> Option<&str> {
-    let name = head_ref_name
-        .strip_prefix("refs/heads/@changes/")
-        .or_else(|| head_ref_name.strip_prefix("@changes/"))?;
-    let mut end = 0;
-    for part in name.split('/') {
-        if part.contains('@') {
-            return Some(&name[..end].trim_end_matches('/'));
-        }
-        end += part.len() + 1;
+/// Extract the target branch name from a stacked-changes ref name.
+fn parse_changes_target(head_ref_name: &str) -> Option<String> {
+    match josh_changes::StackedRef::parse(head_ref_name)? {
+        josh_changes::StackedRef::ChangeRef(change) => Some(change.target().to_string()),
+        josh_changes::StackedRef::StackHead { target, .. } => Some(target),
     }
-    None
 }
 
 /// Extract the PR number from a synthetic change ID of the form `{owner}/{repo}/pull/{N}`.
