@@ -201,10 +201,10 @@ Make sure all temporary namespace got removed
       |   |   `-- b06d7748772bdd407c5911c0ba02b0f5fb31a4
       |   |-- info
       |   `-- pack
+      |       |-- pack-24ce4c1953f799fe03bab1d9c04cf7ec9f96814d.idx
+      |       |-- pack-24ce4c1953f799fe03bab1d9c04cf7ec9f96814d.pack
       |       |-- pack-2f3daab2c2bc0fa3c2cb94022cd73dbeb79fba8b.idx
       |       |-- pack-2f3daab2c2bc0fa3c2cb94022cd73dbeb79fba8b.pack
-      |       |-- pack-c304c61c7328041fd1afafa4b6328b746cad31b1.idx
-      |       |-- pack-c304c61c7328041fd1afafa4b6328b746cad31b1.pack
       |       |-- pack-ed1b2e1285c87d628ed4fedf2e84338a0fa698e1.idx
       |       `-- pack-ed1b2e1285c87d628ed4fedf2e84338a0fa698e1.pack
       `-- refs

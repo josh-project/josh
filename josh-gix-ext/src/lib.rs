@@ -23,6 +23,10 @@ use std::collections::HashMap;
 
 use gix_object::WriteTo;
 
+pub mod revwalk;
+
+pub use revwalk::{RangeWalk, RevWalk};
+
 /// Map the kind of a raw object between the two libraries. Infallible: both enums cover exactly
 /// the four git object kinds.
 pub fn git2_kind(kind: gix_object::Kind) -> git2::ObjectType {
