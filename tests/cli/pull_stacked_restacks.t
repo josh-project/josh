@@ -41,8 +41,8 @@ Make a stack of three changes
   $ git add file4
   $ git commit -q -m "change 4" -m "Change-Id: 3333"
 
-  $ josh changes publish 2>&1 | tail -1
-  Pushed 7 ref(s) to origin
+  $ josh changes publish
+  published 3 changes (3 new)
 
 Emulate the merge queue landing the first two changes on master
 (landed commits keep the Change-Id trailer but differ from the local commits)

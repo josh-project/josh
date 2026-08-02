@@ -43,19 +43,7 @@ Make two stacked changes
 Publish the stack; branches are routed to the fork
 
   $ josh changes publish
-  Pushing 115b269a011d493259a125fa941fd790b903175f to origin/refs/heads/@base/master/josh@example.com/1234
-  Pushing 115b269a011d493259a125fa941fd790b903175f to origin/refs/heads/@base/master/josh@example.com/foo7
-  Pushing 478c423aa5b34433bcb04513deb8f788958099c1 to origin/refs/heads/@changes/master/josh@example.com/1234
-  Pushing 225aa057b057ef4fafbc2cd6916680e176dc4152 to origin/refs/heads/@changes/master/josh@example.com/foo7
-  Pushing 39844a5762c65ef897eb0d7efcfa446d5d99fcea to origin/refs/heads/@heads/master/josh@example.com
-  To file://${TESTTMP}/fork
-   * [new branch]      115b269a011d493259a125fa941fd790b903175f -> @base/master/josh@example.com/1234
-   * [new branch]      115b269a011d493259a125fa941fd790b903175f -> @base/master/josh@example.com/foo7
-   * [new branch]      478c423aa5b34433bcb04513deb8f788958099c1 -> @changes/master/josh@example.com/1234
-   * [new branch]      225aa057b057ef4fafbc2cd6916680e176dc4152 -> @changes/master/josh@example.com/foo7
-   * [new branch]      39844a5762c65ef897eb0d7efcfa446d5d99fcea -> @heads/master/josh@example.com
-  
-  Pushed 5 ref(s) to origin
+  published 2 changes (2 new)
 
 The upstream repo must NOT have received any change refs (only master)
 

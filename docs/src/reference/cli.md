@@ -96,6 +96,13 @@ Push each commit as an independent, minimal diff (stacked changes workflow). Eac
 with a [Change ID](../guide/stacked-changes.md) is pushed to its own ref and, when
 [forge integration](./forge.md) is configured, gets its own pull request.
 
+The push uses `git push --porcelain` and prints a curated summary instead of git's
+per-ref noise: a single `published N changes (M new)` line for the stacked-changes
+refs, with the internal `@base/…`/`@heads/…` refs hidden. Git's stderr (progress,
+rejection details) is still forwarded verbatim. When a pull request is created or
+updated and stderr is a terminal, the `PR #N` reference is printed as a clickable
+hyperlink (OSC 8; supported by iTerm2, kitty, WezTerm and others).
+
 ```
 josh changes publish [<remote>] [<refspecs>...] [options]
 ```

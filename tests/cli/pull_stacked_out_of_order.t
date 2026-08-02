@@ -48,8 +48,8 @@ Make a stack of three changes (C oldest, A newest)
 
 Publish the stack (three open PRs)
 
-  $ josh changes publish 2>&1 | tail -1
-  Pushed 7 ref(s) to origin
+  $ josh changes publish
+  published 3 changes (3 new)
 
 Emulate the merge queue landing ONLY the middle change B on master
 (the landed commit keeps the Change-Id trailer)
