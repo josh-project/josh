@@ -180,7 +180,7 @@ pub fn filter_commit(
     } else {
         tracing::trace!("apply_to_commit");
 
-        filter::apply_to_commit(filterobj, &original_commit, transaction)?
+        filter::apply_to_commit(filterobj, original_commit.id(), transaction)?
     };
 
     transaction.insert_ref(filterobj, oid, filter_commit);

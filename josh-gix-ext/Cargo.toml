@@ -14,3 +14,6 @@ anyhow.workspace = true
 git2.workspace = true
 gix-hash.workspace = true
 gix-object.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true

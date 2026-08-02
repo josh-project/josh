@@ -240,7 +240,6 @@ pub fn baseref_and_options(
 }
 
 fn split_changes(
-    repo: &git2::Repository,
     transaction: &josh_core::cache::Transaction,
     changes: std::collections::HashMap<git2::Oid, Change>,
 ) -> anyhow::Result<Vec<Change>> {
@@ -252,8 +251,7 @@ fn split_changes(
         .into_values()
         .map(|c| {
             let filter = josh_core::filter::Filter::new().downstack(c.base);
-            let commit = repo.find_commit(c.commit)?;
-            let new_oid = josh_core::filter::apply_to_commit(filter, &commit, transaction)?;
+            let new_oid = josh_core::filter::apply_to_commit(filter, c.commit, transaction)?;
             let mut result = c;
             result.commit = new_oid;
             Ok(result)
@@ -358,7 +356,7 @@ pub fn build_to_push(
     match push_mode {
         PushMode::Publish(author) => {
             let changes = get_changes(repo, oid_to_push, base_oid)?;
-            let changes = split_changes(repo, transaction, changes)?;
+            let changes = split_changes(transaction, changes)?;
 
             let mut push_refs = changes_to_refs(repo, baseref, author, changes)?;
 
@@ -556,7 +554,7 @@ pub fn build_gerrit_independent_push(
     base: git2::Oid,
 ) -> anyhow::Result<Vec<PushRef>> {
     let changes = get_changes(repo, tip, base)?;
-    let changes = split_changes(repo, transaction, changes)?;
+    let changes = split_changes(transaction, changes)?;
 
     // `get_changes` collects into a HashMap, so sort for a deterministic push order.
     let mut changes: Vec<Change> = changes.into_iter().collect();
@@ -600,7 +598,7 @@ pub fn sync_changes(
     branch: &str,
 ) -> anyhow::Result<Vec<Change>> {
     let changes = get_changes(repo, tip, base)?;
-    let changes = split_changes(repo, transaction, changes)?;
+    let changes = split_changes(transaction, changes)?;
     let scope = ChangesRef::Local {
         branch: branch.to_string(),
     };

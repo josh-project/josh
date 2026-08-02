@@ -246,9 +246,54 @@ impl GitCommand {
 pub fn read_parent_ids(repo: &git2::Repository, oid: git2::Oid) -> anyhow::Result<Vec<git2::Oid>> {
     let odb = repo.odb()?;
     let odb_commit = odb.read(oid)?;
-    debug_assert_eq!(odb_commit.kind(), git2::ObjectType::Commit);
+    // A hard error, not an assert: this is reachable from inside libgit2 revwalk callbacks,
+    // where unwinding across the FFI frame would abort.
+    if odb_commit.kind() != git2::ObjectType::Commit {
+        return Err(anyhow::anyhow!(
+            "object {} is not a commit but a {:?}",
+            oid,
+            odb_commit.kind()
+        ));
+    }
     gix_object::CommitRefIter::from_bytes(odb_commit.data(), gix_hash::Kind::Sha1)
         .parent_ids()
         .map(|p| Ok(git2::Oid::from_bytes(p.as_bytes())?))
         .collect()
+}
+
+/// Sibling of [`read_parent_ids`]: read a commit's tree OID from the raw ODB bytes via
+/// `gix_object::CommitRefIter`, replacing `find_commit(oid)?.tree_id()` without touching
+/// libgit2's commit parse cache.
+pub fn read_tree_id(repo: &git2::Repository, oid: git2::Oid) -> anyhow::Result<git2::Oid> {
+    let odb = repo.odb()?;
+    let odb_commit = odb.read(oid)?;
+    // Same hard-error rationale as read_parent_ids.
+    if odb_commit.kind() != git2::ObjectType::Commit {
+        return Err(anyhow::anyhow!(
+            "object {} is not a commit but a {:?}",
+            oid,
+            odb_commit.kind()
+        ));
+    }
+    let tree_id =
+        gix_object::CommitRefIter::from_bytes(odb_commit.data(), gix_hash::Kind::Sha1).tree_id()?;
+    Ok(git2::Oid::from_bytes(tree_id.as_bytes())?)
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn read_tree_id_matches_find_commit() {
+        let dir = tempfile::tempdir().unwrap();
+        let repo = git2::Repository::init(dir.path()).unwrap();
+        let sig = git2::Signature::new("t", "t@example.com", &git2::Time::new(0, 0)).unwrap();
+        let tree_id = repo.treebuilder(None).unwrap().write().unwrap();
+        let tree = repo.find_tree(tree_id).unwrap();
+        let commit_id = repo.commit(None, &sig, &sig, "test", &tree, &[]).unwrap();
+
+        assert_eq!(
+            super::read_tree_id(&repo, commit_id).unwrap(),
+            repo.find_commit(commit_id).unwrap().tree_id()
+        );
+    }
 }

@@ -155,6 +155,75 @@ pub fn write_tree_now(
     Ok(odb.write(git2::ObjectType::Tree, &buffer)?)
 }
 
+/// A commit's id + raw odb bytes, owned. Send + Sync plain data; never stored in a transaction.
+/// Parse-on-demand: `CommitRef`/`CommitRefIter` borrow `&self` and never outlive the frame.
+/// The internal representation can become `Arc<[u8]>` later without any signature change.
+#[derive(Clone, Debug)]
+pub struct CommitData {
+    id: git2::Oid,
+    bytes: Vec<u8>,
+}
+
+impl CommitData {
+    /// odb.read + kind check. Errors if the object is missing or not a commit -- matching
+    /// `find_commit`'s contract (both are hard errors there too). Reads go through the odb's
+    /// registered backends (memodb visibility preserved).
+    pub fn read(odb: &git2::Odb<'_>, oid: git2::Oid) -> anyhow::Result<CommitData> {
+        let obj = odb.read(oid)?;
+        if obj.kind() != git2::ObjectType::Commit {
+            return Err(anyhow::anyhow!(
+                "object {} is not a commit but a {:?}",
+                oid,
+                obj.kind()
+            ));
+        }
+        Ok(CommitData {
+            id: oid,
+            bytes: obj.data().to_vec(),
+        })
+    }
+
+    pub fn id(&self) -> git2::Oid {
+        self.id
+    }
+
+    /// The raw serialized commit, exactly as stored in the odb.
+    pub fn bytes(&self) -> &[u8] {
+        &self.bytes
+    }
+
+    /// Full parse of the raw bytes. Cheap (winnow over a few hundred bytes; no lock, no FFI),
+    /// so callers just parse again when they need a second look.
+    pub fn parsed(&self) -> anyhow::Result<gix_object::CommitRef<'_>> {
+        Ok(gix_object::CommitRef::from_bytes(
+            &self.bytes,
+            gix_hash::Kind::Sha1,
+        )?)
+    }
+
+    pub fn tree_id(&self) -> anyhow::Result<git2::Oid> {
+        let id =
+            gix_object::CommitRefIter::from_bytes(&self.bytes, gix_hash::Kind::Sha1).tree_id()?;
+        Ok(git2_oid(&id))
+    }
+
+    /// Binary parent ids read from the parsed commit header id array via
+    /// `CommitRefIter::parent_ids`; never does odb lookups.
+    pub fn parent_ids(&self) -> impl Iterator<Item = git2::Oid> + '_ {
+        gix_object::CommitRefIter::from_bytes(&self.bytes, gix_hash::Kind::Sha1)
+            .parent_ids()
+            .map(|p| git2_oid(&p))
+    }
+
+    pub fn first_parent_id(&self) -> Option<git2::Oid> {
+        self.parent_ids().next()
+    }
+
+    pub fn parent_count(&self) -> usize {
+        self.parent_ids().count()
+    }
+}
+
 /// An in-memory staging store over an optional read-through object database.
 ///
 /// Writes stage objects in a hash map; reads (via the [`gix_object::Find`] family) consult the
