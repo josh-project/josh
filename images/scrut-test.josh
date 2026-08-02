@@ -2,6 +2,6 @@ bases = :[
     :#BUILDER_IMAGE[:+images/rust-base]
 ]
 context = :[
-    :/images/prysk-test
+    :/images/scrut-test
     ::lfs-test-server/
 ]

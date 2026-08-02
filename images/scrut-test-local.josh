@@ -1,0 +1,4 @@
+bases = :[
+    :#BASE_IMAGE[:+images/scrut-test]
+]
+context = :/images/scrut-test-local

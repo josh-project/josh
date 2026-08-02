@@ -238,7 +238,7 @@ Test Adapt with submodule changes - add commits to submodule and update
   From ../submodule-repo
    * branch            HEAD       -> FETCH_HEAD
   $ git submodule update --remote libs
-  From /tmp/prysk-tests-*/link-submodules.t/submodule-repo (glob)
+  From /tmp/*/link-submodules.t/submodule-repo (glob)
      00c8fe9..3061af9  master     -> origin/master
   Submodule path 'libs': checked out '3061af908a0dc1417902fbd7208bb2b8dc354e6c'
   $ git add libs
@@ -611,4 +611,5 @@ Test Adapt on repo with .gitmodules but no actual submodule entries
   $ git commit -m "add file" 1> /dev/null
 
   $ cat > .gitmodules <<EOF
+  > EOF
   $ git add .gitmodules

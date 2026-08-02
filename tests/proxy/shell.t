@@ -1,4 +1,5 @@
   $ . ${TESTDIR}/setup_test_env.sh
+  $ disown -a
   $ kill -9 $(cat ${TESTTMP}/proxy_pid)
   $ josh-proxy --help
   Usage: josh-proxy [OPTIONS] --remote <REMOTE> --local <LOCAL>
@@ -19,6 +20,7 @@
     -V, --version                          Print version
 
   $ josh-proxy --port=8002 --local=../../tmp --remote=http://localhost:8001 > proxy.out 2>&1 &
+  $ disown
   $ sleep 1
   $ kill -9 $!
   $ grep "init mirror repo" proxy.out

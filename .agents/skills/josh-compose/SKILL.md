@@ -13,9 +13,9 @@ When `josh` is available in current environment, use that command. When it's not
 
 ## Test organization
 
-This repo uses `prysk` tool to run integration tests. `prysk` is a tool for snapshot testing.
-The tool takes .t files where shell commands are defined along with their expected output.
-When the output changes, `prysk` detects it.
+This repo uses `scrut` tool to run integration tests. `scrut` is a tool for snapshot testing.
+The tool takes cram-style .t files where shell commands are defined along with their expected output.
+When the output changes, `scrut` detects it.
 
 Test files live under `tests/` and are organized by subsystem:
 
@@ -49,15 +49,15 @@ Other values you can pass include:
 
 ### Inspecting test output
 
-The summary is printed at the end of `josh compose run` output:
+Each test file prints a result line in the `josh compose run` output:
 ```
-# Ran N tests, M skipped, K failed.
+Result: 1 document(s) with N testcase(s): N succeeded, 0 failed and 0 skipped
 ```
-Followed by `SUCCESS: <sha>` or `FAILED: <name>`.
+Followed at the end by `SUCCESS: <sha>` or `FAILED: <name>`.
 
-For failing tests, the prysk diff format shows the command that failed, expected output (indented), and actual
-output (preceded by `+`). The updated `.t` files are written back to the working directory, so you can inspect
-them directly.
+For failing tests, the scrut diff format shows the shell expression that failed, expected output (preceded
+by `-`), and actual output (preceded by `+`). The updated `.t` files are written back to the working
+directory, so you can inspect them directly.
 
 ### Iterating on a failing test
 
