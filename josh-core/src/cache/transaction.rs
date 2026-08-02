@@ -311,6 +311,60 @@ impl Transaction {
         format!("{}{}", ref_prefix, r)
     }
 
+    /// Resolve a fully qualified refname to its target oid, following symbolic refs. No
+    /// partial-name DWIM. `Ok(None)` if the ref (or the end of a symbolic chain) does not
+    /// exist. The target is not peeled: for an annotated tag ref this is the tag oid,
+    /// peeling is an object-store concern.
+    pub fn resolve_ref(&self, refname: &str) -> anyhow::Result<Option<git2::Oid>> {
+        match self.repo.refname_to_id(refname) {
+            Ok(oid) => Ok(Some(oid)),
+            Err(e) if e.code() == git2::ErrorCode::NotFound => Ok(None),
+            Err(e) => Err(e.into()),
+        }
+    }
+
+    /// Force-create or update a direct ref to point at `target`. An existing ref is
+    /// overwritten unconditionally; updating to the value a ref already has is a no-op.
+    pub fn update_ref(
+        &self,
+        refname: &str,
+        target: git2::Oid,
+        log_message: &str,
+    ) -> anyhow::Result<()> {
+        self.repo.reference(refname, target, true, log_message)?;
+        Ok(())
+    }
+
+    /// Run `cb` for every direct ref whose full name starts with `prefix`, byte-sorted by
+    /// name. `prefix` must consist of refname-valid characters. Symbolic refs and refs
+    /// with non-UTF-8 names are skipped. Errors from `cb` abort the iteration.
+    pub fn for_each_ref_prefixed(
+        &self,
+        prefix: &str,
+        mut cb: impl FnMut(&str, git2::Oid) -> anyhow::Result<()>,
+    ) -> anyhow::Result<()> {
+        // Glob metacharacters (*?[\) are all invalid in refnames, so appending `*` — which
+        // matches across `/` — turns the glob walk into plain prefix iteration.
+        debug_assert!(
+            !prefix.contains(['*', '?', '[', '\\']),
+            "prefix must consist of refname-valid characters"
+        );
+        let mut refs = vec![];
+        for reference in self.repo.references_glob(&format!("{}*", prefix))? {
+            let reference = reference?;
+            if let (Ok(name), Some(target)) = (reference.name(), reference.target()) {
+                refs.push((name.to_owned(), target));
+            }
+        }
+        // git2 yields loose refs in filesystem order followed by packed ones; sorting makes
+        // the order part of the API contract instead of an artifact of the backend.
+        refs.sort();
+        for (name, target) in refs {
+            cb(&name, target)?;
+        }
+        Ok(())
+    }
+
     pub fn misses(&self) -> usize {
         self.t2.borrow().misses
     }
@@ -652,5 +706,149 @@ impl josh_search::IndexCache for Transaction {
 
     fn set_index(&self, tree: git2::Oid, index: git2::Oid) {
         self.insert_trigram_index(tree, index)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn test_transaction() -> (tempfile::TempDir, Transaction) {
+        // The sled cache is a process-global, so it gets one directory for the whole test
+        // binary rather than one per transaction.
+        static SLED_DIR: std::sync::LazyLock<tempfile::TempDir> = std::sync::LazyLock::new(|| {
+            let dir = tempfile::tempdir().unwrap();
+            crate::cache::sled_load(dir.path()).unwrap();
+            dir
+        });
+        let _ = &*SLED_DIR;
+
+        let dir = tempfile::tempdir().unwrap();
+        git2::Repository::init_bare(dir.path()).unwrap();
+        let context = TransactionContext::new(
+            dir.path(),
+            std::sync::Arc::new(crate::cache::CacheStack::new()),
+        );
+        let transaction = context.open().unwrap();
+        (dir, transaction)
+    }
+
+    fn commit(transaction: &Transaction, msg: &str) -> git2::Oid {
+        let repo = transaction.repo();
+        let tree = repo
+            .find_tree(repo.treebuilder(None).unwrap().write().unwrap())
+            .unwrap();
+        let sig = git2::Signature::new("t", "t@example.com", &git2::Time::new(0, 0)).unwrap();
+        repo.commit(None, &sig, &sig, msg, &tree, &[]).unwrap()
+    }
+
+    #[test]
+    fn resolve_ref_missing_is_none() {
+        let (_dir, transaction) = test_transaction();
+        assert_eq!(transaction.resolve_ref("refs/heads/missing").unwrap(), None);
+    }
+
+    #[test]
+    fn resolve_ref_follows_symbolic_chain() {
+        let (_dir, transaction) = test_transaction();
+        let oid = commit(&transaction, "a");
+        transaction
+            .update_ref("refs/heads/main", oid, "test")
+            .unwrap();
+        transaction
+            .repo()
+            .reference_symbolic("refs/josh/sym", "refs/heads/main", true, "test")
+            .unwrap();
+
+        assert_eq!(
+            transaction.resolve_ref("refs/heads/main").unwrap(),
+            Some(oid)
+        );
+        assert_eq!(transaction.resolve_ref("refs/josh/sym").unwrap(), Some(oid));
+    }
+
+    #[test]
+    fn resolve_ref_dangling_symref_is_none() {
+        let (_dir, transaction) = test_transaction();
+        transaction
+            .repo()
+            .reference_symbolic("refs/josh/dangling", "refs/heads/missing", true, "test")
+            .unwrap();
+        assert_eq!(transaction.resolve_ref("refs/josh/dangling").unwrap(), None);
+    }
+
+    #[test]
+    fn update_ref_overwrites_unconditionally() {
+        let (_dir, transaction) = test_transaction();
+        let a = commit(&transaction, "a");
+        let b = commit(&transaction, "b");
+        transaction
+            .update_ref("refs/heads/main", a, "test")
+            .unwrap();
+        transaction
+            .update_ref("refs/heads/main", b, "test")
+            .unwrap();
+        assert_eq!(transaction.resolve_ref("refs/heads/main").unwrap(), Some(b));
+        // Re-writing the current value succeeds as a no-op.
+        transaction
+            .update_ref("refs/heads/main", b, "test")
+            .unwrap();
+        assert_eq!(transaction.resolve_ref("refs/heads/main").unwrap(), Some(b));
+    }
+
+    #[test]
+    fn for_each_ref_prefixed_is_sorted_and_skips_symbolic() {
+        let (dir, transaction) = test_transaction();
+        let oid = commit(&transaction, "a");
+        // Insertion order deliberately unsorted; refs/josh-x/ must not match the
+        // refs/josh/ prefix; the symbolic ref sorts inside the range but is skipped.
+        transaction.update_ref("refs/josh/b", oid, "test").unwrap();
+        transaction.update_ref("refs/josh/a", oid, "test").unwrap();
+        transaction
+            .update_ref("refs/josh-x/c", oid, "test")
+            .unwrap();
+        transaction
+            .repo()
+            .reference_symbolic("refs/josh/aa", "refs/josh/a", true, "test")
+            .unwrap();
+
+        // Pack `refs/josh/a` by hand (git2 exposes no pack-refs API). Loose refs alone come
+        // pre-sorted out of the filesystem walk; only a packed ref sorting before a loose
+        // one catches removal of the explicit sort.
+        std::fs::write(
+            dir.path().join("packed-refs"),
+            format!(
+                "# pack-refs with: peeled fully-peeled sorted\n{} refs/josh/a\n",
+                oid
+            ),
+        )
+        .unwrap();
+        std::fs::remove_file(dir.path().join("refs/josh/a")).unwrap();
+
+        let mut seen = vec![];
+        transaction
+            .for_each_ref_prefixed("refs/josh/", |name, target| {
+                assert_eq!(target, oid);
+                seen.push(name.to_owned());
+                Ok(())
+            })
+            .unwrap();
+        assert_eq!(seen, ["refs/josh/a", "refs/josh/b"]);
+    }
+
+    #[test]
+    fn for_each_ref_prefixed_propagates_callback_errors() {
+        let (_dir, transaction) = test_transaction();
+        let oid = commit(&transaction, "a");
+        transaction.update_ref("refs/josh/a", oid, "test").unwrap();
+        transaction.update_ref("refs/josh/b", oid, "test").unwrap();
+
+        let mut calls = 0;
+        let result = transaction.for_each_ref_prefixed("refs/josh/", |_, _| {
+            calls += 1;
+            Err(anyhow::anyhow!("stop"))
+        });
+        assert!(result.is_err());
+        assert_eq!(calls, 1);
     }
 }

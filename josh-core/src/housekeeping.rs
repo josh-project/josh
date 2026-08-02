@@ -1,5 +1,5 @@
 use crate::*;
-use anyhow::{Context, anyhow};
+use anyhow::anyhow;
 use itertools::Itertools;
 use std::collections::{BTreeSet, HashMap};
 use std::sync::LazyLock;
@@ -11,7 +11,7 @@ static KNOWN_FILTERS: LazyLock<std::sync::Mutex<KnownViews>> =
     LazyLock::new(|| std::sync::Mutex::new(std::collections::HashMap::new()));
 
 pub fn list_refs(
-    repo: &git2::Repository,
+    transaction: &cache::Transaction,
     upstream_repo: &str,
 ) -> anyhow::Result<Vec<(String, git2::Oid)>> {
     let mut refs = vec![];
@@ -20,24 +20,21 @@ pub fn list_refs(
         .iter()
         .join("/");
 
-    for glob in [
-        format!("{}/refs/heads/*", &prefix),
-        format!("{}/refs/tags/*", &prefix),
+    for iter_prefix in [
+        format!("{}/refs/heads/", &prefix),
+        format!("{}/refs/tags/", &prefix),
     ]
     .iter()
     {
-        for reference in repo.references_glob(glob)? {
-            let reference = reference.context("unable to obtain reference")?;
+        transaction.for_each_ref_prefixed(iter_prefix, |name, target| {
+            let name = name
+                .strip_prefix(&prefix)
+                .and_then(|name| name.strip_prefix('/'))
+                .ok_or_else(|| anyhow!("bug: unexpected result of prefix iteration"))?;
 
-            if let (Ok(name), Some(target)) = (reference.name(), reference.target()) {
-                let name = name
-                    .strip_prefix(&prefix)
-                    .and_then(|name| name.strip_prefix('/'))
-                    .ok_or_else(|| anyhow!("bug: unexpected result of a glob"))?;
-
-                refs.push((name.to_owned(), target))
-            }
-        }
+            refs.push((name.to_owned(), target));
+            Ok(())
+        })?;
     }
 
     Ok(refs)
@@ -58,25 +55,25 @@ pub fn remember_filter(upstream_repo: &str, filter_spec: &str) {
 }
 
 pub fn default_from_to(
-    repo: &git2::Repository,
+    transaction: &cache::Transaction,
     namespace: &str,
     upstream_repo: &str,
     filter_spec: &str,
-) -> Vec<(String, String)> {
+) -> anyhow::Result<Vec<(String, String)>> {
     let mut refs = vec![];
 
-    for glob in [
-        format!("refs/josh/upstream/{}/refs/heads/*", &to_ns(upstream_repo)),
-        format!("refs/josh/upstream/{}/refs/tags/*", &to_ns(upstream_repo)),
+    for prefix in [
+        format!("refs/josh/upstream/{}/refs/heads/", &to_ns(upstream_repo)),
+        format!("refs/josh/upstream/{}/refs/tags/", &to_ns(upstream_repo)),
     ]
     .iter()
     {
-        for refname in repo.references_glob(glob).unwrap().names() {
-            let refname = refname.unwrap();
+        transaction.for_each_ref_prefixed(prefix, |refname, _| {
             let to_ref = refname.replacen("refs/josh/upstream", "refs/namespaces", 1);
             let to_ref = to_ref.replacen(&to_ns(upstream_repo), namespace, 1);
             refs.push((refname.to_owned(), to_ref.clone()));
-        }
+            Ok(())
+        })?;
     }
 
     // no need to remember the nop filter since we already keep a reference to
@@ -91,18 +88,20 @@ pub fn default_from_to(
         known_f.1.insert(filter_spec.to_string());
     }
 
-    refs
+    Ok(refs)
 }
 
 pub fn memorize_from_to(
-    repo: &git2::Repository,
+    transaction: &cache::Transaction,
     namespace: &str,
     upstream_repo: &str,
 ) -> anyhow::Result<((String, git2::Oid), String)> {
     let from = format!("refs/josh/upstream/{}/HEAD", &to_ns(upstream_repo));
     let to_ref = format!("refs/{}/HEAD", &namespace);
 
-    let oid = repo.revparse_single(&from)?.id();
+    let oid = transaction
+        .resolve_ref(&from)?
+        .ok_or_else(|| anyhow!("missing ref: {}", from))?;
     Ok(((from, oid), to_ref))
 }
 
@@ -124,11 +123,10 @@ pub fn discover_filter_candidates(transaction: &cache::Transaction) -> anyhow::R
     let trace_s = span!(Level::TRACE, "discover_filter_candidates");
     let _e = trace_s.enter();
 
-    let refname = "refs/josh/upstream/*.git/HEAD".to_string();
-
-    for reference in repo.references_glob(&refname)? {
-        let r = reference?;
-        let name = r.name()?;
+    transaction.for_each_ref_prefixed("refs/josh/upstream/", |name, target| {
+        if !name.ends_with(".git/HEAD") {
+            return Ok(());
+        }
         tracing::trace!("find: {}", name);
         let name = UpstreamRef::from_str(name)
             .ok_or_else(|| anyhow!("not a ns"))?
@@ -140,21 +138,23 @@ pub fn discover_filter_candidates(transaction: &cache::Transaction) -> anyhow::R
             .entry(name.clone())
             .or_insert_with(|| (git2::Oid::ZERO_SHA1, BTreeSet::new()));
 
-        if let Some(target) = r.target()
-            && known_f.0 != target
-        {
-            let hs = find_all_workspaces_and_subdirectories(&r.peel_to_tree()?)?;
+        if known_f.0 != target {
+            let tree = repo
+                .find_object(target, None)?
+                .peel(git2::ObjectType::Tree)?;
+            let hs = find_all_workspaces_and_subdirectories(
+                tree.as_tree().ok_or_else(|| anyhow!("not a tree"))?,
+            )?;
             known_f.0 = target;
             for i in hs {
                 known_f.1.insert(i);
             }
         }
-    }
+        Ok(())
+    })?;
 
-    let refname = "josh/filtered/*.git/*/HEAD".to_string();
-    for reference in repo.references_glob(&refname)? {
-        let r = reference?;
-        let name = r.name()?;
+    // This prefix is missing the leading "refs/" and so has never matched anything.
+    transaction.for_each_ref_prefixed("josh/filtered/", |name, _| {
         tracing::trace!("known: {}", name);
         let filtered = FilteredRefRegex::from_str(name).ok_or_else(|| anyhow!("not a ns"))?;
 
@@ -163,7 +163,8 @@ pub fn discover_filter_candidates(transaction: &cache::Transaction) -> anyhow::R
             .or_insert_with(|| (git2::Oid::ZERO_SHA1, BTreeSet::new()))
             .1
             .insert(from_ns(&filtered.filter_spec));
-    }
+        Ok(())
+    })?;
 
     Ok(())
 }
@@ -198,11 +199,14 @@ pub fn get_info(
 ) -> anyhow::Result<String> {
     let _trace_s = span!(Level::TRACE, "get_info");
 
-    let obj = transaction
+    let refname = transaction.refname(headref);
+    let oid = transaction
+        .resolve_ref(&refname)?
+        .ok_or_else(|| anyhow!("missing ref: {}", refname))?;
+    let commit = transaction
         .repo()
-        .revparse_single(&transaction.refname(headref))?;
-
-    let commit = obj.peel_to_commit()?;
+        .find_object(oid, None)?
+        .peel_to_commit()?;
 
     let mut meta = HashMap::new();
     meta.insert("sha1".to_owned(), "".to_owned());
@@ -261,7 +265,7 @@ pub fn refresh_known_filters(
             tracing::trace!("background rebuild: {:?} {:?}", upstream_repo, filter_spec);
 
             if let Ok((from, to_ref)) = memorize_from_to(
-                transaction_mirror.repo(),
+                transaction_mirror,
                 &to_filtered_ref(upstream_repo, filter_spec),
                 upstream_repo,
             ) {

@@ -226,11 +226,7 @@ pub fn update_refs(transaction: &cache::Transaction, updated: Vec<(String, git2:
             continue;
         }
 
-        if let Err(e) = transaction
-            .repo()
-            .reference(&refn, filtered_commit, true, "update_refs")
-            .map(|_| ())
-        {
+        if let Err(e) = transaction.update_ref(&refn, filtered_commit, "update_refs") {
             tracing::error!(
                 error = %e,
                 filtered_commit = %filtered_commit,
