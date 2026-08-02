@@ -206,7 +206,7 @@ pub fn get_info(
 
     let mut meta = HashMap::new();
     meta.insert("sha1".to_owned(), "".to_owned());
-    let filtered = filter::apply_to_commit(filter, &commit, transaction)?;
+    let filtered = filter::apply_to_commit(filter, commit.id(), transaction)?;
 
     let parent_ids = |commit: &git2::Commit| {
         commit

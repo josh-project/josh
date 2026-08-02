@@ -155,6 +155,136 @@ pub fn write_tree_now(
     Ok(odb.write(git2::ObjectType::Tree, &buffer)?)
 }
 
+/// A commit's id + raw odb bytes, owned. Send + Sync plain data; never stored in a transaction.
+/// Parse-on-demand: `CommitRef`/`CommitRefIter` borrow `&self` and never outlive the frame.
+/// The internal representation can become `Arc<[u8]>` later without any signature change.
+#[derive(Clone, Debug)]
+pub struct CommitData {
+    id: git2::Oid,
+    bytes: Vec<u8>,
+}
+
+impl CommitData {
+    /// odb.read + kind check. Errors if the object is missing or not a commit -- matching
+    /// `find_commit`'s contract (both are hard errors there too). Reads go through the odb's
+    /// registered backends (memodb visibility preserved).
+    pub fn read(odb: &git2::Odb<'_>, oid: git2::Oid) -> anyhow::Result<CommitData> {
+        let obj = odb.read(oid)?;
+        if obj.kind() != git2::ObjectType::Commit {
+            return Err(anyhow::anyhow!(
+                "object {} is not a commit but a {:?}",
+                oid,
+                obj.kind()
+            ));
+        }
+        Ok(CommitData {
+            id: oid,
+            bytes: obj.data().to_vec(),
+        })
+    }
+
+    pub fn id(&self) -> git2::Oid {
+        self.id
+    }
+
+    /// The raw serialized commit, exactly as stored in the odb.
+    pub fn bytes(&self) -> &[u8] {
+        &self.bytes
+    }
+
+    /// Full parse of the raw bytes. Cheap (winnow over a few hundred bytes; no lock, no FFI),
+    /// so callers just parse again when they need a second look.
+    pub fn parsed(&self) -> anyhow::Result<gix_object::CommitRef<'_>> {
+        Ok(gix_object::CommitRef::from_bytes(
+            &self.bytes,
+            gix_hash::Kind::Sha1,
+        )?)
+    }
+
+    pub fn tree_id(&self) -> anyhow::Result<git2::Oid> {
+        let id =
+            gix_object::CommitRefIter::from_bytes(&self.bytes, gix_hash::Kind::Sha1).tree_id()?;
+        Ok(git2_oid(&id))
+    }
+
+    /// Binary parent ids via `CommitRefIter::parent_ids`. Identical to git2's `ParentIds`,
+    /// which reads the parsed id array and never does odb lookups.
+    pub fn parent_ids(&self) -> impl Iterator<Item = git2::Oid> + '_ {
+        gix_object::CommitRefIter::from_bytes(&self.bytes, gix_hash::Kind::Sha1)
+            .parent_ids()
+            .map(|p| git2_oid(&p))
+    }
+
+    pub fn first_parent_id(&self) -> Option<git2::Oid> {
+        self.parent_ids().next()
+    }
+
+    pub fn parent_count(&self) -> usize {
+        self.parent_ids().count()
+    }
+}
+
+/// libgit2-exact signature name/email extraction from the RAW header field value (the
+/// `CommitRef.author` / `.committer` bytes -- never gix's `author()` accessor, whose
+/// whitespace trimming differs from libgit2's crud trimming).
+///
+/// Ports `git_signature__parse` + `extract_trimmed` from libgit2 1.9.2 `signature.c`:
+/// the *last* `<` and last `>` (memrchr) over the whole raw field (timestamp included)
+/// delimit the email; missing or misordered brackets are an error (libgit2 fails the whole
+/// commit parse there, so `find_commit` errors today -- callers building a `Rewrite` must
+/// keep erroring); name and email are crud-trimmed from both ends.
+///
+/// Returns `Ok(None)` when either trimmed field is invalid UTF-8: git2's `name()`/`email()`
+/// return `None` then, and the caller's `.zip()` collapsed the pair, which makes
+/// `rewrite_commit` keep the ORIGINAL raw signature bytes. Load-bearing for byte-identity.
+pub fn signature_name_email(
+    raw: &gix_object::bstr::BStr,
+) -> anyhow::Result<Option<(String, String)>> {
+    // is_crud from libgit2 signature.c: control chars/space plus a fixed set of separators.
+    fn is_crud(c: u8) -> bool {
+        c <= 32 || matches!(c, b',' | b':' | b';' | b'<' | b'>' | b'"' | b'\\' | b'\'')
+    }
+    fn extract_trimmed(mut s: &[u8]) -> &[u8] {
+        while let Some((&first, rest)) = s.split_first() {
+            if !is_crud(first) {
+                break;
+            }
+            s = rest;
+        }
+        while let Some((&last, rest)) = s.split_last() {
+            if !is_crud(last) {
+                break;
+            }
+            s = rest;
+        }
+        s
+    }
+
+    let raw: &[u8] = raw.as_ref();
+    let email_start = raw.iter().rposition(|&c| c == b'<');
+    let email_end = raw.iter().rposition(|&c| c == b'>');
+    let (email_start, email_end) = match (email_start, email_end) {
+        (Some(s), Some(e)) if s < e => (s, e),
+        _ => return Err(anyhow::anyhow!("malformed e-mail in signature")),
+    };
+
+    let name = truncate_at_nul(extract_trimmed(&raw[..email_start]));
+    let email = truncate_at_nul(extract_trimmed(&raw[email_start + 1..email_end]));
+
+    match (std::str::from_utf8(name), std::str::from_utf8(email)) {
+        (Ok(name), Ok(email)) => Ok(Some((name.to_owned(), email.to_owned()))),
+        _ => Ok(None),
+    }
+}
+
+/// git2 reads libgit2's C strings via `CStr`, so every accessor the old code used
+/// (`Signature::name()`/`email()`, `Commit::message_raw()`) truncated at the first interior
+/// NUL byte. Interior NULs are valid UTF-8, so this must happen before the UTF-8 check to
+/// reproduce both the truncation and the resulting Some/None outcome.
+pub fn truncate_at_nul(s: &[u8]) -> &[u8] {
+    &s[..s.iter().position(|&c| c == 0).unwrap_or(s.len())]
+}
+
 /// An in-memory staging store over an optional read-through object database.
 ///
 /// Writes stage objects in a hash map; reads (via the [`gix_object::Find`] family) consult the
@@ -357,6 +487,123 @@ mod tests {
                 !tree_entry_name_valid(invalid),
                 "{invalid:?} should be invalid"
             );
+        }
+    }
+
+    /// Differential proof for `signature_name_email`: for every corpus entry, write a raw
+    /// commit buffer into a real git2 odb and compare the helper's output on the raw field
+    /// against `find_commit` + `author().name()/email()` -- the exact libgit2 code path the
+    /// helper replaces. Malformed-bracket entries must error on BOTH sides (libgit2 fails the
+    /// whole commit parse there).
+    #[test]
+    fn signature_name_email_matches_git2() {
+        fn commit_buf(author: &[u8], committer: &[u8]) -> Vec<u8> {
+            let mut buf = Vec::new();
+            buf.extend_from_slice(b"tree 4b825dc642cb6eb9a060e54bf8d69288fbee4904\n");
+            buf.extend_from_slice(b"author ");
+            buf.extend_from_slice(author);
+            buf.extend_from_slice(b"\ncommitter ");
+            buf.extend_from_slice(committer);
+            buf.extend_from_slice(b"\n\ntest message\n");
+            buf
+        }
+
+        let dir = tempfile::tempdir().unwrap();
+        let repo = git2::Repository::init(dir.path()).unwrap();
+        let odb = repo.odb().unwrap();
+        // The empty tree every corpus commit references.
+        odb.write(git2::ObjectType::Tree, b"").unwrap();
+
+        let corpus: &[&[u8]] = &[
+            // canonical
+            b"John Doe <john@example.com> 1234567890 +0000",
+            // multiple <...> pairs: the LAST pair wins (memrchr over the whole field)
+            b"A <a@x.com> B <b@y.com> 1234567890 +0000",
+            // brackets inside the timestamp region shift the extraction window
+            b"T Name <t@example.com> 123 <+0000>",
+            // crud characters around name and email
+            b",;:Crud'\" Name;, <;,'crud@example.com\":> 1234567890 +0000",
+            // leading/trailing spaces
+            b"  Spacey Name   <  spacey@example.com  > 1234567890 +0000",
+            // empty name
+            b"<empty@name.com> 1234567890 +0000",
+            // empty email
+            b"No Email <> 1234567890 +0000",
+            // no timestamp at all
+            b"No Time <no@time.com>",
+            // non-UTF-8 name (git2 name() -> None; helper -> Ok(None))
+            b"Bad\xffName <ok@example.com> 1234567890 +0000",
+            // non-UTF-8 email
+            b"Ok Name <bad\xffmail@example.com> 1234567890 +0000",
+            // interior NUL in name (git2's CStr accessors truncate at the first NUL)
+            b"Nul\x00Name <ok@example.com> 1234567890 +0000",
+            // interior NUL in email
+            b"Ok Name <nul\x00mail@example.com> 1234567890 +0000",
+            // interior NUL followed by non-UTF-8: git2 sees only the truncated prefix (Some)
+            b"Nul\x00\xffName <ok@example.com> 1234567890 +0000",
+            // missing '<' (both sides must error)
+            b"No Brackets nb@example.com> 1234567890 +0000",
+            // missing '>' (both sides must error)
+            b"No Close <nc@example.com 1234567890 +0000",
+            // '>' before '<' (both sides must error)
+            b"Rev > Brackets < 1234567890 +0000",
+        ];
+
+        for &field in corpus {
+            let buf = commit_buf(field, b"C Ommitter <c@example.com> 1234567890 +0000");
+            let oid = odb.write(git2::ObjectType::Commit, &buf).unwrap();
+            let ours = signature_name_email(gix_object::bstr::BStr::new(field));
+            match (ours, repo.find_commit(oid)) {
+                (Ok(ours), Ok(commit)) => {
+                    let author = commit.author();
+                    let expected = author
+                        .name()
+                        .ok()
+                        .map(str::to_owned)
+                        .zip(author.email().ok().map(str::to_owned));
+                    assert_eq!(ours, expected, "field {:?}", field);
+                }
+                (Err(_), Err(_)) => {}
+                (ours, theirs) => panic!(
+                    "parity mismatch for field {:?}: helper: {:?}, git2 ok: {}",
+                    field,
+                    ours,
+                    theirs.is_ok()
+                ),
+            }
+        }
+    }
+
+    /// Differential proof for message extraction: `from_utf8(truncate_at_nul(msg)).ok()`
+    /// must equal git2's `message_raw()` (a CStr conversion, so it truncates at the first
+    /// interior NUL before the UTF-8 check).
+    #[test]
+    fn message_extraction_matches_git2() {
+        let dir = tempfile::tempdir().unwrap();
+        let repo = git2::Repository::init(dir.path()).unwrap();
+        let odb = repo.odb().unwrap();
+        odb.write(git2::ObjectType::Tree, b"").unwrap();
+
+        let corpus: &[&[u8]] = &[
+            b"plain message\n",
+            b"nul\x00in message\n",
+            b"nul then invalid utf-8\x00\xff\n",
+            b"invalid utf-8 \xff message\n",
+            b"",
+        ];
+
+        for &msg in corpus {
+            let mut buf = Vec::new();
+            buf.extend_from_slice(b"tree 4b825dc642cb6eb9a060e54bf8d69288fbee4904\n");
+            buf.extend_from_slice(b"author A U Thor <a@example.com> 1234567890 +0000\n");
+            buf.extend_from_slice(b"committer A U Thor <a@example.com> 1234567890 +0000\n\n");
+            buf.extend_from_slice(msg);
+            let oid = odb.write(git2::ObjectType::Commit, &buf).unwrap();
+
+            let commit = repo.find_commit(oid).unwrap();
+            let cr = gix_object::CommitRef::from_bytes(&buf, gix_hash::Kind::Sha1).unwrap();
+            let ours = std::str::from_utf8(truncate_at_nul(cr.message)).ok();
+            assert_eq!(ours, commit.message_raw().ok(), "message {:?}", msg);
         }
     }
 
