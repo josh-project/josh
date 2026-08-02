@@ -1,10 +1,11 @@
 use anyhow::{Context, anyhow};
 
-use josh_changes::{PushMode, PushRef, build_to_push};
+use josh_changes::{PushMode, PushRef, StackedChangeRef, StackedRef, build_to_push};
 use josh_core::git::normalize_repo_path;
 
 use crate::config::{RemoteConfig, read_remote_config};
 use crate::forge::Forge;
+use crate::porcelain::PushRefUpdate;
 
 #[derive(Debug, clap::Parser)]
 pub struct PushArgs {
@@ -229,11 +230,99 @@ fn prepare_push(
     Ok(PreparedPush { to_push, pr_infos })
 }
 
+/// Render a curated summary of a push, reframing the stacked-changes refs
+/// (`@changes/`) as a change count and hiding the internal `@base/`/`@heads/`
+/// refs entirely. Rejected updates are an error (git's stderr, carrying the
+/// rejection details, has already been forwarded to the user).
+pub fn render_push_summary(
+    updates: &[PushRefUpdate],
+    dry_run: bool,
+) -> anyhow::Result<Vec<String>> {
+    let mut lines = Vec::new();
+    let mut new_changes = 0usize;
+    let mut updated_changes = 0usize;
+
+    for update in updates {
+        if let PushRefUpdate::Rejected { reference, reason } = update {
+            anyhow::bail!(
+                "git push rejected update to {}{}",
+                reference,
+                reason
+                    .as_deref()
+                    .map(|r| format!(" ({})", r))
+                    .unwrap_or_default()
+            );
+        }
+
+        let Some(name) = update.reference().strip_prefix("refs/heads/") else {
+            continue;
+        };
+
+        match StackedRef::parse(name) {
+            Some(StackedRef::ChangeRef(StackedChangeRef::Change { .. })) => {
+                match update {
+                    PushRefUpdate::New { .. } => new_changes += 1,
+                    PushRefUpdate::FastForward { .. } | PushRefUpdate::Forced { .. } => {
+                        updated_changes += 1
+                    }
+                    _ => {}
+                }
+                continue;
+            }
+            // @base and @heads refs are internal plumbing; hide them entirely.
+            Some(_) => continue,
+            None => {}
+        }
+
+        let line = match update {
+            PushRefUpdate::New { .. } => format!("new branch {}", name),
+            PushRefUpdate::Deleted { .. } => format!("deleted branch {}", name),
+            PushRefUpdate::Forced { old, new, .. } => {
+                format!("force-updated {} ({}..{})", name, old, new)
+            }
+            PushRefUpdate::FastForward { old, new, .. } => {
+                format!("updated {} ({}..{})", name, old, new)
+            }
+            PushRefUpdate::UpToDate { .. } => continue,
+            PushRefUpdate::Rejected { .. } => unreachable!("rejected updates bail out above"),
+        };
+        lines.push(line);
+    }
+
+    let total_changes = new_changes + updated_changes;
+    if total_changes > 0 {
+        lines.push(format!(
+            "{} {} change{}{}",
+            if dry_run {
+                "Would publish"
+            } else {
+                "published"
+            },
+            total_changes,
+            if total_changes == 1 { "" } else { "s" },
+            if new_changes > 0 {
+                format!(" ({} new)", new_changes)
+            } else {
+                String::new()
+            },
+        ));
+    } else if lines.is_empty() {
+        lines.push("Everything up-to-date".to_string());
+    }
+
+    Ok(lines)
+}
+
 /// Push all refs to the remote in a single bundled `git push` invocation.
 ///
 /// Every ref shares one remote URL and a uniform set of flags, so they are pushed together
 /// rather than one process per ref. This also makes `--atomic` meaningful across the whole
 /// set instead of applying to a single ref at a time.
+///
+/// In curated mode (stacked-changes publish) the push runs with `--porcelain`:
+/// stdout is captured and rendered as a summary via `render_push_summary`,
+/// while stderr keeps the default handling (inherited on a TTY, forwarded
+/// otherwise) so progress/errors reach the user.
 fn push_refs(
     transaction: &josh_core::cache::Transaction,
     remote_name: &str,
@@ -242,6 +331,7 @@ fn push_refs(
     force: bool,
     atomic: bool,
     dry_run: bool,
+    curated: bool,
 ) -> anyhow::Result<()> {
     if to_push.is_empty() {
         return Ok(());
@@ -261,13 +351,19 @@ fn push_refs(
         git_push_args.push("--dry-run");
     }
 
+    if curated {
+        git_push_args.push("--porcelain");
+    }
+
     git_push_args.push(url);
 
-    for push_ref in to_push {
-        eprintln!(
-            "Pushing {} to {}/{}",
-            push_ref.oid, remote_name, push_ref.ref_name
-        );
+    if !curated {
+        for push_ref in to_push {
+            eprintln!(
+                "Pushing {} to {}/{}",
+                push_ref.oid, remote_name, push_ref.ref_name
+            );
+        }
     }
 
     let refspecs: Vec<String> = to_push
@@ -276,11 +372,25 @@ fn push_refs(
         .collect();
     git_push_args.extend(refspecs.iter().map(String::as_str));
 
-    transaction
-        .spawn_git(&git_push_args, &[])
-        .with_context(|| format!("Failed to push to {}", remote_name))?;
+    if curated {
+        let output = transaction
+            .git_command(&git_push_args, &[])?
+            .with_stdout(std::process::Stdio::piped())
+            .spawn()
+            .with_context(|| format!("Failed to push to {}", remote_name))?;
 
-    eprintln!("Pushed {} ref(s) to {}", to_push.len(), remote_name);
+        let updates =
+            crate::porcelain::parse_push_porcelain(&String::from_utf8_lossy(&output.stdout))?;
+        for line in render_push_summary(&updates, dry_run)? {
+            eprintln!("{}", line);
+        }
+    } else {
+        transaction
+            .spawn_git(&git_push_args, &[])
+            .with_context(|| format!("Failed to push to {}", remote_name))?;
+
+        eprintln!("Pushed {} ref(s) to {}", to_push.len(), remote_name);
+    }
 
     Ok(())
 }
@@ -393,6 +503,10 @@ fn orchestrate_push(
     // Publish mode always force-updates its per-change refs.
     let force = force || matches!(push_mode, PushMode::Publish(_));
 
+    // Publish output is curated (porcelain + summary); plain push keeps raw
+    // git output.
+    let curated = matches!(push_mode, PushMode::Publish(_));
+
     // Phase 3: Execute the side effects.
     push_refs(
         transaction,
@@ -402,6 +516,7 @@ fn orchestrate_push(
         force,
         atomic,
         dry_run,
+        curated,
     )?;
 
     create_prs(&pr_infos, &url, push_url.as_deref(), dry_run)?;
@@ -445,4 +560,91 @@ pub fn handle_publish(
         push_mode,
         transaction,
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn new_ref(reference: &str) -> PushRefUpdate {
+        PushRefUpdate::New {
+            reference: reference.to_string(),
+        }
+    }
+
+    fn forced(reference: &str) -> PushRefUpdate {
+        PushRefUpdate::Forced {
+            old: "1234567".to_string(),
+            new: "abcdef1".to_string(),
+            reference: reference.to_string(),
+        }
+    }
+
+    #[test]
+    fn summary_counts_changes_and_hides_internal_refs() {
+        let updates = vec![
+            new_ref("refs/heads/@changes/master/a@b.c/1234"),
+            forced("refs/heads/@changes/master/a@b.c/5678"),
+            new_ref("refs/heads/@base/master/a@b.c/1234"),
+            forced("refs/heads/@heads/master/a@b.c"),
+        ];
+
+        let lines = render_push_summary(&updates, false).unwrap();
+
+        assert_eq!(lines, vec!["published 2 changes (1 new)"]);
+    }
+
+    #[test]
+    fn summary_renders_branch_updates() {
+        let updates = vec![
+            new_ref("refs/heads/feature"),
+            PushRefUpdate::FastForward {
+                old: "1234567".to_string(),
+                new: "abcdef1".to_string(),
+                reference: "refs/heads/master".to_string(),
+            },
+        ];
+
+        let lines = render_push_summary(&updates, false).unwrap();
+
+        assert_eq!(
+            lines,
+            vec!["new branch feature", "updated master (1234567..abcdef1)"]
+        );
+    }
+
+    #[test]
+    fn summary_up_to_date_republish_is_silent() {
+        let updates = vec![
+            PushRefUpdate::UpToDate {
+                reference: "refs/heads/@changes/master/a@b.c/1234".to_string(),
+            },
+            PushRefUpdate::UpToDate {
+                reference: "refs/heads/@heads/master/a@b.c".to_string(),
+            },
+        ];
+
+        let lines = render_push_summary(&updates, false).unwrap();
+
+        assert_eq!(lines, vec!["Everything up-to-date"]);
+    }
+
+    #[test]
+    fn summary_dry_run_prefixes_would() {
+        let updates = vec![new_ref("refs/heads/@changes/master/a@b.c/1234")];
+
+        let lines = render_push_summary(&updates, true).unwrap();
+
+        assert_eq!(lines, vec!["Would publish 1 change (1 new)"]);
+    }
+
+    #[test]
+    fn summary_rejected_update_errors() {
+        let updates = vec![PushRefUpdate::Rejected {
+            reference: "refs/heads/@changes/master/a@b.c/1234".to_string(),
+            reason: Some("non-fast-forward".to_string()),
+        }];
+
+        assert!(render_push_summary(&updates, false).is_err());
+    }
 }

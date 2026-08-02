@@ -45,8 +45,8 @@ Publish a change from the first clone
   $ echo "contents2" > file2
   $ git add file2
   $ git commit -q -m "change 2" -m "Change-Id: 1111"
-  $ josh changes publish 2>&1 | tail -1 | sed 's/Pushed [0-9]*/Pushed N/'
-  Pushed N ref(s) to origin
+  $ josh changes publish
+  published 1 change (1 new)
 
 The teammate fetches the published stack and checks out its tip
 
@@ -61,8 +61,8 @@ The teammate amends the change's content (keeping the Change-Id) and republishes
 
   $ echo "contents2 amended" > file2
   $ git commit -q -a --amend --no-edit
-  $ josh changes publish 2>&1 | tail -1 | sed 's/Pushed [0-9]*/Pushed N/'
-  Pushed N ref(s) to origin
+  $ josh changes publish
+  published 1 change
 
 Pull in the first clone: the amended change is reported
 
@@ -85,8 +85,8 @@ The teammate restacks onto it (content unchanged) and republishes
   $ josh changes pull 2>&1
   updated master (5f2928c..49dc0ec)
   Restacked master: kept 1 change
-  $ josh changes publish 2>&1 | tail -1 | sed 's/Pushed [0-9]*/Pushed N/'
-  Pushed N ref(s) to origin
+  $ josh changes publish
+  published 1 change
 
 Pull in the first clone: the restacked change has the same patch-id, so no
 "updated N changes" line is printed
