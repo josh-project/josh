@@ -299,8 +299,9 @@ fn restack_commits(
 ///
 /// Linear-history only: fast-forward, rewind over already-applied changes
 /// (detected by Change-Id trailers), and cherry-pick the remaining local
-/// changes on top. Anything more complex (merge commits, diverged commits
-/// without a Change-Id, conflicts, dirty worktree) bails out with refs
+/// changes on top. Local commits without a Change-Id cannot be matched against
+/// the upstream stack, so they are always kept and restacked. Anything more
+/// complex (merge commits, conflicts, dirty worktree) bails out with refs
 /// untouched.
 pub fn integrate(
     transaction: &josh_core::cache::Transaction,
@@ -374,12 +375,12 @@ pub fn integrate(
             let commit = repo.find_commit(oid)?;
             match commit_change_meta(&commit) {
                 (Some(id), _) if applied.contains(&id) => skipped.push(id),
-                (Some(_), _) => remaining.push(oid),
-                (None, _) => anyhow::bail!(
-                    "local commit {} has no Change-Id and history has diverged; \
-                     cannot integrate automatically",
-                    short_oid(oid)
-                ),
+                // A commit with a Change-Id not yet applied upstream, or one
+                // without a Change-Id at all, is a local-only commit we keep and
+                // restack. A missing Change-Id just means we cannot match it
+                // against the upstream stack; restacking cherry-picks it on top
+                // and drops it if its content already landed (becomes empty).
+                _ => remaining.push(oid),
             }
         }
 
