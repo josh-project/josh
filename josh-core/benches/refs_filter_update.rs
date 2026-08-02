@@ -5,7 +5,7 @@ use josh_test_support::bench::{build_index, random_string};
 use rand::prelude::*;
 use std::path::{Path, PathBuf};
 
-// This bench measures the *reference* surface: enumerating refs by glob, resolving each to an oid,
+// This bench measures the *reference* surface: enumerating refs by prefix, resolving each to an oid,
 // looking up the (cache-hot) filtered result per ref, and force-writing the filtered refs back. The
 // scaling parameter is the number of refs, and the filter caches are deliberately warmed during
 // setup and never reset, so the measured loop is dominated by ref enumeration, resolution and
@@ -222,7 +222,7 @@ fn build_case(repo: &git2::Repository, n_refs: usize) -> anyhow::Result<git2::Oi
     }
 
     // Tip ref so `setup` can find this case's head on the cache-hit path, where the build callback
-    // never runs. Named `_tip` (not `case_<n>`) because `refs/heads/case_<n>/change_*` makes
+    // never runs. Named `_tip` (not `case_<n>`) because `refs/heads/case_<n>/change_<i>` makes
     // `case_<n>` a ref *directory*, and a ref cannot shadow a directory.
     repo.reference(
         &format!("refs/heads/case_{n_refs}_tip"),
@@ -242,7 +242,7 @@ fn refs_filter_update(c: &mut Criterion) {
     let mut group = c.benchmark_group("refs_filter_update");
     group.sample_size(10);
     for case in &bench.cases {
-        let glob = format!("refs/heads/case_{}/change_*", case.n_refs);
+        let ref_prefix = format!("refs/heads/case_{}/change_", case.n_refs);
         group.throughput(Throughput::Elements(case.n_refs as u64));
         group.bench_function(BenchmarkId::from_parameter(case.n_refs), |b| {
             b.iter_batched(
@@ -258,16 +258,12 @@ fn refs_filter_update(c: &mut Criterion) {
                 // `refs/josh/bench/`. This is the proxy's fetch steady state.
                 |(transaction, iter_span)| {
                     let mut refs = vec![];
-                    for r in transaction
-                        .repo()
-                        .references_glob(&glob)
-                        .expect("iterate refs")
-                    {
-                        let r = r.expect("read ref");
-                        let name = r.name().expect("utf-8 ref name").to_string();
-                        let oid = r.target().expect("direct ref");
-                        refs.push((name, oid));
-                    }
+                    transaction
+                        .for_each_ref_prefixed(&ref_prefix, |name, oid| {
+                            refs.push((name.to_string(), oid));
+                            Ok(())
+                        })
+                        .expect("iterate refs");
                     assert_eq!(
                         refs.len(),
                         case.n_refs,

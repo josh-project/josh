@@ -640,7 +640,7 @@ async fn filter_to_namespace(
             HeadRef::Implicit => {
                 // When user did not explicitly request a ref to filter,
                 // start with a list of all existing refs
-                josh_core::housekeeping::list_refs(transaction.repo(), &repo)?
+                josh_core::housekeeping::list_refs(&transaction, &repo)?
             }
         };
 
