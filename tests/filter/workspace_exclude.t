@@ -72,8 +72,8 @@
       ::sub2/subsub/
   ]
   [3] :workspace=ws
-  [4] reachable_roots
-  [4] sequence_number
+  [9] reachable_roots
+  [9] sequence_number
   $ git checkout master
   Switched to branch 'master'
 
