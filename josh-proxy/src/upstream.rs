@@ -355,7 +355,7 @@ pub fn process_repo_update(repo_update: RepoUpdate) -> anyhow::Result<String> {
         let author = push_options.author.as_deref().unwrap_or("");
         let (baseref, push_to, options, push_mode) = baseref_and_options(refname, author)?;
 
-        let old = if old == git2::Oid::zero() {
+        let old = if old == git2::Oid::ZERO_SHA1 {
             let rev = format!("refs/namespaces/{}/{}", repo_update.git_ns, &baseref);
             let oid = if let Ok(resolved) = transaction.repo().revparse_single(&rev) {
                 resolved.id()

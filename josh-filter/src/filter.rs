@@ -373,7 +373,7 @@ pub fn invert(filter: Filter) -> anyhow::Result<Filter> {
 /// The sequence_number filter used for tracking commit sequence numbers. A memoized sentinel
 /// node whose OID is the zero OID, so identity comparison and cache-keying stay correct.
 pub fn sequence_number() -> Filter {
-    static F: LazyLock<Filter> = LazyLock::new(|| persist::sentinel(git2::Oid::zero()));
+    static F: LazyLock<Filter> = LazyLock::new(|| persist::sentinel(git2::Oid::ZERO_SHA1));
     *F
 }
 

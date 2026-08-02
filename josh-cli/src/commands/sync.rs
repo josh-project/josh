@@ -34,7 +34,7 @@ pub fn handle_sync(
     let repo = transaction.repo();
 
     let head = repo.head()?.peel_to_commit()?;
-    let branch = repo.head()?.shorthand().map(|s| s.to_string());
+    let branch = repo.head()?.shorthand().ok().map(|s| s.to_string());
 
     let base_oid = branch
         .as_ref()
@@ -44,7 +44,7 @@ pub fn handle_sync(
                 .and_then(|r| r.peel_to_commit().ok())
                 .map(|c| c.id())
         })
-        .unwrap_or(git2::Oid::zero());
+        .unwrap_or(git2::Oid::ZERO_SHA1);
 
     let remote_name = args.remote.as_deref().unwrap_or("origin").to_string();
 

@@ -345,7 +345,7 @@ fn run_filter(args: Vec<String>) -> anyhow::Result<i32> {
     let old_oid = if let Ok(id) = transaction.repo().refname_to_id(target) {
         id
     } else {
-        git2::Oid::zero()
+        git2::Oid::ZERO_SHA1
     };
 
     let (mut updated_refs, errors) = josh_core::filter_refs(&transaction, filterobj, &refs);

@@ -247,7 +247,7 @@ pub fn read_parent_ids(repo: &git2::Repository, oid: git2::Oid) -> anyhow::Resul
     let odb = repo.odb()?;
     let odb_commit = odb.read(oid)?;
     debug_assert_eq!(odb_commit.kind(), git2::ObjectType::Commit);
-    gix_object::CommitRefIter::from_bytes(odb_commit.data())
+    gix_object::CommitRefIter::from_bytes(odb_commit.data(), gix_hash::Kind::Sha1)
         .parent_ids()
         .map(|p| Ok(git2::Oid::from_bytes(p.as_bytes())?))
         .collect()

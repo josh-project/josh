@@ -9,7 +9,7 @@ repository = "https://github.com/josh-project/josh"
 keywords = ["git", "monorepo", "workflow", "scm"]
 
 [dependencies]
-handlebars = "6.4.0"
+handlebars = "6.4.3"
 form_urlencoded.workspace = true
 
 anyhow.workspace = true

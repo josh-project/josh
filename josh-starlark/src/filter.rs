@@ -1,7 +1,7 @@
 use allocative::Allocative;
 use josh_filter::Filter;
 use starlark::{
-    environment::{MethodsBuilder, MethodsStatic},
+    environment::MethodsBuilder,
     starlark_module, starlark_simple_value,
     values::{NoSerialize, ProvidesStaticType, StarlarkValue, StringValue},
 };
@@ -41,8 +41,8 @@ impl<'v> StarlarkValue<'v> for StarlarkFilter {
     }
 
     fn get_methods() -> Option<&'static starlark::environment::Methods> {
-        static RES: MethodsStatic = MethodsStatic::new();
-        RES.methods(filter_methods)
+        starlark::methods_static!(RES = filter_methods);
+        Some(RES.methods())
     }
 }
 

@@ -12,7 +12,7 @@ pub fn filter_module(builder: &mut GlobalsBuilder) {
     /// Creates a filter that overlays the output of filters sequentially
     fn compose<'v>(
         filters: Value<'v>,
-        heap: &'v starlark::values::Heap,
+        heap: starlark::values::Heap<'v>,
     ) -> anyhow::Result<StarlarkFilter> {
         // Get iterator from the value
         let mut iter = filters

@@ -18,8 +18,8 @@ anyhow.workspace = true
 git2.workspace = true
 
 [dev-dependencies]
-criterion2 = { version = "3.0.3" }
-rand = "0.10.1"
+criterion2 = { version = "3.0.4" }
+rand = "0.10.2"
 tempfile.workspace = true
 tracing.workspace = true
 josh-core.workspace = true

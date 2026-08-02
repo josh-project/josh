@@ -9,7 +9,7 @@ repository = "https://github.com/josh-project/josh"
 keywords = ["git", "monorepo", "workflow", "scm"]
 
 [dependencies]
-strfmt = "0.2.4"
+strfmt = "0.2.5"
 
 anyhow.workspace = true
 juniper.workspace = true
@@ -26,6 +26,6 @@ josh-search.workspace = true
 [dependencies.chrono]
 default-features = false
 features = ["alloc", "std"]
-version = "0.4.44"
+version = "0.4.45"
 
 [features]

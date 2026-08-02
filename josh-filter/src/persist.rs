@@ -1034,7 +1034,7 @@ fn from_tree2(repo: &git2::Repository, tree_oid: git2::Oid) -> anyhow::Result<Op
                 // Parse match operator from key
                 let (match_op, lazy_ref) = if key == "_" {
                     // Default filter - no SHA needed
-                    (RevMatch::Default, LazyRef::Resolved(git2::Oid::zero()))
+                    (RevMatch::Default, LazyRef::Resolved(git2::Oid::ZERO_SHA1))
                 } else if let Some(ref_str) = key.strip_prefix("<=") {
                     (RevMatch::AncestorInclusive, LazyRef::parse(ref_str)?)
                 } else if let Some(ref_str) = key.strip_prefix('<') {

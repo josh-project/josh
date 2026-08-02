@@ -29,7 +29,7 @@ pub fn list_refs(
         for reference in repo.references_glob(glob)? {
             let reference = reference.context("unable to obtain reference")?;
 
-            if let (Some(name), Some(target)) = (reference.name(), reference.target()) {
+            if let (Ok(name), Some(target)) = (reference.name(), reference.target()) {
                 let name = name
                     .strip_prefix(&prefix)
                     .and_then(|name| name.strip_prefix('/'))
@@ -51,7 +51,7 @@ pub fn remember_filter(upstream_repo: &str, filter_spec: &str) {
     {
         let known_f = &mut known_filters
             .entry(upstream_repo.trim_start_matches('/').to_string())
-            .or_insert_with(|| (git2::Oid::zero(), BTreeSet::new()));
+            .or_insert_with(|| (git2::Oid::ZERO_SHA1, BTreeSet::new()));
 
         known_f.1.insert(filter_spec.to_string());
     }
@@ -86,7 +86,7 @@ pub fn default_from_to(
     {
         let known_f = &mut known_filters
             .entry(upstream_repo.trim_start_matches('/').to_string())
-            .or_insert_with(|| (git2::Oid::zero(), BTreeSet::new()));
+            .or_insert_with(|| (git2::Oid::ZERO_SHA1, BTreeSet::new()));
 
         known_f.1.insert(filter_spec.to_string());
     }
@@ -128,7 +128,7 @@ pub fn discover_filter_candidates(transaction: &cache::Transaction) -> anyhow::R
 
     for reference in repo.references_glob(&refname)? {
         let r = reference?;
-        let name = r.name().ok_or_else(|| anyhow!("reference without name"))?;
+        let name = r.name()?;
         tracing::trace!("find: {}", name);
         let name = UpstreamRef::from_str(name)
             .ok_or_else(|| anyhow!("not a ns"))?
@@ -138,7 +138,7 @@ pub fn discover_filter_candidates(transaction: &cache::Transaction) -> anyhow::R
 
         let known_f = &mut known_filters
             .entry(name.clone())
-            .or_insert_with(|| (git2::Oid::zero(), BTreeSet::new()));
+            .or_insert_with(|| (git2::Oid::ZERO_SHA1, BTreeSet::new()));
 
         if let Some(target) = r.target()
             && known_f.0 != target
@@ -154,13 +154,13 @@ pub fn discover_filter_candidates(transaction: &cache::Transaction) -> anyhow::R
     let refname = "josh/filtered/*.git/*/HEAD".to_string();
     for reference in repo.references_glob(&refname)? {
         let r = reference?;
-        let name = r.name().ok_or_else(|| anyhow!("reference without name"))?;
+        let name = r.name()?;
         tracing::trace!("known: {}", name);
         let filtered = FilteredRefRegex::from_str(name).ok_or_else(|| anyhow!("not a ns"))?;
 
         known_filters
             .entry(from_ns(&filtered.upstream_repo))
-            .or_insert_with(|| (git2::Oid::zero(), BTreeSet::new()))
+            .or_insert_with(|| (git2::Oid::ZERO_SHA1, BTreeSet::new()))
             .1
             .insert(from_ns(&filtered.filter_spec));
     }
@@ -178,7 +178,7 @@ pub fn find_all_workspaces_and_subdirectories(
             return 0;
         }
 
-        if entry.name() == Some("workspace.josh") {
+        if entry.name().ok() == Some("workspace.josh") {
             hs.insert(format!(":workspace={}", root.trim_matches('/')));
         }
         let v = format!("::{}/", root.trim_matches('/'));
@@ -216,7 +216,7 @@ pub fn get_info(
                     "commit": x.to_string(),
                     "tree": transaction.repo().find_commit(x)
                         .map(|c| { c.tree_id() })
-                        .unwrap_or_else(|_| git2::Oid::zero())
+                        .unwrap_or_else(|_| git2::Oid::ZERO_SHA1)
                         .to_string(),
                 })
             })
@@ -231,8 +231,8 @@ pub fn get_info(
         })
     } else {
         serde_json::json!({
-            "commit": git2::Oid::zero().to_string(),
-            "tree": git2::Oid::zero().to_string(),
+            "commit": git2::Oid::ZERO_SHA1.to_string(),
+            "tree": git2::Oid::ZERO_SHA1.to_string(),
             "parents": serde_json::json!([]),
         })
     };

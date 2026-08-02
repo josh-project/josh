@@ -351,7 +351,7 @@ pub fn load_detail(sha: &str, branch: &str) -> anyhow::Result<DetailData> {
         if let Ok(all) = josh_changes::list_changes_in_scopes(&repo, &scopes) {
             if let Some(c) = all.iter().find(|c| c.id() == Some(cid.as_str())) {
                 let base = c.base();
-                if base != git2::Oid::zero() {
+                if base != git2::Oid::ZERO_SHA1 {
                     change.set_base(base);
                 }
             }

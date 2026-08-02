@@ -622,7 +622,7 @@ impl Transaction {
         let oid = t2.cache.read_propagate(filter, from, hint)?;
 
         if let Some(oid) = oid {
-            if oid == git2::Oid::zero() {
+            if oid == git2::Oid::ZERO_SHA1 {
                 return Ok(Some(oid));
             }
             if filter == crate::filter::sequence_number() {

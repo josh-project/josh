@@ -364,13 +364,9 @@ fn create_repo_base(path: &PathBuf) -> anyhow::Result<crate::shell::Shell> {
                 .iter()
                 .cloned()
                 .try_for_each(|(name, value)| -> anyhow::Result<()> {
-                    use gix::config::parse::section::ValueName;
-
-                    let key =
-                        ValueName::try_from(name).context("unable to create config section")?;
-                    let value = Some(value.into());
-
-                    section.push(key, value);
+                    section
+                        .push(name, value)
+                        .context("unable to push config value")?;
 
                     Ok(())
                 })?;

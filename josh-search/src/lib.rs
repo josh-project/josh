@@ -98,22 +98,14 @@ fn for_each_spine_leaf(
     mut f: impl FnMut([u8; 3], git2::Oid) -> anyhow::Result<()>,
 ) -> anyhow::Result<()> {
     for e1 in index.iter() {
-        let b1 = e1
-            .name()
-            .and_then(decode_hex_name)
-            .ok_or_else(|| anyhow!("invalid spine entry"))?;
+        let b1 = decode_hex_name(e1.name()?).ok_or_else(|| anyhow!("invalid spine entry"))?;
         let t1 = repo.find_tree(e1.id())?;
         for e2 in t1.iter() {
-            let b2 = e2
-                .name()
-                .and_then(decode_hex_name)
-                .ok_or_else(|| anyhow!("invalid spine entry"))?;
+            let b2 = decode_hex_name(e2.name()?).ok_or_else(|| anyhow!("invalid spine entry"))?;
             let t2 = repo.find_tree(e2.id())?;
             for e3 in t2.iter() {
-                let b3 = e3
-                    .name()
-                    .and_then(decode_hex_name)
-                    .ok_or_else(|| anyhow!("invalid spine entry"))?;
+                let b3 =
+                    decode_hex_name(e3.name()?).ok_or_else(|| anyhow!("invalid spine entry"))?;
                 f([b1, b2, b3], e3.id())?;
             }
         }
@@ -193,7 +185,7 @@ fn build_index(
     let mut postings = Postings::new();
 
     for entry in tree.iter() {
-        let name = entry.name().ok_or_else(|| anyhow!("no name"))?;
+        let name = entry.name()?;
 
         if entry.kind() == Some(git2::ObjectType::Blob) {
             let content = get_blob(repo, tree, name);
@@ -308,7 +300,7 @@ fn intersect_walk(
         .expect("roots is never empty");
 
     'entry: for entry in smallest.iter() {
-        let name = entry.name().ok_or_else(|| anyhow!("no name"))?;
+        let name = entry.name()?;
 
         let mut child_roots = Vec::with_capacity(trees.len());
         for tree in &trees {
@@ -337,7 +329,7 @@ fn collect_paths(
 ) -> anyhow::Result<()> {
     let tree = repo.find_tree(oid)?;
     for entry in tree.iter() {
-        let name = entry.name().ok_or_else(|| anyhow!("no name"))?;
+        let name = entry.name()?;
         let path = join_path(prefix, name);
         match entry.kind() {
             Some(git2::ObjectType::Tree) => collect_paths(repo, entry.id(), &path, out)?,

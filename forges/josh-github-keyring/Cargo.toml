@@ -14,9 +14,12 @@ serde.workspace = true
 serde_json.workspace = true
 chrono = { workspace = true, features = ["clock"] }
 dirs.workspace = true
-keyring = { version = "^3.6", features = ["apple-native"] }
+keyring-core = "^1"
 
 josh-github-auth.workspace = true
+
+[target.'cfg(target_os = "macos")'.dependencies]
+apple-native-keyring-store = { version = "^1", features = ["keychain"] }
 
 [features]
 codesign = []

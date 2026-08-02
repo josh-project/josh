@@ -99,14 +99,14 @@ fn find_unapply_base(
         return Ok(*original);
     }
 
-    if contained_in == git2::Oid::zero() {
+    if contained_in == git2::Oid::ZERO_SHA1 {
         tracing::info!("contained in zero",);
-        return Ok(git2::Oid::zero());
+        return Ok(git2::Oid::ZERO_SHA1);
     }
 
     let contained_in_commit = transaction.repo().find_commit(contained_in)?;
     let oid = filter::apply_to_commit(filter, &contained_in_commit, transaction)?;
-    if oid != git2::Oid::zero() {
+    if oid != git2::Oid::ZERO_SHA1 {
         filtered_to_original.insert(oid, contained_in);
     }
 
@@ -216,7 +216,7 @@ fn find_unapply_base(
         Some(Err(e)) => Err(e),
         None => {
             tracing::info!("Didn't find original",);
-            Ok(git2::Oid::zero())
+            Ok(git2::Oid::ZERO_SHA1)
         }
     }
 }
@@ -228,8 +228,8 @@ pub fn find_original(
     filtered: git2::Oid,
     linear: bool,
 ) -> anyhow::Result<git2::Oid> {
-    if contained_in == git2::Oid::zero() {
-        return Ok(git2::Oid::zero());
+    if contained_in == git2::Oid::ZERO_SHA1 {
+        return Ok(git2::Oid::ZERO_SHA1);
     }
     if filter.is_nop() {
         return Ok(filtered);
@@ -259,7 +259,7 @@ pub fn find_original(
         }
     }
 
-    Ok(git2::Oid::zero())
+    Ok(git2::Oid::ZERO_SHA1)
 }
 
 // takes everything from base except its tree and replaces it with the tree
@@ -290,7 +290,7 @@ pub fn rewrite_commit(
     let mut committer = None;
     let message = rewrite_data.message.map(|s| BString::from(s));
 
-    let mut commit = gix_object::CommitRef::from_bytes(odb_commit.data())?;
+    let mut commit = gix_object::CommitRef::from_bytes(odb_commit.data(), gix_hash::Kind::Sha1)?;
     commit.tree = tree_id.as_ref();
 
     commit.parents.clear();
@@ -418,7 +418,7 @@ fn find_new_branch_base(
         let rev = rev?;
         if let Ok(base) =
             find_unapply_base(transaction, filtered_to_original, filter, contained_in, rev)
-            && base != git2::Oid::zero()
+            && base != git2::Oid::ZERO_SHA1
         {
             tracing::info!("new branch base: {:?} mapping to {:?}", base, rev);
             let base = if let Ok(new_base) = find_oldest_similar_commit(transaction, filter, base) {
@@ -434,7 +434,7 @@ fn find_new_branch_base(
         }
     }
     tracing::info!("new branch base not found");
-    Ok(git2::Oid::zero())
+    Ok(git2::Oid::ZERO_SHA1)
 }
 
 #[derive(Clone, Debug)]
@@ -457,7 +457,7 @@ pub fn unapply_filter(
     let mut filtered_to_original = HashMap::new();
     let mut ret = original_target;
 
-    let old_filtered_oid = if old_filtered_oid == git2::Oid::zero() {
+    let old_filtered_oid = if old_filtered_oid == git2::Oid::ZERO_SHA1 {
         match find_new_branch_base(
             transaction,
             &mut filtered_to_original,
@@ -553,7 +553,7 @@ pub fn unapply_filter(
                           '-o merge' to import new history by creating merge commit
                           '-o edit' if you are editing a stored filter or workspace
                         "###,
-                        module_commit.summary().unwrap_or_default(),
+                        module_commit.summary().ok().flatten().unwrap_or_default(),
                         module_commit.id(),
                     )));
                 }
@@ -574,7 +574,7 @@ pub fn unapply_filter(
             })
             .filter(|unapply_base| {
                 if let Ok(oid) = unapply_base {
-                    *oid != git2::Oid::zero()
+                    *oid != git2::Oid::ZERO_SHA1
                 } else {
                     true
                 }
@@ -599,7 +599,11 @@ pub fn unapply_filter(
         // Convert original_parents to a vector of (rust) references
         let original_parents: Vec<&git2::Commit> = original_parents.iter().collect();
         let tree = module_commit.tree()?;
-        let commit_message = module_commit.summary().unwrap_or("NO COMMIT MESSAGE");
+        let commit_message = module_commit
+            .summary()
+            .ok()
+            .flatten()
+            .unwrap_or("NO COMMIT MESSAGE");
 
         let new_trees: anyhow::Result<Vec<_>> = {
             let span = tracing::span!(
@@ -672,7 +676,7 @@ pub fn unapply_filter(
             // This will typically be parent_count == 2 and mean we are dealing with a merge
             // where the parents have differences outside of the filter.
             parent_count => {
-                let mut tid = git2::Oid::zero();
+                let mut tid = git2::Oid::ZERO_SHA1;
                 for i in 0..parent_count {
                     // If one of the parents is a descendant of the target branch and the other is
                     // not, pick the tree of the one that is a descendant.
@@ -686,7 +690,7 @@ pub fn unapply_filter(
                     }
                 }
 
-                if tid == git2::Oid::zero() && parent_count == 2 {
+                if tid == git2::Oid::ZERO_SHA1 && parent_count == 2 {
                     // If we could not select one of the parents, try to merge them.
                     // We expect conflicts to occur only in the paths that are present in
                     // the filtered commit.
@@ -740,14 +744,14 @@ pub fn unapply_filter(
                     }
                 }
 
-                if tid == git2::Oid::zero() {
+                if tid == git2::Oid::ZERO_SHA1 {
                     // We give up. If we see this message again we need to investigate once
                     // more and maybe consider allowing a manual override as last resort.
                     tracing::warn!("rejecting merge");
                     return Err(anyhow!(
                         "rejecting merge with {} parents:\n{:?} ({:?})\n1) {:?} ({:?})\n2) {:?} ({:?})",
                         parent_count,
-                        module_commit.summary().unwrap_or_default(),
+                        module_commit.summary().ok().flatten().unwrap_or_default(),
                         module_commit.id(),
                         original_parents[0].summary().unwrap_or_default(),
                         original_parents[0].id(),
@@ -819,7 +823,7 @@ pub fn drop_commit(
     let r = if let Some(id) = filtered_parent_ids.first() {
         *id
     } else {
-        git2::Oid::zero()
+        git2::Oid::ZERO_SHA1
     };
 
     transaction.insert(filter, original_commit.id(), r, false)?;
@@ -877,7 +881,7 @@ fn create_filtered_commit2<'a>(
     let repo = transaction.repo();
     let mut filtered_parents: Vec<(git2::Oid, git2::Oid)> = filtered_parent_ids
         .iter()
-        .filter(|x| **x != git2::Oid::zero())
+        .filter(|x| **x != git2::Oid::ZERO_SHA1)
         .map(|x| Ok((*x, filtered_parent_tree_id(transaction, *x)?)))
         .collect::<anyhow::Result<_>>()?;
 
@@ -893,7 +897,7 @@ fn create_filtered_commit2<'a>(
         let nonzero_parent_ids: Vec<_> = filtered_parent_ids
             .iter()
             .copied()
-            .filter(|x| *x != git2::Oid::zero())
+            .filter(|x| *x != git2::Oid::ZERO_SHA1)
             .collect();
         let is_initial_merge = nonzero_parent_ids.len() > 1
             && !cache::parents_share_root(transaction, &nonzero_parent_ids)?;
@@ -942,7 +946,7 @@ fn create_filtered_commit2<'a>(
             return Ok((filtered_parents[0].0, false));
         }
         if rewrite_data.tree().id() == filter::tree::empty_id() {
-            return Ok((git2::Oid::zero(), false));
+            return Ok((git2::Oid::ZERO_SHA1, false));
         }
     }
 
