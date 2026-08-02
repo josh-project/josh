@@ -83,7 +83,8 @@ Pull again: no-op
   $ josh changes pull
   Already up to date.
 
-Bail out on diverged commit without a Change-Id
+Restack a diverged local commit that has no Change-Id: it cannot be matched
+against the upstream stack, so it is simply kept and cherry-picked on top.
 
   $ echo "contents5" > file5
   $ git add file5
@@ -94,11 +95,23 @@ Bail out on diverged commit without a Change-Id
   $ git commit -q -m "unrelated upstream commit"
   $ git push -q origin master
   $ cd ${TESTTMP}/filtered
-  $ git rev-parse master > before
   $ josh changes pull
   updated master (e19e334..649a1fa)
-  Error: local commit 8e601d3 has no Change-Id and history has diverged; cannot integrate automatically
-  local commit 8e601d3 has no Change-Id and history has diverged; cannot integrate automatically
-  [1]
-  $ git rev-parse master > after
-  $ diff before after
+  Restacked master: kept 2 changes
+  $ git log --graph --pretty="%s"
+  * no change id
+  * change 4
+  * unrelated upstream commit
+  * landed change 3
+  * landed change 2
+  * add file1
+  $ tree
+  .
+  |-- file1
+  |-- file2
+  |-- file3
+  |-- file4
+  |-- file5
+  `-- file9
+  
+  1 directory, 6 files
