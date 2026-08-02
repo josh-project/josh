@@ -536,11 +536,7 @@ pub fn process_repo_update(repo_update: RepoUpdate) -> anyhow::Result<String> {
             }
         }
 
-        let reapply = josh_core::filter::apply_to_commit(
-            filter,
-            &transaction.repo().find_commit(oid_to_push)?,
-            &transaction,
-        )?;
+        let reapply = josh_core::filter::apply_to_commit(filter, oid_to_push, &transaction)?;
 
         if new_oid != reapply {
             if std::env::var("JOSH_REWRITE_REFS").is_ok() {

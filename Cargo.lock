@@ -3526,6 +3526,7 @@ dependencies = [
  "git2",
  "gix-hash",
  "gix-object",
+ "tempfile",
 ]
 
 [[package]]

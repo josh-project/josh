@@ -102,17 +102,18 @@ impl Revision {
 
     fn hash(&self, context: &Context) -> FieldResult<String> {
         let transaction = context.transaction.lock().unwrap();
-        let commit = transaction.repo().find_commit(self.commit_id)?;
-        let filter_commit = filter::apply_to_commit(self.filter, &commit, &transaction)?;
+        // Existence/type probe: a bogus id (e.g. the zero oid from a target-less symbolic
+        // ref) must error here, not filter to a bogus hash under a nop filter.
+        transaction.repo().find_commit(self.commit_id)?;
+        let filter_commit = filter::apply_to_commit(self.filter, self.commit_id, &transaction)?;
         Ok(format!("{}", filter_commit))
     }
 
     fn author_email(&self, context: &Context) -> FieldResult<String> {
         let transaction = context.transaction.lock().unwrap();
-        let commit = transaction.repo().find_commit(self.commit_id)?;
         let filter_commit = transaction.repo().find_commit(filter::apply_to_commit(
             self.filter,
-            &commit,
+            self.commit_id,
             &transaction,
         )?)?;
         let a = filter_commit.author();
@@ -121,10 +122,9 @@ impl Revision {
 
     fn summary(&self, context: &Context) -> FieldResult<String> {
         let transaction = context.transaction.lock().unwrap();
-        let commit = transaction.repo().find_commit(self.commit_id)?;
         let filter_commit = transaction.repo().find_commit(filter::apply_to_commit(
             self.filter,
-            &commit,
+            self.commit_id,
             &transaction,
         )?)?;
         Ok(filter_commit
@@ -137,10 +137,9 @@ impl Revision {
 
     fn message(&self, context: &Context) -> FieldResult<String> {
         let transaction = context.transaction.lock().unwrap();
-        let commit = transaction.repo().find_commit(self.commit_id)?;
         let filter_commit = transaction.repo().find_commit(filter::apply_to_commit(
             self.filter,
-            &commit,
+            self.commit_id,
             &transaction,
         )?)?;
         Ok(filter_commit.message().unwrap_or("").to_owned())
@@ -148,10 +147,9 @@ impl Revision {
 
     fn date(&self, format: String, context: &Context) -> FieldResult<String> {
         let transaction = context.transaction.lock().unwrap();
-        let commit = transaction.repo().find_commit(self.commit_id)?;
         let filter_commit = transaction.repo().find_commit(filter::apply_to_commit(
             self.filter,
-            &commit,
+            self.commit_id,
             &transaction,
         )?)?;
 
@@ -170,10 +168,9 @@ impl Revision {
     ) -> FieldResult<Option<Revision>> {
         let commit_id = if let Some(true) = original {
             let transaction = context.transaction.lock().unwrap();
-            let commit = transaction.repo().find_commit(self.commit_id)?;
             let filter_commit = transaction.repo().find_commit(filter::apply_to_commit(
                 self.filter,
-                &commit,
+                self.commit_id,
                 &transaction,
             )?)?;
 
@@ -196,8 +193,7 @@ impl Revision {
 
     fn parents(&self, context: &Context) -> FieldResult<Vec<Revision>> {
         let transaction = context.transaction.lock().unwrap();
-        let commit = transaction.repo().find_commit(self.commit_id)?;
-        let filter_commit_id = filter::apply_to_commit(self.filter, &commit, &transaction)?;
+        let filter_commit_id = filter::apply_to_commit(self.filter, self.commit_id, &transaction)?;
 
         let parents = josh_core::git::read_parent_ids(transaction.repo(), filter_commit_id)?
             .into_iter()
@@ -226,10 +222,9 @@ impl Revision {
         let limit = limit.unwrap_or(1) as usize;
         let offset = offset.unwrap_or(0) as usize;
         let transaction = context.transaction.lock().unwrap();
-        let commit = transaction.repo().find_commit(self.commit_id)?;
         let filter_commit = transaction.repo().find_commit(filter::apply_to_commit(
             self.filter,
-            &commit,
+            self.commit_id,
             &transaction,
         )?)?;
 
@@ -298,10 +293,9 @@ impl Revision {
         context: &Context,
     ) -> FieldResult<Option<Vec<DiffPath>>> {
         let transaction = context.transaction.lock().unwrap();
-        let commit = transaction.repo().find_commit(self.commit_id)?;
         let filter_commit = transaction.repo().find_commit(filter::apply_to_commit(
             self.filter,
-            &commit,
+            self.commit_id,
             &transaction,
         )?)?;
 
@@ -936,15 +930,10 @@ struct RevMut {
 impl RevMut {
     fn push(&self, target: String, repo: Option<String>, context: &Context) -> FieldResult<bool> {
         let transaction = context.transaction.lock().unwrap();
-        let transaction_mirror = context.transaction_mirror.lock().unwrap();
-
-        let commit = transaction_mirror
-            .repo()
-            .find_commit(git2::Oid::from_str(&self.at)?)?;
 
         let filter_commit = transaction.repo().find_commit(filter::apply_to_commit(
             self.filter,
-            &commit,
+            git2::Oid::from_str(&self.at)?,
             &transaction,
         )?)?;
 
