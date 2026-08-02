@@ -55,9 +55,7 @@ pub fn head_branch(repo: &git2::Repository) -> anyhow::Result<String> {
             "HEAD is detached -- pass --branch to select a target branch explicitly"
         ));
     }
-    head.shorthand()
-        .map(|s| s.to_string())
-        .ok_or_else(|| anyhow!("HEAD has no valid shorthand"))
+    Ok(head.shorthand()?.to_string())
 }
 
 /// Return every changes ref that currently exists, as `ChangesRef` values.
@@ -69,8 +67,8 @@ pub fn all_changes_refs(repo: &git2::Repository) -> anyhow::Result<Vec<ChangesRe
     for r in repo.references()? {
         let r = r?;
         let name = match r.name() {
-            Some(n) => n,
-            None => continue,
+            Ok(n) => n,
+            Err(_) => continue,
         };
         if let Some(branch) = name.strip_prefix("refs/josh/changes/") {
             if !branch.is_empty() {
@@ -117,7 +115,7 @@ impl Change {
             id: None,
             series: Vec::new(),
             commit: commit.id(),
-            base: git2::Oid::zero(),
+            base: git2::Oid::ZERO_SHA1,
         };
         let (id, series) = commit_change_meta(commit);
         change.id = id;
@@ -155,7 +153,7 @@ impl Change {
         walk.simplify_first_parent()?;
         walk.set_sorting(git2::Sort::TOPOLOGICAL)?;
         walk.push(self.commit)?;
-        if self.base != git2::Oid::zero() {
+        if self.base != git2::Oid::ZERO_SHA1 {
             walk.hide(self.base)?;
         }
         let mut oids: Vec<git2::Oid> = walk.collect::<Result<Vec<_>, _>>()?;
@@ -246,7 +244,7 @@ fn split_changes(
     transaction: &josh_core::cache::Transaction,
     changes: std::collections::HashMap<git2::Oid, Change>,
 ) -> anyhow::Result<Vec<Change>> {
-    if changes.values().next().map(|c| c.base) == Some(git2::Oid::zero()) {
+    if changes.values().next().map(|c| c.base) == Some(git2::Oid::ZERO_SHA1) {
         return Ok(changes.into_values().collect());
     }
 
@@ -330,7 +328,7 @@ fn get_changes(
     walk.set_sorting(git2::Sort::REVERSE | git2::Sort::TOPOLOGICAL)?;
     walk.simplify_first_parent()?;
     walk.push(tip)?;
-    if base != git2::Oid::zero() {
+    if base != git2::Oid::ZERO_SHA1 {
         walk.hide(base)?;
     }
 
@@ -439,8 +437,8 @@ pub fn list_changes(repo: &git2::Repository, scope: &ChangesRef) -> anyhow::Resu
         };
         // The subtree has a single blob named by its content hash.
         // Read it to get tip and base OIDs.
-        let mut tip_oid = git2::Oid::zero();
-        let mut base_oid = git2::Oid::zero();
+        let mut tip_oid = git2::Oid::ZERO_SHA1;
+        let mut base_oid = git2::Oid::ZERO_SHA1;
         for se in subtree.iter() {
             let blob = match se.to_object(repo).ok().and_then(|o| o.peel_to_blob().ok()) {
                 Some(b) => b,
@@ -448,12 +446,12 @@ pub fn list_changes(repo: &git2::Repository, scope: &ChangesRef) -> anyhow::Resu
             };
             let content = String::from_utf8_lossy(blob.content());
             if let Some((tip_str, base_str)) = content.split_once('\n') {
-                tip_oid = git2::Oid::from_str(tip_str).unwrap_or(git2::Oid::zero());
-                base_oid = git2::Oid::from_str(base_str).unwrap_or(git2::Oid::zero());
+                tip_oid = git2::Oid::from_str(tip_str).unwrap_or(git2::Oid::ZERO_SHA1);
+                base_oid = git2::Oid::from_str(base_str).unwrap_or(git2::Oid::ZERO_SHA1);
             }
             break;
         }
-        if tip_oid == git2::Oid::zero() {
+        if tip_oid == git2::Oid::ZERO_SHA1 {
             continue;
         }
         let commit = match repo.find_commit(tip_oid) {
@@ -1206,7 +1204,7 @@ pub fn delete_outbox_comments(
     let c_prefix = std::path::Path::new("outbox/comments/C").join(&encoded);
     if let Some(c_tree) = get_tree(repo, &tree, &c_prefix) {
         for entry in c_tree.iter() {
-            if let Some(name) = entry.name() {
+            if let Ok(name) = entry.name() {
                 if want.contains(name) {
                     paths_to_remove.push(c_prefix.join(name));
                 }
@@ -1226,7 +1224,7 @@ pub fn delete_outbox_comments(
 
     for path in &paths_to_remove {
         if tree.get_path(path).is_ok() {
-            tree = josh_core::filter::tree::insert(repo, &tree, path, git2::Oid::zero(), 0)?;
+            tree = josh_core::filter::tree::insert(repo, &tree, path, git2::Oid::ZERO_SHA1, 0)?;
         }
     }
 
@@ -1257,8 +1255,8 @@ fn collect_outbox_file_paths(
 ) -> anyhow::Result<()> {
     for entry in tree.iter() {
         let name = match entry.name() {
-            Some(n) => n,
-            None => continue,
+            Ok(n) => n,
+            Err(_) => continue,
         };
         match entry.kind() {
             Some(git2::ObjectType::Tree) => {
@@ -1330,7 +1328,7 @@ pub fn delete_change(
     ] {
         let path = std::path::Path::new(prefix).join(&encoded);
         if tree.get_path(&path).is_ok() {
-            tree = josh_core::filter::tree::insert(repo, &tree, &path, git2::Oid::zero(), 0)?;
+            tree = josh_core::filter::tree::insert(repo, &tree, &path, git2::Oid::ZERO_SHA1, 0)?;
         }
     }
 
@@ -1386,7 +1384,7 @@ pub fn read_github_ids(
     };
     let mut map = std::collections::HashMap::new();
     for entry in subtree.iter() {
-        if let Some(name) = entry.name() {
+        if let Ok(name) = entry.name() {
             if let Ok(blob) = entry.to_object(repo).and_then(|o| o.peel_to_blob()) {
                 let github_id = String::from_utf8_lossy(blob.content()).trim().to_string();
                 map.insert(name.to_string(), github_id);
@@ -1428,7 +1426,7 @@ pub fn read_github_vote_ids(
     };
     let mut map = std::collections::HashMap::new();
     for entry in subtree.iter() {
-        if let Some(user) = entry.name() {
+        if let Ok(user) = entry.name() {
             if let Ok(blob) = entry.to_object(repo).and_then(|o| o.peel_to_blob()) {
                 if let Ok(data) = serde_json::from_slice::<VoteData>(blob.content()) {
                     map.insert(user.to_string(), data);
@@ -1707,8 +1705,8 @@ fn list_votes_at_prefix(
     let mut votes = Vec::new();
     for entry in subtree.iter() {
         let user = match entry.name() {
-            Some(name) => name.to_string(),
-            None => continue,
+            Ok(name) => name.to_string(),
+            Err(_) => continue,
         };
         let user_tree = match entry.to_object(repo).and_then(|o| o.peel_to_tree()) {
             Ok(t) => t,
@@ -1768,7 +1766,7 @@ pub fn cleanup_posted_outbox_votes(
             .join(&encoded)
             .join(user);
         if tree.get_path(&path).is_ok() {
-            tree = josh_core::filter::tree::insert(repo, &tree, &path, git2::Oid::zero(), 0)?;
+            tree = josh_core::filter::tree::insert(repo, &tree, &path, git2::Oid::ZERO_SHA1, 0)?;
             removed += 1;
         }
     }

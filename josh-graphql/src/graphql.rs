@@ -33,7 +33,7 @@ fn find_paths(
     let mut ws = vec![];
     tree.walk(git2::TreeWalkMode::PreOrder, |root, entry| {
         if Some(kind) == entry.kind()
-            && let Some(name) = entry.name()
+            && let Ok(name) = entry.name()
         {
             let path = std::path::Path::new(root).join(name);
             if let Some(limit) = depth
@@ -127,7 +127,12 @@ impl Revision {
             &commit,
             &transaction,
         )?)?;
-        Ok(filter_commit.summary().unwrap_or("").to_owned())
+        Ok(filter_commit
+            .summary()
+            .ok()
+            .flatten()
+            .unwrap_or("")
+            .to_owned())
     }
 
     fn message(&self, context: &Context) -> FieldResult<String> {
@@ -205,7 +210,7 @@ impl Revision {
                     id,
                     false,
                 )
-                .unwrap_or_else(|_| git2::Oid::zero()),
+                .unwrap_or_else(|_| git2::Oid::ZERO_SHA1),
             })
             .collect();
 
@@ -237,7 +242,7 @@ impl Revision {
         let mut ids = {
             walk.skip(offset)
                 .take(limit)
-                .map(|id| id.unwrap_or(git2::Oid::zero()))
+                .map(|id| id.unwrap_or(git2::Oid::ZERO_SHA1))
                 .collect::<Vec<git2::Oid>>()
         };
 
@@ -246,7 +251,7 @@ impl Revision {
                 let orig =
                     history::find_original(&transaction, self.filter, contained_in, ids[i], true)?;
 
-                if orig != git2::Oid::zero() {
+                if orig != git2::Oid::ZERO_SHA1 {
                     ids[i] = orig;
                     contained_in = josh_core::git::read_parent_ids(transaction.repo(), ids[i])?
                         .into_iter()
@@ -304,7 +309,7 @@ impl Revision {
             .parents()
             .next()
             .map(|p| (p.id(), p.tree_id()))
-            .unwrap_or((git2::Oid::zero(), git2::Oid::zero()));
+            .unwrap_or((git2::Oid::ZERO_SHA1, git2::Oid::ZERO_SHA1));
 
         let d = filter::tree::diff_paths(
             transaction.repo(),
@@ -579,7 +584,7 @@ impl Markers {
                     id: s
                         .next()
                         .and_then(|x| git2::Oid::from_str(x).ok())
-                        .unwrap_or_else(git2::Oid::zero),
+                        .unwrap_or(git2::Oid::ZERO_SHA1),
                     value: s
                         .next()
                         .and_then(|x| serde_json::from_str::<serde_json::Value>(x).ok())
@@ -782,7 +787,7 @@ impl Document {
         if let serde_json::Value::Array(a) = &self.pointer(at) {
             for x in a.iter() {
                 v.push(Document {
-                    id: git2::Oid::zero(),
+                    id: git2::Oid::ZERO_SHA1,
                     value: x.clone(),
                 });
             }
@@ -794,7 +799,7 @@ impl Document {
 
     fn value(&self, at: String) -> Option<Document> {
         self.value.pointer(&at).map(|x| Document {
-            id: git2::Oid::zero(),
+            id: git2::Oid::ZERO_SHA1,
             value: x.to_owned(),
         })
     }
@@ -824,7 +829,7 @@ impl Reference {
             .repo()
             .find_reference(&self.refname)?
             .target()
-            .unwrap_or_else(git2::Oid::zero);
+            .unwrap_or(git2::Oid::ZERO_SHA1);
 
         Ok(Revision {
             filter: filter::parse(&filter.unwrap_or_else(|| ":/".to_string()))?,
@@ -1012,7 +1017,7 @@ impl Repository {
 
         for reference in transaction_mirror.repo().references_glob(&refname)? {
             let r = reference?;
-            let name = r.name().ok_or_else(|| anyhow!("reference without name"))?;
+            let name = r.name()?;
 
             refs.push(Reference {
                 refname: name.to_string(),

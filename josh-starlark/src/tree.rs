@@ -2,7 +2,7 @@ use allocative::Allocative;
 use anyhow::Context;
 use anyhow::anyhow;
 use starlark::{
-    environment::{MethodsBuilder, MethodsStatic},
+    environment::MethodsBuilder,
     starlark_module, starlark_simple_value,
     values::{NoSerialize, ProvidesStaticType, StarlarkValue, StringValue, Value},
 };
@@ -55,8 +55,8 @@ impl<'v> StarlarkValue<'v> for StarlarkTree {
     }
 
     fn get_methods() -> Option<&'static starlark::environment::Methods> {
-        static RES: MethodsStatic = MethodsStatic::new();
-        RES.methods(tree_methods)
+        starlark::methods_static!(RES = tree_methods);
+        Some(RES.methods())
     }
 }
 
@@ -173,7 +173,7 @@ fn tree_methods(_builder: &mut MethodsBuilder) {
     fn dirs<'v>(
         this: &StarlarkTree,
         path: StringValue,
-        heap: &'v starlark::values::Heap,
+        heap: starlark::values::Heap<'v>,
     ) -> anyhow::Result<Vec<Value<'v>>> {
         let repo = this.repo();
 
@@ -198,7 +198,7 @@ fn tree_methods(_builder: &mut MethodsBuilder) {
         };
 
         for entry in target_tree.iter() {
-            if let Some(name) = entry.name() {
+            if let Ok(name) = entry.name() {
                 if entry.kind() == Some(git2::ObjectType::Tree) {
                     let full_path = if base_path.is_empty() {
                         name.to_string()
@@ -218,7 +218,7 @@ fn tree_methods(_builder: &mut MethodsBuilder) {
     fn files<'v>(
         this: &StarlarkTree,
         path: StringValue,
-        heap: &'v starlark::values::Heap,
+        heap: starlark::values::Heap<'v>,
     ) -> anyhow::Result<Vec<Value<'v>>> {
         let repo = this.repo();
 
@@ -243,7 +243,7 @@ fn tree_methods(_builder: &mut MethodsBuilder) {
         };
 
         for entry in target_tree.iter() {
-            if let Some(name) = entry.name() {
+            if let Ok(name) = entry.name() {
                 if entry.kind() == Some(git2::ObjectType::Blob) {
                     let full_path = if base_path.is_empty() {
                         name.to_string()

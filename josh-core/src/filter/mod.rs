@@ -67,7 +67,7 @@ impl<'a> Rewrite<'a> {
         Rewrite {
             tree,
             author: None,
-            commit: git2::Oid::zero(),
+            commit: git2::Oid::ZERO_SHA1,
             committer: None,
             message: None,
         }
@@ -82,7 +82,7 @@ impl<'a> Rewrite<'a> {
         Rewrite {
             tree,
             author,
-            commit: git2::Oid::zero(),
+            commit: git2::Oid::ZERO_SHA1,
             committer,
             message,
         }
@@ -93,14 +93,22 @@ impl<'a> Rewrite<'a> {
         let author = commit
             .author()
             .name()
+            .ok()
             .map(|name| name.to_owned())
-            .zip(commit.author().email().map(|email| email.to_owned()));
+            .zip(commit.author().email().ok().map(|email| email.to_owned()));
         let committer = commit
             .committer()
             .name()
+            .ok()
             .map(|name| name.to_owned())
-            .zip(commit.committer().email().map(|email| email.to_owned()));
-        let message = commit.message_raw().map(|msg| msg.to_owned());
+            .zip(
+                commit
+                    .committer()
+                    .email()
+                    .ok()
+                    .map(|email| email.to_owned()),
+            );
+        let message = commit.message_raw().ok().map(|msg| msg.to_owned());
 
         Ok(Rewrite {
             tree,
@@ -596,12 +604,12 @@ pub fn apply_to_commit2(
     }
 
     match &op {
-        Op::Empty => return Ok(Some(git2::Oid::zero())),
+        Op::Empty => return Ok(Some(git2::Oid::ZERO_SHA1)),
 
         Op::Chain(_) => {
             let mut current_oid = commit.id();
             for f in flatten_chain(filter) {
-                if current_oid == git2::Oid::zero() {
+                if current_oid == git2::Oid::ZERO_SHA1 {
                     break;
                 }
                 let current_commit = repo.find_commit(current_oid)?;
@@ -658,18 +666,20 @@ pub fn apply_to_commit2(
                 let author = rc
                     .author()
                     .name()
+                    .ok()
                     .map(|x| x.to_owned())
-                    .zip(rc.author().email().map(|x| x.to_owned()));
+                    .zip(rc.author().email().ok().map(|x| x.to_owned()));
                 let committer = rc
                     .committer()
                     .name()
+                    .ok()
                     .map(|x| x.to_owned())
-                    .zip(rc.committer().email().map(|x| x.to_owned()));
+                    .zip(rc.committer().email().ok().map(|x| x.to_owned()));
                 Rewrite::from_tree_with_metadata(
                     rc.tree()?,
                     author,
                     committer,
-                    rc.message_raw().map(|x| x.to_owned()),
+                    rc.message_raw().ok().map(|x| x.to_owned()),
                 )
                 //commit.tree()?
             } else {
@@ -1069,7 +1079,7 @@ pub fn apply_to_commit2(
                     }
                 }
             }
-            return Ok(Some(git2::Oid::zero()));
+            return Ok(Some(git2::Oid::ZERO_SHA1));
         }
 
         _ => apply(transaction, filter, Rewrite::from_commit(commit)?)?,
@@ -1159,7 +1169,7 @@ fn get_link_roots<'a>(
         .walk(git2::TreeWalkMode::PreOrder, |root, entry| {
             let root = root.trim_matches('/');
             let root = std::path::PathBuf::from(root);
-            if entry.name() == Some(".link.josh") {
+            if entry.name().ok() == Some(".link.josh") {
                 roots.push(root);
             }
             0
@@ -1227,7 +1237,7 @@ pub fn apply<'a>(
                         key if key.starts_with("#") => Some(
                             tree.get_path(std::path::Path::new(&key[1..]))
                                 .map(|e| e.id())
-                                .unwrap_or(git2::Oid::zero())
+                                .unwrap_or(git2::Oid::ZERO_SHA1)
                                 .to_string(),
                         ),
                         _ => None,
@@ -1269,7 +1279,7 @@ pub fn apply<'a>(
                         repo,
                         &result_tree,
                         std::path::Path::new(".gitmodules"),
-                        git2::Oid::zero(),
+                        git2::Oid::ZERO_SHA1,
                         0o0100644,
                     )?;
                 }
@@ -1284,7 +1294,7 @@ pub fn apply<'a>(
                 repo,
                 &tree,
                 &std::path::Path::new(".link.josh"),
-                git2::Oid::zero(),
+                git2::Oid::ZERO_SHA1,
                 0o0100644,
             )?))
         }
@@ -1293,8 +1303,13 @@ pub fn apply<'a>(
             use crate::link::find_link_files;
             let mut result_tree = x.tree.clone();
             for (link_path, link_file) in find_link_files(&repo, &result_tree)?.iter() {
-                result_tree =
-                    tree::insert(repo, &result_tree, &link_path, git2::Oid::zero(), 0o0100644)?;
+                result_tree = tree::insert(
+                    repo,
+                    &result_tree,
+                    &link_path,
+                    git2::Oid::ZERO_SHA1,
+                    0o0100644,
+                )?;
 
                 // The link_file is already a filter with metadata, just serialize it
                 let link_content = as_file(*link_file, 0);
@@ -1431,7 +1446,7 @@ pub fn apply<'a>(
                 .tree()
                 .get_path(source_path)
                 .map(|x| (x.id(), x.filemode()))
-                .unwrap_or((git2::Oid::zero(), git2::FileMode::Blob.into()));
+                .unwrap_or((git2::Oid::ZERO_SHA1, git2::FileMode::Blob.into()));
             Ok(x.with_tree(tree::insert(
                 repo,
                 &tree::empty(repo),
@@ -2100,7 +2115,7 @@ fn compute_splice_parents(
     Ok(Some(
         splice_parents
             .into_iter()
-            .filter(|&oid| oid != git2::Oid::zero())
+            .filter(|&oid| oid != git2::Oid::ZERO_SHA1)
             .collect(),
     ))
 }
@@ -2188,7 +2203,7 @@ fn per_rev_filter(
         let mut target = None;
         for id in filtered_parent_ids
             .iter()
-            .filter(|x| **x != git2::Oid::zero())
+            .filter(|x| **x != git2::Oid::ZERO_SHA1)
         {
             let seq = cache::compute_sequence_number(transaction, *id)?;
             if target.map(|(top, _)| seq > top).unwrap_or(true) {
@@ -2202,7 +2217,7 @@ fn per_rev_filter(
         if let Some((_, target_id)) = target {
             for id in filtered_parent_ids
                 .iter()
-                .filter(|x| **x != git2::Oid::zero() && **x != target_id)
+                .filter(|x| **x != git2::Oid::ZERO_SHA1 && **x != target_id)
             {
                 if !transaction.repo().graph_descendant_of(target_id, *id)? {
                     return Err(anyhow!(
@@ -2418,7 +2433,7 @@ fn downstack_commit_deps(
     let parent_tree_id = if commit.parent_count() > 0 {
         commit.parent(0)?.tree()?.id()
     } else {
-        git2::Oid::zero()
+        git2::Oid::ZERO_SHA1
     };
     let commit_tree_id = commit.tree()?.id();
 

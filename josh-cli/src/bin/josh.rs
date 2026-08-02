@@ -373,7 +373,7 @@ fn handle_clone(
             .with_context(|| format!("Failed to find remote HEAD reference {}", head_ref))?;
 
         let symref_target = head_reference
-            .symbolic_target()
+            .symbolic_target()?
             .context("Remote HEAD reference is not a symbolic reference")?;
 
         // Extract branch name from symref target (e.g., "refs/remotes/origin/master" -> "master")

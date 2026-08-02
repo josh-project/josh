@@ -254,6 +254,7 @@ impl gix_object::Find for StagingOdb<'_> {
             buffer.extend_from_slice(data);
             return Ok(Some(gix_object::Data {
                 kind: *kind,
+                object_hash: id.kind(),
                 data: buffer,
             }));
         }
@@ -270,7 +271,11 @@ impl gix_object::Find for StagingOdb<'_> {
         };
         buffer.clear();
         buffer.extend_from_slice(obj.data());
-        Ok(Some(gix_object::Data { kind, data: buffer }))
+        Ok(Some(gix_object::Data {
+            kind,
+            object_hash: id.kind(),
+            data: buffer,
+        }))
     }
 }
 

@@ -94,11 +94,11 @@ impl DistributedCacheBackend {
             // Each entry is a gitlink: the tree entry stores the target oid directly, and git
             // never requires a gitlink target to be present, so no blob objects are needed and
             // push/fetch never tries to transfer the filtered commits the entries point to.
-            // `Oid::zero()` ("filters to nothing") cannot be a gitlink -- null oids are invalid
+            // `Oid::ZERO_SHA1` ("filters to nothing") cannot be a gitlink -- null oids are invalid
             // in tree entries -- so it is encoded as a blob entry pointing at the empty blob;
             // the entry mode disambiguates on read.
             for (from, to) in &mut *m {
-                if *to == git2::Oid::zero() {
+                if *to == git2::Oid::ZERO_SHA1 {
                     let blob = repo.blob(&[])?;
                     builder.upsert(fanout(*from), blob, git2::FileMode::Blob.into());
                 } else {
@@ -247,11 +247,11 @@ impl CacheBackend for DistributedCacheBackend {
                 filter::spec(filter)
             );
             // Gitlink entries carry the target oid directly; any other mode is the empty-blob
-            // encoding of `Oid::zero()` (see `flush`).
+            // encoding of `Oid::ZERO_SHA1` (see `flush`).
             if e.filemode() == i32::from(git2::FileMode::Commit) {
                 return Ok(Some(e.id()));
             }
-            return Ok(Some(git2::Oid::zero()));
+            return Ok(Some(git2::Oid::ZERO_SHA1));
         } else {
             return Ok(None);
         };

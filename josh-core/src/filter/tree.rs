@@ -28,7 +28,7 @@ fn pathstree_inner(
     let bytes = transaction
         .read_tree_bytes(odb, input)?
         .ok_or_else(|| anyhow!("pathstree: {} is not a tree", input))?;
-    let tree = gix_object::TreeRef::from_bytes(&bytes)?;
+    let tree = gix_object::TreeRef::from_bytes(&bytes, gix_hash::Kind::Sha1)?;
     let mut rebuild = TreeRebuild::new(tree.entries.len());
 
     for entry in &tree.entries {
@@ -99,7 +99,7 @@ fn regex_replace_inner(
     let bytes = transaction
         .read_tree_bytes(odb, input)?
         .ok_or_else(|| anyhow!("regex_replace: {} is not a tree", input))?;
-    let tree = gix_object::TreeRef::from_bytes(&bytes)?;
+    let tree = gix_object::TreeRef::from_bytes(&bytes, gix_hash::Kind::Sha1)?;
     let mut rebuild = TreeRebuild::new(tree.entries.len());
 
     for entry in &tree.entries {
@@ -339,7 +339,7 @@ fn remove_pred_inner(
     let bytes = transaction
         .read_tree_bytes(odb, input)?
         .ok_or_else(|| anyhow!("remove_pred: {} is not a tree", input))?;
-    let tree = gix_object::TreeRef::from_bytes(&bytes)?;
+    let tree = gix_object::TreeRef::from_bytes(&bytes, gix_hash::Kind::Sha1)?;
     let mut rebuild = TreeRebuild::new(tree.entries.len());
     let empty = empty_id();
 
@@ -475,7 +475,7 @@ fn remove_pattern_inner(
     let bytes = transaction
         .read_tree_bytes(odb, input)?
         .ok_or_else(|| anyhow!("remove_pattern: {} is not a tree", input))?;
-    let tree = gix_object::TreeRef::from_bytes(&bytes)?;
+    let tree = gix_object::TreeRef::from_bytes(&bytes, gix_hash::Kind::Sha1)?;
     let mut rebuild = TreeRebuild::new(tree.entries.len());
     let empty = empty_id();
 
@@ -617,8 +617,8 @@ fn subtract_inner(
         if input2 == empty_id() {
             return Ok(input1);
         }
-        let tree1 = gix_object::TreeRef::from_bytes(&bytes1)?;
-        let tree2 = gix_object::TreeRef::from_bytes(&bytes2)?;
+        let tree1 = gix_object::TreeRef::from_bytes(&bytes1, gix_hash::Kind::Sha1)?;
+        let tree2 = gix_object::TreeRef::from_bytes(&bytes2, gix_hash::Kind::Sha1)?;
         // Start from `tree1` and drop or replace each path that also appears in `tree2`.
         // Modifications are collected by name first and applied in one pass, mirroring the
         // name-keyed libgit2 treebuilder: `None` removes the entry, `Some` replaces its oid with
@@ -634,7 +634,7 @@ fn subtract_inner(
                     objects::git2_oid(e1.oid),
                     objects::git2_oid(entry.oid),
                 )?;
-                if sub == empty_id() || sub == git2::Oid::zero() {
+                if sub == empty_id() || sub == git2::Oid::ZERO_SHA1 {
                     mods.insert(&**entry.filename, None);
                 } else if objects::tree_entry_name_valid(entry.filename) {
                     mods.insert(&**entry.filename, Some(sub));
@@ -700,8 +700,8 @@ fn intersect_inner(
     let bytes1 = transaction.read_tree_bytes(odb, input1)?;
     let bytes2 = transaction.read_tree_bytes(odb, input2)?;
     let result = if let (Some(bytes1), Some(bytes2)) = (bytes1, bytes2) {
-        let tree1 = gix_object::TreeRef::from_bytes(&bytes1)?;
-        let tree2 = gix_object::TreeRef::from_bytes(&bytes2)?;
+        let tree1 = gix_object::TreeRef::from_bytes(&bytes1, gix_hash::Kind::Sha1)?;
+        let tree2 = gix_object::TreeRef::from_bytes(&bytes2, gix_hash::Kind::Sha1)?;
         // Iterate the selector (`input2`), keeping each of its paths that also exists in `tree1`
         // with `tree1`'s content and normalized mode; cost tracks the size of the selected set.
         // Entries with invalid names are dropped silently (libgit2 insert-name parity).
@@ -714,7 +714,7 @@ fn intersect_inner(
                     objects::git2_oid(entry.oid),
                 )?;
                 if child != empty_id()
-                    && child != git2::Oid::zero()
+                    && child != git2::Oid::ZERO_SHA1
                     && objects::tree_entry_name_valid(entry.filename)
                 {
                     rebuild.keep(gix_object::tree::Entry {
@@ -764,10 +764,13 @@ fn replace_child_inner(
     tree_oid: git2::Oid,
 ) -> anyhow::Result<git2::Oid> {
     let mut out = match tree_object(odb, tree_oid) {
-        Some(obj) => seed_entries(&gix_object::TreeRef::from_bytes(obj.data())?),
+        Some(obj) => seed_entries(&gix_object::TreeRef::from_bytes(
+            obj.data(),
+            gix_hash::Kind::Sha1,
+        )?),
         None => Vec::new(),
     };
-    let remove = oid == git2::Oid::zero() || oid == empty_id();
+    let remove = oid == git2::Oid::ZERO_SHA1 || oid == empty_id();
     let existing = out.iter().position(|e| &*e.filename == child);
     if remove {
         if let Some(pos) = existing {
@@ -821,7 +824,7 @@ fn insert_inner(
         let cb = component_bytes(c.as_os_str());
         st = match tree_object(odb, st) {
             Some(obj) => {
-                let tree = gix_object::TreeRef::from_bytes(obj.data())?;
+                let tree = gix_object::TreeRef::from_bytes(obj.data(), gix_hash::Kind::Sha1)?;
                 match lookup_entry(&tree, cb.into()) {
                     Some(e) => objects::git2_oid(e.oid),
                     None => empty_id(),
@@ -874,8 +877,8 @@ pub fn diff_paths(
 
     if let (Ok(tree1), Ok(tree2)) = (repo.find_tree(input1), repo.find_tree(input2)) {
         for entry in tree2.iter() {
-            let name = entry.name().ok_or_else(|| anyhow!("no name"))?;
-            if let Some(e) = tree1.get_name(entry.name().ok_or_else(|| anyhow!("no name"))?) {
+            let name = entry.name()?;
+            if let Some(e) = tree1.get_name(entry.name()?) {
                 r.append(&mut diff_paths(
                     repo,
                     e.id(),
@@ -885,7 +888,7 @@ pub fn diff_paths(
             } else {
                 r.append(&mut diff_paths(
                     repo,
-                    git2::Oid::zero(),
+                    git2::Oid::ZERO_SHA1,
                     entry.id(),
                     &format!("{}{}{}", root, if root.is_empty() { "" } else { "/" }, name),
                 )?);
@@ -893,15 +896,12 @@ pub fn diff_paths(
         }
 
         for entry in tree1.iter() {
-            let name = entry.name().ok_or_else(|| anyhow!("no name"))?;
-            if tree2
-                .get_name(entry.name().ok_or_else(|| anyhow!("no name"))?)
-                .is_none()
-            {
+            let name = entry.name()?;
+            if tree2.get_name(entry.name()?).is_none() {
                 r.append(&mut diff_paths(
                     repo,
                     entry.id(),
-                    git2::Oid::zero(),
+                    git2::Oid::ZERO_SHA1,
                     &format!("{}{}{}", root, if root.is_empty() { "" } else { "/" }, name),
                 )?);
             }
@@ -912,10 +912,10 @@ pub fn diff_paths(
 
     if let Ok(tree2) = repo.find_tree(input2) {
         for entry in tree2.iter() {
-            let name = entry.name().ok_or_else(|| anyhow!("no name"))?;
+            let name = entry.name()?;
             r.append(&mut diff_paths(
                 repo,
-                git2::Oid::zero(),
+                git2::Oid::ZERO_SHA1,
                 entry.id(),
                 &format!("{}{}{}", root, if root.is_empty() { "" } else { "/" }, name),
             )?);
@@ -925,11 +925,11 @@ pub fn diff_paths(
 
     if let Ok(tree1) = repo.find_tree(input1) {
         for entry in tree1.iter() {
-            let name = entry.name().ok_or_else(|| anyhow!("no name"))?;
+            let name = entry.name()?;
             r.append(&mut diff_paths(
                 repo,
                 entry.id(),
-                git2::Oid::zero(),
+                git2::Oid::ZERO_SHA1,
                 &format!("{}{}{}", root, if root.is_empty() { "" } else { "/" }, name),
             )?);
         }
@@ -971,8 +971,8 @@ fn overlay_inner(
     let bytes1 = transaction.read_tree_bytes(odb, input1)?;
     let bytes2 = transaction.read_tree_bytes(odb, input2)?;
     if let (Some(bytes1), Some(bytes2)) = (bytes1, bytes2) {
-        let tree1 = gix_object::TreeRef::from_bytes(&bytes1)?;
-        let tree2 = gix_object::TreeRef::from_bytes(&bytes2)?;
+        let tree1 = gix_object::TreeRef::from_bytes(&bytes1, gix_hash::Kind::Sha1)?;
+        let tree2 = gix_object::TreeRef::from_bytes(&bytes2, gix_hash::Kind::Sha1)?;
         // Start from `tree1` and insert every entry of `tree2`: recursively overlaid where the
         // name exists in `tree1` (with `tree1` winning on blob collisions), taken over as-is
         // otherwise. Every inserted entry gets the normalized mode, and -- unlike the other tree
@@ -1055,7 +1055,7 @@ pub fn invert_paths<'a>(
     let mut result = empty(repo);
 
     for entry in tree.iter() {
-        let name = entry.name().ok_or_else(|| anyhow!("no name"))?;
+        let name = entry.name()?;
 
         if entry.kind() == Some(git2::ObjectType::Blob) {
             let mpath = normalize_path(&Path::new(root).join(name))
@@ -1144,7 +1144,7 @@ pub fn populate(
         .id();
     } else if let (Ok(paths), Ok(content)) = (repo.find_tree(paths), repo.find_tree(content)) {
         for entry in content.iter() {
-            if let Some(e) = paths.get_name(entry.name().ok_or_else(|| anyhow!("no name"))?) {
+            if let Some(e) = paths.get_name(entry.name()?) {
                 result_tree = overlay(
                     transaction,
                     result_tree,

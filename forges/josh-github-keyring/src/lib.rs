@@ -1,9 +1,8 @@
 use std::any::Any;
 use std::path::PathBuf;
 
-use anyhow::Context;
 use chrono::{DateTime, Duration, Utc};
-use keyring::credential::CredentialApi;
+use keyring_core::api::CredentialApi;
 use serde::{Deserialize, Serialize};
 
 use josh_github_auth::device_flow::AccessTokenResponse;
@@ -72,41 +71,55 @@ impl FileCredentialStore {
 }
 
 impl CredentialApi for FileCredentialStore {
-    fn set_secret(&self, secret: &[u8]) -> keyring::Result<()> {
+    fn set_secret(&self, secret: &[u8]) -> keyring_core::Result<()> {
         if let Some(parent) = self.path.parent() {
             std::fs::create_dir_all(parent)
-                .map_err(|e| keyring::Error::PlatformFailure(Box::new(e)))?;
+                .map_err(|e| keyring_core::Error::PlatformFailure(Box::new(e)))?;
         }
 
         std::fs::write(&self.path, secret)
-            .map_err(|e| keyring::Error::PlatformFailure(Box::new(e)))?;
+            .map_err(|e| keyring_core::Error::PlatformFailure(Box::new(e)))?;
 
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;
             std::fs::set_permissions(&self.path, std::fs::Permissions::from_mode(0o600))
-                .map_err(|e| keyring::Error::PlatformFailure(Box::new(e)))?;
+                .map_err(|e| keyring_core::Error::PlatformFailure(Box::new(e)))?;
         }
 
         Ok(())
     }
 
-    fn get_secret(&self) -> keyring::Result<Vec<u8>> {
+    fn get_secret(&self) -> keyring_core::Result<Vec<u8>> {
         std::fs::read(&self.path).map_err(|e| {
             if e.kind() == std::io::ErrorKind::NotFound {
-                keyring::Error::NoEntry
+                keyring_core::Error::NoEntry
             } else {
-                keyring::Error::PlatformFailure(Box::new(e))
+                keyring_core::Error::PlatformFailure(Box::new(e))
             }
         })
     }
 
-    fn delete_credential(&self) -> keyring::Result<()> {
+    fn delete_credential(&self) -> keyring_core::Result<()> {
         match std::fs::remove_file(&self.path) {
             Ok(()) => Ok(()),
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => Err(keyring::Error::NoEntry),
-            Err(e) => Err(keyring::Error::PlatformFailure(Box::new(e))),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => Err(keyring_core::Error::NoEntry),
+            Err(e) => Err(keyring_core::Error::PlatformFailure(Box::new(e))),
         }
+    }
+
+    fn get_credential(
+        &self,
+    ) -> keyring_core::Result<Option<std::sync::Arc<keyring_core::Credential>>> {
+        if self.path.exists() {
+            Ok(None)
+        } else {
+            Err(keyring_core::Error::NoEntry)
+        }
+    }
+
+    fn get_specifiers(&self) -> Option<(String, String)> {
+        None
     }
 
     fn as_any(&self) -> &dyn Any {
@@ -115,28 +128,32 @@ impl CredentialApi for FileCredentialStore {
 }
 
 /// Return the default credential store for the current build configuration.
-pub fn default_store() -> anyhow::Result<keyring::Entry> {
+pub fn default_store() -> anyhow::Result<keyring_core::Entry> {
     #[cfg(all(feature = "codesign", target_os = "macos"))]
-    let credential = {
+    let entry = {
+        use keyring_core::api::CredentialStoreApi;
+
         const KEYRING_SERVICE: &str = "josh-cli";
         const KEYRING_KEY: &str = "github:credentials";
 
-        Box::new(keyring::macos::MacCredential::new_with_target(
-            None,
+        apple_native_keyring_store::keychain::Store::new()?.build(
             KEYRING_SERVICE,
             KEYRING_KEY,
-        )?)
+            None,
+        )?
     };
 
     #[cfg(not(all(feature = "codesign", target_os = "macos")))]
-    let credential = {
-        Box::new(
+    let entry = {
+        use anyhow::Context;
+
+        keyring_core::Entry::new_with_credential(std::sync::Arc::new(
             FileCredentialStore::new()
                 .context("could not determine config directory for credential storage")?,
-        )
+        ))
     };
 
-    Ok(keyring::Entry::new_with_credential(credential))
+    Ok(entry)
 }
 
 /// Load a stored device-flow token from the default credential store.

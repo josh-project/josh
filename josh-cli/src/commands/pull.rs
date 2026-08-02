@@ -204,7 +204,7 @@ fn resolve_upstream_ref(
     let expected_prefix = format!("refs/remotes/{}/", remote);
 
     if let Ok(upstream_buf) = repo.branch_upstream_name(branch_ref) {
-        if let Some(upstream) = upstream_buf.as_str() {
+        if let Ok(upstream) = upstream_buf.as_str() {
             if !upstream.starts_with(&expected_prefix) {
                 return Err(anyhow::anyhow!(
                     "the current branch tracks '{}', which does not belong to remote '{}'",
@@ -233,7 +233,7 @@ fn upstream_change_ids(
     let mut ids = std::collections::HashSet::new();
     let mut walk = repo.revwalk()?;
     walk.push(tip)?;
-    if base != git2::Oid::zero() {
+    if base != git2::Oid::ZERO_SHA1 {
         walk.hide(base)?;
     }
 
@@ -314,7 +314,7 @@ pub fn integrate(
     }
     let branch_ref = head
         .name()
-        .ok_or_else(|| anyhow::anyhow!("HEAD ref name is not valid UTF-8"))?
+        .map_err(|_| anyhow::anyhow!("HEAD ref name is not valid UTF-8"))?
         .to_string();
     let branch = branch_ref
         .strip_prefix("refs/heads/")

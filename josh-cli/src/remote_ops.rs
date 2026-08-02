@@ -51,7 +51,7 @@ pub fn resolve_default_branch(
     let head_symref = format!("refs/remotes/{}/HEAD", remote_name);
     repo.find_reference(&head_symref)
         .ok()
-        .and_then(|r| r.symbolic_target().map(|s| s.to_string()))
+        .and_then(|r| r.symbolic_target().ok().flatten().map(|s| s.to_string()))
         .and_then(|target| {
             target
                 .strip_prefix(&format!("refs/remotes/{}/", remote_name))
@@ -155,7 +155,7 @@ pub fn apply_josh_filtering(
         let mut next_commits = Vec::new();
 
         for (branch_name, filtered_oid) in &filtered {
-            if *filtered_oid == git2::Oid::zero() {
+            if *filtered_oid == git2::Oid::ZERO_SHA1 {
                 continue;
             }
 

@@ -33,7 +33,7 @@ pub struct Oid(git2::Oid);
 
 impl Default for Oid {
     fn default() -> Self {
-        Oid(git2::Oid::zero())
+        Oid(git2::Oid::ZERO_SHA1)
     }
 }
 
@@ -211,7 +211,7 @@ pub fn filter_refs(
                     warn = true,
                     from = k.0.as_str(),
                 );
-                git2::Oid::zero()
+                git2::Oid::ZERO_SHA1
             }
         };
         updated.push((k.0.to_string(), oid));

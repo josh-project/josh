@@ -82,7 +82,7 @@ pub fn parents_share_root(
     transaction: &Transaction,
     parent_ids: &[git2::Oid],
 ) -> anyhow::Result<bool> {
-    if parent_ids.is_empty() || parent_ids.iter().any(|x| *x == git2::Oid::zero()) {
+    if parent_ids.is_empty() || parent_ids.iter().any(|x| *x == git2::Oid::ZERO_SHA1) {
         return Ok(false);
     }
 

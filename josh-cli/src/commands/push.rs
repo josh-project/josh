@@ -131,7 +131,7 @@ fn prepare_push(
     let dest_remote_ref = format!("refs/josh/remotes/{}/{}", remote_name, remote_ref);
     let (dest_oid, old_filtered_oid) =
         if let Ok(remote_reference) = repo.find_reference(&dest_remote_ref) {
-            let dest_oid = remote_reference.target().unwrap_or(git2::Oid::zero());
+            let dest_oid = remote_reference.target().unwrap_or(git2::Oid::ZERO_SHA1);
 
             let (filtered_oids, errors) =
                 josh_core::filter_refs(transaction, filter, &[(dest_remote_ref.clone(), dest_oid)]);
@@ -143,12 +143,12 @@ fn prepare_push(
             let old_filtered = if let Some((_, filtered_oid)) = filtered_oids.first() {
                 *filtered_oid
             } else {
-                git2::Oid::zero()
+                git2::Oid::ZERO_SHA1
             };
 
             (dest_oid, old_filtered)
         } else {
-            (git2::Oid::zero(), git2::Oid::zero())
+            (git2::Oid::ZERO_SHA1, git2::Oid::ZERO_SHA1)
         };
 
     let original_target = if let Some(base) = base {
@@ -181,7 +181,7 @@ fn prepare_push(
     .context("Failed to unapply filter")?;
 
     let unfiltered_oid = if merge {
-        if original_target == git2::Oid::zero() {
+        if original_target == git2::Oid::ZERO_SHA1 {
             return Err(anyhow!(
                 "--merge requires --base=<ref> or an existing destination ref"
             ));

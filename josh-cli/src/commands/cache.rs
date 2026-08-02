@@ -71,8 +71,8 @@ fn handle_cache_build(args: &CacheBuildArgs, transaction: &Transaction) -> anyho
                 Err(_) => continue,
             };
             let refname = match reference.name() {
-                Some(n) => n,
-                None => continue,
+                Ok(n) => n,
+                Err(_) => continue,
             };
             if let Some(rest) = refname.strip_prefix("refs/josh/filtered/") {
                 if let Some(heads_pos) = rest.find("/heads/") {
@@ -196,7 +196,7 @@ fn handle_cache_build(args: &CacheBuildArgs, transaction: &Transaction) -> anyho
             let mut next_commits = Vec::new();
 
             for (branch_name, filtered_oid) in filtered {
-                if filtered_oid == git2::Oid::zero() {
+                if filtered_oid == git2::Oid::ZERO_SHA1 {
                     continue;
                 }
                 let filtered_ref =
