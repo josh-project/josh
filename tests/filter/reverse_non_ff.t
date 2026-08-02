@@ -35,8 +35,8 @@ Meanwhile a concurrent commit lands on master
 Pushing without re-pulling first is refused
   $ josh-filter -s :/sub refs/heads/master --update refs/heads/filtered --reverse
   [2] :/sub
-  [2] reachable_roots
-  [2] sequence_number
+  [5] reachable_roots
+  [5] sequence_number
   ERROR: refusing non-fast-forward update of refs/heads/master -- it contains commits that the reverse apply would discard. Re-apply the filter and rebase the filtered changes onto the result, or pass --force
   [1]
 
@@ -47,8 +47,8 @@ With --force the update happens and the concurrent commit is discarded
   $ josh-filter -s :/sub refs/heads/master --update refs/heads/filtered --reverse --force
   cae93bf6a6f602f2777c66ce12a76065b21d30f9
   [2] :/sub
-  [2] reachable_roots
-  [2] sequence_number
+  [5] reachable_roots
+  [5] sequence_number
 
   $ git log --graph --pretty=%s refs/heads/master
   * filtered side work
@@ -59,8 +59,8 @@ After a proper pull (re-filter) the same push fast-forwards cleanly
   $ josh-filter -s :/sub refs/heads/master --update refs/heads/filtered2
   6436bdb983b15392190096cc9dd832af2ae017ed
   [2] :/sub
-  [2] reachable_roots
-  [2] sequence_number
+  [5] reachable_roots
+  [5] sequence_number
   $ git checkout -q -b work2 refs/heads/filtered2
   $ echo d > file4
   $ git add .
@@ -69,8 +69,8 @@ After a proper pull (re-filter) the same push fast-forwards cleanly
   $ josh-filter -s :/sub refs/heads/master --update refs/heads/filtered2 --reverse
   0b1cb14b07f000ffbed470ae7abc3c698ebb7781
   [2] :/sub
-  [2] reachable_roots
-  [2] sequence_number
+  [5] reachable_roots
+  [5] sequence_number
 
   $ git log --graph --pretty=%s refs/heads/master
   * rebased filtered work
