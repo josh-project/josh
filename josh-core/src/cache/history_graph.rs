@@ -149,28 +149,26 @@ fn ensure_hint_cached(
     }
 
     log::info!("ensure_hint_cached: new_walk for {:?}", input);
-    let mut walk = transaction.repo().revwalk()?;
-    walk.set_sorting(git2::Sort::REVERSE | git2::Sort::TOPOLOGICAL)?;
+    let odb = transaction.repo().odb()?;
+    let mut walk = crate::objects::RevWalk::new(&odb);
     walk.push(input)?;
 
-    // Hide ancestors that already have *both* pieces cached. Hiding on seq#
+    // Prune ancestors that already have *both* pieces cached. Pruning on seq#
     // alone would skip commits with cached seq# but missing roots, leaving
     // their roots unpopulated.
     // The callback cannot propagate errors, so treat a failed lookup as "not
     // cached": the walk then visits the commit and the fallible body reports
     // the same error properly.
-    let mut hide = |id| {
+    let sorted = walk.into_topo_vec(|id| {
         transaction
             .known(crate::filter::sequence_number(), id)
             .unwrap_or(false)
             && transaction
                 .known(crate::filter::reachable_roots(), id)
                 .unwrap_or(false)
-    };
-    let walk = walk.with_hide_callback(&mut hide)?;
+    })?;
 
-    for c in walk {
-        let oid = c?;
+    for &oid in sorted.iter().rev() {
         let parents_hint: Vec<(u64, git2::Oid)> =
             crate::git::read_parent_ids(transaction.repo(), oid)?
                 .into_iter()

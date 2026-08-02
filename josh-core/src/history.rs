@@ -1,6 +1,5 @@
 use super::*;
 use anyhow::anyhow;
-use std::cell::RefCell;
 use std::collections::{BTreeMap, HashMap, HashSet};
 
 pub enum GpgsigMode {
@@ -26,25 +25,17 @@ pub fn walk2(
 
     // A missing or non-commit input aborts the walk quietly; read_header avoids
     // decompressing the object.
-    match transaction.repo().odb()?.read_header(input) {
+    let odb = transaction.repo().odb()?;
+    match odb.read_header(input) {
         Ok((_, git2::ObjectType::Commit)) => {}
         _ => return Ok(()),
     }
 
-    let walk = {
-        let mut walk = transaction.repo().revwalk()?;
-        if history_flag(filter.get_meta("history").as_deref(), "linear") {
-            walk.simplify_first_parent()?;
-        }
-        walk.set_sorting(git2::Sort::REVERSE | git2::Sort::TOPOLOGICAL)?;
-
-        walk.push(input)?;
-        walk
-    };
-    // The callback cannot propagate errors, so treat a failed lookup as "not known": the walk
-    // then visits the commit and the fallible body reports the same error properly.
-    let mut hide_callback = |id| transaction.known(filter, id).unwrap_or(false);
-    let walk = walk.with_hide_callback(&mut hide_callback)?;
+    let mut walk = objects::RevWalk::new(&odb);
+    if history_flag(filter.get_meta("history").as_deref(), "linear") {
+        walk.simplify_first_parent();
+    }
+    walk.push(input)?;
 
     log::info!(
         "Walking {} commits for: {} {:?}",
@@ -52,12 +43,15 @@ pub fn walk2(
         filter::spec(filter),
         input,
     );
+
+    // The prune callback cannot propagate errors, so treat a failed lookup as "not known":
+    // the walk then visits the commit and the fallible body reports the same error properly.
+    let sorted = walk.into_topo_vec(|id| transaction.known(filter, id).unwrap_or(false))?;
+
     let mut n_in = 0;
     let mut n_out = 0;
 
-    for original_commit_id in walk {
-        let id = original_commit_id?;
-
+    for &id in sorted.iter().rev() {
         if filter::apply_to_commit2(filter, id, transaction)?.is_some() {
             n_out += 1;
         } else {
@@ -110,110 +104,57 @@ fn find_unapply_base(
         filtered_to_original.insert(oid, contained_in);
     }
 
-    // Start a revwalk in the original history tree starting from the
-    // contained_in "hint"
-    let mut walk = transaction.repo().revwalk()?;
-    walk.set_sorting(git2::Sort::TOPOLOGICAL)?;
+    // Walk the original history starting from the contained_in "hint" in lazy
+    // discovery order (the tip first, then the parents of each visited commit as
+    // the frontier expands), stopping at the first match. Because discovery order
+    // is only loosely child-before-parent, commits are held as pending until at
+    // least one other commit references them as a parent ("unlocked"); the start
+    // commit has no children in this subgraph, so it's unlocked immediately.
+    // Processing a commit may unlock pending ones, which are then processed too.
+    let odb = transaction.repo().odb()?;
+    let mut walk = objects::RevWalk::new(&odb);
     walk.push(contained_in)?;
 
-    // libgit2 does not read the list of commits lazily; instead,
-    // it reads the whole list, sorts it according to user's preference,
-    // and then lets the user iterate.
-    //
-    // while this does ensure the desired iteration order, it also means
-    // revwalks don't really scale. this approach below uses "hide callbacks"
-    // feature to stop iteration early - for real this time. hide callbacks
-    // are invoked during commit graph index read, and affect which commits
-    // are added to the traversal list.
-    //
-    // because we still want topological order - but it would be impossible to
-    // guarantee without reading full graph - we instead use something like
-    // "best effort" topo sorting, where commits are held as pending until
-    // at least one other commit references them as a parent.
-    #[derive(Default)]
-    struct CallbackContext {
-        result: Option<anyhow::Result<(git2::Oid, git2::Oid)>>,
-        unlocked: HashSet<git2::Oid>,
-        pending: HashSet<git2::Oid>,
-    }
+    let mut result: Option<(git2::Oid, git2::Oid)> = None;
+    let mut unlocked = HashSet::new();
+    let mut pending = HashSet::new();
+    unlocked.insert(contained_in);
 
-    let ctx = RefCell::new(CallbackContext::default());
-
-    // The start commit has no children in this subgraph, so it's immediately unlocked
-    ctx.borrow_mut().unlocked.insert(contained_in);
-
-    let mut hide_callback = |oid: git2::Oid| {
-        let mut ctx = ctx.borrow_mut();
-
-        // Returning true once is not enough: we need to ensure
-        // we don't add more commits to walk list as the loop
-        // in libgit2 continues if callback returns true
-        //
-        // https://github.com/libgit2/libgit2/blob/610dcaac065c0f27daca84b87795ed26926864f5/src/libgit2/revwalk.c#L428-L429
-        if ctx.result.is_some() {
-            return true;
-        }
-
-        ctx.pending.insert(oid);
-        if !ctx.unlocked.contains(&oid) {
-            return false;
+    walk.discover(|oid| {
+        pending.insert(oid);
+        if !unlocked.contains(&oid) {
+            return Ok(std::ops::ControlFlow::Continue(()));
         }
 
         // Check if any pending commits are now unlocked
         // Processing one might unlock another
-        while let Some(&pending_oid) = ctx
-            .pending
+        while let Some(&pending_oid) = pending
             .iter()
-            .find(|&pending_oid| ctx.unlocked.contains(pending_oid))
+            .find(|&pending_oid| unlocked.contains(pending_oid))
         {
-            ctx.pending.remove(&pending_oid);
+            pending.remove(&pending_oid);
 
-            let original_filtered = match filter::apply_to_commit(filter, pending_oid, transaction)
-            {
-                Ok(oid) => oid,
-                Err(e) => {
-                    ctx.result = Some(Err(e));
-                    return true;
-                }
-            };
+            let original_filtered = filter::apply_to_commit(filter, pending_oid, transaction)?;
 
             if filtered == original_filtered {
-                ctx.result = Some(Ok((filtered, pending_oid)));
-                return true;
+                result = Some((filtered, pending_oid));
+                return Ok(std::ops::ControlFlow::Break(()));
             }
 
-            let parent_ids = match git::read_parent_ids(transaction.repo(), pending_oid) {
-                Ok(parent_ids) => parent_ids,
-                Err(e) => {
-                    ctx.result = Some(Err(e));
-                    return true;
-                }
-            };
-            for parent_id in parent_ids {
-                ctx.unlocked.insert(parent_id);
+            for parent_id in git::read_parent_ids(transaction.repo(), pending_oid)? {
+                unlocked.insert(parent_id);
             }
         }
 
-        false
-    };
+        Ok(std::ops::ControlFlow::Continue(()))
+    })?;
 
-    let walk = walk.with_hide_callback(&mut hide_callback)?;
-    for original in walk {
-        // Only propagate errors; value is unused. Drives iteration to trigger hide_callback.
-        original?;
-
-        if ctx.borrow().result.is_some() {
-            break;
-        }
-    }
-
-    match ctx.into_inner().result {
-        Some(Ok((filtered, original))) => {
+    match result {
+        Some((filtered, original)) => {
             filtered_to_original.insert(filtered, original);
             tracing::info!("found original properly {}", original);
             Ok(original)
         }
-        Some(Err(e)) => Err(e),
         None => {
             tracing::info!("Didn't find original",);
             Ok(git2::Oid::ZERO_SHA1)
@@ -234,15 +175,14 @@ pub fn find_original(
     if filter.is_nop() {
         return Ok(filtered);
     }
-    let mut walk = transaction.repo().revwalk()?;
-    walk.set_sorting(git2::Sort::TOPOLOGICAL)?;
+    let odb = transaction.repo().odb()?;
+    let mut walk = objects::RevWalk::new(&odb);
     if linear {
-        walk.simplify_first_parent()?;
+        walk.simplify_first_parent();
     }
     walk.push(contained_in)?;
 
-    for original in walk {
-        let original = original?;
+    for original in walk.into_topo_vec(|_| false)? {
         if filtered == filter::apply_to_commit(filter, original, transaction)? {
             let parent_ids = git::read_parent_ids(transaction.repo(), original)?;
             if parent_ids.len() == 1 {
@@ -368,17 +308,13 @@ fn find_oldest_similar_commit(
     filter: filter::Filter,
     unfiltered: git2::Oid,
 ) -> anyhow::Result<git2::Oid> {
-    let walk = {
-        let mut walk = transaction.repo().revwalk()?;
-        walk.set_sorting(git2::Sort::TOPOLOGICAL)?;
-        walk.push(unfiltered)?;
-        walk
-    };
+    let odb = transaction.repo().odb()?;
+    let mut walk = objects::RevWalk::new(&odb);
+    walk.push(unfiltered)?;
     tracing::info!("oldest similar?");
     let filtered = filter::apply_to_commit(filter, unfiltered, transaction)?;
     let mut prev_rev = unfiltered;
-    for rev in walk {
-        let rev = rev?;
+    for rev in walk.into_topo_vec(|_| false)? {
         tracing::info!("next");
         if filtered != filter::apply_to_commit(filter, rev, transaction)? {
             tracing::info!("diff! {}", prev_rev);
@@ -398,17 +334,13 @@ fn find_new_branch_base(
     contained_in: git2::Oid,
     filtered: git2::Oid,
 ) -> anyhow::Result<git2::Oid> {
-    let walk = {
-        let mut walk = transaction.repo().revwalk()?;
-        walk.set_sorting(git2::Sort::TOPOLOGICAL)?;
-        walk.push(filtered)?;
-        walk
-    };
+    let odb = transaction.repo().odb()?;
+    let mut walk = objects::RevWalk::new(&odb);
+    walk.push(filtered)?;
     tracing::info!("new branch base?");
 
     // Walk filtered history, trying to find a base for every commit
-    for rev in walk {
-        let rev = rev?;
+    for rev in walk.into_topo_vec(|_| false)? {
         if let Ok(base) =
             find_unapply_base(transaction, filtered_to_original, filter, contained_in, rev)
             && base != git2::Oid::ZERO_SHA1
@@ -496,10 +428,8 @@ pub fn unapply_filter(
 
     let odb = transaction.repo().odb()?;
 
-    let walk = {
-        let mut walk = transaction.repo().revwalk()?;
-
-        walk.set_sorting(git2::Sort::REVERSE | git2::Sort::TOPOLOGICAL)?;
+    let revs = {
+        let mut walk = objects::RevWalk::new(&odb);
         walk.push(new_filtered_oid)?;
 
         // The main reason hide() can fail is if old_filtered_oid is not found in the repo
@@ -509,13 +439,11 @@ pub fn unapply_filter(
             tracing::warn!("walk: can't hide");
         }
 
-        walk
+        walk.into_topo_vec(|_| false)?
     };
 
-    // Walk starting from new filtered OID
-    for rev in walk {
-        let rev = rev?;
-
+    // Walk starting from new filtered OID, parents before children
+    for &rev in revs.iter().rev() {
         let span = tracing::span!(tracing::Level::TRACE, "walk commit", ?rev);
         let _span_guard = span.enter();
 

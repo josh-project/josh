@@ -2304,13 +2304,15 @@ pub fn downstack(
     }
 
     // Collect commits from base to change (exclusive of base, inclusive of change)
-    let mut walk = repo.revwalk()?;
-    walk.simplify_first_parent()?;
-    walk.set_sorting(git2::Sort::REVERSE | git2::Sort::TOPOLOGICAL)?;
+    let odb = repo.odb()?;
+    let mut walk = objects::RevWalk::new(&odb);
+    walk.simplify_first_parent();
     walk.push(change_oid)?;
     walk.hide(base_oid)?;
 
-    let oids: Vec<git2::Oid> = walk.collect::<Result<Vec<_>, _>>()?;
+    // Reverse-topo order: oldest first, `change` last.
+    let mut oids = walk.into_topo_vec(|_| false)?;
+    oids.reverse();
 
     if oids.is_empty() {
         return Ok(change_oid);
@@ -2337,7 +2339,6 @@ pub fn downstack(
     }
 
     // Rebase needed intermediates forward onto current_base.
-    let odb = repo.odb()?;
     let mut current_base = repo.find_commit(base_oid)?;
     for (intermediate, is_needed) in commits.iter().zip(needed.iter()) {
         if !is_needed {
