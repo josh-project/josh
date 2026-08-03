@@ -31,9 +31,7 @@
   $ josh-filter -s --squash-pattern "refs/tags/*" --update refs/heads/filtered
   Warning: reference refs/heads/filtered wasn't updated
   0000000000000000000000000000000000000000
-  [1] :squash(
-  
-  )
+  [1] :rev(_:SQUASH)
   [5] reachable_roots
   [5] sequence_number
 
@@ -47,16 +45,11 @@ This one tag is an annotated tag, to make sure those are handled as well
   $ git tag -a tag_a -m "created a tag" 1d69b7d
   $ josh-filter -s --squash-pattern "refs/tags/*" :author=\"New\ Author\"\;\"new@e.mail\" --update refs/heads/filtered
   977cc3ee14c0d6163ba63bd96f4aeedd43916ba7
-  [1] :"refs/tags/tag_a"
   [1] :author="New Author";"new@e.mail"
-  [1] :squash(
-  
-  )
-  [2] :squash(
-      1d69b7d2651f744be3416f2ad526aeccefb99310:"refs/tags/tag_a"
-  )
-  [7] reachable_roots
-  [7] sequence_number
+  [1] :rev(_:SQUASH)
+  [2] :rev(==1d69b7d2651f744be3416f2ad526aeccefb99310:"refs/tags/tag_a",_:SQUASH)
+  [6] reachable_roots
+  [6] sequence_number
 
   $ git log --graph --decorate --pretty=oneline refs/heads/filtered
   * 977cc3ee14c0d6163ba63bd96f4aeedd43916ba7 (tag: filtered/tag_a, filtered) refs/tags/tag_a
@@ -74,23 +67,12 @@ This one tag is an annotated tag, to make sure those are handled as well
 
   $ josh-filter -s --squash-pattern "refs/tags/*" :author=\"New\ Author\"\;\"new@e.mail\" --update refs/heads/filtered
   be41caf35896090033cfd103e06aae721a3ce541
-  [1] :"refs/tags/filtered/tag_a"
-  [1] :"refs/tags/tag_a"
-  [1] :"refs/tags/tag_b"
-  [1] :squash(
-  
-  )
-  [2] :squash(
-      1d69b7d2651f744be3416f2ad526aeccefb99310:"refs/tags/tag_a"
-  )
-  [3] :squash(
-      0b4cf6c9efbbda1eada39fa9c1d21d2525b027bb:"refs/tags/tag_b"
-      1d69b7d2651f744be3416f2ad526aeccefb99310:"refs/tags/tag_a"
-      977cc3ee14c0d6163ba63bd96f4aeedd43916ba7:"refs/tags/filtered/tag_a"
-  )
+  [1] :rev(_:SQUASH)
+  [2] :rev(==1d69b7d2651f744be3416f2ad526aeccefb99310:"refs/tags/tag_a",_:SQUASH)
+  [3] :rev(==977cc3ee14c0d6163ba63bd96f4aeedd43916ba7:"refs/tags/filtered/tag_a",==1d69b7d2651f744be3416f2ad526aeccefb99310:"refs/tags/tag_a",==0b4cf6c9efbbda1eada39fa9c1d21d2525b027bb:"refs/tags/tag_b",_:SQUASH)
   [4] :author="New Author";"new@e.mail"
-  [11] reachable_roots
-  [11] sequence_number
+  [10] reachable_roots
+  [10] sequence_number
 
   $ git log --graph --decorate --pretty=oneline refs/heads/filtered
   * be41caf35896090033cfd103e06aae721a3ce541 (tag: filtered/tag_a, filtered) refs/tags/tag_a
@@ -112,33 +94,14 @@ This one tag is an annotated tag, to make sure those are handled as well
 
   $ josh-filter -s --squash-pattern "refs/tags/*" :committer=\"New\ Author\"\;\"new@e.mail\" --update refs/heads/filtered
   97c6007771c497c9530d61aa89af663daebb1625
-  [1] :"refs/tags/filtered/filtered/tag_a"
-  [1] :"refs/tags/filtered/tag_a"
-  [1] :"refs/tags/filtered/tag_b"
-  [1] :"refs/tags/tag_a"
-  [1] :"refs/tags/tag_b"
-  [1] :squash(
-  
-  )
-  [2] :squash(
-      1d69b7d2651f744be3416f2ad526aeccefb99310:"refs/tags/tag_a"
-  )
-  [3] :squash(
-      0b4cf6c9efbbda1eada39fa9c1d21d2525b027bb:"refs/tags/tag_b"
-      1d69b7d2651f744be3416f2ad526aeccefb99310:"refs/tags/tag_a"
-      977cc3ee14c0d6163ba63bd96f4aeedd43916ba7:"refs/tags/filtered/tag_a"
-  )
+  [1] :rev(_:SQUASH)
+  [2] :rev(==1d69b7d2651f744be3416f2ad526aeccefb99310:"refs/tags/tag_a",_:SQUASH)
+  [3] :rev(==977cc3ee14c0d6163ba63bd96f4aeedd43916ba7:"refs/tags/filtered/tag_a",==1d69b7d2651f744be3416f2ad526aeccefb99310:"refs/tags/tag_a",==0b4cf6c9efbbda1eada39fa9c1d21d2525b027bb:"refs/tags/tag_b",_:SQUASH)
   [4] :author="New Author";"new@e.mail"
   [5] :committer="New Author";"new@e.mail"
-  [5] :squash(
-      0b4cf6c9efbbda1eada39fa9c1d21d2525b027bb:"refs/tags/tag_b"
-      1d69b7d2651f744be3416f2ad526aeccefb99310:"refs/tags/tag_a"
-      64f712c4615dbf5e9e0a1c4cdf65b2da2138f4be:"refs/tags/filtered/tag_b"
-      a68763bdf2f45a44304067954855749e366a5533:"refs/tags/filtered/filtered/tag_a"
-      be41caf35896090033cfd103e06aae721a3ce541:"refs/tags/filtered/tag_a"
-  )
-  [16] reachable_roots
-  [16] sequence_number
+  [5] :rev(==a68763bdf2f45a44304067954855749e366a5533:"refs/tags/filtered/filtered/tag_a",==be41caf35896090033cfd103e06aae721a3ce541:"refs/tags/filtered/tag_a",==64f712c4615dbf5e9e0a1c4cdf65b2da2138f4be:"refs/tags/filtered/tag_b",==1d69b7d2651f744be3416f2ad526aeccefb99310:"refs/tags/tag_a",==0b4cf6c9efbbda1eada39fa9c1d21d2525b027bb:"refs/tags/tag_b",_:SQUASH)
+  [15] reachable_roots
+  [15] sequence_number
   $ git log --graph --pretty=%an:%ae-%cn:%ce refs/heads/filtered
   * Josh:josh@example.com-New Author:new@e.mail
   |\
@@ -153,64 +116,22 @@ This one tag is an annotated tag, to make sure those are handled as well
   1d69b7d2651f744be3416f2ad526aeccefb99310 refs/heads/master
   $ josh-filter -s --squash-file squashlist :author=\"John\ Doe\"\;\"new@e.mail\" --update refs/heads/filtered -p > filter.josh
   $ cat filter.josh
-  :squash(
-      1d69b7d2651f744be3416f2ad526aeccefb99310:"refs/heads/master"
-      86871b8775ad3baca86484337d1072aa1d386f7e:"refs/heads/branch2"
-      97c6007771c497c9530d61aa89af663daebb1625:"refs/heads/filtered"
-  ):author="John Doe";"new@e.mail"
+  :rev(==86871b8775ad3baca86484337d1072aa1d386f7e:"refs/heads/branch2",==97c6007771c497c9530d61aa89af663daebb1625:"refs/heads/filtered",==1d69b7d2651f744be3416f2ad526aeccefb99310:"refs/heads/master",_:SQUASH):author="John Doe";"new@e.mail"
 
   $ josh-filter -s --squash-pattern "refs/tags/*" :author=\"New\ Author\"\;\"new@e.mail\" --update refs/heads/filtered -p > filter.josh
   $ cat filter.josh
-  :squash(
-      0b4cf6c9efbbda1eada39fa9c1d21d2525b027bb:"refs/tags/tag_b"
-      1d69b7d2651f744be3416f2ad526aeccefb99310:"refs/tags/tag_a"
-      1dd879133bc80f7d180bd98268412f8ee61226f2:"refs/tags/filtered/tag_b"
-      975d4c4975912729482cc864d321c5196a969271:"refs/tags/tag_c"
-      97c6007771c497c9530d61aa89af663daebb1625:"refs/tags/filtered/tag_a"
-      a91f2e4061d13b9adcb6d8ca63e17c8bbc5bed55:"refs/tags/filtered/filtered/tag_a"
-      b7e3b7815c4d7c8738545526b20308b1240137c7:"refs/tags/filtered/filtered/filtered/tag_a"
-      c4215db39f3cd96f07fe4c1f701dad39d5f5dec3:"refs/tags/filtered/filtered/tag_b"
-  ):author="New Author";"new@e.mail"
+  :rev(==b7e3b7815c4d7c8738545526b20308b1240137c7:"refs/tags/filtered/filtered/filtered/tag_a",==a91f2e4061d13b9adcb6d8ca63e17c8bbc5bed55:"refs/tags/filtered/filtered/tag_a",==c4215db39f3cd96f07fe4c1f701dad39d5f5dec3:"refs/tags/filtered/filtered/tag_b",==97c6007771c497c9530d61aa89af663daebb1625:"refs/tags/filtered/tag_a",==1dd879133bc80f7d180bd98268412f8ee61226f2:"refs/tags/filtered/tag_b",==1d69b7d2651f744be3416f2ad526aeccefb99310:"refs/tags/tag_a",==0b4cf6c9efbbda1eada39fa9c1d21d2525b027bb:"refs/tags/tag_b",==975d4c4975912729482cc864d321c5196a969271:"refs/tags/tag_c",_:SQUASH):author="New Author";"new@e.mail"
   $ josh-filter -s --file filter.josh --update refs/heads/filtered
   2826b9a173c7a7d5c83d9ae2614de89c77205d83
-  [1] :"refs/tags/filtered/filtered/tag_a"
-  [1] :"refs/tags/filtered/tag_a"
-  [1] :"refs/tags/filtered/tag_b"
-  [1] :"refs/tags/tag_a"
-  [1] :"refs/tags/tag_b"
-  [1] :"refs/tags/tag_c"
-  [1] :squash(
-  
-  )
-  [2] :squash(
-      1d69b7d2651f744be3416f2ad526aeccefb99310:"refs/tags/tag_a"
-  )
-  [3] :squash(
-      0b4cf6c9efbbda1eada39fa9c1d21d2525b027bb:"refs/tags/tag_b"
-      1d69b7d2651f744be3416f2ad526aeccefb99310:"refs/tags/tag_a"
-      1dd879133bc80f7d180bd98268412f8ee61226f2:"refs/tags/filtered/tag_b"
-      975d4c4975912729482cc864d321c5196a969271:"refs/tags/tag_c"
-      97c6007771c497c9530d61aa89af663daebb1625:"refs/tags/filtered/tag_a"
-      a91f2e4061d13b9adcb6d8ca63e17c8bbc5bed55:"refs/tags/filtered/filtered/tag_a"
-      b7e3b7815c4d7c8738545526b20308b1240137c7:"refs/tags/filtered/filtered/filtered/tag_a"
-      c4215db39f3cd96f07fe4c1f701dad39d5f5dec3:"refs/tags/filtered/filtered/tag_b"
-  )
-  [3] :squash(
-      0b4cf6c9efbbda1eada39fa9c1d21d2525b027bb:"refs/tags/tag_b"
-      1d69b7d2651f744be3416f2ad526aeccefb99310:"refs/tags/tag_a"
-      977cc3ee14c0d6163ba63bd96f4aeedd43916ba7:"refs/tags/filtered/tag_a"
-  )
+  [1] :rev(_:SQUASH)
+  [2] :rev(==1d69b7d2651f744be3416f2ad526aeccefb99310:"refs/tags/tag_a",_:SQUASH)
+  [3] :rev(==977cc3ee14c0d6163ba63bd96f4aeedd43916ba7:"refs/tags/filtered/tag_a",==1d69b7d2651f744be3416f2ad526aeccefb99310:"refs/tags/tag_a",==0b4cf6c9efbbda1eada39fa9c1d21d2525b027bb:"refs/tags/tag_b",_:SQUASH)
+  [3] :rev(==b7e3b7815c4d7c8738545526b20308b1240137c7:"refs/tags/filtered/filtered/filtered/tag_a",==a91f2e4061d13b9adcb6d8ca63e17c8bbc5bed55:"refs/tags/filtered/filtered/tag_a",==c4215db39f3cd96f07fe4c1f701dad39d5f5dec3:"refs/tags/filtered/filtered/tag_b",==97c6007771c497c9530d61aa89af663daebb1625:"refs/tags/filtered/tag_a",==1dd879133bc80f7d180bd98268412f8ee61226f2:"refs/tags/filtered/tag_b",==1d69b7d2651f744be3416f2ad526aeccefb99310:"refs/tags/tag_a",==0b4cf6c9efbbda1eada39fa9c1d21d2525b027bb:"refs/tags/tag_b",==975d4c4975912729482cc864d321c5196a969271:"refs/tags/tag_c",_:SQUASH)
   [5] :committer="New Author";"new@e.mail"
-  [5] :squash(
-      0b4cf6c9efbbda1eada39fa9c1d21d2525b027bb:"refs/tags/tag_b"
-      1d69b7d2651f744be3416f2ad526aeccefb99310:"refs/tags/tag_a"
-      64f712c4615dbf5e9e0a1c4cdf65b2da2138f4be:"refs/tags/filtered/tag_b"
-      a68763bdf2f45a44304067954855749e366a5533:"refs/tags/filtered/filtered/tag_a"
-      be41caf35896090033cfd103e06aae721a3ce541:"refs/tags/filtered/tag_a"
-  )
+  [5] :rev(==a68763bdf2f45a44304067954855749e366a5533:"refs/tags/filtered/filtered/tag_a",==be41caf35896090033cfd103e06aae721a3ce541:"refs/tags/filtered/tag_a",==64f712c4615dbf5e9e0a1c4cdf65b2da2138f4be:"refs/tags/filtered/tag_b",==1d69b7d2651f744be3416f2ad526aeccefb99310:"refs/tags/tag_a",==0b4cf6c9efbbda1eada39fa9c1d21d2525b027bb:"refs/tags/tag_b",_:SQUASH)
   [6] :author="New Author";"new@e.mail"
-  [19] reachable_roots
-  [19] sequence_number
+  [17] reachable_roots
+  [17] sequence_number
 
   $ git log --graph --decorate --pretty=oneline refs/heads/filtered
   *   2826b9a173c7a7d5c83d9ae2614de89c77205d83 (filtered) refs/tags/tag_a
@@ -218,4 +139,3 @@ This one tag is an annotated tag, to make sure those are handled as well
   | * 63f8653625759f860ee31cce2d4e207974da1c37 refs/tags/tag_c
   |/  
   * 64f712c4615dbf5e9e0a1c4cdf65b2da2138f4be refs/tags/tag_b
-

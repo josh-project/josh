@@ -44,7 +44,7 @@ fn make_filter(args: &[&str]) -> anyhow::Result<Filter> {
             Where `path` is path to the directory where workspace.josh file is located
             "#
         ))),
-        ["SQUASH"] => Ok(f.squash(None)),
+        ["SQUASH"] => Ok(f.squash()),
         ["SQUASH", _ids @ ..] => Err(anyhow!("SQUASH with ids can't be parsed")),
         ["linear"] => Ok(f.linear()),
         ["prune", "trivial-merge"] => Ok(f.prune_trivial_merge()),
@@ -352,6 +352,7 @@ fn parse_item(pair: pest::iterators::Pair<Rule>) -> anyhow::Result<Filter> {
             Ok(to_filter(Op::RegexReplace(replacements)))
         }
         Rule::filter_squash => {
+            // BTreeMap deduplicates IDs and makes the expansion deterministic.
             let ids: std::collections::BTreeMap<LazyRef, Filter> = pair
                 .into_inner()
                 .tuples()
@@ -362,7 +363,7 @@ fn parse_item(pair: pest::iterators::Pair<Rule>) -> anyhow::Result<Filter> {
                 .into_iter()
                 .collect();
 
-            Ok(to_filter(Op::Squash(Some(ids))))
+            Ok(to_filter(crate::filter::squash_to_rev(ids)))
         }
         Rule::filter_meta => {
             let inner = pair.into_inner();
