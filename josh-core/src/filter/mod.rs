@@ -2416,7 +2416,7 @@ pub fn downstack(
     Ok(new_oid)
 }
 
-/// Memo libgit2's 3-way `merge_trees` + `write_tree_to` pair within the
+/// Memo git2's 3-way `merge_trees` + `write_tree_to` pair within the
 /// active transaction. The merged tree oid is a pure function of the three
 /// input tree oids (with `MergeOptions::None`), and `split_changes` issues
 /// many identical triples across per-tip `downstack` calls; turning each
@@ -2480,7 +2480,7 @@ fn downstack_commit_deps(
         return Ok(hit);
     }
 
-    // Use the in-crate `tree::diff_paths` rather than libgit2's full diff
+    // Use the in-crate `tree::diff_paths` rather than git2's full diff
     // pipeline: it short-circuits subtrees by oid equality, which collapses
     // the typical "stack of single-file commits" deps walk down to a few
     // tree lookups per call.

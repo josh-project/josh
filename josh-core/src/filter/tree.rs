@@ -128,7 +128,7 @@ fn regex_replace_inner(
 
             if objects::tree_entry_name_valid(entry.filename) {
                 rebuild.keep(gix_object::tree::Entry {
-                    mode: entry_mode(objects::normalize_filemode(raw_mode)),
+                    mode: entry_mode(objects::canonical_filemode(raw_mode)),
                     filename: entry.filename.to_owned(),
                     oid: objects::gix_oid(repo.blob(replaced.as_bytes())?),
                 });
@@ -172,15 +172,15 @@ fn git_tree_entry_cmp(a: &[u8], a_is_tree: bool, b: &[u8], b_is_tree: bool) -> s
     ca.cmp(&cb)
 }
 
-/// Accumulator for rebuilding a tree entry-by-entry, encapsulating the libgit2-treebuilder
-/// parity rules: canonical-order tracking, last-wins dedup of duplicate names, and the
+/// Accumulator for rebuilding a tree entry-by-entry, encapsulating the parity rules of the
+/// git2 treebuilder it replaced: canonical-order tracking, last-wins dedup of duplicate names, and the
 /// unchanged fast path guarded by `changed`. Callers report the fate of each input entry
 /// (`keep` for survivors, `mark_changed` for anything dropped, rewritten, renamed-away or
 /// mode-normalized) and `finish` writes the rebuilt tree or returns the input oid.
 ///
 /// TODO(byte-preservation): the last-wins dedup in `keep`, the order-violation handling
 /// (forcing `changed` so non-canonical trees skip the unchanged fast path), and the
-/// unconditional sort in `write_tree_now` together replicate libgit2's treebuilder
+/// unconditional sort in `write_tree_now` together keep the old treebuilder's
 /// normalization of fsck-invalid input trees. That normalization is a bug of the same kind as
 /// git2's gpgsig header line-ending normalization: it re-encodes bytes the operation was
 /// never asked to change, so non-canonical trees do not round-trip through a filter even when
@@ -192,7 +192,7 @@ fn git_tree_entry_cmp(a: &[u8], a_is_tree: bool, b: &[u8], b_is_tree: bool) -> s
 /// `write_tree_now` and tolerant (non-bisecting) name lookups in subtract/intersect/overlay,
 /// and it changes filtered oids for repos containing such trees, so it must land as its own
 /// change with tests -- not inside the gix port, which is validated on byte-identity against
-/// the libgit2 baseline and keeps this wart until then.
+/// the pre-port git2 baseline and keeps this wart until then.
 struct TreeRebuild {
     out: Vec<gix_object::tree::Entry>,
     /// Whether the rebuilt entry set could serialize to anything other than the input
@@ -225,7 +225,7 @@ impl TreeRebuild {
     }
 
     /// Append a surviving entry, replacing an earlier kept entry of the same name like
-    /// libgit2's name-keyed treebuilder did (last insert wins).
+    /// git2's name-keyed treebuilder did (last insert wins).
     ///
     /// Also verifies the kept entries arrive in canonical git order with no duplicate names:
     /// a violation forces `changed` (non-canonical input trees must not take the unchanged
@@ -270,8 +270,8 @@ impl TreeRebuild {
     }
 }
 
-/// Clone a parsed tree's entries for use as the starting set of a rebuild, replicating what
-/// seeding a libgit2 treebuilder from a tree did: entry names and raw modes are taken over
+/// Clone a parsed tree's entries for use as the starting set of a rebuild, keeping what
+/// seeding a git2 treebuilder from a tree did: entry names and raw modes are taken over
 /// unvalidated and unnormalized, but duplicate names collapse to the last occurrence (the
 /// treebuilder was a name-keyed map). [`TreeRebuild::keep`] owns that dedup and the
 /// order-violation detection arming it; `keep` is usable standalone here because seeded
@@ -285,7 +285,7 @@ fn seed_entries(tree: &gix_object::TreeRef) -> Vec<gix_object::tree::Entry> {
     rebuild.out
 }
 
-/// Look up an entry by name irrespective of its kind, like libgit2's `git_tree_entry_byname`.
+/// Look up an entry by name irrespective of its kind, like git2's `Tree::get_name`.
 /// Canonical order sorts a blob before a same-named tree, so the blob probe comes first.
 fn lookup_entry<'a>(
     tree: &gix_object::TreeRef<'a>,
@@ -295,7 +295,7 @@ fn lookup_entry<'a>(
         .or_else(|| tree.bisect_entry(name, true))
 }
 
-/// The [`gix_object::tree::EntryMode`] for a libgit2-normalized mode value.
+/// The [`gix_object::tree::EntryMode`] for a canonicalized mode value.
 fn entry_mode(norm: u16) -> gix_object::tree::EntryMode {
     gix_object::tree::EntryMode::try_from(norm as u32).expect("normalized modes are valid")
 }
@@ -362,7 +362,7 @@ fn remove_pred_inner(
                 key,
             )?;
             // `entry.mode` compares by the serialized form, so the fsck-invalid "040000"
-            // spelling also counts as changed (libgit2 could not distinguish it).
+            // spelling also counts as changed (the old treebuilder could not distinguish it).
             if s != objects::git2_oid(entry.oid)
                 || s == empty
                 || entry.mode != gix_object::tree::EntryKind::Tree.into()
@@ -387,10 +387,10 @@ fn remove_pred_inner(
             // take the unchanged fast path.
             rebuild.mark_changed();
         } else if pred(path, true) {
-            // The normalized mode is what libgit2's treebuilder would have stored: if it
+            // The canonical mode is what the old treebuilder would have stored: if it
             // differs from the raw on-disk mode (e.g. legacy 100664 blobs), the rebuilt tree
             // differs from the input.
-            let norm = objects::normalize_filemode(raw_mode);
+            let norm = objects::canonical_filemode(raw_mode);
             if raw_mode != norm {
                 rebuild.mark_changed();
             }
@@ -558,7 +558,7 @@ fn remove_pattern_inner(
             if keep {
                 // See remove_pred for why legacy filemodes and rejected names count as
                 // changed.
-                let norm = objects::normalize_filemode(raw_mode);
+                let norm = objects::canonical_filemode(raw_mode);
                 if raw_mode != norm {
                     rebuild.mark_changed();
                 }
@@ -621,9 +621,9 @@ fn subtract_inner(
         let tree2 = gix_object::TreeRef::from_bytes(&bytes2, gix_hash::Kind::Sha1)?;
         // Start from `tree1` and drop or replace each path that also appears in `tree2`.
         // Modifications are collected by name first and applied in one pass, mirroring the
-        // name-keyed libgit2 treebuilder: `None` removes the entry, `Some` replaces its oid with
-        // the subtraction result (a tree, hence the normalized tree mode). Names that libgit2's
-        // insert would have rejected silently keep their original entry.
+        // name-keyed git2 treebuilder: `None` removes the entry, `Some` replaces its oid with
+        // the subtraction result (a tree, hence the canonical tree mode). Names that a
+        // treebuilder insert would have rejected silently keep their original entry.
         let mut mods: std::collections::HashMap<&[u8], Option<git2::Oid>> =
             std::collections::HashMap::new();
         for entry in &tree2.entries {
@@ -704,7 +704,7 @@ fn intersect_inner(
         let tree2 = gix_object::TreeRef::from_bytes(&bytes2, gix_hash::Kind::Sha1)?;
         // Iterate the selector (`input2`), keeping each of its paths that also exists in `tree1`
         // with `tree1`'s content and normalized mode; cost tracks the size of the selected set.
-        // Entries with invalid names are dropped silently (libgit2 insert-name parity).
+        // Entries with invalid names are dropped silently (treebuilder insert-name parity).
         let mut rebuild = TreeRebuild::new(0);
         for entry in &tree2.entries {
             if let Some(e1) = lookup_entry(&tree1, entry.filename) {
@@ -718,7 +718,7 @@ fn intersect_inner(
                     && objects::tree_entry_name_valid(entry.filename)
                 {
                     rebuild.keep(gix_object::tree::Entry {
-                        mode: entry_mode(objects::normalize_filemode(e1.mode.value())),
+                        mode: entry_mode(objects::canonical_filemode(e1.mode.value())),
                         filename: entry.filename.to_owned(),
                         oid: objects::gix_oid(child),
                     });
@@ -753,8 +753,8 @@ fn tree_object<'a>(odb: &'a git2::Odb, oid: git2::Oid) -> Option<git2::OdbObject
 }
 
 /// Rebuild the tree `tree_oid` with the single-component `child` replaced by (`oid`, `mode`), or
-/// removed when `oid` is the zero or empty-tree oid. Like a seeded libgit2 treebuilder: other
-/// entries keep their raw modes, the inserted mode is normalized, and an invalid child name
+/// removed when `oid` is the zero or empty-tree oid. Like a seeded git2 treebuilder: other
+/// entries keep their raw modes, the inserted mode is canonicalized, and an invalid child name
 /// silently leaves the tree unchanged.
 fn replace_child_inner(
     odb: &git2::Odb,
@@ -778,7 +778,7 @@ fn replace_child_inner(
         }
     } else if objects::tree_entry_name_valid(child) {
         let entry = gix_object::tree::Entry {
-            mode: entry_mode(objects::normalize_filemode(mode as u16)),
+            mode: entry_mode(objects::canonical_filemode(mode as u16)),
             filename: child.into(),
             oid: objects::gix_oid(oid),
         };
@@ -999,13 +999,13 @@ fn overlay_inner(
                 )?;
                 mods.insert(
                     &**entry.filename,
-                    (id, entry_mode(objects::normalize_filemode(e1.mode.value()))),
+                    (id, entry_mode(objects::canonical_filemode(e1.mode.value()))),
                 );
             } else {
                 new_entries.insert(
                     &**entry.filename,
                     gix_object::tree::Entry {
-                        mode: entry_mode(objects::normalize_filemode(entry.mode.value())),
+                        mode: entry_mode(objects::canonical_filemode(entry.mode.value())),
                         filename: entry.filename.to_owned(),
                         oid: entry.oid.to_owned(),
                     },
@@ -1275,7 +1275,7 @@ mod tests {
 
         let blob = repo.blob(b"content").unwrap();
         let link = repo.blob(b"target").unwrap();
-        // Gitlinks reference commits in other repositories; libgit2 does not require the oid
+        // Gitlinks reference commits in other repositories; git does not require the oid
         // to exist locally.
         let sub = git2::Oid::from_str("0123456789012345678901234567890123456789").unwrap();
 

@@ -59,17 +59,18 @@ pub fn git2_oid(oid: &gix_hash::oid) -> git2::Oid {
     git2::Oid::from_bytes(oid.as_bytes()).expect("oid sizes match")
 }
 
-/// Whether `name` is acceptable as a tree entry name, replicating libgit2's `valid_entry_name`
-/// under default configuration. gix by design performs no name validation when writing trees, so
-/// josh owns this check; tree rewriting drops entries with invalid names (and marks the tree as
-/// changed), exactly like the failed `git_treebuilder_insert` did before the gix port.
+/// Whether `name` is acceptable as a tree entry name, keeping the checks git2's treebuilder
+/// enforced under default configuration. gix by design performs no name validation when writing
+/// trees, so josh owns this check; tree rewriting drops entries with invalid names (and marks
+/// the tree as changed), exactly like the failed treebuilder insert did before the gix port.
 ///
 /// Rejected are: the empty name, names containing `/`, `.` and `..`, and `.git` including its
 /// NTFS-style aliases (`.git.`, `.git `, `.git:x`, `.git\x`, case-insensitive) and HFS-style
-/// aliases (`.git` with HFS-ignorable code points interspersed). libgit2 applies the NTFS check
-/// everywhere (`core.protectNTFS` defaults to true) but the HFS check only on Apple platforms;
-/// josh applies both everywhere so filtered output does not depend on the host OS -- for the
-/// HFS-alias corner case on non-Apple hosts this is deliberately stricter than libgit2 was.
+/// aliases (`.git` with HFS-ignorable code points interspersed) -- the protections git itself
+/// applies under `core.protectNTFS`/`core.protectHFS`. git2 ran the NTFS check everywhere
+/// (`core.protectNTFS` defaults to true) but the HFS check only on Apple platforms; josh
+/// applies both everywhere so filtered output does not depend on the host OS -- for the
+/// HFS-alias corner case on non-Apple hosts this is deliberately stricter than git2 was.
 pub fn tree_entry_name_valid(name: &[u8]) -> bool {
     if name.is_empty() || name == b"." || name == b".." {
         return false;
@@ -96,8 +97,8 @@ pub fn tree_entry_name_valid(name: &[u8]) -> bool {
     true
 }
 
-/// True if `name` equals ".git" case-insensitively once HFS-ignorable code points are removed.
-/// Mirrors libgit2's `validate_dotgit_hfs`. Non-UTF-8 names cannot alias ".git" this way.
+/// True if `name` equals ".git" case-insensitively once HFS-ignorable code points are removed
+/// (the `core.protectHFS` alias rule). Non-UTF-8 names cannot alias ".git" this way.
 fn hfs_reads_as_dotgit(name: &[u8]) -> bool {
     let Ok(s) = std::str::from_utf8(name) else {
         return false;
@@ -119,12 +120,12 @@ fn hfs_reads_as_dotgit(name: &[u8]) -> bool {
     }
 }
 
-/// Normalize a raw tree entry mode exactly like libgit2's `normalize_filemode` (which every
-/// `git_treebuilder_insert` applied): trees stay trees, any exec bit makes an executable blob,
-/// gitlinks and symlinks keep their type, everything else becomes a plain blob. Note the exec
-/// check precedes the gitlink/symlink checks and tests all three exec bits -- both quirks are
-/// libgit2's, kept for byte-identical rebuilt trees.
-pub fn normalize_filemode(raw: u16) -> u16 {
+/// Reduce a raw tree entry mode to the canonical form git2's treebuilder stored on every
+/// insert: trees stay trees, any exec bit makes an executable blob, gitlinks and symlinks keep
+/// their type, everything else becomes a plain blob. Note the exec check precedes the
+/// gitlink/symlink checks and tests all three exec bits -- both quirks are kept from the old
+/// treebuilder for byte-identical rebuilt trees.
+pub fn canonical_filemode(raw: u16) -> u16 {
     if raw & 0o170000 == 0o040000 {
         0o040000
     } else if raw & 0o111 != 0 {
@@ -143,7 +144,7 @@ pub fn normalize_filemode(raw: u16) -> u16 {
 /// the repository (and lands in the in-memory memodb store when one is registered), so ported and
 /// unported code can interleave freely.
 ///
-/// TODO(byte-preservation): the unconditional sort is part of the libgit2-parity normalization
+/// TODO(byte-preservation): the unconditional sort is part of the treebuilder-parity normalization
 /// of fsck-invalid input trees described on `TreeRebuild` in josh-core's filter/tree.rs. Once
 /// filters preserve non-canonical trees byte-for-byte, rebuilds seeded from such trees will need
 /// an order-preserving variant of this function (callers building entry sets from scratch keep
@@ -447,13 +448,13 @@ mod tests {
             (0o040755, 0o040000),
             (0o120000, 0o120000),
             (0o160000, 0o160000),
-            // libgit2 quirks: exec bits win over the gitlink/symlink type checks.
+            // Old-treebuilder quirks: exec bits win over the gitlink/symlink type checks.
             (0o120755, 0o100755),
             (0o160755, 0o100755),
             // Garbage type bits collapse to a plain blob.
             (0o110644, 0o100644),
         ] {
-            assert_eq!(normalize_filemode(raw), norm, "raw mode {raw:o}");
+            assert_eq!(canonical_filemode(raw), norm, "raw mode {raw:o}");
         }
     }
 }
