@@ -121,9 +121,7 @@ pub enum Op {
     Export,
     Embed(std::path::PathBuf),
 
-    // We use BTreeMap rather than HashMap to guarantee deterministic results when
-    // converting to Filter
-    Squash(Option<std::collections::BTreeMap<LazyRef, Filter>>),
+    Squash,
     Author(String, String),
     Committer(String, String),
 

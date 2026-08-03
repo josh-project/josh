@@ -13,6 +13,7 @@ pub use josh_filter::filter::MESSAGE_MATCH_ALL_REGEX;
 pub use josh_filter::filter::index;
 pub use josh_filter::filter::reachable_roots;
 pub use josh_filter::filter::sequence_number;
+pub use josh_filter::filter::squash_to_rev;
 pub use josh_filter::flang::parse::{get_comments, parse};
 pub use josh_filter::opt;
 pub use josh_filter::opt::invert;
@@ -189,17 +190,6 @@ fn lazy_refs2(op: &Op) -> Vec<String> {
             lr.dedup();
             lr
         }
-        Op::Squash(Some(revs)) => {
-            let mut lr = vec![];
-            lr.extend(revs.keys().filter_map(|nested| {
-                if let LazyRef::Lazy(s) = nested {
-                    Some(s.to_owned())
-                } else {
-                    None
-                }
-            }));
-            lr
-        }
         Op::Downstack(LazyRef::Lazy(s)) => vec![s.to_owned()],
         Op::Downstack(_) => vec![],
         _ => vec![],
@@ -241,23 +231,6 @@ fn resolve_refs2(refs: &std::collections::HashMap<String, git2::Oid>, op: &Op) -
                 })
                 .collect();
             Op::Rev(lr)
-        }
-        Op::Squash(Some(filters)) => {
-            let lr = filters
-                .iter()
-                .map(|(r, m)| {
-                    if let LazyRef::Lazy(s) = r {
-                        if let Some(res) = refs.get(s) {
-                            (LazyRef::Resolved(*res), *m)
-                        } else {
-                            (r.clone(), *m)
-                        }
-                    } else {
-                        (r.clone(), *m)
-                    }
-                })
-                .collect();
-            Op::Squash(Some(lr))
         }
         Op::Downstack(LazyRef::Lazy(s)) => {
             if let Some(res) = refs.get(s) {
@@ -612,7 +585,7 @@ pub fn apply_to_commit2(
             }
             return Ok(Some(current_oid));
         }
-        Op::Squash(None) => {
+        Op::Squash => {
             let odb = transaction.odb()?;
             let commit = objects::CommitData::read(&odb, commit_id)?;
             odb.read_header(commit.tree_id()?)?;
@@ -653,50 +626,6 @@ pub fn apply_to_commit2(
     odb.read_header(commit.tree_id()?)?;
 
     let rewrite_data = match &op {
-        Op::Squash(Some(ids)) => {
-            if let Some(sq) = ids.get(&LazyRef::Resolved(commit.id())) {
-                let oid = if let Some(oid) = apply_to_commit2(
-                    filter::Filter::new().squash(None).chain(*sq),
-                    commit_id,
-                    transaction,
-                )? {
-                    oid
-                } else {
-                    return Ok(None);
-                };
-
-                // Transplant the squash result's metadata verbatim onto the rewrite of the
-                // original commit (which must stay the base: memoization keys on its id).
-                // Timestamps are the base's own anyway -- no filter alters them.
-                let rc = objects::CommitData::read(&odb, oid)?;
-                let rcr = rc.parsed()?;
-                Rewrite::from_tree_with_metadata(
-                    rc.tree_id()?,
-                    Some(SigRewrite::Raw(rcr.author.to_owned())),
-                    Some(SigRewrite::Raw(rcr.committer.to_owned())),
-                    Some(rcr.message.to_owned()),
-                )
-            } else {
-                if let Some(parent) = commit.first_parent_id() {
-                    return Ok(if let Some(fparent) = transaction.get(filter, parent)? {
-                        Some(history::drop_commit(
-                            commit.id(),
-                            vec![fparent],
-                            transaction,
-                            filter,
-                        )?)
-                    } else {
-                        None
-                    });
-                }
-                return Ok(Some(history::drop_commit(
-                    commit.id(),
-                    vec![],
-                    transaction,
-                    filter,
-                )?));
-            }
-        }
         Op::Prune => {
             let p: Vec<_> = commit.parent_ids().collect();
 
@@ -1315,14 +1244,13 @@ fn apply_impl(
         Op::Nop => Ok(x),
         Op::Empty => Ok(x.with_tree(tree::empty_id())),
         Op::Fold => Ok(x),
-        Op::Squash(None) => Ok(x),
+        Op::Squash => Ok(x),
         Op::Author(author, email) => {
             Ok(x.with_author((author.clone().into(), email.clone().into())))
         }
         Op::Committer(author, email) => {
             Ok(x.with_committer((author.clone().into(), email.clone().into())))
         }
-        Op::Squash(Some(_)) => Err(anyhow!("not applicable to tree: squash")),
         Op::Message(m, r) => {
             // Rewriting a message leaves the tree alone, so with neither a commit nor a
             // message to transform this is identity, like the other history-only filters.
@@ -2440,7 +2368,7 @@ fn per_rev_filter(
 
     let filtered_parent_ids: Vec<_> = normal_parents.into_iter().chain(splice_parents).collect();
 
-    if let Op::Squash(None) = to_op(commit_filter.peel()) {
+    if let Op::Squash = to_op(commit_filter.peel()) {
         // `:SQUASH` as a per-commit filter squashes the commit away, mapping it
         // to the surviving filtered parent with the largest sequence number.
         // Ancestors have strictly smaller sequence numbers, so a parent that
