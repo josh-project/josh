@@ -83,7 +83,7 @@ fn parse_git_env_date(s: &str) -> Option<git2::Time> {
 }
 
 /// Like `repo.signature()` but honors `GIT_COMMITTER_*` / `GIT_AUTHOR_*` env vars
-/// the way `git` itself does. libgit2's `git_signature_default` ignores the date
+/// the way `git` itself does. git2's `Repository::signature` ignores the date
 /// env vars, which breaks reproducibility in tests.
 pub fn user_signature(repo: &git2::Repository) -> anyhow::Result<git2::Signature<'static>> {
     let default = repo.signature()?;
@@ -246,8 +246,8 @@ impl GitCommand {
 pub fn read_parent_ids(repo: &git2::Repository, oid: git2::Oid) -> anyhow::Result<Vec<git2::Oid>> {
     let odb = repo.odb()?;
     let odb_commit = odb.read(oid)?;
-    // A hard error, not an assert: this is reachable from inside libgit2 revwalk callbacks,
-    // where unwinding across the FFI frame would abort.
+    // A hard error, not an assert: this is reachable from inside git2 callback frames,
+    // where unwinding across the FFI boundary would abort.
     if odb_commit.kind() != git2::ObjectType::Commit {
         return Err(anyhow::anyhow!(
             "object {} is not a commit but a {:?}",
