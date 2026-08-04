@@ -56,7 +56,7 @@ Commits that predate the module filter to empty (a missing module is an
 evaluation error), so "add sub2" collapses away.
 
   $ josh-filter -s ':!st/config[::st/]' master --update refs/josh/master
-  0779e24203a507d439cd5d1ae647403af8512989
+  645068e4acfe7ecad0af8ed8ba46d9ca42a15639
   [1] :[
       ::st/
       :/sub1
@@ -81,7 +81,7 @@ evaluation error), so "add sub2" collapses away.
 Invocation args: the same history filtered through the arg-driven module.
 
   $ josh-filter -s ':!st/pick=sub2[::st/]' master --update refs/josh/args
-  782344ab9d337860e24f1d2aea8114e5428c3b08
+  6f90323c57721a54c05d34eeaaf9239df4873432
   [1] :[
       ::st/
       :/sub1

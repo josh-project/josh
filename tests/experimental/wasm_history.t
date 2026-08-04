@@ -54,7 +54,7 @@ commit 2 goes through the history splicing machinery: "switch module to M2"
 becomes a synthetic merge splicing in the history of the newly selected sub2.
 
   $ josh-filter -s ':!st/config[::st/]' master --update refs/josh/master
-  830f14e9c2a4b4e35a66e20fe19cdc4f07aa8957
+  daf2882baa1fc025da6869cb3c46b726311e0b2f
   [1] :[
       ::st/
       :/sub1
