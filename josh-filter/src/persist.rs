@@ -58,7 +58,7 @@ fn child_filters(op: &Op) -> Vec<Filter> {
         | Op::Exclude(f)
         | Op::Select(f)
         | Op::Pin(f)
-        | Op::Starlark(_, f)
+        | Op::Wasm(_, _, f)
         | Op::TreeId(_, f)
         | Op::Unapply(_, f) => vec![*f],
         Op::Subtract(a, b) => vec![*a, *b],
@@ -165,7 +165,7 @@ impl<'a> InMemoryBuilder<'a> {
         Ok(self.write_tree(tree))
     }
 
-    fn build_starlark_params(
+    fn build_path_filter_params(
         &mut self,
         path: &std::path::Path,
         subfilter: Filter,
@@ -184,6 +184,38 @@ impl<'a> InMemoryBuilder<'a> {
                 oid: filter_tree,
             },
         ];
+        Ok(self.write_tree(gix_object::Tree { entries }))
+    }
+
+    fn build_wasm_params(
+        &mut self,
+        path: &std::path::Path,
+        args: &[String],
+        subfilter: Filter,
+    ) -> anyhow::Result<gix_hash::ObjectId> {
+        let path_tree = self.build_str_params(&[path.to_string_lossy().as_ref()]);
+        let filter_tree = self.build_filter_params(&[subfilter])?;
+        let mut entries = vec![
+            gix_object::tree::Entry {
+                mode: gix_object::tree::EntryKind::Tree.into(),
+                filename: BString::from("0"),
+                oid: path_tree,
+            },
+            gix_object::tree::Entry {
+                mode: gix_object::tree::EntryKind::Tree.into(),
+                filename: BString::from("1"),
+                oid: filter_tree,
+            },
+        ];
+        if !args.is_empty() {
+            let args: Vec<&str> = args.iter().map(String::as_str).collect();
+            let args_tree = self.build_str_params(&args);
+            entries.push(gix_object::tree::Entry {
+                mode: gix_object::tree::EntryKind::Tree.into(),
+                filename: BString::from("2"),
+                oid: args_tree,
+            });
+        }
         Ok(self.write_tree(gix_object::Tree { entries }))
     }
 
@@ -460,12 +492,12 @@ impl<'a> InMemoryBuilder<'a> {
                 let params_tree = self.build_str_params(&[path.to_string_lossy().as_ref()]);
                 push_tree_entries(&mut entries, [("stored", params_tree)]);
             }
-            Op::Starlark(path, subfilter) => {
-                let params_tree = self.build_starlark_params(path, *subfilter)?;
-                push_tree_entries(&mut entries, [("starlark", params_tree)]);
+            Op::Wasm(path, args, subfilter) => {
+                let params_tree = self.build_wasm_params(path, args, *subfilter)?;
+                push_tree_entries(&mut entries, [("wasm", params_tree)]);
             }
             Op::TreeId(path, subfilter) => {
-                let params_tree = self.build_starlark_params(path, *subfilter)?;
+                let params_tree = self.build_path_filter_params(path, *subfilter)?;
                 push_tree_entries(&mut entries, [("treeid", params_tree)]);
             }
             Op::ObjectDeref(path) => {
@@ -870,25 +902,42 @@ fn from_tree2(repo: &git2::Repository, tree_oid: git2::Oid) -> anyhow::Result<Op
             let path = std::str::from_utf8(path_blob.content())?;
             Ok(Op::Stored(std::path::PathBuf::from(path)))
         }
-        "starlark" => {
+        "wasm" => {
             let inner = repo.find_tree(entry.id())?;
-            let path_tree = inner.get_name("0").context("starlark: missing path")?;
+            let path_tree = inner.get_name("0").context("wasm: missing path")?;
             let path_blob = repo.find_blob(
                 repo.find_tree(path_tree.id())?
                     .get_name("0")
-                    .context("starlark: missing path blob")?
+                    .context("wasm: missing path blob")?
                     .id(),
             )?;
             let path = std::str::from_utf8(path_blob.content())?;
+            // "1" is a filter-params tree; its "0" entry is the subfilter node.
+            let filter_params =
+                repo.find_tree(inner.get_name("1").context("wasm: missing filter")?.id())?;
             let filter_tree = repo.find_tree(
-                inner
-                    .get_name("1")
-                    .context("starlark: missing filter")?
+                filter_params
+                    .get_name("0")
+                    .context("wasm: missing filter node")?
                     .id(),
             )?;
             let filter = from_tree2(repo, filter_tree.id())?;
-            Ok(Op::Starlark(
+            let mut args = Vec::new();
+            if let Some(args_entry) = inner.get_name("2") {
+                let args_tree = repo.find_tree(args_entry.id())?;
+                for i in 0..args_tree.len() {
+                    let arg_blob = repo.find_blob(
+                        args_tree
+                            .get_name(&i.to_string())
+                            .with_context(|| format!("wasm: missing arg {}", i))?
+                            .id(),
+                    )?;
+                    args.push(std::str::from_utf8(arg_blob.content())?.to_string());
+                }
+            }
+            Ok(Op::Wasm(
                 std::path::PathBuf::from(path),
+                args,
                 to_filter(filter),
             ))
         }
@@ -916,8 +965,15 @@ fn from_tree2(repo: &git2::Repository, tree_oid: git2::Oid) -> anyhow::Result<Op
                     .id(),
             )?;
             let path = std::str::from_utf8(path_blob.content())?;
-            let filter_tree =
+            // "1" is a filter-params tree; its "0" entry is the subfilter node.
+            let filter_params =
                 repo.find_tree(inner.get_name("1").context("treeid: missing filter")?.id())?;
+            let filter_tree = repo.find_tree(
+                filter_params
+                    .get_name("0")
+                    .context("treeid: missing filter node")?
+                    .id(),
+            )?;
             let filter = from_tree2(repo, filter_tree.id())?;
             Ok(Op::TreeId(
                 std::path::PathBuf::from(path),
