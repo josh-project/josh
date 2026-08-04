@@ -39,7 +39,7 @@ members = [
     "deployment/josh-command-middleware",
 ]
 
-exclude = ["josh-gui", "devtools", "vendor/rust-lang/glob"]
+exclude = ["josh-gui", "devtools", "vendor/rust-lang/glob", "josh-guest"]
 
 [profile.release]
 lto = "thin"
