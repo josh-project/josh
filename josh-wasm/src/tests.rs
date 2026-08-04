@@ -10,8 +10,27 @@ fn cache_lock() -> std::sync::MutexGuard<'static, ()> {
     CACHE_LOCK.lock().unwrap_or_else(|e| e.into_inner())
 }
 
-/// A fresh bare repository in a unique temp directory.
-fn temp_repo() -> anyhow::Result<git2::Repository> {
+/// A fresh bare repository and its transaction-compatible object facade.
+struct TestRepo {
+    repo: gix::Repository,
+    odb: josh_memodb::Odb,
+}
+
+impl std::ops::Deref for TestRepo {
+    type Target = gix::Repository;
+
+    fn deref(&self) -> &Self::Target {
+        &self.repo
+    }
+}
+
+impl TestRepo {
+    fn odb(&self) -> &josh_memodb::Odb {
+        &self.odb
+    }
+}
+
+fn temp_repo() -> anyhow::Result<TestRepo> {
     static DIR_COUNTER: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
     let temp_dir = std::env::temp_dir().join(format!(
         "josh_wasm_test_{}_{}_{}",
@@ -22,22 +41,51 @@ fn temp_repo() -> anyhow::Result<git2::Repository> {
             .as_nanos()
     ));
     let _ = std::fs::remove_dir_all(&temp_dir);
-    Ok(git2::Repository::init_bare(&temp_dir)?)
+    let repo = gix::init_bare(&temp_dir)?;
+    let objects = repo.path().join("objects");
+    let mem = josh_memodb::MemOdb::new(None, objects.clone());
+    let odb = josh_memodb::Odb::at(mem, &objects)?;
+    Ok(TestRepo { repo, odb })
 }
 
-fn empty_tree(repo: &git2::Repository) -> anyhow::Result<git2::Oid> {
-    Ok(repo.treebuilder(None)?.write()?)
+fn write_blob(repo: &gix::Repository, data: &[u8]) -> anyhow::Result<gix_hash::ObjectId> {
+    Ok(repo.write_blob(data)?.detach())
+}
+
+fn write_tree(
+    repo: &gix::Repository,
+    mut entries: Vec<gix_object::tree::Entry>,
+) -> anyhow::Result<gix_hash::ObjectId> {
+    entries.sort();
+    gix_object::Write::write(&repo.objects, &gix_object::Tree { entries })
+        .map_err(|err| anyhow::anyhow!("write test tree: {err}"))
+}
+
+fn entry(
+    filename: &str,
+    oid: gix_hash::ObjectId,
+    kind: gix_object::tree::EntryKind,
+) -> gix_object::tree::Entry {
+    gix_object::tree::Entry {
+        mode: kind.into(),
+        filename: filename.into(),
+        oid,
+    }
+}
+
+fn empty_tree(repo: &gix::Repository) -> anyhow::Result<gix_hash::ObjectId> {
+    write_tree(repo, vec![])
 }
 
 fn eval(
-    repo: &git2::Repository,
+    repo: &TestRepo,
     module: &str,
     args: &[&str],
-    tree_oid: git2::Oid,
+    tree_oid: gix_hash::ObjectId,
 ) -> anyhow::Result<josh_filter::Filter> {
-    let module_oid = repo.blob(module.as_bytes())?;
+    let module_oid = write_blob(repo, module.as_bytes())?;
     let args: Vec<String> = args.iter().map(|s| s.to_string()).collect();
-    crate::evaluate(repo, module_oid, &args, tree_oid)
+    crate::evaluate(repo.odb(), module_oid, &args, tree_oid)
 }
 
 /// Standard module skeleton: ABI exports plus a bump `josh_alloc`, with the
@@ -64,8 +112,8 @@ fn module(imports: &str, data: &str, body: &str) -> String {
 /// wraps the returned string in `with_meta(nop(), "r", <string>)`, which the
 /// test reads back via `Filter::get_meta` (newline-safe, unlike specs).
 fn probe_string(
-    repo: &git2::Repository,
-    tree_oid: git2::Oid,
+    repo: &TestRepo,
+    tree_oid: gix_hash::ObjectId,
     import: &str,
     path: &str,
     args: &[&str],
@@ -107,31 +155,38 @@ fn probe_string(
 /// Tree used by the tree-access tests:
 /// README.md, hello.txt ("sub1"), bin.dat (binary), odd.txt (non-UTF-8),
 /// src/{main.rs, lib/{utils.rs}}.
-fn tree_fixture(repo: &git2::Repository) -> anyhow::Result<git2::Oid> {
+fn tree_fixture(repo: &gix::Repository) -> anyhow::Result<gix_hash::ObjectId> {
     let lib_tree = {
-        let utils = repo.blob(b"pub fn helper() {}")?;
-        let mut b = repo.treebuilder(None)?;
-        b.insert("utils.rs", utils, 0o100644)?;
-        b.write()?
+        let utils = write_blob(repo, b"pub fn helper() {}")?;
+        write_tree(
+            repo,
+            vec![entry("utils.rs", utils, gix_object::tree::EntryKind::Blob)],
+        )?
     };
     let src_tree = {
-        let main = repo.blob(b"fn main() {}")?;
-        let mut b = repo.treebuilder(None)?;
-        b.insert("main.rs", main, 0o100644)?;
-        b.insert("lib", lib_tree, 0o040000)?;
-        b.write()?
+        let main = write_blob(repo, b"fn main() {}")?;
+        write_tree(
+            repo,
+            vec![
+                entry("main.rs", main, gix_object::tree::EntryKind::Blob),
+                entry("lib", lib_tree, gix_object::tree::EntryKind::Tree),
+            ],
+        )?
     };
-    let readme = repo.blob(b"# Project")?;
-    let hello = repo.blob(b"sub1")?;
-    let binary = repo.blob(&[0u8, 159, 146, 150])?;
-    let non_utf8 = repo.blob(&[0xff, 0xfe, 0xfd])?;
-    let mut b = repo.treebuilder(None)?;
-    b.insert("README.md", readme, 0o100644)?;
-    b.insert("hello.txt", hello, 0o100644)?;
-    b.insert("bin.dat", binary, 0o100644)?;
-    b.insert("odd.txt", non_utf8, 0o100644)?;
-    b.insert("src", src_tree, 0o040000)?;
-    Ok(b.write()?)
+    let readme = write_blob(repo, b"# Project")?;
+    let hello = write_blob(repo, b"sub1")?;
+    let binary = write_blob(repo, &[0u8, 159, 146, 150])?;
+    let non_utf8 = write_blob(repo, &[0xff, 0xfe, 0xfd])?;
+    write_tree(
+        repo,
+        vec![
+            entry("README.md", readme, gix_object::tree::EntryKind::Blob),
+            entry("hello.txt", hello, gix_object::tree::EntryKind::Blob),
+            entry("bin.dat", binary, gix_object::tree::EntryKind::Blob),
+            entry("odd.txt", non_utf8, gix_object::tree::EntryKind::Blob),
+            entry("src", src_tree, gix_object::tree::EntryKind::Tree),
+        ],
+    )
 }
 
 #[test]
@@ -284,7 +339,7 @@ fn test_tree_files_and_dirs() -> anyhow::Result<()> {
 fn test_tree_entry_oid() -> anyhow::Result<()> {
     let repo = temp_repo()?;
     let tree = tree_fixture(&repo)?;
-    let expected = repo.blob(b"sub1")?.to_string();
+    let expected = write_blob(&repo, b"sub1")?.to_string();
     assert_eq!(
         probe_string(&repo, tree, "tree_entry_oid", "hello.txt", &[])?,
         Some(expected)
@@ -456,18 +511,19 @@ fn test_handle_limit() -> anyhow::Result<()> {
 fn test_tree_file_size_cap() -> anyhow::Result<()> {
     let repo = temp_repo()?;
     let content = "a".repeat(100);
-    let blob = repo.blob(content.as_bytes())?;
-    let mut builder = repo.treebuilder(None)?;
-    builder.insert("big.txt", blob, 0o100644)?;
-    let tree = builder.write()?;
+    let blob = write_blob(&repo, content.as_bytes())?;
+    let tree = write_tree(
+        &repo,
+        vec![entry("big.txt", blob, gix_object::tree::EntryKind::Blob)],
+    )?;
     // Oversized blobs are never materialized host-side; within the cap the
     // content is returned as usual.
     assert_eq!(
-        crate::host::tree_file_content(&repo, tree, "big.txt", 10),
+        crate::host::tree_file_content(repo.odb(), tree, "big.txt", 10),
         ""
     );
     assert_eq!(
-        crate::host::tree_file_content(&repo, tree, "big.txt", 100),
+        crate::host::tree_file_content(repo.odb(), tree, "big.txt", 100),
         content
     );
     Ok(())
@@ -478,8 +534,8 @@ fn test_module_size_limit() -> anyhow::Result<()> {
     let repo = temp_repo()?;
     let tree = empty_tree(&repo)?;
     let oversized = vec![0u8; *crate::JOSH_WASM_MODULE_SIZE_LIMIT + 1];
-    let module_oid = repo.blob(&oversized)?;
-    let result = crate::evaluate(&repo, module_oid, &[], tree);
+    let module_oid = write_blob(&repo, &oversized)?;
+    let result = crate::evaluate(repo.odb(), module_oid, &[], tree);
     assert!(result.is_err());
     assert!(result.unwrap_err().to_string().contains("size limit"));
     Ok(())
@@ -497,8 +553,8 @@ fn test_binary_wasm_and_garbage_text() -> anyhow::Result<()> {
     );
     let binary = wat::parse_str(&wat)?;
     assert!(binary.starts_with(b"\0asm"));
-    let module_oid = repo.blob(&binary)?;
-    let filter = crate::evaluate(&repo, module_oid, &[], tree)?;
+    let module_oid = write_blob(&repo, &binary)?;
+    let filter = crate::evaluate(repo.odb(), module_oid, &[], tree)?;
     assert!(filter.is_nop());
     // Garbage text is neither a binary nor valid WAT.
     let result = eval(&repo, "this is not a wasm module", &[], tree);
@@ -518,14 +574,14 @@ fn test_memoization() -> anyhow::Result<()> {
         r#"(data (i32.const 900) "memoization-test-unique")"#,
         "(call $nop)",
     );
-    let module_oid = repo.blob(wat.as_bytes())?;
-    let f1 = crate::evaluate(&repo, module_oid, &[], tree)?;
-    let f2 = crate::evaluate(&repo, module_oid, &[], tree)?;
+    let module_oid = write_blob(&repo, wat.as_bytes())?;
+    let f1 = crate::evaluate(repo.odb(), module_oid, &[], tree)?;
+    let f2 = crate::evaluate(repo.odb(), module_oid, &[], tree)?;
     // Filter equality is interned-pointer equality.
     assert!(f1 == f2);
     assert_eq!(cache::eval_memo_entries_for(module_oid), 1);
     // Different args are a different memo key.
-    let _ = crate::evaluate(&repo, module_oid, &["x".to_string()], tree)?;
+    let _ = crate::evaluate(repo.odb(), module_oid, &["x".to_string()], tree)?;
     assert_eq!(cache::eval_memo_entries_for(module_oid), 2);
     Ok(())
 }
@@ -540,15 +596,15 @@ fn test_clear_caches() -> anyhow::Result<()> {
         r#"(data (i32.const 900) "clear-caches-test-unique")"#,
         "(call $nop)",
     );
-    let module_oid = repo.blob(wat.as_bytes())?;
-    crate::evaluate(&repo, module_oid, &[], tree)?;
+    let module_oid = write_blob(&repo, wat.as_bytes())?;
+    crate::evaluate(repo.odb(), module_oid, &[], tree)?;
     assert_eq!(cache::eval_memo_entries_for(module_oid), 1);
-    assert!(cache::module_cache().lock().unwrap().contains(&module_oid));
+    assert!(cache::module_cache().lock().contains(&module_oid));
     crate::clear_caches();
     assert_eq!(cache::eval_memo_entries_for(module_oid), 0);
-    assert!(!cache::module_cache().lock().unwrap().contains(&module_oid));
+    assert!(!cache::module_cache().lock().contains(&module_oid));
     // Evaluation still works after clearing (recompiles).
-    assert!(crate::evaluate(&repo, module_oid, &[], tree)?.is_nop());
+    assert!(crate::evaluate(repo.odb(), module_oid, &[], tree)?.is_nop());
     Ok(())
 }
 
@@ -569,7 +625,7 @@ fn test_module_lru_eviction() -> anyhow::Result<()> {
             &format!(r#"(data (i32.const 900) "{name}")"#),
             "(call $nop)",
         );
-        let oid = repo.blob(wat.as_bytes())?;
+        let oid = write_blob(&repo, wat.as_bytes())?;
         let compiled = engine.load(wat.as_bytes(), &limits)?;
         lru.insert(oid, compiled);
         oids.push((oid, wat));
@@ -587,7 +643,7 @@ fn test_module_lru_eviction() -> anyhow::Result<()> {
         r#"(data (i32.const 900) "lru-d")"#,
         "(call $nop)",
     );
-    let oid_d = repo.blob(wat_d.as_bytes())?;
+    let oid_d = write_blob(&repo, wat_d.as_bytes())?;
     lru.insert(oid_d, engine.load(wat_d.as_bytes(), &limits)?);
     assert!(lru.contains(&oids[1].0));
     assert!(!lru.contains(&oids[2].0));
@@ -595,7 +651,7 @@ fn test_module_lru_eviction() -> anyhow::Result<()> {
     let recompiled = engine.load(oids[0].1.as_bytes(), &limits)?;
     let filter = recompiled.evaluate(
         EvalContext {
-            repo: &repo,
+            odb: repo.odb(),
             tree_oid: tree,
             args: &[],
         },
