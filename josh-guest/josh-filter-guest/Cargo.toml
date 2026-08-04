@@ -1,0 +1,21 @@
+[package]
+name = "josh-filter-guest"
+version = "26.7.28"
+edition = "2024"
+authors = ["Josh Project authors <contact@josh-project.dev>"]
+license-file = "../../LICENSE"
+description = "Guest SDK for writing josh wasm filter modules"
+keywords = ["git", "monorepo", "workflow", "scm", "wasm"]
+repository = "https://github.com/josh-project/josh"
+
+[lib]
+crate-type = ["rlib"]
+
+[features]
+default = ["rt"]
+# Bump allocator and aborting panic handler for pure-`no_std` guests. Must be
+# disabled for guests that link `std` (e.g. an interpreter build): `std`
+# already provides an allocator and a panic handler.
+rt = []
+
+[dependencies]
