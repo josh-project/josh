@@ -12,11 +12,11 @@ pub struct Limits {
     pub max_handles: usize,
 }
 
-/// Everything an evaluation may observe: the repository (for tree access), the
-/// context-filtered tree and the invocation arguments.
+/// Everything an evaluation may observe: the object database (for tree
+/// access), the context-filtered tree and the invocation arguments.
 pub struct EvalContext<'a> {
-    pub repo: &'a git2::Repository,
-    pub tree_oid: git2::Oid,
+    pub odb: &'a josh_memodb::Odb,
+    pub tree_oid: gix_hash::ObjectId,
     pub args: &'a [String],
 }
 

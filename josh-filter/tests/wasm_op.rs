@@ -97,17 +97,16 @@ fn builder_matches_parser() {
 fn persist_roundtrip() {
     enable_experimental();
     let td = tempfile::tempdir().unwrap();
-    let repo = git2::Repository::init_bare(td.path()).unwrap();
-    let odb = repo.odb().unwrap();
-    let src = josh_gix_ext::Git2Odb(&odb);
+    let repo = gix::init_bare(td.path()).unwrap();
+    let src = &repo.objects;
     for canonical in [
         ":!st/config[:empty]",
         ":!st/config[:/sub]",
         ":!tools/mod=a,b[::st/]",
     ] {
         let filter = parse(canonical).unwrap();
-        let tree_oid = as_tree(&src, filter).unwrap();
-        let restored = from_tree(&src, tree_oid).unwrap();
+        let tree_oid = as_tree(src, filter).unwrap();
+        let restored = from_tree(src, tree_oid).unwrap();
         assert_eq!(
             spec(restored),
             spec(filter),
