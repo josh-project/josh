@@ -153,12 +153,22 @@ fn parse_item(pair: pest::iterators::Pair<Rule>) -> anyhow::Result<Filter> {
         Rule::filter_stored => Ok(
             f.stored(Path::new(&unquote(pair.into_inner().next().unwrap().as_str())).to_owned())
         ),
-        Rule::filter_starlark => {
-            check_experimental_features_enabled("Starlark filter")?;
+        Rule::filter_wasm => {
+            check_experimental_features_enabled("Wasm filter")?;
             let mut inner = pair.into_inner();
             let path = Path::new(&unquote(inner.next().unwrap().as_str())).to_owned();
-            let subfilter = to_filter(Op::Compose(parse_group(inner.next().unwrap().as_str())?));
-            Ok(f.starlark(path, subfilter)?)
+            let mut args = Vec::new();
+            let mut subfilter = to_filter(Op::Compose(vec![]));
+            for p in inner {
+                match p.as_rule() {
+                    Rule::argument => args.push(unquote(p.as_str())),
+                    Rule::compose => {
+                        subfilter = to_filter(Op::Compose(parse_group(p.as_str())?));
+                    }
+                    _ => return Err(anyhow!("filter_wasm: unexpected rule: {:?}", p.as_rule())),
+                }
+            }
+            Ok(f.wasm(path, args, subfilter)?)
         }
         Rule::filter_treeid => {
             check_experimental_features_enabled("TreeId filter")?;

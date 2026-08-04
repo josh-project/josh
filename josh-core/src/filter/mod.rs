@@ -50,10 +50,12 @@ static ANCESTORS: LazyLock<
     >,
 > = LazyLock::new(Default::default);
 
-/// Clear the process-global workspace and ancestor caches.
+/// Clear the process-global workspace and ancestor caches, and the wasm
+/// module/evaluation caches.
 pub fn clear_caches() {
     WORKSPACES.lock().unwrap().clear();
     ANCESTORS.lock().unwrap().clear();
+    josh_wasm::clear_caches();
 }
 
 // MESSAGE_MATCH_ALL_REGEX is now in josh-filter
@@ -460,27 +462,141 @@ fn get_stored(
     ])
 }
 
-fn get_starlark(
+thread_local! {
+    static WASM_GUARDS: std::cell::RefCell<Vec<Option<Filter>>> =
+        const { std::cell::RefCell::new(Vec::new()) };
+}
+
+/// RAII guard capping the nesting depth of `Op::Wasm` resolution+application
+/// (`JOSH_WASM_MAX_DEPTH`). The guard must be held across BOTH `get_wasm` and
+/// the application of the resolved filter: resolution alone never nests (it
+/// returns before the resolved filter is applied), the recursion happens when
+/// a module returns a filter that itself contains `Op::Wasm`, which re-enters
+/// an `Op::Wasm` arm while the outer guards are still alive. `enter` returns
+/// `None` when the cap is reached, in which case the arm degrades to `Empty`.
+struct WasmDepthGuard;
+
+impl WasmDepthGuard {
+    /// `filter` is the full filter whose commit-level `Op::Wasm` arm is being
+    /// entered — the filter that arm persists per-commit results under (see
+    /// `wasm_persistable`); tree-level arms pass `None`.
+    fn enter(filter: Option<Filter>) -> Option<WasmDepthGuard> {
+        WASM_GUARDS.with(|guards| {
+            let mut guards = guards.borrow_mut();
+            if guards.len() >= *josh_wasm::JOSH_WASM_MAX_DEPTH {
+                tracing::trace!("wasm filter depth cap exceeded");
+                None
+            } else {
+                guards.push(filter);
+                Some(WasmDepthGuard)
+            }
+        })
+    }
+}
+
+impl Drop for WasmDepthGuard {
+    fn drop(&mut self) {
+        WASM_GUARDS.with(|guards| {
+            guards.borrow_mut().pop();
+        });
+    }
+}
+
+/// The current `Op::Wasm` nesting depth on this thread (see [`WasmDepthGuard`]).
+pub(crate) fn wasm_depth() -> usize {
+    WASM_GUARDS.with(|guards| guards.borrow().len())
+}
+
+/// Whether per-commit results for `filter` may be cached persistently right
+/// now. Results of wasm-containing filters computed while nested inside
+/// another wasm evaluation may be degraded by the depth cap, which is not part
+/// of any cache key; only results whose own `Op::Wasm` arm was entered at
+/// depth zero (i.e. the outermost wasm evaluation, whose result is canonical)
+/// are persisted. Non-wasm results are depth-independent.
+pub(crate) fn wasm_persistable(filter: Filter) -> bool {
+    if !contains_wasm(filter) {
+        return true;
+    }
+    WASM_GUARDS.with(|guards| match guards.borrow().as_slice() {
+        [] => true,
+        [outermost] => *outermost == Some(filter),
+        _ => false,
+    })
+}
+
+static CONTAINS_WASM: LazyLock<std::sync::Mutex<std::collections::HashMap<Filter, bool>>> =
+    LazyLock::new(Default::default);
+
+/// True if the op tree of `filter` contains an `Op::Wasm` anywhere.
+pub(crate) fn contains_wasm(filter: Filter) -> bool {
+    if let Some(r) = CONTAINS_WASM.lock().unwrap().get(&filter) {
+        return *r;
+    }
+    let r = match josh_filter::persist::to_op_ref(filter) {
+        Op::Wasm(..) => true,
+        Op::Meta(_, f)
+        | Op::Exclude(f)
+        | Op::Select(f)
+        | Op::Pin(f)
+        | Op::TreeId(_, f)
+        | Op::Unapply(_, f) => contains_wasm(*f),
+        Op::Compose(filters) | Op::Chain(filters) => filters.iter().any(|f| contains_wasm(*f)),
+        Op::Subtract(a, b) => contains_wasm(*a) || contains_wasm(*b),
+        Op::Squash(Some(ids)) => ids.values().any(|f| contains_wasm(*f)),
+        Op::Rev(filters) => filters.iter().any(|(_, _, f)| contains_wasm(*f)),
+        _ => false,
+    };
+    CONTAINS_WASM.lock().unwrap().insert(filter, r);
+    r
+}
+
+/// The key under which per-commit results of `filter` are persisted. Wasm
+/// evaluation outcomes (including the degraded-to-Empty error path) depend on
+/// the resource-limit configuration, which is not part of the filter spec, so
+/// results of filters containing `Op::Wasm` are keyed with the current limits
+/// attached. A limit change then reads and writes different entries instead of
+/// serving projections degraded under the old configuration.
+pub fn persistent_cache_key(filter: Filter) -> Filter {
+    if !contains_wasm(filter) {
+        return filter;
+    }
+    let mut meta = std::collections::BTreeMap::new();
+    meta.insert(
+        "josh-wasm-limits".to_string(),
+        josh_wasm::limits_fingerprint().to_string(),
+    );
+    to_filter(Op::Meta(meta, filter))
+}
+
+fn get_wasm(
     transaction: &cache::Transaction,
     odb: &josh_memodb::Odb,
     tree: gix_hash::ObjectId,
     reader: &tree::TreeReader,
     path: &Path,
+    args: &[String],
     subfilter: Filter,
 ) -> Filter {
-    let star_path = path.with_added_extension("star");
-    let script = tree::get_blob_at(transaction, odb, reader, &star_path);
+    let module_path = path.with_added_extension("wasm");
     let filtered_tree = match apply(transaction, subfilter, Rewrite::from_tree(tree)) {
         Ok(rw) => rw.tree_id(),
         Err(_) => return to_filter(Op::Empty),
     };
-    match josh_starlark::evaluate(&script, filtered_tree, odb) {
-        Ok(f) => {
-            let star_file = Filter::new().file(star_path);
-            compose(&[star_file, subfilter, f])
+    // The module blob is resolved from the INPUT tree at this op's position in
+    // the pipeline; a missing blob is an evaluation error (-> Empty), not a nop.
+    let module_oid = match tree::get_path_entry_at(transaction, odb, reader, &module_path) {
+        Ok(Some(entry)) if entry.mode.is_blob() => objects::git2_oid(&entry.oid),
+        _ => {
+            tracing::trace!("wasm module not found: {:?}", module_path);
+            return to_filter(Op::Empty);
         }
+    };
+    match josh_wasm::evaluate(transaction.git2_repo(), module_oid, args, filtered_tree) {
+        // The module blob is NOT forced into the output; it is only present if
+        // the context subfilter (or the returned filter) selects it.
+        Ok(f) => compose(&[subfilter, f]),
         Err(e) => {
-            tracing::trace!("starlark evaluation failed: {}", e);
+            tracing::trace!("wasm evaluation failed: {}", e);
             to_filter(Op::Empty)
         }
     }
@@ -516,7 +632,12 @@ fn get_filter(
         } else {
             to_filter(Op::Empty)
         };
-        WORKSPACES.lock().unwrap().insert(ws_id, f);
+        // Legalization of wasm-containing content may have been degraded by
+        // the depth cap; only cache results computed at depth 0 (see
+        // WasmDepthGuard).
+        if wasm_depth() == 0 {
+            WORKSPACES.lock().unwrap().insert(ws_id, f);
+        }
         f
     }
 }
@@ -1053,20 +1174,37 @@ pub fn apply_to_commit2(
 
             return per_rev_filter(transaction, &commit, filter, commit_filter, parent_filters);
         }
-        Op::Starlark(s_path, s_subfilter) => {
-            check_experimental_features_enabled("Starlark filter")?;
-            let tree = commit.tree_id()?;
-            let tree_reader = tree::read_tree(transaction, odb, tree)?;
-            let commit_filter =
-                get_starlark(transaction, odb, tree, &tree_reader, s_path, *s_subfilter);
+        Op::Wasm(w_path, w_args, w_subfilter) => {
+            check_experimental_features_enabled("Wasm filter")?;
+            // Held across resolution AND application (per_rev_filter): see
+            // WasmDepthGuard. On cap exhaustion the filters degrade to Empty.
+            let guard = WasmDepthGuard::enter(Some(filter));
+            let resolve = |tree: git2::Oid| {
+                if guard.is_none() {
+                    return to_filter(Op::Empty);
+                }
+                match tree::read_tree(transaction, odb, tree) {
+                    Ok(reader) => get_wasm(
+                        transaction,
+                        odb,
+                        tree,
+                        &reader,
+                        w_path,
+                        w_args,
+                        *w_subfilter,
+                    ),
+                    Err(_) => to_filter(Op::Empty),
+                }
+            };
+            let commit_filter = resolve(commit.tree_id()?);
 
             let parent_filters = commit
                 .parent_ids()
                 .map(|parent| {
-                    let tree_id = git::read_tree_id(odb, parent)?;
-                    let reader = tree::read_tree(transaction, odb, tree_id)?;
-                    let pcs =
-                        get_starlark(transaction, odb, tree_id, &reader, s_path, *s_subfilter);
+                    // An unreadable parent tree degrades to the empty tree (-> Empty
+                    // filter) rather than failing the whole projection.
+                    let tree = git::read_tree_id(odb, parent).unwrap_or_else(|_| tree::empty_id());
+                    let pcs = resolve(tree);
                     Ok((parent, pcs))
                 })
                 .collect::<anyhow::Result<Vec<_>>>()?;
@@ -1697,11 +1835,16 @@ fn apply_impl(
             let f = get_stored(transaction, odb, tree, &tree_reader, path);
             apply_impl(transaction, odb, f, x)
         }
-        Op::Starlark(path, subfilter) => {
-            let tree = x.tree_id();
-            let tree_reader = tree::read_tree(transaction, odb, tree)?;
-            let f = get_starlark(transaction, odb, tree, &tree_reader, path, *subfilter);
-            apply_impl(transaction, odb, f, x)
+        Op::Wasm(path, args, subfilter) => {
+            // Guard held across resolution and application, see WasmDepthGuard.
+            if let Some(_guard) = WasmDepthGuard::enter(None) {
+                let tree = x.tree_id();
+                let tree_reader = tree::read_tree(transaction, odb, tree)?;
+                let f = get_wasm(transaction, odb, tree, &tree_reader, path, args, *subfilter);
+                apply_impl(transaction, odb, f, x)
+            } else {
+                apply_impl(transaction, odb, to_filter(Op::Empty), x)
+            }
         }
         Op::TreeId(path, subfilter) => {
             let tree_oid = apply_impl(transaction, odb, *subfilter, x.clone())?.tree_id();
@@ -1814,7 +1957,7 @@ pub fn unapply(
     commits: Option<(gix_hash::ObjectId, gix_hash::ObjectId)>,
 ) -> anyhow::Result<gix_hash::ObjectId> {
     // A `:rev(...)` filter has no static inverse (`invert` returns `Err`, like `:workspace` /
-    // `:stored` / `:starlark`), so this generic path is automatically skipped for it and it falls
+    // `:stored` / `:!` (wasm)), so this generic path is automatically skipped for it and it falls
     // through to the per-commit handler / chain recursion below.
     if let Ok(inverted) = invert(filter) {
         let filtered = apply(
@@ -1891,7 +2034,7 @@ pub fn unapply(
     Err(anyhow!("filter cannot be unapplied"))
 }
 
-/// Reverse a per-commit filter (`:workspace` / `:stored` / `:starlark` / `:rev` / `:hook`), whose
+/// Reverse a per-commit filter (`:workspace` / `:stored` / `:!` (wasm) / `:rev` / `:hook`), whose
 /// concrete sub-filter differs between the commit being reconstructed and its parent. `filter` is
 /// the sub-filter resolved for the commit, `original_filter` the one resolved for the specific
 /// parent whose tree is `parent_tree`. The reconstruction reproduces the out-of-filter content of
@@ -1917,7 +2060,7 @@ fn reverse_strip_overlay(
 
 /// Resolve the concrete sub-filter of a per-commit filter whose selector lives in *commit identity*
 /// rather than the tree: `:rev(...)` (commit ancestry) and `:hook` (hook lookup). These mirror the
-/// forward `Op::Rev`/`Op::Hook` paths and, unlike `:workspace`/`:stored`/`:starlark`, cannot be
+/// forward `Op::Rev`/`Op::Hook` paths and, unlike `:workspace`/`:stored`/`:!` (wasm), cannot be
 /// resolved from a tree. Returns `Err` for any other op (callers only reach it for rev/hook).
 fn resolve_commit_filter(
     transaction: &cache::Transaction,
@@ -2021,19 +2164,28 @@ fn unapply_per_rev_filter(
                 parent_tree,
             )?))
         }
-        Op::Starlark(path, subfilter) => {
+        Op::Wasm(path, args, subfilter) => {
+            // Guard held across resolution and application, see WasmDepthGuard.
+            let guard = WasmDepthGuard::enter(None);
             let odb = transaction.odb();
-            let tree_reader = tree::read_tree(transaction, odb, tree)?;
-            let parent_reader = tree::read_tree(transaction, odb, parent_tree)?;
-            let filter = get_starlark(transaction, odb, tree, &tree_reader, path, *subfilter);
-            let original_filter = get_starlark(
-                transaction,
-                odb,
-                parent_tree,
-                &parent_reader,
-                path,
-                *subfilter,
-            );
+            let (filter, original_filter) = if guard.is_some() {
+                let tree_reader = tree::read_tree(transaction, odb, tree)?;
+                let parent_reader = tree::read_tree(transaction, odb, parent_tree)?;
+                (
+                    get_wasm(transaction, odb, tree, &tree_reader, path, args, *subfilter),
+                    get_wasm(
+                        transaction,
+                        odb,
+                        parent_tree,
+                        &parent_reader,
+                        path,
+                        args,
+                        *subfilter,
+                    ),
+                )
+            } else {
+                (to_filter(Op::Empty), to_filter(Op::Empty))
+            };
             Ok(Some(reverse_strip_overlay(
                 transaction,
                 filter,
@@ -2202,7 +2354,7 @@ where
 
 fn needs_legalization(f: Filter) -> bool {
     match to_op(f) {
-        Op::Stored(_) | Op::Starlark(_, _) => true,
+        Op::Stored(_) | Op::Wasm(..) => true,
         Op::Compose(filters) | Op::Chain(filters) => filters.iter().any(|&f| needs_legalization(f)),
         Op::Subtract(a, b) => needs_legalization(a) || needs_legalization(b),
         Op::Exclude(f) | Op::Select(f) | Op::Pin(f) | Op::TreeId(_, f) => needs_legalization(f),
@@ -2255,7 +2407,7 @@ fn legalize_stored(
                 result.push(legalized);
                 // Only compute the intermediate tree if a subsequent element still needs
                 // legalization — the tree is passed to legalize_stored, which uses it to
-                // resolve Stored/Starlark refs.  Elements that don't need legalization
+                // resolve Stored/Wasm refs.  Elements that don't need legalization
                 // (e.g. a trailing Prefix) return immediately via the fast-path, so
                 // running apply just to compute a tree they'll never use is pure waste.
                 if filters[i + 1..].iter().any(|&f| needs_legalization(f)) {
@@ -2273,21 +2425,34 @@ fn legalize_stored(
         Op::Meta(meta, f) => to_filter(Op::Meta(meta, legalize_stored(t, odb, f, tree, reader)?)),
         Op::Pin(f) => to_filter(Op::Pin(legalize_stored(t, odb, f, tree, reader)?)),
         Op::Stored(path) => get_stored(t, odb, tree, reader, &path),
-        Op::Starlark(path, sub) => get_starlark(
-            t,
-            odb,
-            tree,
-            reader,
-            &path,
-            legalize_stored(t, odb, sub, tree, reader)?,
-        ),
+        Op::Wasm(path, args, sub) => {
+            // Guard held across the whole substitution, see WasmDepthGuard.
+            if let Some(_guard) = WasmDepthGuard::enter(None) {
+                get_wasm(
+                    t,
+                    odb,
+                    tree,
+                    reader,
+                    &path,
+                    &args,
+                    legalize_stored(t, odb, sub, tree, reader)?,
+                )
+            } else {
+                to_filter(Op::Empty)
+            }
+        }
         Op::TreeId(path, f) => {
             to_filter(Op::TreeId(path, legalize_stored(t, odb, f, tree, reader)?))
         }
         _ => f,
     };
 
-    t.insert_legalize((f, tree), r);
+    // Depth-cap-degraded wasm resolutions must not be memoized under a
+    // depth-free key (see WasmDepthGuard); non-wasm results are
+    // depth-independent.
+    if wasm_depth() == 0 || !contains_wasm(f) {
+        t.insert_legalize((f, tree), r);
+    }
 
     Ok(r)
 }
@@ -2737,6 +2902,36 @@ mod tests {
             message,
         )
         .unwrap()
+    }
+
+    #[test]
+    fn persistent_cache_key_test() {
+        // Non-wasm filters are keyed as-is.
+        let plain = parse(":/sub1").unwrap();
+        assert_eq!(persistent_cache_key(plain), plain);
+
+        // Filters containing Op::Wasm anywhere are keyed with the resource
+        // limit configuration attached, so results degraded under one
+        // configuration are not served under another.
+        let wasm = to_filter(Op::Wasm(
+            PathBuf::from("tools/mod"),
+            vec![],
+            to_filter(Op::Compose(vec![])),
+        ));
+        for f in [
+            wasm,
+            to_filter(Op::Compose(vec![plain, wasm])),
+            to_filter(Op::Chain(vec![plain, wasm])),
+            to_filter(Op::Subtract(wasm, plain)),
+            to_filter(Op::Exclude(wasm)),
+        ] {
+            assert!(contains_wasm(f));
+            let key = persistent_cache_key(f);
+            assert_ne!(key, f);
+            assert!(spec(key).contains("josh-wasm-limits"));
+            // Stable across calls.
+            assert_eq!(key, persistent_cache_key(f));
+        }
     }
 
     #[test]
