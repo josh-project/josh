@@ -1,3 +1,5 @@
+# The per-category test nodes are static: extend this list when a new
+# subdirectory of tests/ is added.
 :$label="test suite"
 :$output="none"
 inputs = :[
@@ -22,5 +24,92 @@ inputs = :[
             ::devtools/josh-test-support/
         ]
     ]
-    :!ws/tests-per-category[::tests/]:exclude[:[::tests/]]
+    :#cli[
+        :$label="cli"
+        :$output="workdir"
+        :#image[:+images/scrut-test-local]
+        inputs = :[
+            :#josh[:+ws/build-rust]
+            :#build-go[:+ws/build-go]
+        ]
+        worktree = :[
+            ::run.sh=ws/tests.sh
+            ::run-tests.sh
+            ::scripts/
+            ::tests/cli/*.t
+            ::tests/proxy/destroy_test_env.sh
+            ::tests/proxy/setup_test_env.sh
+        ]
+    ]
+    :#cq[
+        :$label="cq"
+        :$output="workdir"
+        :#image[:+images/scrut-test-local]
+        inputs = :[
+            :#josh[:+ws/build-rust]
+            :#build-go[:+ws/build-go]
+        ]
+        worktree = :[
+            ::run.sh=ws/tests.sh
+            ::run-tests.sh
+            ::scripts/
+            ::tests/cq/*.t
+            ::tests/proxy/destroy_test_env.sh
+            ::tests/proxy/setup_test_env.sh
+        ]
+    ]
+    :#experimental[
+        :$label="experimental"
+        :$output="workdir"
+        :#image[:+images/scrut-test-local]
+        inputs = :[
+            :#josh[:+ws/build-rust]
+            :#build-go[:+ws/build-go]
+        ]
+        worktree = :[
+            ::run.sh=ws/tests.sh
+            ::run-tests.sh
+            ::scripts/
+            ::tests/experimental/*.t
+            ::tests/proxy/destroy_test_env.sh
+            ::tests/proxy/setup_test_env.sh
+        ]
+        env = :[
+            :$JOSH_EXPERIMENTAL_FEATURES="1"
+        ]
+    ]
+    :#filter[
+        :$label="filter"
+        :$output="workdir"
+        :#image[:+images/scrut-test-local]
+        inputs = :[
+            :#josh[:+ws/build-rust]
+            :#build-go[:+ws/build-go]
+        ]
+        worktree = :[
+            ::run.sh=ws/tests.sh
+            ::run-tests.sh
+            ::scripts/
+            ::tests/filter/*.t
+            ::tests/proxy/destroy_test_env.sh
+            ::tests/proxy/setup_test_env.sh
+        ]
+    ]
+    :#proxy[
+        :$label="proxy"
+        :$output="workdir"
+        :#image[:+images/scrut-test-local]
+        inputs = :[
+            :#josh[:+ws/build-rust]
+            :#build-go[:+ws/build-go]
+        ]
+        worktree = :[
+            ::run.sh=ws/tests.sh
+            ::run-tests.sh
+            ::scripts/
+            ::tests/proxy/*.t
+            ::tests/proxy/destroy_test_env.sh
+            ::tests/proxy/setup_test_env.sh
+        ]
+    ]
 ]
