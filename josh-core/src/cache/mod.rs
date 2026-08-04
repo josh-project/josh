@@ -8,7 +8,10 @@ mod tree_cache;
 
 /// Schema version for on-disk cache structures. Bump when the layout of the
 /// sled trees or distributed cache refs changes incompatibly.
-pub const CACHE_VERSION: u64 = 32;
+/// Version 33: history hints gained the jump-delta byte and jump-parent flag;
+/// old hints would decode as jump_delta 0 and never classify as a boundary
+/// crossing.
+pub const CACHE_VERSION: u64 = 33;
 
 pub use backend::{CacheBackend, HistoryGraphHint};
 pub use distributed::DistributedCacheBackend;
