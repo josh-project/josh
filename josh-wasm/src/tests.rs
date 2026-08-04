@@ -606,18 +606,21 @@ fn test_module_lru_eviction() -> anyhow::Result<()> {
 }
 
 #[test]
-fn test_wasm_import_traps() -> anyhow::Result<()> {
+fn test_wasm_import() -> anyhow::Result<()> {
+    // The builder is experimental-gated; enable it before the gate's LazyLock
+    // is first read (no other test in this binary touches the gate).
+    unsafe { std::env::set_var("JOSH_EXPERIMENTAL_FEATURES", "1") };
     let repo = temp_repo()?;
     let tree = empty_tree(&repo)?;
     let wat = module(
         r#"(import "josh" "nop" (func $nop (result i32)))
   (import "josh" "wasm" (func $wasm (param i32 i32 i32 i32 i32 i32) (result i32)))"#,
-        r#"(data (i32.const 16) "mod")"#,
-        r#"(call $wasm (call $nop) (i32.const 16) (i32.const 3) (i32.const 16) (i32.const 0) (call $nop))"#,
+        r#"(data (i32.const 16) "tools/mod")
+  (data (i32.const 32) "a\nb")"#,
+        r#"(call $wasm (call $nop) (i32.const 16) (i32.const 9) (i32.const 32) (i32.const 3) (call $nop))"#,
     );
-    let result = eval(&repo, &wat, &[], tree);
-    assert!(result.is_err());
-    assert!(result.unwrap_err().to_string().contains("not wired yet"));
+    let filter = eval(&repo, &wat, &[], tree)?;
+    assert_eq!(spec(filter), ":!tools/mod=a,b[:/]");
     Ok(())
 }
 
