@@ -305,7 +305,7 @@ Note that ws/d/ is now present in the ws
   .
   |-- josh
   |   `-- cache
-  |       `-- 32
+  |       `-- 33
   |           `-- sled
   |               |-- blobs
   |               |-- conf

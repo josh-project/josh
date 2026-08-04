@@ -171,11 +171,35 @@ impl DistributedCacheBackend {
 // is used in addition to the sparse cache.
 // The sparse cache is mostly only used for initial "cold starts" or longer "catch up".
 // For incremental filtering it's fine re-filter commits and rely on the local "dense" cache.
-// We store entries for 1% of all commits, and additionally all merges and orphans.
-// The parent count comes from the cached history-graph hint, so this check never
-// reads the commit from the ODB.
+// We store entries for 1% of all commits (sampled by sequence number), and
+// additionally every commit the sampling alone cannot bound: orphans (a walk
+// path ends there with no parent whose entry could terminate it), octopus
+// merges (the hint only covers the first two parents), and two-parent merges
+// whose backward jump skips over a sample point. A single-parent step always
+// decreases the sequence number by exactly 1, so any walk path reaches a
+// stored entry within at most 100 steps: either it takes 100 consecutive
+// unit steps and crosses a multiple of 100, or it hits one of the stored
+// jump/end commits first.
+// Everything needed comes from the cached history-graph hint, so this check
+// never reads the commit from the ODB.
 fn is_eligible(hint: HistoryGraphHint) -> bool {
-    hint.sequence_number % 100 == 0 || hint.parent_count != 1
+    if hint.sequence_number % 100 == 0 {
+        return true;
+    }
+    match hint.parent_count {
+        1 => false,
+        2 => crosses_sample_boundary(hint.sequence_number, hint.jump_delta),
+        _ => true,
+    }
+}
+
+// True when a backward step of `delta` from `seq` skips over a multiple of 100,
+// i.e. the sampled commit that would otherwise bound the walk on this path is
+// jumped over. `delta` saturates at 127, meaning "at least 127": any jump of
+// 100 or more crosses a boundary, so the saturated value still decodes
+// correctly.
+fn crosses_sample_boundary(seq: u64, delta: u8) -> bool {
+    seq.saturating_sub(delta as u64) / 100 < seq / 100
 }
 
 // To additionally limit the size of the trees the cache is also sharded by sequence
