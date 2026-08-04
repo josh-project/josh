@@ -201,7 +201,7 @@ pub(super) fn step(filter: Filter) -> Filter {
         Op::Select(b) if *b == to_filter(Op::Nop) => Op::Nop,
         Op::Select(b) => Op::Select(step(*b)),
         Op::Pin(b) => Op::Pin(step(*b)),
-        Op::Starlark(path, sub) => Op::Starlark(path.clone(), step(*sub)),
+        Op::Wasm(path, args, sub) => Op::Wasm(path.clone(), args.clone(), step(*sub)),
         Op::TreeId(path, sub) => Op::TreeId(path.clone(), step(*sub)),
         Op::ObjectDeref(_) => to_op(filter),
         Op::ObjectRef(_) => to_op(filter),

@@ -34,7 +34,7 @@ filter_spec = { (
   | filter_presub
   | filter_subdir
   | filter_stored
-  | filter_starlark
+  | filter_wasm
   | filter_treeid
   | filter_treeref
   | filter_treederef
@@ -48,7 +48,7 @@ filter_spec = { (
 filter_group = { CMD_START ~ cmd? ~ GROUP_START ~ compose ~ GROUP_END }
 filter_subdir = { CMD_START ~ "/" ~ argument }
 filter_stored = { CMD_START ~ "+" ~ argument }
-filter_starlark  = { CMD_START ~ "!" ~ argument ~ GROUP_START ~ compose ~ GROUP_END }
+filter_wasm      = { CMD_START ~ "!" ~ argument ~ ("=" ~ argument ~ ("," ~ argument)*)? ~ (GROUP_START ~ compose ~ GROUP_END)? }
 filter_treeid    = { CMD_START ~ "#" ~ argument ~ GROUP_START ~ compose ~ GROUP_END }
 filter_treeref   = { CMD_START ~ "&" ~ argument }
 filter_treederef = { CMD_START ~ "#" ~ argument }
