@@ -91,3 +91,7 @@ rand = "0.10.2"
 criterion = { version = "5.0.1", package = "codspeed-criterion-compat" }
 tempfile.workspace = true
 josh-test-support = { path = "../devtools/josh-test-support" }
+
+[[bench]]
+name = "unapply"
+harness = false
