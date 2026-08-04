@@ -1,0 +1,12 @@
+[package]
+name = "subdirs-prefixed"
+version = "0.0.0"
+edition = "2024"
+publish = false
+description = "Example josh wasm filter: mount every top-level directory at its own name"
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+josh-filter-guest = { path = "../../josh-filter-guest" }
