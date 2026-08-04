@@ -751,8 +751,19 @@ impl Transaction {
         // number of steps -- including across merge jumps and at orphans. This is what keeps
         // filters that reduce the history length by a very large factor (which store almost
         // nothing of their own) from re-walking all of history on every request.
-        if store || hint.is_sample_point() {
-            t2.cache.write_all(filter, from, to, hint, false)?;
+        //
+        // Results of wasm-containing filters computed while nested inside another wasm
+        // evaluation may be degraded by the depth cap, which is not part of the cache key;
+        // keep those out of the persistent cache so an outermost evaluation recomputes them
+        // (see WasmDepthGuard / wasm_persistable).
+        if (store || hint.is_sample_point()) && crate::filter::wasm_persistable(filter) {
+            t2.cache.write_all(
+                crate::filter::persistent_cache_key(filter),
+                from,
+                to,
+                hint,
+                false,
+            )?;
         }
         Ok(())
     }
@@ -819,7 +830,12 @@ impl Transaction {
             return Ok(Some(oid));
         }
 
-        let oid = t2.cache.read_propagate(filter, from, hint, false)?;
+        let oid = t2.cache.read_propagate(
+            crate::filter::persistent_cache_key(filter),
+            from,
+            hint,
+            false,
+        )?;
 
         if let Some(oid) = oid {
             if oid == git2::Oid::ZERO_SHA1 {
