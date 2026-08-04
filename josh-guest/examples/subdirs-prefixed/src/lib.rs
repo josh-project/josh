@@ -8,7 +8,7 @@
 
 #![no_std]
 
-use josh_filter_guest::{Filter, Tree, compose, josh_filter_entry, nop};
+use josh_filter_guest::{Filter, Tree, compose, josh_filter_entry, josh_guest_rt, nop};
 
 fn run(tree: Tree) -> Filter {
     compose(
@@ -19,3 +19,4 @@ fn run(tree: Tree) -> Filter {
 }
 
 josh_filter_entry!(run);
+josh_guest_rt!();

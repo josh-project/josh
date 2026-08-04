@@ -1,0 +1,7 @@
+# getrandom (pulled in transitively by the starlark crate) refuses to build
+# for wasm32-unknown-unknown unless a backend is selected. The "custom"
+# backend routes to the deterministic stub in
+# josh-starlark-guest/src/getrandom_backend.rs — the wasm_js backend would
+# pull in wasm-bindgen imports that the josh host cannot link.
+[target.wasm32-unknown-unknown]
+rustflags = ['--cfg', 'getrandom_backend="custom"']
