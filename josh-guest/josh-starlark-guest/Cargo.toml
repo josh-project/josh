@@ -1,0 +1,22 @@
+[package]
+name = "josh-starlark-guest"
+version = "26.7.28"
+edition = "2024"
+authors = ["Josh Project authors <contact@josh-project.dev>"]
+license-file = "../../LICENSE"
+description = "Starlark interpreter compiled to wasm32 as a josh filter guest module"
+keywords = ["git", "monorepo", "workflow", "scm", "starlark"]
+repository = "https://github.com/josh-project/josh"
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+allocative = "0.3"
+anyhow = "1"
+getrandom = "0.4"
+starlark = "0.14.2"
+
+# default-features = false: this is a `std` guest, so the SDK's `rt` feature
+# (bump allocator + panic handler) must stay off — std provides both.
+josh-filter-guest = { path = "../josh-filter-guest", default-features = false }
