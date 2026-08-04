@@ -1814,6 +1814,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "git2"
+version = "0.20.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7b88256088d75a56f8ecfa070513a775dd9107f6530ef14919dac831af9cfe2b"
+dependencies = [
+ "bitflags 2.13.1",
+ "libc",
+ "libgit2-sys",
+ "log",
+ "openssl-probe 0.1.6",
+ "openssl-sys",
+ "url",
+]
+
+[[package]]
 name = "gix"
 version = "0.86.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3453,8 +3468,8 @@ dependencies = [
  "josh-gix-ext",
  "josh-memodb",
  "josh-search",
- "josh-starlark",
  "josh-test-support",
+ "josh-wasm",
  "log",
  "percent-encoding",
  "pest",
@@ -3520,6 +3535,7 @@ dependencies = [
  "regex",
  "serde_json",
  "smallvec",
+ "tempfile",
 ]
 
 [[package]]
@@ -4021,7 +4037,9 @@ checksum = "23c7391e4b9f4ffab1a624223cc1d7385ff9a678f490768add717de7ea2f4d89"
 dependencies = [
  "cc",
  "libc",
+ "libssh2-sys",
  "libz-sys",
+ "openssl-sys",
  "pkg-config",
 ]
 
@@ -4038,6 +4056,32 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2026a5056764a10b2bf5d56488cba40da507f5493a6a429340e2004d9ed085fa"
 dependencies = [
  "libc",
+]
+
+[[package]]
+name = "libssh2-sys"
+version = "0.3.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0f5eb74291e8691cab524a01274a1b1e7742b1a94f29d8b101d8aadc8372c1cd"
+dependencies = [
+ "cc",
+ "libc",
+ "libz-sys",
+ "openssl-sys",
+ "pkg-config",
+ "vcpkg",
+]
+
+[[package]]
+name = "libz-sys"
+version = "1.1.29"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "85bc9657773828b90eeb625adff10eeac83cc21bbfd8e23a03eaa8a33c9e28d9"
+dependencies = [
+ "cc",
+ "libc",
+ "pkg-config",
+ "vcpkg",
 ]
 
 [[package]]
@@ -4410,9 +4454,27 @@ checksum = "d6790f58c7ff633d8771f42965289203411a5e5c68388703c06e14f24770b41e"
 
 [[package]]
 name = "openssl-probe"
+version = "0.1.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d05e27ee213611ffe7d6348b942e8f942b37114c00cc03cec254295a4a17852e"
+
+[[package]]
+name = "openssl-probe"
 version = "0.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7c87def4c32ab89d880effc9e097653c8da5d6ef28e6b539d313baaacfbafcbe"
+
+[[package]]
+name = "openssl-sys"
+version = "0.9.117"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b47e7e6bb2c38cd930d25a23b40fa52e068c10e85f3e03a7f5ba5aaca5713695"
+dependencies = [
+ "cc",
+ "libc",
+ "pkg-config",
+ "vcpkg",
+]
 
 [[package]]
 name = "opentelemetry"
@@ -5224,7 +5286,7 @@ version = "0.8.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "dab5152771c58876a2146916e53e35057e1a4dfa2b9df0f0305b07f611fdea4d"
 dependencies = [
- "openssl-probe",
+ "openssl-probe 0.2.1",
  "rustls-pki-types",
  "schannel",
  "security-framework",
@@ -6589,6 +6651,12 @@ name = "valuable"
 version = "0.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ba73ea9cf16a25df0c8caa16c51acb937d5712a8429db78a3ee29d5dcacd3a65"
+
+[[package]]
+name = "vcpkg"
+version = "0.2.15"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "accd4ea62f7bb7a82fe23066fb0957d48ef677f6eeb8215f372f52e48bb32426"
 
 [[package]]
 name = "version_check"
