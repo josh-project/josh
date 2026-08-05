@@ -542,6 +542,8 @@ impl Transaction {
             HistoryGraphHint {
                 sequence_number: 0,
                 parent_count: 1,
+                jump_delta: 1,
+                jump_is_second: false,
             }
         };
         let mut t2 = self.t2.borrow_mut();
@@ -610,6 +612,8 @@ impl Transaction {
             HistoryGraphHint {
                 sequence_number: 0,
                 parent_count: 1,
+                jump_delta: 1,
+                jump_is_second: false,
             }
         };
         let t2 = self.t2.borrow_mut();
