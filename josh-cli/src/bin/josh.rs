@@ -12,7 +12,7 @@ use josh_cli::commands::push::{PublishArgs, PushArgs};
 use josh_cli::commands::run::ComposeArgs;
 use josh_cli::commands::sync::SyncArgs;
 use josh_cli::config::{read_remote_config, write_remote_config};
-use josh_cli::forge::Forge;
+use josh_cli::forge::{Forge, GerritMode};
 use josh_core::git::{GitCommand, normalize_repo_path};
 
 #[derive(Debug, clap::Parser)]
@@ -174,6 +174,13 @@ pub struct ForgeArgs {
     /// Explicitly disable forge integration
     #[arg(long = "no-forge", conflicts_with = "forge")]
     pub no_forge: bool,
+
+    /// For a Gerrit remote, how `josh changes publish` maps the stack onto
+    /// Gerrit changes: `independent` (default) publishes only dependency-free
+    /// changes as separate reviews; `stack` pushes the whole history as one
+    /// relation chain.
+    #[arg(long = "gerrit-mode", value_enum)]
+    pub gerrit_mode: Option<GerritMode>,
 }
 
 #[derive(Debug, clap::Parser)]
@@ -473,6 +480,7 @@ fn handle_remote_add_repo(args: &RemoteAddArgs, repo_path: &std::path::Path) -> 
         &refspec,
         forge,
         push_url.as_deref(),
+        args.forge_args.gerrit_mode,
     )
     .context("Failed to write remote config file")?;
 
