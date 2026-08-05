@@ -19,6 +19,11 @@ pub trait CacheBackend: Send + Sync {
         to: git2::Oid,
         hint: HistoryGraphHint,
     ) -> anyhow::Result<()>;
+
+    /// Drop any cached handles into the underlying store. The default is a no-op; backends holding
+    /// a lock (e.g. the sled tree handles) override this so the lock can be released. Reads and
+    /// writes stay valid afterwards, transparently reacquiring what they need.
+    fn release(&self) {}
 }
 
 /// Per-commit history-graph facts passed along with every cache record.

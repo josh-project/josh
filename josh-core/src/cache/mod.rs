@@ -19,7 +19,10 @@ pub use history_graph::{
     HistoryGraphInfo, collect_history_graph_info, compute_history_hint, compute_sequence_number,
     parents_share_root,
 };
-pub use sled::{SledCacheBackend, sled_clear, sled_load, sled_open_josh_trees, sled_print_stats};
+pub use sled::{
+    SledCacheBackend, sled_clear, sled_flush, sled_load, sled_open_josh_trees, sled_print_stats,
+    sled_unload,
+};
 pub use stack::CacheStack;
 pub use transaction::*;
 pub use tree_cache::TreeBytes;

@@ -42,6 +42,13 @@ impl CacheStack {
         Ok(())
     }
 
+    /// Release cached handles across all backends (see [`CacheBackend::release`]).
+    pub fn release(&self) {
+        for backend in &self.backends {
+            backend.release();
+        }
+    }
+
     /// Try to read from the cache backend stack.
     ///
     /// When a record is found, it's propagated to the backends
