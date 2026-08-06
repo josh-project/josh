@@ -390,3 +390,9 @@ pub fn reachable_roots() -> Filter {
     });
     *F
 }
+
+/// The `:INDEX` trigram-index filter, used as the cache namespace for the
+/// tree-keyed trigram index records.
+pub fn index() -> Filter {
+    to_filter(Op::Index)
+}

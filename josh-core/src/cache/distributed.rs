@@ -230,11 +230,15 @@ impl CacheBackend for DistributedCacheBackend {
         filter: Filter,
         from: git2::Oid,
         hint: HistoryGraphHint,
+        tree_keyed: bool,
     ) -> anyhow::Result<Option<git2::Oid>> {
         if filter == filter::sequence_number() || filter == filter::reachable_roots() {
             return Ok(None);
         }
-        if !is_eligible(hint) {
+        // Tree-keyed records were written by whichever indexing commit was eligible,
+        // so gating reads on the reader's eligibility would hide them from the
+        // (usually non-sampled) commits that reuse them.
+        if !tree_keyed && !is_eligible(hint) {
             return Ok(None);
         }
         let repo = self.repo.lock().unwrap();
@@ -287,6 +291,9 @@ impl CacheBackend for DistributedCacheBackend {
         from: git2::Oid,
         to: git2::Oid,
         hint: HistoryGraphHint,
+        // Writes stay eligibility-gated for tree-keyed records too: subtrees recur
+        // across commits, so a stable subtree is still caught at some sampled commit.
+        _tree_keyed: bool,
     ) -> anyhow::Result<()> {
         if !self.writable {
             return Ok(());
