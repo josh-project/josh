@@ -8,7 +8,7 @@ pub struct CacheStack {
 
 impl Default for CacheStack {
     fn default() -> Self {
-        CacheStack::new().with_backend(SledCacheBackend::default())
+        CacheStack::new().with_backend(SledCacheBackend)
     }
 }
 
@@ -43,10 +43,17 @@ impl CacheStack {
         Ok(())
     }
 
-    /// Release cached handles across all backends (see [`CacheBackend::release`]).
-    pub fn release(&self) {
+    /// Register the start of a transaction across all backends (see [`CacheBackend::begin`]).
+    pub fn begin(&self) {
         for backend in &self.backends {
-            backend.release();
+            backend.begin();
+        }
+    }
+
+    /// Register the end of a transaction across all backends (see [`CacheBackend::end`]).
+    pub fn end(&self) {
+        for backend in &self.backends {
+            backend.end();
         }
     }
 

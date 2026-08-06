@@ -2690,9 +2690,8 @@ mod tests {
             .unwrap();
         let tree = repo.find_tree(tree).unwrap();
 
-        cache::sled_load(td.path()).unwrap();
         let cachestack = std::sync::Arc::new(
-            cache::CacheStack::new().with_backend(cache::SledCacheBackend::default()),
+            cache::CacheStack::new().with_backend(cache::SledCacheBackend::new(td.path())),
         );
         let ctx = cache::TransactionContext::new(td.path(), cachestack);
         let t = ctx.open().unwrap();
@@ -2838,9 +2837,8 @@ mod tests {
             "merge change",
         );
 
-        cache::sled_load(td.path()).unwrap();
         let cachestack = std::sync::Arc::new(
-            cache::CacheStack::new().with_backend(cache::SledCacheBackend::default()),
+            cache::CacheStack::new().with_backend(cache::SledCacheBackend::new(td.path())),
         );
         let ctx = cache::TransactionContext::new(td.path(), cachestack);
         let t = ctx.open().unwrap();

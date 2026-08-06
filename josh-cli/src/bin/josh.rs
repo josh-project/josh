@@ -235,10 +235,15 @@ fn run_repo(cmd: &RepoCommand, distributed_cache: bool) -> anyhow::Result<()> {
         .commondir()
         .to_path_buf();
 
-    josh_core::cache::sled_load(&git_common_dir).context("Failed to load sled cache")?;
+    let is_compose = matches!(cmd, RepoCommand::Compose(_));
 
-    let mut cache_stack = josh_core::cache::CacheStack::new()
-        .with_backend(josh_core::cache::SledCacheBackend::default());
+    let mut cache_stack = josh_core::cache::CacheStack::new();
+    // Compose does one-shot, throwaway filtering and then hands off to a long container run; the
+    // on-disk sled cache would only take a lock we would have to release again, so skip it.
+    if !is_compose {
+        cache_stack =
+            cache_stack.with_backend(josh_core::cache::SledCacheBackend::new(&git_common_dir));
+    }
     if distributed_cache {
         cache_stack = cache_stack.with_backend(
             josh_core::cache::DistributedCacheBackend::new(&git_common_dir)
@@ -251,7 +256,7 @@ fn run_repo(cmd: &RepoCommand, distributed_cache: bool) -> anyhow::Result<()> {
 
     // For compose, we don't need to flush the objects to disk;
     // everything else gets mem odb setup with an upper flush limit
-    if matches!(cmd, RepoCommand::Compose(_)) {
+    if is_compose {
         ctx = ctx.ephemeral();
     } else {
         ctx = ctx.with_mem_odb_limit(josh_cli::MAX_MEM_PACK_SIZE)

@@ -87,7 +87,9 @@ async fn main() -> anyhow::Result<()> {
 
     josh_proxy::service::create_repo(&repo_path, Some(&args.josh_proxy_path))
         .expect("Failed to create repo");
-    josh_core::cache::sled_load(&repo_path).expect("Failed to load cache");
+    josh_core::cache::SledCacheBackend::new(&repo_path)
+        .pin()
+        .expect("Failed to load cache");
 
     let git_server_task = start_git_server(&args.upstream_dir).await;
     let (io_tx, mut io_rx) = tokio::sync::mpsc::unbounded_channel();
