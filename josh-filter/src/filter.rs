@@ -152,16 +152,19 @@ impl Filter {
         self.chain(to_filter(Op::Stored(path.into())))
     }
 
-    /// Chain a filter that evaluates a Starlark script from a `.star` file.
-    /// The path is used with `.star` extension. The subfilter is applied to the input tree to get the tree passed to the script.
-    /// Syntax: `:*starfile[:filter]` (e.g. `:*foo[:/lib]` passes the result of `:/lib` to the script).
-    pub fn starlark(
+    /// Chain a filter that evaluates a wasm filter module. The `.wasm` extension is appended
+    /// to `path` at apply time; the module blob is resolved from the input tree. The subfilter
+    /// is applied to the input tree to produce the tree the module may read, and the module's
+    /// result is composed with that context.
+    /// Syntax: `:!path=arg,...[context]` (e.g. `:!tools/mod=x[::tools/]`).
+    pub fn wasm(
         self,
         path: impl Into<std::path::PathBuf>,
+        args: Vec<String>,
         subfilter: Filter,
     ) -> anyhow::Result<Filter> {
-        check_experimental_features_enabled("Starlark filter")?;
-        Ok(self.chain(to_filter(Op::Starlark(path.into(), subfilter))))
+        check_experimental_features_enabled("Wasm filter")?;
+        Ok(self.chain(to_filter(Op::Wasm(path.into(), args, subfilter))))
     }
 
     /// Chain a filter that inserts a blob containing the tree OID of the subfilter applied to the input tree.

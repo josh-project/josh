@@ -142,7 +142,7 @@ pub enum Op {
     Subdir(std::path::PathBuf),
     Workspace(std::path::PathBuf),
     Stored(std::path::PathBuf),
-    Starlark(std::path::PathBuf, Filter),
+    Wasm(std::path::PathBuf, Vec<String>, Filter),
     TreeId(std::path::PathBuf, Filter),
     ObjectDeref(std::path::PathBuf),
     ObjectRef(std::path::PathBuf),
