@@ -6,6 +6,7 @@
 use std::sync::Arc;
 
 use josh_core::cache::{CacheStack, TransactionContext, sled_load, sled_unload};
+use josh_core::filter;
 
 #[test]
 fn release_cache_frees_the_sled_lock() {
@@ -18,11 +19,20 @@ fn release_cache_frees_the_sled_lock() {
         .open()
         .unwrap();
 
-    // Populate a cache tree so the transaction and the backend both hold live sled handles.
-    transaction.insert_paths((git2::Oid::ZERO_SHA1, "x".into()), git2::Oid::ZERO_SHA1);
+    // Force a backend cache write so the SledCacheBackend opens a per-filter tree -- that handle,
+    // plus the global db, is what release_cache has to drop to free the lock.
+    let git = transaction.repo();
+    let sig = git2::Signature::new("t", "t@example.com", &git2::Time::new(0, 0)).unwrap();
+    let tree = git
+        .find_tree(git.treebuilder(None).unwrap().write().unwrap())
+        .unwrap();
+    let commit = git.commit(None, &sig, &sig, "c", &tree, &[]).unwrap();
+    transaction
+        .insert(filter::parse(":/").unwrap(), commit, commit, true)
+        .unwrap();
 
-    // A second open of the same cache dir must fail while the transaction holds the lock: sled_load
-    // opens before swapping the global db in, so it observes the still-held lock and errors.
+    // A second open of the same cache dir must fail while those handles are live: sled_load opens
+    // before swapping the global db in, so it observes the still-held lock and errors.
     assert!(
         sled_load(repo).is_err(),
         "cache should be locked while the transaction holds it"
