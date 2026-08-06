@@ -61,19 +61,6 @@ pub fn sled_print_stats() -> anyhow::Result<()> {
     Ok(())
 }
 
-pub fn sled_open_josh_trees() -> anyhow::Result<(sled::Tree, sled::Tree)> {
-    let db = DB.lock().unwrap();
-    let db = match db.as_ref() {
-        Some(db) => db,
-        None => return Err(anyhow!("cache not initialized")),
-    };
-
-    let path_tree = db.open_tree("_paths")?;
-    let invert_tree = db.open_tree("_invert")?;
-
-    Ok((path_tree, invert_tree))
-}
-
 /// Flush any pending writes of the global cache db to disk. No-op if the cache is not loaded.
 pub fn sled_flush() -> anyhow::Result<()> {
     if let Some(db) = DB.lock().unwrap().as_ref() {

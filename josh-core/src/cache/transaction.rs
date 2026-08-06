@@ -1,6 +1,5 @@
 use super::backend::HistoryGraphHint;
 use super::history_graph::compute_history_hint;
-use super::sled::sled_open_josh_trees;
 use super::stack::CacheStack;
 use super::tree_cache::{TreeBytes, TreeCache};
 use anyhow::anyhow;
@@ -36,12 +35,24 @@ static GLOB_MAP: LazyLock<RwLock<HashMap<(git2::Oid, git2::Oid, u64), git2::Oid>
 static TRIGRAM_INDEX_MAP: LazyLock<RwLock<HashMap<git2::Oid, git2::Oid>>> =
     LazyLock::new(Default::default);
 
+// Path-projection memoization for `:PATHS` and its inverse, keyed by (input tree oid, root path).
+// Both are pure functions of the input tree, and workspace filters walk commits parent-first, so a
+// child commit reuses the projections its parent just computed for the subtrees they share -- the
+// same parent-reuse the trigram index relies on, so an in-process map suffices here too.
+static PATHS_MAP: LazyLock<RwLock<HashMap<(git2::Oid, String), git2::Oid>>> =
+    LazyLock::new(Default::default);
+
+static INVERT_MAP: LazyLock<RwLock<HashMap<(git2::Oid, String), git2::Oid>>> =
+    LazyLock::new(Default::default);
+
 /// Clear the process-global in-memory caches shared across all transactions.
 pub fn clear_global_caches() {
     REF_CACHE.write().unwrap().clear();
     POPULATE_MAP.write().unwrap().clear();
     GLOB_MAP.write().unwrap().clear();
     TRIGRAM_INDEX_MAP.write().unwrap().clear();
+    PATHS_MAP.write().unwrap().clear();
+    INVERT_MAP.write().unwrap().clear();
 }
 
 pub struct TransactionContext {
@@ -126,28 +137,10 @@ struct Transaction2 {
     tree_cache: TreeCache,
 
     cache: std::sync::Arc<CacheStack>,
-    // Held `Some` for the life of the transaction; `release_cache` drops them (along with the
-    // backend handles and the global db) to free the sled file lock while the transaction's repo
-    // and object store stay usable. Only the cache-populating filter phase touches these, so any
-    // access after release is a bug and panics.
-    path_tree: Option<sled::Tree>,
-    invert_tree: Option<sled::Tree>,
     missing: Vec<(usize, crate::filter::Filter, git2::Oid)>,
     misses: usize,
     nesting_level: usize,
 }
-
-impl Transaction2 {
-    fn path_tree(&self) -> &sled::Tree {
-        self.path_tree.as_ref().expect(CACHE_RELEASED)
-    }
-
-    fn invert_tree(&self) -> &sled::Tree {
-        self.invert_tree.as_ref().expect(CACHE_RELEASED)
-    }
-}
-
-const CACHE_RELEASED: &str = "cache tree accessed after release_cache";
 
 pub struct Transaction {
     t2: std::cell::RefCell<Transaction2>,
@@ -203,8 +196,6 @@ impl Transaction {
 
         log::debug!("new transaction");
 
-        let (path_tree, invert_tree) = sled_open_josh_trees().expect("failed to open transaction");
-
         Transaction {
             t2: std::cell::RefCell::new(Transaction2 {
                 commit_map: HashMap::new(),
@@ -219,8 +210,6 @@ impl Transaction {
                 last_written_commit: None,
                 tree_cache: Default::default(),
                 cache,
-                path_tree: Some(path_tree),
-                invert_tree: Some(invert_tree),
                 missing: vec![],
                 misses: 0,
                 nesting_level: 0,
@@ -251,19 +240,16 @@ impl Transaction {
     }
 
     /// Close the on-disk cache, releasing sled's exclusive lock on the cache directory so other
-    /// josh processes can open it. This flushes pending writes, then drops every sled handle: this
-    /// transaction's tree handles, the shared backend's, and the process-global database.
+    /// josh processes can open it. This flushes pending writes, then drops the remaining sled
+    /// handles: the shared backend's per-filter trees and the process-global database.
     ///
     /// Call once no further cache reads or writes will happen. The repo and in-memory object store
     /// stay usable, so a filtering phase can hand its result to a long, cache-free tail (for
-    /// example running containers) without pinning the lock. Any cache access after this panics.
+    /// example running containers) without pinning the lock. A later cache read or write reopens
+    /// what it needs.
     pub fn release_cache(&self) -> anyhow::Result<()> {
         crate::cache::sled::sled_flush()?;
-        let mut t2 = self.t2.borrow_mut();
-        t2.path_tree = None;
-        t2.invert_tree = None;
-        t2.cache.release();
-        drop(t2);
+        self.t2.borrow().cache.release();
         crate::cache::sled::sled_unload();
         Ok(())
     }
@@ -453,43 +439,19 @@ impl Transaction {
     }
 
     pub fn insert_paths(&self, tree: (git2::Oid, String), result: git2::Oid) {
-        let t2 = self.t2.borrow();
-        let s = format!("{:?}", tree);
-        let x = git2::Oid::hash_object(git2::ObjectType::Blob, s.as_bytes()).expect("hash_object");
-        t2.path_tree()
-            .insert(x.as_bytes(), result.as_bytes())
-            .unwrap();
+        PATHS_MAP.write().unwrap().entry(tree).or_insert(result);
     }
 
     pub fn get_paths(&self, tree: (git2::Oid, String)) -> Option<git2::Oid> {
-        let t2 = self.t2.borrow();
-        let s = format!("{:?}", tree);
-        let x = git2::Oid::hash_object(git2::ObjectType::Blob, s.as_bytes()).expect("hash_object");
-
-        if let Some(oid) = t2.path_tree().get(x.as_bytes()).unwrap() {
-            return Some(git2::Oid::from_bytes(&oid).unwrap());
-        }
-        None
+        PATHS_MAP.read().unwrap().get(&tree).cloned()
     }
 
     pub fn insert_invert(&self, tree: (git2::Oid, String), result: git2::Oid) {
-        let t2 = self.t2.borrow();
-        let s = format!("{:?}", tree);
-        let x = git2::Oid::hash_object(git2::ObjectType::Blob, s.as_bytes()).expect("hash_object");
-        t2.invert_tree()
-            .insert(x.as_bytes(), result.as_bytes())
-            .unwrap();
+        INVERT_MAP.write().unwrap().entry(tree).or_insert(result);
     }
 
     pub fn get_invert(&self, tree: (git2::Oid, String)) -> Option<git2::Oid> {
-        let t2 = self.t2.borrow();
-        let s = format!("{:?}", tree);
-        let x = git2::Oid::hash_object(git2::ObjectType::Blob, s.as_bytes()).expect("hash_object");
-
-        if let Some(oid) = t2.invert_tree().get(x.as_bytes()).unwrap() {
-            return Some(git2::Oid::from_bytes(&oid).unwrap());
-        }
-        None
+        INVERT_MAP.read().unwrap().get(&tree).cloned()
     }
 
     pub fn insert_trigram_index(&self, tree: git2::Oid, result: git2::Oid) {

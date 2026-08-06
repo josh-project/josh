@@ -20,8 +20,7 @@ pub use history_graph::{
     parents_share_root,
 };
 pub use sled::{
-    SledCacheBackend, sled_clear, sled_flush, sled_load, sled_open_josh_trees, sled_print_stats,
-    sled_unload,
+    SledCacheBackend, sled_clear, sled_flush, sled_load, sled_print_stats, sled_unload,
 };
 pub use stack::CacheStack;
 pub use transaction::*;
