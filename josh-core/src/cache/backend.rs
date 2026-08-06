@@ -27,10 +27,15 @@ pub trait CacheBackend: Send + Sync {
         tree_keyed: bool,
     ) -> anyhow::Result<()>;
 
-    /// Drop any cached handles into the underlying store. The default is a no-op; backends holding
-    /// a lock (e.g. the sled tree handles) override this so the lock can be released. Reads and
-    /// writes stay valid afterwards, transparently reacquiring what they need.
-    fn release(&self) {}
+    /// Register the start of a transaction against this backend. The default is a no-op; backends
+    /// whose underlying store holds a process-exclusive lock (the sled backend) use this to open
+    /// lazily and reference-count active transactions.
+    fn begin(&self) {}
+
+    /// Register the end of a transaction. Balances a prior [`CacheBackend::begin`]. When the last
+    /// active transaction ends, a locking backend flushes and drops its handles, releasing the lock
+    /// until the next [`CacheBackend::begin`] transparently reopens what it needs.
+    fn end(&self) {}
 }
 
 /// Per-commit history-graph facts passed along with every cache record.
