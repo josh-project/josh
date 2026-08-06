@@ -28,11 +28,20 @@ static POPULATE_MAP: LazyLock<RwLock<HashMap<(git2::Oid, git2::Oid), git2::Oid>>
 static GLOB_MAP: LazyLock<RwLock<HashMap<(git2::Oid, git2::Oid, u64), git2::Oid>>> =
     LazyLock::new(Default::default);
 
+// Trigram index memoization, keyed by source tree oid -> index tree oid. The index is a pure
+// function of the source tree, and `:INDEX` walks commits parent-first, so when a child commit is
+// indexed the subtrees it shares with its parent are already memoized here from the parent's run --
+// which is where reuse almost always comes from. An in-process map captures that without the
+// persistence (and file lock) of an on-disk cache.
+static TRIGRAM_INDEX_MAP: LazyLock<RwLock<HashMap<git2::Oid, git2::Oid>>> =
+    LazyLock::new(Default::default);
+
 /// Clear the process-global in-memory caches shared across all transactions.
 pub fn clear_global_caches() {
     REF_CACHE.write().unwrap().clear();
     POPULATE_MAP.write().unwrap().clear();
     GLOB_MAP.write().unwrap().clear();
+    TRIGRAM_INDEX_MAP.write().unwrap().clear();
 }
 
 pub struct TransactionContext {
@@ -123,7 +132,6 @@ struct Transaction2 {
     // access after release is a bug and panics.
     path_tree: Option<sled::Tree>,
     invert_tree: Option<sled::Tree>,
-    trigram_index_tree: Option<sled::Tree>,
     missing: Vec<(usize, crate::filter::Filter, git2::Oid)>,
     misses: usize,
     nesting_level: usize,
@@ -136,10 +144,6 @@ impl Transaction2 {
 
     fn invert_tree(&self) -> &sled::Tree {
         self.invert_tree.as_ref().expect(CACHE_RELEASED)
-    }
-
-    fn trigram_index_tree(&self) -> &sled::Tree {
-        self.trigram_index_tree.as_ref().expect(CACHE_RELEASED)
     }
 }
 
@@ -199,8 +203,7 @@ impl Transaction {
 
         log::debug!("new transaction");
 
-        let (path_tree, invert_tree, trigram_index_tree) =
-            sled_open_josh_trees().expect("failed to open transaction");
+        let (path_tree, invert_tree) = sled_open_josh_trees().expect("failed to open transaction");
 
         Transaction {
             t2: std::cell::RefCell::new(Transaction2 {
@@ -218,7 +221,6 @@ impl Transaction {
                 cache,
                 path_tree: Some(path_tree),
                 invert_tree: Some(invert_tree),
-                trigram_index_tree: Some(trigram_index_tree),
                 missing: vec![],
                 misses: 0,
                 nesting_level: 0,
@@ -260,7 +262,6 @@ impl Transaction {
         let mut t2 = self.t2.borrow_mut();
         t2.path_tree = None;
         t2.invert_tree = None;
-        t2.trigram_index_tree = None;
         t2.cache.release();
         drop(t2);
         crate::cache::sled::sled_unload();
@@ -492,19 +493,15 @@ impl Transaction {
     }
 
     pub fn insert_trigram_index(&self, tree: git2::Oid, result: git2::Oid) {
-        let t2 = self.t2.borrow();
-        t2.trigram_index_tree()
-            .insert(tree.as_bytes(), result.as_bytes())
-            .unwrap();
+        TRIGRAM_INDEX_MAP
+            .write()
+            .unwrap()
+            .entry(tree)
+            .or_insert(result);
     }
 
     pub fn get_trigram_index(&self, tree: git2::Oid) -> Option<git2::Oid> {
-        let t2 = self.t2.borrow();
-
-        if let Some(oid) = t2.trigram_index_tree().get(tree.as_bytes()).unwrap() {
-            return Some(git2::Oid::from_bytes(&oid).unwrap());
-        }
-        None
+        TRIGRAM_INDEX_MAP.read().unwrap().get(&tree).cloned()
     }
 
     pub fn insert_populate(&self, tree: (git2::Oid, git2::Oid), result: git2::Oid) {
@@ -683,8 +680,9 @@ impl Transaction {
     }
 }
 
-/// Back josh-search's index memoization with the persistent trigram sled tree, so `:INDEX` (and
-/// any other in-transaction indexing) stays incremental across transactions and processes.
+/// Back josh-search's index memoization with the process-global trigram map, so `:INDEX` (and any
+/// other in-transaction indexing) stays incremental across transactions within a process -- keyed
+/// by source tree oid, so a child commit reuses the subtrees its parent just indexed.
 impl josh_search::IndexCache for Transaction {
     fn get_index(&self, tree: git2::Oid) -> Option<git2::Oid> {
         self.get_trigram_index(tree)
