@@ -10,6 +10,7 @@ use std::sync::LazyLock;
 // Re-export from josh-filter
 pub use josh_filter::LinkMode;
 pub use josh_filter::filter::MESSAGE_MATCH_ALL_REGEX;
+pub use josh_filter::filter::index;
 pub use josh_filter::filter::reachable_roots;
 pub use josh_filter::filter::sequence_number;
 pub use josh_filter::flang::parse::{get_comments, parse};
@@ -1509,11 +1510,17 @@ pub fn apply<'a>(
         Op::Paths => Ok(x
             .clone()
             .with_tree(tree::pathstree("", x.tree().id(), transaction)?)),
-        Op::Index => Ok(x.clone().with_tree(josh_search::trigram_index(
-            transaction.repo(),
-            transaction,
-            x.tree().clone(),
-        )?)),
+        Op::Index => {
+            // Shard the tree-keyed index cache by the history position of the commit being
+            // filtered. `x.commit` is the zero oid when indexing a bare tree (no commit context),
+            // which resolves to the sequence-0 fallback hint.
+            let index_cache = transaction.trigram_index_cache(x.commit);
+            Ok(x.clone().with_tree(josh_search::trigram_index(
+                transaction.repo(),
+                &index_cache,
+                x.tree().clone(),
+            )?))
+        }
 
         Op::Invert => {
             Ok(x.clone()

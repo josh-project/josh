@@ -230,11 +230,18 @@ impl CacheBackend for DistributedCacheBackend {
         filter: Filter,
         from: git2::Oid,
         hint: HistoryGraphHint,
+        tree_keyed: bool,
     ) -> anyhow::Result<Option<git2::Oid>> {
         if filter == filter::sequence_number() || filter == filter::reachable_roots() {
             return Ok(None);
         }
-        if !is_eligible(hint) {
+        // Commit-keyed records are only ever stored for eligible (sampled) commits, so a read at a
+        // non-eligible commit can skip the store entirely. Tree-keyed records (the trigram index)
+        // are stored for whichever *indexing* commit was eligible, which is unrelated to the commit
+        // now doing the lookup -- so the read must not gate on the reader's eligibility, or shared
+        // subtrees written at a sampled commit would never be found from the (usually non-sampled)
+        // commits that reuse them. The shard, derived from the hint below, still applies to both.
+        if !tree_keyed && !is_eligible(hint) {
             return Ok(None);
         }
         let repo = self.repo.lock().unwrap();
@@ -287,6 +294,10 @@ impl CacheBackend for DistributedCacheBackend {
         from: git2::Oid,
         to: git2::Oid,
         hint: HistoryGraphHint,
+        // Writes stay gated by eligibility for tree-keyed records too: the store stays sparse, and
+        // because subtrees recur across commits a stable subtree is still caught at whichever
+        // sampled commit indexes it (and re-stored, per shard, in each window it survives into).
+        _tree_keyed: bool,
     ) -> anyhow::Result<()> {
         if !self.writable {
             return Ok(());

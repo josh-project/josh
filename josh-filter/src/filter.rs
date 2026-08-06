@@ -390,3 +390,10 @@ pub fn reachable_roots() -> Filter {
     });
     *F
 }
+
+/// The `:INDEX` trigram-index filter. Used as the cache namespace (filter identity) for the
+/// tree-keyed trigram index cache, so per-subtree `source tree -> index tree` records live in
+/// their own per-filter cache tree, keyed and sharded like any other filter's records.
+pub fn index() -> Filter {
+    to_filter(Op::Index)
+}
