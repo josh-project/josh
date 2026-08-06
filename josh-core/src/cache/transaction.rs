@@ -162,6 +162,11 @@ pub struct Transaction {
 
 impl Drop for Transaction {
     fn drop(&mut self) {
+        // Balance the `begin` from `Transaction::new`. Unconditional (even for ephemeral
+        // transactions) so the sled backend's active-transaction count stays balanced and the
+        // on-disk cache lock is released once the last transaction ends.
+        self.t2.borrow().cache.end();
+
         // Skip flushing to disk, the mem odb will be lost, as requested.
         if self.ephemeral {
             return;
@@ -198,6 +203,10 @@ impl Transaction {
 
         let mem_odb = josh_memodb::MemOdb::new(mem_odb_limit, repo.path().to_owned());
         mem_odb.register(&repo);
+
+        // Register this transaction with the cache backends so a locking backend (sled) opens
+        // lazily and holds its lock only while a transaction is live. Balanced in `Drop`.
+        cache.begin();
 
         log::debug!("new transaction");
 
@@ -243,21 +252,6 @@ impl Transaction {
 
     pub fn repo(&self) -> &git2::Repository {
         &self.repo
-    }
-
-    /// Close the on-disk cache, releasing sled's exclusive lock on the cache directory so other
-    /// josh processes can open it. This flushes pending writes, then drops the remaining sled
-    /// handles: the shared backend's per-filter trees and the process-global database.
-    ///
-    /// Call once no further cache reads or writes will happen. The repo and in-memory object store
-    /// stay usable, so a filtering phase can hand its result to a long, cache-free tail (for
-    /// example running containers) without pinning the lock. A later cache read or write reopens
-    /// what it needs.
-    pub fn release_cache(&self) -> anyhow::Result<()> {
-        crate::cache::sled::sled_flush()?;
-        self.t2.borrow().cache.release();
-        crate::cache::sled::sled_unload();
-        Ok(())
     }
 
     /// Read the raw bytes of the tree `oid` through the per-transaction [`TreeCache`]
@@ -770,15 +764,8 @@ mod tests {
     use super::*;
 
     fn test_transaction() -> (tempfile::TempDir, Transaction) {
-        // The sled cache is a process-global, so it gets one directory for the whole test
-        // binary rather than one per transaction.
-        static SLED_DIR: std::sync::LazyLock<tempfile::TempDir> = std::sync::LazyLock::new(|| {
-            let dir = tempfile::tempdir().unwrap();
-            crate::cache::sled_load(dir.path()).unwrap();
-            dir
-        });
-        let _ = &*SLED_DIR;
-
+        // These tests exercise ref/commit machinery, not the on-disk cache, so an empty cache
+        // stack (no sled backend) is enough.
         let dir = tempfile::tempdir().unwrap();
         git2::Repository::init_bare(dir.path()).unwrap();
         let context = TransactionContext::new(
