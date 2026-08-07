@@ -13,6 +13,8 @@
 //! (e.g. synthetic `owner/repo/pull/N` ids), so everything after the author
 //! segment is treated as the change-id.
 
+use anyhow::anyhow;
+
 /// A change-scoped ref: either the change's head commit (`Change`) or the
 /// commit it is based on (`Base`). Both spellings carry the same identity, so
 /// they convert freely via [`StackedChangeRef::as_change`] and
@@ -188,6 +190,109 @@ fn split_target_author(rest: &str) -> Option<(String, String, String)> {
         target_end += segment.len() + 1;
     }
     None
+}
+
+/// Which `refs/josh/...` ref holds a piece of change metadata.
+///
+/// Scoped by the target branch of the change, so a single repo can host
+/// changes against multiple branches without collisions.
+///
+/// `Local { branch }` is data the user authored or discovered from their
+/// working tree, targeting `branch`.
+/// `Remote { remote, branch }` is data fetched from / posted to `remote`
+/// for changes targeting `branch`.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub enum ChangesRef {
+    Local { branch: String },
+    Remote { remote: String, branch: String },
+}
+
+impl ChangesRef {
+    pub fn ref_name(&self) -> String {
+        match self {
+            ChangesRef::Local { branch } => format!("refs/josh/changes/{}", branch),
+            ChangesRef::Remote { remote, branch } => {
+                format!("refs/josh/remotes/{}/changes/{}", remote, branch)
+            }
+        }
+    }
+
+    pub fn branch(&self) -> &str {
+        match self {
+            ChangesRef::Local { branch } => branch,
+            ChangesRef::Remote { branch, .. } => branch,
+        }
+    }
+
+    pub fn remote(&self) -> Option<&str> {
+        match self {
+            ChangesRef::Local { .. } => None,
+            ChangesRef::Remote { remote, .. } => Some(remote),
+        }
+    }
+}
+
+/// Read `repo.head()` and return the current branch shorthand. Errors on a
+/// detached HEAD with a message asking the caller to pass an explicit branch.
+pub fn head_branch(repo: &git2::Repository) -> anyhow::Result<String> {
+    let head = repo
+        .head()
+        .map_err(|e| anyhow!("failed to read HEAD: {}", e))?;
+    if !head.is_branch() {
+        return Err(anyhow!(
+            "HEAD is detached -- pass --branch to select a target branch explicitly"
+        ));
+    }
+    Ok(head.shorthand()?.to_string())
+}
+
+/// Return every changes ref that currently exists, as `ChangesRef` values.
+/// `(remote, branch)` pairs are sorted for deterministic iteration; Local
+/// entries come first.
+pub fn all_changes_refs(repo: &git2::Repository) -> anyhow::Result<Vec<ChangesRef>> {
+    let mut locals: Vec<String> = Vec::new();
+    let mut remotes: Vec<(String, String)> = Vec::new();
+    for r in repo.references()? {
+        let r = r?;
+        let name = match r.name() {
+            Ok(n) => n,
+            Err(_) => continue,
+        };
+        if let Some(branch) = name.strip_prefix("refs/josh/changes/") {
+            if !branch.is_empty() {
+                locals.push(branch.to_string());
+            }
+        } else if let Some(rest) = name.strip_prefix("refs/josh/remotes/") {
+            // `<remote>/changes/<branch>` -- branch may contain `/`, so split
+            // on the literal `/changes/` separator.
+            if let Some((remote, branch)) = rest.split_once("/changes/") {
+                if !remote.is_empty() && !branch.is_empty() {
+                    remotes.push((remote.to_string(), branch.to_string()));
+                }
+            }
+        }
+    }
+    locals.sort();
+    locals.dedup();
+    remotes.sort();
+    remotes.dedup();
+
+    let mut out = Vec::with_capacity(locals.len() + remotes.len());
+    for branch in locals {
+        out.push(ChangesRef::Local { branch });
+    }
+    for (remote, branch) in remotes {
+        out.push(ChangesRef::Remote { remote, branch });
+    }
+    Ok(out)
+}
+
+/// Like `all_changes_refs`, but filtered to refs targeting `branch`.
+pub fn refs_on_branch(repo: &git2::Repository, branch: &str) -> anyhow::Result<Vec<ChangesRef>> {
+    Ok(all_changes_refs(repo)?
+        .into_iter()
+        .filter(|r| r.branch() == branch)
+        .collect())
 }
 
 #[cfg(test)]
