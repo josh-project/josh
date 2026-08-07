@@ -25,6 +25,14 @@ fn make_app() -> clap::Command {
     let app = clap::Command::new("josh-filter");
 
     let app = { app.arg(clap::Arg::new("search").long("search")) };
+    let app = {
+        app.arg(
+            clap::Arg::new("search-history")
+                .long("search-history")
+                .action(clap::ArgAction::SetTrue)
+                .help("With --search: search every commit of the filtered first-parent history"),
+        )
+    };
 
     app
         .arg(
@@ -368,6 +376,53 @@ fn run_filter(args: Vec<String>) -> anyhow::Result<i32> {
     josh_core::update_refs(&transaction, updated_refs.clone());
 
     if let Some(searchstring) = args.get_one::<String>("search") {
+        if args.get_flag("search-history") {
+            if !josh_core::filter::experimental_features_enabled() {
+                anyhow::bail!("--search-history requires JOSH_EXPERIMENTAL_FEATURES=1");
+            }
+            // Search every reachable commit of the filtered history (like `git log -S`, the
+            // whole graph, not just first-parent). Walking the filtered graph directly gives
+            // exactly the trees being searched — no mapping back and forth between original
+            // and filtered commits.
+            let commit = repo.revparse_single(&input_ref)?.peel_to_commit()?;
+            let filtered_id = josh_core::filter_commit(&transaction, filterobj, commit.id())?;
+            let ifilterobj = josh_core::filter::parse(":INDEX")?;
+
+            let mut walk = repo.revwalk()?;
+            walk.set_sorting(git2::Sort::TOPOLOGICAL)?;
+            walk.push(filtered_id)?;
+            for id in walk {
+                let id = id?;
+                let tree = repo.find_commit(id)?.tree()?;
+                let index_tree = josh_core::filter::apply(
+                    &transaction,
+                    ifilterobj,
+                    josh_core::filter::Rewrite::from_tree(tree.clone()),
+                )?
+                .tree()
+                .clone();
+                let candidates = josh_search::search_candidates(
+                    &repo,
+                    &mut transaction.search_cache(),
+                    &index_tree,
+                    &tree,
+                    searchstring,
+                )?;
+                let matches = josh_search::search_matches(
+                    &repo,
+                    &mut transaction.search_cache(),
+                    searchstring,
+                    &candidates,
+                )?;
+                for r in matches {
+                    for l in r.1 {
+                        println!("{}:{}:{}: {}", id, r.0, l.0, l.1);
+                    }
+                }
+            }
+            return Ok(0);
+        }
+
         let commit = repo.revparse_single(&input_ref)?.peel_to_commit()?;
 
         let tree = repo
@@ -405,7 +460,7 @@ fn run_filter(args: Vec<String>) -> anyhow::Result<i32> {
                 if entry.kind() == Some(git2::ObjectType::Blob)
                     && let Ok(name) = entry.name()
                 {
-                    scan.push(format!("{}{}", root, name));
+                    scan.push((format!("{}{}", root, name), entry.id()));
                 }
                 0
             })?;
@@ -414,7 +469,6 @@ fn run_filter(args: Vec<String>) -> anyhow::Result<i32> {
         let matches = josh_search::search_matches(
             &repo,
             &mut transaction.search_cache(),
-            &tree,
             searchstring,
             &candidates,
         )?;

@@ -452,7 +452,7 @@ impl Revision {
                 if entry.kind() == Some(git2::ObjectType::Blob)
                     && let Ok(name) = entry.name()
                 {
-                    scan.push(format!("{}{}", root, name));
+                    scan.push((format!("{}{}", root, name), entry.id()));
                 }
                 0
             })?;
@@ -461,7 +461,6 @@ impl Revision {
         let results = josh_search::search_matches(
             transaction.repo(),
             &mut transaction.search_cache(),
-            x.tree(),
             &string,
             &candidates,
         )?;
