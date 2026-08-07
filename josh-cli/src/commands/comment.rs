@@ -1,3 +1,5 @@
+use crate::commands::scope::ScopeArgs;
+
 /// Arguments for `josh changes comment`.
 #[derive(Debug, clap::Parser)]
 pub struct CommentArgs {
@@ -45,15 +47,8 @@ pub struct CommentArgs {
     #[arg(long = "update-of")]
     pub update_of: Option<String>,
 
-    /// Target branch for the comment (defaults to HEAD's branch).
-    #[arg(short = 'b', long = "branch")]
-    pub branch: Option<String>,
-
-    /// Queue the comment in the outbox of the named remote so the next
-    /// `sync --push` will post it. Without this flag, the comment stays
-    /// private to the local changes ref.
-    #[arg(long = "remote")]
-    pub remote: Option<String>,
+    #[command(flatten)]
+    pub scope: ScopeArgs,
 }
 
 pub fn handle_comment(
@@ -123,22 +118,14 @@ pub fn handle_comment(
         reply_to: args.reply_to.clone(),
         update_of: args.update_of.clone(),
     };
-    let branch = match &args.branch {
-        Some(b) => b.clone(),
-        None => josh_changes::head_branch(repo)?,
-    };
 
-    match &args.remote {
-        Some(remote) => {
-            let scope = josh_changes::ChangesRef::Remote {
-                remote: remote.clone(),
-                branch,
-            };
+    let scope = args.scope.resolve(repo)?;
+    match &scope {
+        josh_changes::ChangesRef::Remote { remote, .. } => {
             josh_changes::write_outbox_comment(repo, &change, &meta, None, None, &scope)?;
             println!("Comment queued in outbox for remote '{}'.", remote);
         }
-        None => {
-            let scope = josh_changes::ChangesRef::Local { branch };
+        josh_changes::ChangesRef::Local { .. } => {
             josh_changes::write_comment(repo, &change, &meta, None, None, &scope)?;
             println!("Comment saved (private to local ref).");
         }

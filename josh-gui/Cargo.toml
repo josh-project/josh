@@ -12,6 +12,7 @@ publish = false
 [dependencies]
 anyhow = "1.0"
 chrono = "^0"
+clap = { version = "4", features = ["derive"] }
 dioxus = { version = "0.7", features = ["desktop"] }
 serde_json = "1.0"
 josh-changes = { path = "../josh-changes" }
