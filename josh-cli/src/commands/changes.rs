@@ -246,6 +246,7 @@ pub fn handle_deps(
             .ok()
             .and_then(|c| {
                 c.message()
+                    .ok()
                     .map(|m| m.lines().next().unwrap_or("").to_string())
             })
             .unwrap_or_default();
