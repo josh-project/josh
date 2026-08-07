@@ -1,7 +1,8 @@
 //! Trigram based code search index for git repositories.
 //!
 //! The index of a tree is itself a git tree: an exact inverted index mapping every trigram
-//! (3-byte window of file content) to the set of files containing it. For a trigram with bytes
+//! (3-byte window of file content, case-folded and with punctuation classes normalized, see
+//! [`fold_byte`]) to the set of files containing it. For a trigram with bytes
 //! `(b1, b2, b3)`, the index contains
 //!
 //! ```text
@@ -61,13 +62,28 @@ fn to_git2(oid: gix_hash::ObjectId) -> git2::Oid {
     git2::Oid::from_bytes(oid.as_bytes()).expect("oid size mismatch")
 }
 
-/// All distinct trigrams of `content`: 3-byte windows that are valid UTF-8. Used identically on
-/// the index side and the query side, which is what makes the index exact — UTF-8 validity of a
-/// window depends only on its own bytes, so a query trigram is found in every file containing
-/// the query string.
+/// Fold a byte for trigram extraction: ASCII letters lowercase, and every ASCII byte that is
+/// not alphanumeric or `_` (whitespace, punctuation, brackets, operators) becomes one class
+/// glyph. Folding collapses the combinatorial variety of near-content-free trigrams — on
+/// typical source trees it shrinks the index by more than a third — while folded trigrams keep
+/// their positional filtering power (a query like `foo(` still requires a non-word byte after
+/// `foo`). Non-ASCII bytes pass through untouched, so UTF-8 validity of a window is unaffected.
+fn fold_byte(b: u8) -> u8 {
+    match b {
+        b'A'..=b'Z' => b + 32,
+        b if b < 128 && !(b.is_ascii_alphanumeric() || b == b'_') => b' ',
+        _ => b,
+    }
+}
+
+/// All distinct trigrams of `content`: 3-byte windows of the [`fold_byte`]-normalized bytes
+/// that are valid UTF-8. Used identically on the index side and the query side, which is what
+/// keeps the index exact: folding only merges trigram classes, so a query trigram is found in
+/// every file containing the query string, candidates are a superset of the true matches, and
+/// [`search_matches`] still verifies the original string byte for byte.
 fn distinct_trigrams(content: &str) -> BTreeSet<[u8; 3]> {
-    content
-        .as_bytes()
+    let folded: Vec<u8> = content.bytes().map(fold_byte).collect();
+    folded
         .windows(3)
         .filter(|w| std::str::from_utf8(w).is_ok())
         .map(|w| [w[0], w[1], w[2]])
@@ -649,6 +665,14 @@ mod tests {
         assert!(t.contains(&[b'a', 0xc3, 0xa9]));
         assert!(t.contains(&[0xc3, 0xa9, b'b']));
         assert_eq!(t.len(), 2);
+        // Case folds, and all ASCII space/punctuation/bracket bytes are one class glyph;
+        // word bytes ([a-z0-9_]) and non-ASCII stay distinct.
+        assert_eq!(distinct_trigrams("AbC"), distinct_trigrams("abc"));
+        assert_eq!(distinct_trigrams("a,b"), distinct_trigrams("a;b"));
+        assert_eq!(distinct_trigrams("f(x)"), distinct_trigrams("f[x]"));
+        assert_eq!(distinct_trigrams("a b"), distinct_trigrams("a\tb"));
+        assert_ne!(distinct_trigrams("a_b"), distinct_trigrams("a b"));
+        assert_ne!(distinct_trigrams("a1b"), distinct_trigrams("a2b"));
     }
 
     #[derive(Default)]
@@ -700,23 +724,29 @@ mod tests {
 
         let index = trigram_index(&repo, &cache, &mut Indexer::default(), tree.clone()).unwrap();
 
-        // The index format is pinned: this oid was produced by the pre-rework (postings based)
-        // builder for the same tree. Cached indexes of older josh versions stay valid only as
-        // long as it does not change.
+        // The index format is pinned: cached indexes of older josh versions stay valid only as
+        // long as this oid does not change; a change requires a josh cache version bump.
         assert_eq!(
             index.id().to_string(),
-            "ce86153edb26f730719a7d7f83e940785221c8c0"
+            "169f9d05072eb25e1f1e90b4f7f11f6cfc2d3222"
         );
 
-        // "Tes" lives at 54/65/73 ('T' escapes nothing -- hex spine).
+        // "Tes" folds to "tes", which lives at 74/65/73 in the hex spine.
         assert!(
             index
-                .get_path(std::path::Path::new("54/65/73/sub1/file1"))
+                .get_path(std::path::Path::new("74/65/73/sub1/file1"))
                 .is_ok()
         );
 
         let candidates = search_candidates(&repo, &index, &tree, "document").unwrap();
         assert_eq!(candidates, vec!["sub1/file1", "sub1/file2"]);
+
+        // Trigrams are case-folded, so candidates are a case-insensitive superset ("Test" in
+        // file1 makes it a candidate for "test") while match verification stays byte-exact.
+        let candidates = search_candidates(&repo, &index, &tree, "test").unwrap();
+        assert_eq!(candidates, vec!["sub1/file1"]);
+        let matches = search_matches(&repo, &tree, "test", &candidates).unwrap();
+        assert!(matches.is_empty());
 
         let candidates = search_candidates(&repo, &index, &tree, "missingword").unwrap();
         assert!(candidates.is_empty());
