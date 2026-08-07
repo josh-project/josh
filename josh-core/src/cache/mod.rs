@@ -17,7 +17,9 @@ mod tree_cache;
 /// trigram index, changing the index format.
 /// Version 36: trigram mirror entries are named by a one-byte hash of the
 /// source name, changing the index format.
-pub const CACHE_VERSION: u64 = 36;
+/// Version 37: the folded-byte trigram spine is replaced with a hashed spine
+/// and curated fold, changing the index format.
+pub const CACHE_VERSION: u64 = 37;
 
 pub use backend::{CacheBackend, HistoryGraphHint};
 pub use distributed::DistributedCacheBackend;
