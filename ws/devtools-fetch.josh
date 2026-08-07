@@ -1,0 +1,25 @@
+:$label="devtools cargo fetch"
+:#image[:+images/rust-devtools-dev-local]
+:$network="host"
+
+:$cmd="cd devtools && cargo fetch --locked"
+
+env = :[
+    :$CARGO_HOME="/out/cargo-cache"
+]
+
+worktree = :[
+    :+ws/patched-cargo
+    ::devtools/Cargo.lock
+    ::devtools/**/Cargo.toml
+    ::cq/josh-cq-test-components/Cargo.toml
+    ::axum-cgi/Cargo.toml
+    :[
+        ::devtools/**/lib.rs
+        ::devtools/**/main.rs
+        ::devtools/**/bin/
+        ::devtools/**/build.rs
+        ::cq/josh-cq-test-components/**/lib.rs
+        ::axum-cgi/**/lib.rs
+    ]:replace("(?s).+":"")
+]

@@ -1,0 +1,34 @@
+:$label="devtools cargo deps build"
+:#image[:+images/rust-devtools-dev-local]
+:$cache="sccache"
+
+:+sidecars
+
+inputs = :[
+    :#fetch[:+ws/devtools-fetch]
+]
+
+env = :[
+    :$RUSTFLAGS="-D warnings -Ctarget-feature=-crt-static"
+    :$CARGO_HOME="/fetch/cargo-cache"
+]
+
+worktree = :[
+    ::run.sh=ws/devtools-deps-build.sh
+    ::check-sccache.sh=ws/check-sccache.sh
+    :+ws/patched-cargo
+    ::devtools/Cargo.lock
+    ::devtools/**/Cargo.toml
+    ::cq/josh-cq-test-components/Cargo.toml
+    ::axum-cgi/Cargo.toml
+    :[
+        ::devtools/**/lib.rs
+        ::cq/josh-cq-test-components/**/lib.rs
+        ::axum-cgi/**/lib.rs
+    ]:replace("(?s).+":"")
+    :[
+        ::devtools/**/main.rs
+        ::devtools/**/src/bin/**/*.rs
+        ::devtools/**/build.rs
+    ]:replace("(?s).+":"fn main(){}")
+]
