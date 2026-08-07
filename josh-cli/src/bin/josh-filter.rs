@@ -382,9 +382,16 @@ fn run_filter(args: Vec<String>) -> anyhow::Result<i32> {
         // The trigram index is experimental; without it every file is a candidate and
         // search_matches does all the filtering, so results are identical, just slower.
         let candidates = if josh_core::filter::experimental_features_enabled() {
-            let ifilterobj = filterobj.chain(josh_core::filter::parse(":SQUASH:INDEX")?);
-            let index_commit = josh_core::filter_commit(&transaction, ifilterobj, commit.id())?;
-            let index_tree = repo.find_commit(index_commit)?.tree()?;
+            // Index just the tip tree: no history walk needed for a one-shot search, and the
+            // per-tree memoization shares everything with any other indexing of the same
+            // trees.
+            let index_tree = josh_core::filter::apply(
+                &transaction,
+                josh_core::filter::parse(":INDEX")?,
+                josh_core::filter::Rewrite::from_tree(tree.clone()),
+            )?
+            .tree()
+            .clone();
             josh_search::search_candidates(
                 &repo,
                 &mut transaction.search_cache(),
