@@ -64,7 +64,6 @@ fn child_filters(op: &Op) -> Vec<Filter> {
         Op::Subtract(a, b) => vec![*a, *b],
         Op::Compose(v) | Op::Chain(v) => v.clone(),
         Op::Rev(v) => v.iter().map(|(_, _, f)| *f).collect(),
-        Op::Squash(Some(m)) => m.values().copied().collect(),
         _ => vec![],
     }
 }
@@ -265,44 +264,6 @@ impl<'a> InMemoryBuilder<'a> {
             filename: BString::from("0"),
             oid: inner_oid,
         }];
-        let outer_tree = gix_object::Tree {
-            entries: outer_entries,
-        };
-        Ok(self.write_tree(outer_tree))
-    }
-
-    fn build_squash_params(
-        &mut self,
-        params: &std::collections::BTreeMap<LazyRef, Filter>,
-    ) -> anyhow::Result<gix_hash::ObjectId> {
-        let mut outer_entries = Vec::new();
-        for (i, (lazy_ref, filter)) in params.iter().enumerate() {
-            let key_blob = self.write_blob(lazy_ref.to_string().as_bytes());
-            let filter_tree = self.node_oid(*filter);
-
-            let inner_entries = vec![
-                gix_object::tree::Entry {
-                    mode: gix_object::tree::EntryKind::Blob.into(),
-                    filename: BString::from("o"),
-                    oid: key_blob,
-                },
-                gix_object::tree::Entry {
-                    mode: gix_object::tree::EntryKind::Tree.into(),
-                    filename: BString::from("f"),
-                    oid: filter_tree,
-                },
-            ];
-            let inner_tree = gix_object::Tree {
-                entries: inner_entries,
-            };
-            let inner_oid = self.write_tree(inner_tree);
-
-            outer_entries.push(gix_object::tree::Entry {
-                mode: gix_object::tree::EntryKind::Tree.into(),
-                filename: BString::from(i.to_string()),
-                oid: inner_oid,
-            });
-        }
         let outer_tree = gix_object::Tree {
             entries: outer_entries,
         };
@@ -521,7 +482,7 @@ impl<'a> InMemoryBuilder<'a> {
                 let blob = self.write_blob(b"");
                 push_blob_entries(&mut entries, [("fold", blob)]);
             }
-            Op::Squash(None) => {
+            Op::Squash => {
                 let blob = self.write_blob(b"");
                 push_blob_entries(&mut entries, [("squash", blob)]);
             }
@@ -537,10 +498,6 @@ impl<'a> InMemoryBuilder<'a> {
             Op::Unapply(lr, f) => {
                 let params_tree = self.build_lazyref_filter_params(lr, *f)?;
                 push_tree_entries(&mut entries, [("unapply", params_tree)]);
-            }
-            Op::Squash(Some(ids)) => {
-                let params_tree = self.build_squash_params(ids)?;
-                push_tree_entries(&mut entries, [("squash", params_tree)]);
             }
             Op::RegexReplace(replacements) => {
                 let params_tree = self.build_regex_replace_params(replacements);
@@ -1082,35 +1039,8 @@ fn from_tree2(repo: &git2::Repository, tree_oid: git2::Oid) -> anyhow::Result<Op
             Ok(Op::Unapply(LazyRef::parse(&key)?, to_filter(filter)))
         }
         "squash" => {
-            // blob -> Squash(None), tree -> Squash(Some(...))
-            if let Some(kind) = entry.kind()
-                && kind == git2::ObjectType::Blob
-            {
-                let _ = repo.find_blob(entry.id())?;
-                return Ok(Op::Squash(None));
-            }
-            let squash_tree = repo.find_tree(entry.id())?;
-            let mut filters = std::collections::BTreeMap::new();
-            for i in 0..squash_tree.len() {
-                let squash_entry = squash_tree.get(i).context("squash: missing entry")?;
-                let inner_tree = repo.find_tree(squash_entry.id())?;
-                let key_blob = repo.find_blob(
-                    inner_tree
-                        .get_name("o")
-                        .context("squash: missing key")?
-                        .id(),
-                )?;
-                let filter_tree = repo.find_tree(
-                    inner_tree
-                        .get_name("f")
-                        .context("squash: missing filter")?
-                        .id(),
-                )?;
-                let key = std::str::from_utf8(key_blob.content())?;
-                let filter = from_tree2(repo, filter_tree.id())?;
-                filters.insert(LazyRef::parse(&key)?, to_filter(filter));
-            }
-            Ok(Op::Squash(Some(filters)))
+            let _ = repo.find_blob(entry.id())?;
+            Ok(Op::Squash)
         }
         "regex_replace" => {
             let regex_replace_tree = repo.find_tree(entry.id())?;

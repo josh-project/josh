@@ -21,6 +21,13 @@ fn resolve_input_ref(
     Ok((ref_string, oid))
 }
 
+fn squash_ids_filter(ids: &[(git2::Oid, josh_core::filter::Filter)]) -> josh_core::filter::Filter {
+    josh_core::filter::to_filter(josh_core::filter::squash_to_rev(
+        ids.iter()
+            .map(|(x, y)| (josh_core::filter::LazyRef::Resolved(*x), *y)),
+    ))
+}
+
 fn make_app() -> clap::Command {
     let app = clap::Command::new("josh-filter");
 
@@ -235,9 +242,7 @@ fn run_filter(args: Vec<String>) -> anyhow::Result<i32> {
     refs.push((input_ref.clone(), oid));
 
     if args.get_flag("single") {
-        filterobj = josh_core::filter::Filter::new()
-            .squash(None)
-            .chain(filterobj);
+        filterobj = josh_core::filter::Filter::new().squash().chain(filterobj);
     }
 
     if let Some(pattern) = args.get_one::<String>("squash-pattern") {
@@ -251,9 +256,7 @@ fn run_filter(args: Vec<String>) -> anyhow::Result<i32> {
             ));
             refs.push((reference.name().unwrap().to_string(), target));
         }
-        filterobj = josh_core::filter::Filter::new()
-            .squash(Some(&ids))
-            .chain(filterobj);
+        filterobj = squash_ids_filter(&ids).chain(filterobj);
     };
 
     if let Some(filename) = args.get_one::<String>("squash-file") {
@@ -270,9 +273,7 @@ fn run_filter(args: Vec<String>) -> anyhow::Result<i32> {
                 eprintln!("Warning: malformed line: {:?}", line);
             }
         }
-        filterobj = josh_core::filter::Filter::new()
-            .squash(Some(&ids))
-            .chain(filterobj);
+        filterobj = squash_ids_filter(&ids).chain(filterobj);
     };
 
     if args.get_flag("print-filter") {

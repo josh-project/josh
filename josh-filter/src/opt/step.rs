@@ -9,6 +9,16 @@ fn is_prefix(op: Op) -> bool {
     matches!(op, Op::Prefix(_))
 }
 
+/// Filters that only rewrite commit metadata and are identity on trees. Subtracting one
+/// such filter from another therefore always yields the empty path set.
+fn is_tree_identity(filter: Filter) -> bool {
+    match to_op_ref(filter) {
+        Op::Nop | Op::Squash | Op::Message(..) | Op::Author(..) | Op::Committer(..) => true,
+        Op::Chain(v) | Op::Compose(v) => v.iter().all(|f| is_tree_identity(*f)),
+        _ => false,
+    }
+}
+
 fn prefix_of(op: Op) -> Filter {
     let last = to_op(last_chain(to_filter(Op::Nop), to_filter(op)).1);
     to_filter(if is_prefix(last.clone()) {
@@ -201,7 +211,7 @@ pub(super) fn step(filter: Filter) -> Filter {
             let (af, bf) = (*af, *bf);
             match (to_op(af), to_op(bf)) {
                 (Op::Empty, _) => Op::Empty,
-                (Op::Message(..), Op::Message(..)) => Op::Empty,
+                _ if is_tree_identity(af) && is_tree_identity(bf) => Op::Empty,
                 (_, Op::Nop) => Op::Empty,
                 (a, Op::Empty) => a,
                 // `Select(F)` and `Exclude(F)` partition the input tree by path: one keeps exactly
