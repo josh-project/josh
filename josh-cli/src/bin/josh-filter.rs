@@ -385,7 +385,13 @@ fn run_filter(args: Vec<String>) -> anyhow::Result<i32> {
             let ifilterobj = filterobj.chain(josh_core::filter::parse(":SQUASH:INDEX")?);
             let index_commit = josh_core::filter_commit(&transaction, ifilterobj, commit.id())?;
             let index_tree = repo.find_commit(index_commit)?.tree()?;
-            josh_search::search_candidates(&repo, &index_tree, &tree, searchstring)?
+            josh_search::search_candidates(
+                &repo,
+                &mut transaction.search_cache(),
+                &index_tree,
+                &tree,
+                searchstring,
+            )?
         } else {
             let mut scan = vec![];
             tree.walk(git2::TreeWalkMode::PreOrder, |root, entry| {
@@ -398,7 +404,13 @@ fn run_filter(args: Vec<String>) -> anyhow::Result<i32> {
             })?;
             scan
         };
-        let matches = josh_search::search_matches(&repo, &tree, searchstring, &candidates)?;
+        let matches = josh_search::search_matches(
+            &repo,
+            &mut transaction.search_cache(),
+            &tree,
+            searchstring,
+            &candidates,
+        )?;
         /* let duration = start.elapsed(); */
 
         for r in matches {
