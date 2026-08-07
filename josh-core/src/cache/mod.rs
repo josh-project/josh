@@ -13,7 +13,9 @@ mod tree_cache;
 /// crossing.
 /// Version 34: trigram extraction folds case and punctuation classes, changing
 /// the trigram index format.
-pub const CACHE_VERSION: u64 = 34;
+/// Version 35: small directories are recorded at directory granularity in the
+/// trigram index, changing the index format.
+pub const CACHE_VERSION: u64 = 35;
 
 pub use backend::{CacheBackend, HistoryGraphHint};
 pub use distributed::DistributedCacheBackend;
