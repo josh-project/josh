@@ -335,7 +335,12 @@ impl TrigramBench {
             // Cold-build the tip index, then flush: `trigram_search` opens fresh repository
             // handles per directory, and those cannot see objects still sitting in this
             // transaction's in-memory odb.
-            let index_tree = josh_search::trigram_index(repo, &transaction, tip_tree.clone())?;
+            let index_tree = josh_search::trigram_index(
+                repo,
+                &transaction,
+                &mut josh_search::Indexer::default(),
+                tip_tree.clone(),
+            )?;
             let index_tree_oid = index_tree.id();
             transaction.flush_mem_odb()?;
 
@@ -377,11 +382,16 @@ impl TrigramBench {
             let transaction = context.open()?;
             let repo = transaction.repo();
             let root_tree = repo.find_commit(chain[0])?.tree()?;
-            let root_index_oid = josh_search::trigram_index(repo, &transaction, root_tree)?.id();
+            // One indexer state for the whole chain, matching how josh keeps one per
+            // transaction.
+            let mut indexer = josh_search::Indexer::default();
+            let root_index_oid =
+                josh_search::trigram_index(repo, &transaction, &mut indexer, root_tree)?.id();
             let mut incremental_oid = root_index_oid;
             for &oid in &chain[1..] {
                 let tree = repo.find_commit(oid)?.tree()?;
-                incremental_oid = josh_search::trigram_index(repo, &transaction, tree)?.id();
+                incremental_oid =
+                    josh_search::trigram_index(repo, &transaction, &mut indexer, tree)?.id();
             }
             anyhow::ensure!(
                 incremental_oid == index_tree_oid,
@@ -435,8 +445,10 @@ fn trigram_benches(c: &mut Criterion) {
                     .tree()
                     .expect("tip tree");
 
+                let mut indexer = josh_search::Indexer::default();
+
                 runner.run(|| {
-                    josh_search::trigram_index(repo, &transaction, tip_tree.clone())
+                    josh_search::trigram_index(repo, &transaction, &mut indexer, tip_tree.clone())
                         .expect("index tree")
                 });
             });
@@ -463,7 +475,11 @@ fn trigram_benches(c: &mut Criterion) {
                     .expect("find root")
                     .tree()
                     .expect("root tree");
-                josh_search::trigram_index(repo, &transaction, root_tree).expect("warm root index");
+                // One indexer state across the warm root and the whole chain, matching how
+                // josh keeps one per transaction.
+                let mut indexer = josh_search::Indexer::default();
+                josh_search::trigram_index(repo, &transaction, &mut indexer, root_tree)
+                    .expect("warm root index");
 
                 runner.run(|| {
                     for &oid in &case.chain[1..] {
@@ -472,7 +488,7 @@ fn trigram_benches(c: &mut Criterion) {
                             .expect("find churn commit")
                             .tree()
                             .expect("churn tree");
-                        josh_search::trigram_index(repo, &transaction, tree)
+                        josh_search::trigram_index(repo, &transaction, &mut indexer, tree)
                             .expect("incremental index");
                     }
                 });

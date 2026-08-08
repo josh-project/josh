@@ -1512,6 +1512,7 @@ pub fn apply<'a>(
         Op::Index => Ok(x.clone().with_tree(josh_search::trigram_index(
             transaction.repo(),
             transaction,
+            &mut transaction.trigram_indexer(),
             x.tree().clone(),
         )?)),
 

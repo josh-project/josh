@@ -16,6 +16,8 @@ harness = false
 [dependencies]
 anyhow.workspace = true
 git2.workspace = true
+gix-hash.workspace = true
+gix-object.workspace = true
 
 [dev-dependencies]
 criterion2 = { version = "3.0.4" }
