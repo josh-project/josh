@@ -17,6 +17,8 @@ fragments = ["check_run_info"]
 
 [queries.get_prs_by_sha]
 
+[queries.get_commit_check_runs]
+
 [queries.get_pr_comments]
 
 [queries.create_pull_request]
