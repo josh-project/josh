@@ -66,6 +66,28 @@ pub struct GithubAuthMiddleware {
 }
 
 impl GithubAuthMiddleware {
+    /// Resolve auth credentials from the environment.
+    ///
+    /// Prefers the `GH_TOKEN` env var; otherwise falls back to the supplied
+    /// stored device-flow token (read by the caller to prevent circular deps).
+    /// Returns `None` if neither is available.
+    pub fn from_environment(stored_token: Option<AccessTokenResponse>) -> Option<Self> {
+        if let Ok(token) = std::env::var(crate::GITHUB_USER_TOKEN_ENV)
+            && !token.is_empty()
+        {
+            tracing::info!("using GH_TOKEN for GitHub authentication");
+            return Some(Self::from_token(token));
+        }
+
+        let stored = stored_token?;
+        tracing::info!("using stored device-flow token for GitHub authentication");
+
+        Some(Self::from_app_flow(
+            stored,
+            crate::APP_CLIENT_ID.to_string(),
+        ))
+    }
+
     pub fn from_app_flow(token: AccessTokenResponse, client_id: String) -> Self {
         let (sender, receiver) = mpsc::unbounded_channel();
 
