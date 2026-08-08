@@ -176,10 +176,9 @@ impl PinBench {
             .hook(HOOK_ARG_ONE_TREE)
             .with_meta("history", "no-splice");
 
-        josh_core::cache::sled_load(provisioned.path())?;
         let cache = std::sync::Arc::new(
             josh_core::cache::CacheStack::new()
-                .with_backend(josh_core::cache::SledCacheBackend::default()),
+                .with_backend(josh_core::cache::SledCacheBackend::new(provisioned.path())),
         );
         let context = josh_core::cache::TransactionContext::new(provisioned.path(), cache);
 

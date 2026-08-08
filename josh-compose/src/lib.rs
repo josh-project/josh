@@ -58,11 +58,6 @@ pub fn run(
 
     let (ws_tree, _safe_name) = filter::compute_ws_tree(transaction, &filter_spec, source_commit)?;
 
-    // Computing the workspace tree is the only cache-backed work; running the containers below
-    // only reads objects from the repo. Release the cache lock now so its long tail doesn't block
-    // other josh processes from opening the shared sled cache.
-    transaction.release_cache()?;
-
     let mut attempted = std::collections::HashSet::new();
     // Only extract output artifacts into the working tree when running against
     // uncommitted changes (input_ref == "."). For committed refs there is no
