@@ -1,0 +1,20 @@
+[package]
+name = "josh-wasm"
+version = "26.7.28"
+edition = "2024"
+authors = ["Josh Project authors <contact@josh-project.dev>"]
+license-file = "../LICENSE"
+description = "WASM filter evaluation runtime for josh"
+keywords = ["git", "monorepo", "workflow", "scm", "wasm"]
+readme = "../README.md"
+repository = "https://github.com/josh-project/josh"
+
+[dependencies]
+wasmi = "1.1"
+wat = "1"
+
+anyhow.workspace = true
+git2.workspace = true
+tracing.workspace = true
+
+josh-filter.workspace = true
