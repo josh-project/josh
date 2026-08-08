@@ -1,8 +1,8 @@
 use anyhow::Context;
 
-use josh_github_auth::APP_CLIENT_ID;
 use josh_github_auth::device_flow::DeviceAuthFlow;
 use josh_github_auth::middleware::GithubAuthMiddleware;
+use josh_github_auth::{APP_CLIENT_ID, GITHUB_USER_TOKEN_ENV};
 use josh_github_graphql::connection::GithubApiConnection;
 use josh_github_graphql::request::GITHUB_GRAPHQL_API_URL;
 
@@ -51,9 +51,6 @@ pub fn logout() -> anyhow::Result<()> {
 
     Ok(())
 }
-
-// Matches official github CLI and other github-adjacent tools
-pub const GITHUB_USER_TOKEN_ENV: &str = "GH_TOKEN";
 
 pub async fn make_api_connection() -> Option<GithubApiConnection> {
     let middleware = if let Ok(token) = std::env::var(GITHUB_USER_TOKEN_ENV) {
