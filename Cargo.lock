@@ -3429,6 +3429,7 @@ dependencies = [
  "http",
  "josh-github-auth",
  "josh-github-codegen-graphql",
+ "josh-github-webhooks",
  "reqwest",
  "reqwest-middleware",
  "serde",
