@@ -116,6 +116,65 @@ def comparison_chart(results: list[ToolResult]) -> alt.LayerChart:
     )
 
 
+def grouped_chart(
+    data: pd.DataFrame,
+    series_order: list[str],
+    title: str,
+) -> alt.LayerChart:
+    """Log-scale bars grouped by `group` with one bar per `series`.
+
+    `data` needs columns ``group``, ``series`` and ``elapsed_s``. Groups keep
+    their order of first appearance; the y ceiling is computed from the data
+    (cold full-history syncs can exceed the default LOG_CEIL).
+    """
+    data = data.copy()
+    data["elapsed_human"] = data["elapsed_s"].map(format_duration)
+    group_order = list(dict.fromkeys(data["group"]))
+
+    ceil = 10 ** math.ceil(math.log10(max(data["elapsed_s"].max(), 1.0)))
+    scale = alt.Scale(type="log", domain=[LOG_FLOOR, ceil])
+    ticks = _decade_ticks(LOG_FLOOR, ceil)
+
+    x = alt.X("group:N", sort=group_order, title=None)
+    offset = alt.XOffset("series:N", sort=series_order)
+
+    bars = alt.Chart(data).mark_bar().encode(
+        x=x,
+        xOffset=offset,
+        y=alt.Y(
+            "elapsed_s:Q",
+            scale=scale,
+            axis=alt.Axis(
+                values=ticks,
+                labelExpr=_label_expr_from(ticks, format_duration),
+                grid=True,
+                title="Elapsed time (log scale)",
+            ),
+        ),
+        y2=alt.Y2(datum=LOG_FLOOR),
+        color=alt.Color("series:N", sort=series_order, title=None),
+        tooltip=[
+            alt.Tooltip("group:N", title="Subtree"),
+            alt.Tooltip("series:N", title="Series"),
+            alt.Tooltip("elapsed_human:N", title="Elapsed"),
+        ],
+    )
+    labels = alt.Chart(data).mark_text(dy=-4, baseline="bottom", fontSize=9).encode(
+        x=alt.X("group:N", sort=group_order, axis=None),
+        xOffset=offset,
+        y=alt.Y("elapsed_s:Q", scale=scale, axis=None),
+        text=alt.Text("elapsed_human:N"),
+    )
+    return alt.layer(
+        _minor_grid(scale, LOG_FLOOR, ceil),
+        bars,
+        labels,
+    ).resolve_scale(x="independent", y="independent").properties(
+        title=title,
+        width=600,
+    )
+
+
 def save_chart(chart: alt.LayerChart, path: str | Path) -> Path:
     """Render `chart` to `path` (PNG via vl-convert), creating parent dirs."""
     path = Path(path)
