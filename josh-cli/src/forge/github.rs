@@ -1,10 +1,11 @@
+use std::sync::Arc;
+
 use anyhow::Context;
 
 use josh_github_auth::device_flow::DeviceAuthFlow;
 use josh_github_auth::middleware::GithubAuthMiddleware;
 use josh_github_auth::{APP_CLIENT_ID, GITHUB_USER_TOKEN_ENV};
 use josh_github_graphql::connection::GithubApiConnection;
-use josh_github_graphql::request::GITHUB_GRAPHQL_API_URL;
 
 /// Login to GitHub using device flow and store the token.
 pub async fn login() -> anyhow::Result<()> {
@@ -53,23 +54,13 @@ pub fn logout() -> anyhow::Result<()> {
 }
 
 pub async fn make_api_connection() -> Option<GithubApiConnection> {
-    let middleware = if let Ok(token) = std::env::var(GITHUB_USER_TOKEN_ENV) {
-        GithubAuthMiddleware::from_token(token)
-    } else {
-        let stored = josh_github_keyring::load_stored_token()?;
-        GithubAuthMiddleware::from_app_flow(stored, APP_CLIENT_ID.to_string())
-    };
+    let middleware =
+        GithubAuthMiddleware::from_environment(josh_github_keyring::load_stored_token())?;
 
-    let client = reqwest_middleware::ClientBuilder::new(reqwest::Client::new())
-        .with(middleware)
-        .build();
-
-    Some(GithubApiConnection {
-        client,
-        api_url: GITHUB_GRAPHQL_API_URL
-            .parse()
-            .expect("Failed to parse API URL"),
-    })
+    Some(GithubApiConnection::from_middleware(
+        Arc::new(middleware),
+        None,
+    ))
 }
 
 pub fn api_connection_hint() -> String {
