@@ -27,14 +27,6 @@ static POPULATE_MAP: LazyLock<RwLock<HashMap<(git2::Oid, git2::Oid), git2::Oid>>
 static GLOB_MAP: LazyLock<RwLock<HashMap<(git2::Oid, git2::Oid, u64), git2::Oid>>> =
     LazyLock::new(Default::default);
 
-// Trigram index memoization, keyed by source tree oid -> index tree oid. The index is a pure
-// function of the source tree, and `:INDEX` walks commits parent-first, so when a child commit is
-// indexed the subtrees it shares with its parent are already memoized here from the parent's run --
-// which is where reuse almost always comes from. An in-process map captures that without the
-// persistence (and file lock) of an on-disk cache.
-static TRIGRAM_INDEX_MAP: LazyLock<RwLock<HashMap<git2::Oid, git2::Oid>>> =
-    LazyLock::new(Default::default);
-
 // Path-projection memoization for `:PATHS` and its inverse, keyed by (input tree oid, root path).
 // Both are pure functions of the input tree, and workspace filters walk commits parent-first, so a
 // child commit reuses the projections its parent just computed for the subtrees they share -- the
@@ -45,12 +37,21 @@ static PATHS_MAP: LazyLock<RwLock<HashMap<(git2::Oid, String), git2::Oid>>> =
 static INVERT_MAP: LazyLock<RwLock<HashMap<(git2::Oid, String), git2::Oid>>> =
     LazyLock::new(Default::default);
 
+/// Placeholder hint for tree-keyed records with no active commit context. Sequence 0 keeps the
+/// distributed backend consistent (`0 % 100 == 0` -> eligible, shard 0); the local backend ignores
+/// the hint entirely.
+const TREE_KEYED_FALLBACK_HINT: HistoryGraphHint = HistoryGraphHint {
+    sequence_number: 0,
+    parent_count: 1,
+    jump_delta: 1,
+    jump_is_second: false,
+};
+
 /// Clear the process-global in-memory caches shared across all transactions.
 pub fn clear_global_caches() {
     REF_CACHE.write().unwrap().clear();
     POPULATE_MAP.write().unwrap().clear();
     GLOB_MAP.write().unwrap().clear();
-    TRIGRAM_INDEX_MAP.write().unwrap().clear();
     PATHS_MAP.write().unwrap().clear();
     INVERT_MAP.write().unwrap().clear();
 }
@@ -137,6 +138,10 @@ struct Transaction2 {
     tree_cache: TreeCache,
 
     cache: std::sync::Arc<CacheStack>,
+    // In-memory front for the tree-keyed trigram index (source tree oid -> index tree oid), so
+    // repeated subtree lookups within a transaction stay off disk. The backend stack (sled +
+    // optional distributed) is the cross-transaction/cross-process layer behind it.
+    index_map: HashMap<git2::Oid, git2::Oid>,
     missing: Vec<(usize, crate::filter::Filter, git2::Oid)>,
     misses: usize,
     nesting_level: usize,
@@ -210,6 +215,7 @@ impl Transaction {
                 last_written_commit: None,
                 tree_cache: Default::default(),
                 cache,
+                index_map: HashMap::new(),
                 missing: vec![],
                 misses: 0,
                 nesting_level: 0,
@@ -508,16 +514,55 @@ impl Transaction {
         INVERT_MAP.read().unwrap().get(&tree).cloned()
     }
 
-    pub fn insert_trigram_index(&self, tree: git2::Oid, result: git2::Oid) {
-        TRIGRAM_INDEX_MAP
-            .write()
-            .unwrap()
-            .entry(tree)
-            .or_insert(result);
+    /// Build a josh-search index cache that shards tree-keyed records by `commit`'s history-graph
+    /// position. `commit` comes from the [`crate::filter::Rewrite`] being filtered, so the index
+    /// path threads its history context explicitly instead of the transaction carrying an ambient
+    /// "current commit". Pass [`git2::Oid::ZERO_SHA1`] when indexing a bare tree with no commit
+    /// context; the hint then falls back to the sequence-0 placeholder.
+    pub fn trigram_index_cache(&self, commit: git2::Oid) -> TrigramIndexCache<'_> {
+        TrigramIndexCache {
+            transaction: self,
+            hint: self.tree_keyed_hint(commit),
+        }
     }
 
-    pub fn get_trigram_index(&self, tree: git2::Oid) -> Option<git2::Oid> {
-        TRIGRAM_INDEX_MAP.read().unwrap().get(&tree).cloned()
+    /// Hint used to shard tree-keyed cache records: the history-graph hint of `commit`. Trees carry
+    /// no history position of their own, so the indexed commit's hint stands in. Falls back to a
+    /// sequence-0 placeholder when there is no commit context (`commit` is the zero oid, i.e. a bare
+    /// tree) or the hint cannot be computed; the local backend ignores the hint and the distributed
+    /// one then treats the record as shard 0.
+    fn tree_keyed_hint(&self, commit: git2::Oid) -> HistoryGraphHint {
+        if commit == git2::Oid::ZERO_SHA1 {
+            return TREE_KEYED_FALLBACK_HINT;
+        }
+        compute_history_hint(self, commit).unwrap_or(TREE_KEYED_FALLBACK_HINT)
+    }
+
+    fn insert_trigram_index(&self, tree: git2::Oid, result: git2::Oid, hint: HistoryGraphHint) {
+        let filter = crate::filter::index();
+        let mut t2 = self.t2.borrow_mut();
+        t2.index_map.entry(tree).or_insert(result);
+        if let Err(e) = t2.cache.write_all(filter, tree, result, hint, true) {
+            log::warn!("trigram index cache write failed: {e}");
+        }
+    }
+
+    fn get_trigram_index(&self, tree: git2::Oid, hint: HistoryGraphHint) -> Option<git2::Oid> {
+        let filter = crate::filter::index();
+        let t2 = self.t2.borrow_mut();
+        if let Some(oid) = t2.index_map.get(&tree).cloned() {
+            // Written this transaction, so the index tree is live in the mem odb -- no odb check.
+            return Some(oid);
+        }
+        let oid = t2.cache.read_propagate(filter, tree, hint, true).ok()??;
+        // Honor a cached index only if it still exists in the object database: per-subtree index
+        // trees are anchored by no ref, so gc/repack can prune them and a dangling hit must
+        // reindex on demand instead of erroring.
+        if self.repo.odb().ok()?.exists(oid) {
+            Some(oid)
+        } else {
+            None
+        }
     }
 
     pub fn insert_populate(&self, tree: (git2::Oid, git2::Oid), result: git2::Oid) {
@@ -608,7 +653,7 @@ impl Transaction {
         // random extra commits (probability 1/256) to avoid long searches for filters that reduce
         // the history length by a very large factor.
         if store || from.as_bytes()[0] == 0 {
-            t2.cache.write_all(filter, from, to, hint)?;
+            t2.cache.write_all(filter, from, to, hint, false)?;
         }
         Ok(())
     }
@@ -675,7 +720,7 @@ impl Transaction {
             return Ok(Some(oid));
         }
 
-        let oid = t2.cache.read_propagate(filter, from, hint)?;
+        let oid = t2.cache.read_propagate(filter, from, hint, false)?;
 
         if let Some(oid) = oid {
             if oid == git2::Oid::ZERO_SHA1 {
@@ -696,16 +741,27 @@ impl Transaction {
     }
 }
 
-/// Back josh-search's index memoization with the process-global trigram map, so `:INDEX` (and any
-/// other in-transaction indexing) stays incremental across transactions within a process -- keyed
-/// by source tree oid, so a child commit reuses the subtrees its parent just indexed.
-impl josh_search::IndexCache for Transaction {
+/// Backs josh-search's index memoization with the per-filter cache backend under the `:INDEX`
+/// filter, keyed by source tree oid. An in-transaction map fronts it for speed; the sled backend
+/// makes it durable across transactions and process restarts, and the distributed backend (when
+/// present) shares it across machines.
+///
+/// The bound `hint` shards those tree-keyed records by the indexed commit's history position: it is
+/// constant for a single indexed commit, so [`Transaction::trigram_index_cache`] resolves it once
+/// and every per-subtree `get`/`set` during the recursive index walk reuses it.
+pub struct TrigramIndexCache<'a> {
+    transaction: &'a Transaction,
+    hint: HistoryGraphHint,
+}
+
+impl josh_search::IndexCache for TrigramIndexCache<'_> {
     fn get_index(&self, tree: git2::Oid) -> Option<git2::Oid> {
-        self.get_trigram_index(tree)
+        self.transaction.get_trigram_index(tree, self.hint)
     }
 
     fn set_index(&self, tree: git2::Oid, index: git2::Oid) {
-        self.insert_trigram_index(tree, index)
+        self.transaction
+            .insert_trigram_index(tree, index, self.hint)
     }
 }
 

@@ -20,9 +20,9 @@
 
   $ josh-filter -s :INDEX --update refs/heads/index
   ce00c6cd65dea70a35eeaa9283741bcd3f901991
-  [3] :INDEX
   [3] reachable_roots
   [3] sequence_number
+  [9] :INDEX
 
   $ josh-filter :/ --search "Another"
   sub1/file2:1: Another document with more 

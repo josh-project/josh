@@ -1,15 +1,24 @@
-/// Pluggable storage layer for josh's per-filter, per-commit cache.
+/// Pluggable storage layer for josh's per-filter cache.
 ///
 /// Each backend maps `(filter, from_oid) → to_oid`. The [`HistoryGraphHint`]
 /// passed with every record lets backends like the distributed one shard or
 /// skip records based on commit ordering and topology without reading the
 /// commit from the object database.
+///
+/// Most records are per-commit: `from` is a commit and the hint describes that
+/// commit's own position in history. Records with `tree_keyed == true` (the
+/// trigram index) instead key on a *tree* oid shared across many commits, and
+/// the hint describes the commit currently being indexed rather than the key.
+/// Because the key is content-shared, the writing and reading commits differ,
+/// so a backend must not gate reads on the reading commit's eligibility -- see
+/// [`crate::cache::distributed::DistributedCacheBackend`].
 pub trait CacheBackend: Send + Sync {
     fn read(
         &self,
         filter: crate::filter::Filter,
         from: git2::Oid,
         hint: HistoryGraphHint,
+        tree_keyed: bool,
     ) -> anyhow::Result<Option<git2::Oid>>;
 
     fn write(
@@ -18,6 +27,7 @@ pub trait CacheBackend: Send + Sync {
         from: git2::Oid,
         to: git2::Oid,
         hint: HistoryGraphHint,
+        tree_keyed: bool,
     ) -> anyhow::Result<()>;
 
     /// Drop any cached handles into the underlying store. The default is a no-op; backends holding

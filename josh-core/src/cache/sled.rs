@@ -107,6 +107,9 @@ impl CacheBackend for SledCacheBackend {
         filter: Filter,
         from: git2::Oid,
         _hint: HistoryGraphHint,
+        // The dense on-disk cache stores every record under its per-filter tree regardless of
+        // whether the key is a commit or a tree, so tree-keyed records need no special handling.
+        _tree_keyed: bool,
     ) -> anyhow::Result<Option<git2::Oid>> {
         let mut trees = self.trees.lock().unwrap();
         let tree = trees
@@ -127,6 +130,7 @@ impl CacheBackend for SledCacheBackend {
         from: git2::Oid,
         to: git2::Oid,
         _hint: HistoryGraphHint,
+        _tree_keyed: bool,
     ) -> anyhow::Result<()> {
         let mut trees = self.trees.lock().unwrap();
         let tree = trees
