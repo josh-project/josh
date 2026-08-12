@@ -125,80 +125,7 @@ pub fn handle_sync(
             ctx.gc_closed_changes(&prs).await?;
 
             if args.push {
-                let mut total_posted = 0usize;
-                let mut total_votes_posted = 0usize;
-                for pr in &prs {
-                    let change_id = change_id_for_pr(pr, &owner, &repo_name);
-                    let target_branch = target_branch_for_pr(pr);
-                    let remote_scope = remote_scope_for(&remote_name, &target_branch);
-
-                    match api
-                        .find_pull_request_by_head(&owner, &repo_name, &pr.head_ref_name, None)
-                        .await
-                    {
-                        Ok(Some((pr_node_id, _, _))) => {
-                            match josh_github_changes::post_local_comments(
-                                &api,
-                                transaction,
-                                &change_id,
-                                &pr_node_id,
-                                &remote_scope,
-                            )
-                            .await
-                            {
-                                Ok(n) => {
-                                    total_posted += n;
-                                    if n > 0 {
-                                        println!(
-                                            "  PR #{}: posted {} local comments",
-                                            pr.number, n
-                                        );
-                                    }
-                                }
-                                Err(e) => {
-                                    eprintln!(
-                                        "  PR #{}: failed to post comments: {}",
-                                        pr.number, e
-                                    );
-                                }
-                            }
-
-                            match josh_github_changes::post_local_votes(
-                                &api,
-                                transaction,
-                                &change_id,
-                                &pr_node_id,
-                                &pr.head_oid,
-                                &remote_scope,
-                            )
-                            .await
-                            {
-                                Ok(n) => {
-                                    total_votes_posted += n;
-                                    if n > 0 {
-                                        println!("  PR #{}: posted {} votes", pr.number, n);
-                                    }
-                                }
-                                Err(e) => {
-                                    eprintln!("  PR #{}: failed to post votes: {}", pr.number, e);
-                                }
-                            }
-                        }
-                        Ok(None) => {
-                            eprintln!(
-                                "  No open PR found for {} — skipping comment push",
-                                pr.head_ref_name
-                            );
-                        }
-                        Err(e) => {
-                            eprintln!("  Failed to look up PR for {}: {}", pr.head_ref_name, e);
-                        }
-                    }
-                }
-                println!(
-                    "Posted {} local comments and {} votes to GitHub.",
-                    total_posted, total_votes_posted
-                );
+                ctx.push_local_feedback(&prs).await;
             }
 
             Ok::<_, anyhow::Error>(())
@@ -487,6 +414,79 @@ impl GithubSyncCtx<'_> {
 
         josh_changes::store_diff_data(self.transaction, &change, remote_scope)?;
         Ok(change)
+    }
+
+    /// Post local comments and votes that haven't been pushed to GitHub yet.
+    async fn push_local_feedback(&self, prs: &[PrSummary]) {
+        let mut total_posted = 0usize;
+        let mut total_votes_posted = 0usize;
+        for pr in prs {
+            let change_id = change_id_for_pr(pr, self.owner, self.repo_name);
+            let target_branch = target_branch_for_pr(pr);
+            let remote_scope = remote_scope_for(self.remote_name, &target_branch);
+
+            match self
+                .api
+                .find_pull_request_by_head(self.owner, self.repo_name, &pr.head_ref_name, None)
+                .await
+            {
+                Ok(Some((pr_node_id, _, _))) => {
+                    match josh_github_changes::post_local_comments(
+                        self.api,
+                        self.transaction,
+                        &change_id,
+                        &pr_node_id,
+                        &remote_scope,
+                    )
+                    .await
+                    {
+                        Ok(n) => {
+                            total_posted += n;
+                            if n > 0 {
+                                println!("  PR #{}: posted {} local comments", pr.number, n);
+                            }
+                        }
+                        Err(e) => {
+                            eprintln!("  PR #{}: failed to post comments: {}", pr.number, e);
+                        }
+                    }
+
+                    match josh_github_changes::post_local_votes(
+                        self.api,
+                        self.transaction,
+                        &change_id,
+                        &pr_node_id,
+                        &pr.head_oid,
+                        &remote_scope,
+                    )
+                    .await
+                    {
+                        Ok(n) => {
+                            total_votes_posted += n;
+                            if n > 0 {
+                                println!("  PR #{}: posted {} votes", pr.number, n);
+                            }
+                        }
+                        Err(e) => {
+                            eprintln!("  PR #{}: failed to post votes: {}", pr.number, e);
+                        }
+                    }
+                }
+                Ok(None) => {
+                    eprintln!(
+                        "  No open PR found for {} — skipping comment push",
+                        pr.head_ref_name
+                    );
+                }
+                Err(e) => {
+                    eprintln!("  Failed to look up PR for {}: {}", pr.head_ref_name, e);
+                }
+            }
+        }
+        println!(
+            "Posted {} local comments and {} votes to GitHub.",
+            total_posted, total_votes_posted
+        );
     }
 }
 
