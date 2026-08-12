@@ -72,16 +72,7 @@ pub fn handle_sync(
     }
 
     if let Some(remote_name) = remote_name {
-        let repo_path = normalize_repo_path(repo.path());
-
-        let remote_config = read_remote_config(&repo_path, &remote_name)
-            .with_context(|| format!("Failed to read remote config for '{}'", remote_name))?;
-
-        if remote_config.forge != Some(Forge::Github) {
-            return Err(anyhow!("sync is only supported for GitHub remotes"));
-        }
-
-        let (owner, repo_name) = josh_github_changes::repo::parse_owner_repo(&remote_config.url)?;
+        let (owner, repo_name) = resolve_github_remote(repo, Some(&remote_name))?;
 
         let rt = tokio::runtime::Runtime::new()?;
         rt.block_on(async {
@@ -96,69 +87,9 @@ pub fn handle_sync(
                 return Ok(());
             }
 
-            // Collect all unique OIDs: PR head commits + target branch tips.
-            let mut oids: Vec<String> = Vec::new();
-            let mut seen: std::collections::HashSet<&str> = std::collections::HashSet::new();
-            for pr in &prs {
-                if seen.insert(&pr.head_oid) {
-                    oids.push(pr.head_oid.clone());
-                }
-                if seen.insert(&pr.base_ref_oid) {
-                    oids.push(pr.base_ref_oid.clone());
-                }
-            }
-
-            // Fetch all needed objects by SHA from GitHub.
-            let github_url = format!("https://github.com/{}/{}", owner, repo_name);
-            if !oids.is_empty() {
-                let mut fetch_args: Vec<&str> = Vec::with_capacity(3 + oids.len());
-                fetch_args.push("fetch");
-                fetch_args.push(&github_url);
-                fetch_args.push("--no-tags");
-                let oid_strs: Vec<String> = oids.iter().map(|o| o.to_string()).collect();
-                for oid in &oid_strs {
-                    fetch_args.push(oid);
-                }
-                transaction
-                    .spawn_git(&fetch_args, &[])
-                    .with_context(|| "Failed to fetch objects from GitHub")?;
-            }
-
-            // Refresh ODB so git2 sees the newly fetched objects.
-            repo.odb()?.refresh()?;
-
-            // Collect target branches from @changes/... head refs and fetch their tips.
-            let mut target_branch_shas: std::collections::HashMap<String, git2::Oid> =
-                std::collections::HashMap::new();
-            {
-                let mut seen_targets: std::collections::HashSet<String> =
-                    std::collections::HashSet::new();
-                for pr in &prs {
-                    if let Some(target) = parse_changes_target(&pr.head_ref_name) {
-                        if seen_targets.insert(target.clone()) {
-                            let refspec = format!("refs/heads/{}", target);
-                            let fetch_args: Vec<&str> =
-                                vec!["fetch", &github_url, "--no-tags", &refspec];
-                            transaction.spawn_git(&fetch_args, &[]).with_context(|| {
-                                format!("Failed to fetch target branch {}", target)
-                            })?;
-                            let output = std::process::Command::new("git")
-                                .args(["rev-parse", "FETCH_HEAD"])
-                                .current_dir(repo.path())
-                                .output()
-                                .with_context(
-                                    || "Failed to resolve FETCH_HEAD after target branch fetch",
-                                )?;
-                            let sha_str = String::from_utf8(output.stdout)?.trim().to_string();
-                            let oid = git2::Oid::from_str(&sha_str)?;
-                            target_branch_shas.insert(target, oid);
-                        }
-                    }
-                }
-            }
-            if !target_branch_shas.is_empty() {
-                repo.odb()?.refresh()?;
-            }
+            fetch_pr_objects(transaction, repo, &owner, &repo_name, &prs)?;
+            let target_branch_shas =
+                fetch_target_branch_tips(transaction, repo, &owner, &repo_name, &prs)?;
 
             let mut total_comments = 0usize;
             let mut synced = 0usize;
@@ -574,4 +505,97 @@ fn collect_open_change_ids(
     prs.iter()
         .map(|pr| change_id_for_pr(pr, owner, repo))
         .collect()
+}
+
+/// Read the remote config and return the GitHub (owner, repo) pair.
+fn resolve_github_remote(
+    repo: &git2::Repository,
+    remote: Option<&str>,
+) -> anyhow::Result<(String, String)> {
+    let remote_name = remote.unwrap_or("origin");
+    let repo_path = normalize_repo_path(repo.path());
+    let remote_config = read_remote_config(&repo_path, remote_name)
+        .with_context(|| format!("Failed to read remote config for '{}'", remote_name))?;
+
+    if remote_config.forge != Some(Forge::Github) {
+        return Err(anyhow!("sync is only supported for GitHub remotes"));
+    }
+
+    josh_github_changes::repo::parse_owner_repo(&remote_config.url)
+}
+
+/// Fetch the head and base commits of all given PRs by SHA from GitHub.
+fn fetch_pr_objects(
+    transaction: &josh_core::cache::Transaction,
+    repo: &git2::Repository,
+    owner: &str,
+    repo_name: &str,
+    prs: &[PrSummary],
+) -> anyhow::Result<()> {
+    // Collect all unique OIDs: PR head commits + target branch tips.
+    let mut oids: Vec<&str> = Vec::new();
+    let mut seen: std::collections::HashSet<&str> = std::collections::HashSet::new();
+    for pr in prs {
+        if seen.insert(pr.head_oid.as_str()) {
+            oids.push(&pr.head_oid);
+        }
+        if seen.insert(pr.base_ref_oid.as_str()) {
+            oids.push(&pr.base_ref_oid);
+        }
+    }
+
+    if oids.is_empty() {
+        return Ok(());
+    }
+
+    let github_url = format!("https://github.com/{}/{}", owner, repo_name);
+    let mut fetch_args: Vec<&str> = Vec::with_capacity(3 + oids.len());
+    fetch_args.push("fetch");
+    fetch_args.push(&github_url);
+    fetch_args.push("--no-tags");
+    fetch_args.extend(oids);
+    transaction
+        .spawn_git(&fetch_args, &[])
+        .with_context(|| "Failed to fetch objects from GitHub")?;
+
+    // Refresh ODB so git2 sees the newly fetched objects.
+    repo.odb()?.refresh()?;
+    Ok(())
+}
+
+/// Fetch the tips of the target branches referenced by @changes/... head refs.
+/// Returns a map from target branch name to its fetched tip commit.
+fn fetch_target_branch_tips(
+    transaction: &josh_core::cache::Transaction,
+    repo: &git2::Repository,
+    owner: &str,
+    repo_name: &str,
+    prs: &[PrSummary],
+) -> anyhow::Result<std::collections::HashMap<String, git2::Oid>> {
+    let github_url = format!("https://github.com/{}/{}", owner, repo_name);
+    let mut tips = std::collections::HashMap::new();
+    let mut seen_targets = std::collections::HashSet::new();
+    for pr in prs {
+        let Some(target) = parse_changes_target(&pr.head_ref_name) else {
+            continue;
+        };
+        if !seen_targets.insert(target.clone()) {
+            continue;
+        }
+        let refspec = format!("refs/heads/{}", target);
+        transaction
+            .spawn_git(&["fetch", &github_url, "--no-tags", &refspec], &[])
+            .with_context(|| format!("Failed to fetch target branch {}", target))?;
+        let oid = repo
+            .find_reference("FETCH_HEAD")
+            .context("Failed to find FETCH_HEAD after target branch fetch")?
+            .peel_to_commit()
+            .context("Failed to peel FETCH_HEAD to commit")?
+            .id();
+        tips.insert(target, oid);
+    }
+    if !tips.is_empty() {
+        repo.odb()?.refresh()?;
+    }
+    Ok(tips)
 }
