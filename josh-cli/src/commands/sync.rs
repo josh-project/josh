@@ -5,6 +5,7 @@ use josh_core::git::normalize_repo_path;
 use crate::config::read_remote_config;
 use crate::forge::Forge;
 use crate::forge::github;
+use josh_github_graphql::operations::pull_request::PrSummary;
 use serde_json;
 
 /// Arguments for `josh changes sync`.
@@ -227,18 +228,8 @@ pub fn handle_sync(
                     );
                 }
 
-                // Target branch for scoping: stacked changes encode the ultimate target
-                // in the head ref (@changes/<target>/...); otherwise fall back to the
-                // PR's immediate base.
-                let target_branch = parse_changes_target(&pr.head_ref_name).unwrap_or_else(|| {
-                    pr.base_ref_name
-                        .trim_start_matches("refs/heads/")
-                        .to_string()
-                });
-                let remote_scope = josh_changes::ChangesRef::Remote {
-                    remote: remote_name.clone(),
-                    branch: target_branch.clone(),
-                };
+                let target_branch = target_branch_for_pr(pr);
+                let remote_scope = remote_scope_for(&remote_name, &target_branch);
 
                 let result = (|| -> anyhow::Result<(josh_changes::Change, i64)> {
                     let change = if existing_change_id.is_some() {
@@ -310,16 +301,7 @@ pub fn handle_sync(
                 total_comments, synced, skipped
             );
 
-            // Build the set of open change IDs from the PRs we just synced.
-            let open_change_ids: std::collections::HashSet<String> = prs
-                .iter()
-                .map(|pr| {
-                    let (existing_id, _) =
-                        josh_core::trailers::parse_change_meta(&pr.head_commit_message);
-                    existing_id
-                        .unwrap_or_else(|| format!("{}/{}/pull/{}", owner, repo_name, pr.number))
-                })
-                .collect();
+            let open_change_ids = collect_open_change_ids(&prs, &owner, &repo_name);
 
             // Iterate every (change, scope) pair under this remote -- changes may live
             // under multiple target-branch refs.
@@ -450,22 +432,9 @@ pub fn handle_sync(
                 let mut total_posted = 0usize;
                 let mut total_votes_posted = 0usize;
                 for pr in &prs {
-                    let (existing_id, _) =
-                        josh_core::trailers::parse_change_meta(&pr.head_commit_message);
-                    let change_id = existing_id
-                        .unwrap_or_else(|| format!("{}/{}/pull/{}", owner, repo_name, pr.number));
-
-                    // Same target-branch derivation as the per-PR sync above.
-                    let target_branch =
-                        parse_changes_target(&pr.head_ref_name).unwrap_or_else(|| {
-                            pr.base_ref_name
-                                .trim_start_matches("refs/heads/")
-                                .to_string()
-                        });
-                    let remote_scope = josh_changes::ChangesRef::Remote {
-                        remote: remote_name.clone(),
-                        branch: target_branch.clone(),
-                    };
+                    let change_id = change_id_for_pr(pr, &owner, &repo_name);
+                    let target_branch = target_branch_for_pr(pr);
+                    let remote_scope = remote_scope_for(&remote_name, &target_branch);
 
                     match api
                         .find_pull_request_by_head(&owner, &repo_name, &pr.head_ref_name, None)
@@ -564,4 +533,41 @@ fn parse_changes_target(head_ref_name: &str) -> Option<String> {
 fn parse_pr_number_from_change_id(change_id: &str, owner: &str, repo: &str) -> Option<i64> {
     let prefix = format!("{}/{}/pull/", owner, repo);
     change_id.strip_prefix(&prefix)?.parse().ok()
+}
+
+/// Derive the change ID for a PR: the change-id from the head commit's trailers
+/// if present, otherwise a synthetic `{owner}/{repo}/pull/{N}` ID.
+fn change_id_for_pr(pr: &PrSummary, owner: &str, repo: &str) -> String {
+    let (existing_id, _) = josh_core::trailers::parse_change_meta(&pr.head_commit_message);
+    existing_id.unwrap_or_else(|| format!("{}/{}/pull/{}", owner, repo, pr.number))
+}
+
+/// Determine the target branch for scoping a PR's changes: stacked changes encode
+/// the ultimate target in the head ref (@changes/<target>/...); otherwise fall
+/// back to the PR's immediate base.
+fn target_branch_for_pr(pr: &PrSummary) -> String {
+    parse_changes_target(&pr.head_ref_name).unwrap_or_else(|| {
+        pr.base_ref_name
+            .trim_start_matches("refs/heads/")
+            .to_string()
+    })
+}
+
+/// Build the remote changes-ref scope for a target branch.
+fn remote_scope_for(remote_name: &str, target_branch: &str) -> josh_changes::ChangesRef {
+    josh_changes::ChangesRef::Remote {
+        remote: remote_name.to_string(),
+        branch: target_branch.to_string(),
+    }
+}
+
+/// Build the set of change IDs for the given open PRs.
+fn collect_open_change_ids(
+    prs: &[PrSummary],
+    owner: &str,
+    repo: &str,
+) -> std::collections::HashSet<String> {
+    prs.iter()
+        .map(|pr| change_id_for_pr(pr, owner, repo))
+        .collect()
 }
