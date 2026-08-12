@@ -6,6 +6,7 @@ use crate::commands::scope::ScopeArgs;
 use crate::config::read_remote_config;
 use crate::forge::Forge;
 use crate::forge::github;
+use josh_github_graphql::connection::GithubApiConnection;
 use josh_github_graphql::operations::pull_request::PrSummary;
 use serde_json;
 
@@ -91,143 +92,34 @@ pub fn handle_sync(
             let target_branch_shas =
                 fetch_target_branch_tips(transaction, repo, &owner, &repo_name, &prs)?;
 
-            let mut total_comments = 0usize;
-            let mut synced = 0usize;
-            let mut skipped = 0usize;
+            let ctx = GithubSyncCtx {
+                transaction,
+                repo,
+                api: &api,
+                owner: &owner,
+                repo_name: &repo_name,
+                remote_name: &remote_name,
+                target_branch_shas: &target_branch_shas,
+            };
 
+            let mut stats = SyncStats::default();
             for pr in &prs {
-                let (existing_change_id, _) =
-                    josh_core::trailers::parse_change_meta(&pr.head_commit_message);
-
-                let head_oid = match git2::Oid::from_str(&pr.head_oid) {
-                    Ok(o) => o,
-                    Err(e) => {
-                        eprintln!("PR #{}: bad head OID: {}", pr.number, e);
-                        skipped += 1;
-                        continue;
-                    }
-                };
-
-                let pr_head = match repo.find_commit(head_oid) {
-                    Ok(c) => c,
-                    Err(_) => {
-                        eprintln!(
-                            "PR #{}: head commit {} not available from GitHub — skipping",
-                            pr.number, pr.head_oid
-                        );
-                        skipped += 1;
-                        continue;
-                    }
-                };
-
-                let base_oid = match git2::Oid::from_str(&pr.base_ref_oid) {
-                    Ok(o) => o,
-                    Err(e) => {
-                        eprintln!("PR #{}: bad base OID: {}", pr.number, e);
-                        skipped += 1;
-                        continue;
-                    }
-                };
-
-                let target = match repo.find_commit(base_oid) {
-                    Ok(c) => c,
-                    Err(_) => {
-                        eprintln!(
-                            "PR #{}: base commit {} not available from GitHub — skipping",
-                            pr.number, pr.base_ref_oid
-                        );
-                        skipped += 1;
-                        continue;
-                    }
-                };
-
-                if let Some(ref cid) = existing_change_id {
-                    println!("PR #{}: head commit has change-id '{}'", pr.number, cid);
-                } else {
-                    println!(
-                        "PR #{}{}: creating synthetic merge commit",
-                        pr.number,
-                        if pr.title.is_empty() {
-                            String::new()
-                        } else {
-                            format!(" ({})", &pr.title)
-                        }
-                    );
-                }
-
-                let target_branch = target_branch_for_pr(pr);
-                let remote_scope = remote_scope_for(&remote_name, &target_branch);
-
-                let result = (|| -> anyhow::Result<(josh_changes::Change, i64)> {
-                    let change = if existing_change_id.is_some() {
-                        let mut change = josh_changes::Change::new(transaction, pr_head.id())?;
-                        let base = match parse_changes_target(&pr.head_ref_name)
-                            .and_then(|t| target_branch_shas.get(&t))
-                        {
-                            Some(tip) => repo.merge_base(*tip, pr_head.id())?,
-                            None => repo.merge_base(target.id(), pr_head.id())?,
-                        };
-                        change.set_base(base);
-                        change
-                    } else {
-                        let change_id = format!("{}/{}/pull/{}", owner, repo_name, pr.number);
-                        let mut message = pr.title.clone();
-                        if !pr.body.is_empty() {
-                            message.push_str("\n\n");
-                            message.push_str(&pr.body);
-                        }
-                        message.push_str(&format!("\n\nChange-Id: {}\n", change_id));
-
-                        let merge_oid = josh_changes::create_synthetic_merge_commit(
-                            transaction,
-                            pr_head.id(),
-                            target.id(),
-                            &message,
-                        )?;
-
-                        let mut change = josh_changes::Change::new(transaction, merge_oid)?;
-                        change.set_base(target.id());
-                        change
-                    };
-
-                    josh_changes::store_diff_data(transaction, &change, &remote_scope)?;
-                    Ok((change, pr.number))
-                })();
-
-                match result {
-                    Ok((change, pr_number)) => {
-                        match josh_github_changes::sync_change_comments_by_pr_number(
-                            &api,
-                            &owner,
-                            &repo_name,
-                            transaction,
-                            &change,
-                            pr_number,
-                            &remote_scope,
-                        )
-                        .await
-                        {
-                            Ok(n) => {
-                                total_comments += n;
-                                synced += 1;
-                                println!("  PR #{}: synced {} comments", pr.number, n);
-                            }
-                            Err(e) => {
-                                eprintln!("PR #{}: {} — skipping", pr.number, e);
-                                skipped += 1;
-                            }
-                        }
+                match ctx.sync_single_pr(pr).await {
+                    Ok(n) => {
+                        stats.comments += n;
+                        stats.synced += 1;
+                        println!("  PR #{}: synced {} comments", pr.number, n);
                     }
                     Err(e) => {
                         eprintln!("PR #{}: {} — skipping", pr.number, e);
-                        skipped += 1;
+                        stats.skipped += 1;
                     }
                 }
             }
 
             println!(
                 "Synced {} comments across {} PRs ({} skipped).",
-                total_comments, synced, skipped
+                stats.comments, stats.synced, stats.skipped
             );
 
             let open_change_ids = collect_open_change_ids(&prs, &owner, &repo_name);
@@ -457,6 +349,129 @@ pub fn handle_sync(
     }
 
     Ok(())
+}
+
+#[derive(Default)]
+struct SyncStats {
+    comments: usize,
+    synced: usize,
+    skipped: usize,
+}
+
+/// Context for GitHub-backed sync phases.
+struct GithubSyncCtx<'a> {
+    transaction: &'a josh_core::cache::Transaction,
+    repo: &'a git2::Repository,
+    api: &'a GithubApiConnection,
+    owner: &'a str,
+    repo_name: &'a str,
+    remote_name: &'a str,
+    target_branch_shas: &'a std::collections::HashMap<String, git2::Oid>,
+}
+
+impl GithubSyncCtx<'_> {
+    /// Sync a single PR: build its local change, store diff data, and pull its
+    /// comments from GitHub. Returns the number of comments synced.
+    async fn sync_single_pr(&self, pr: &PrSummary) -> anyhow::Result<usize> {
+        let (existing_change_id, _) =
+            josh_core::trailers::parse_change_meta(&pr.head_commit_message);
+
+        let head_oid =
+            git2::Oid::from_str(&pr.head_oid).map_err(|e| anyhow!("bad head OID: {}", e))?;
+        let pr_head = self
+            .repo
+            .find_commit(head_oid)
+            .map_err(|_| anyhow!("head commit {} not available from GitHub", pr.head_oid))?;
+
+        let base_oid =
+            git2::Oid::from_str(&pr.base_ref_oid).map_err(|e| anyhow!("bad base OID: {}", e))?;
+        let target = self
+            .repo
+            .find_commit(base_oid)
+            .map_err(|_| anyhow!("base commit {} not available from GitHub", pr.base_ref_oid))?;
+
+        if let Some(ref cid) = existing_change_id {
+            println!("PR #{}: head commit has change-id '{}'", pr.number, cid);
+        } else {
+            println!(
+                "PR #{}{}: creating synthetic merge commit",
+                pr.number,
+                if pr.title.is_empty() {
+                    String::new()
+                } else {
+                    format!(" ({})", &pr.title)
+                }
+            );
+        }
+
+        let target_branch = target_branch_for_pr(pr);
+        let remote_scope = remote_scope_for(self.remote_name, &target_branch);
+
+        let change = self.build_change_for_pr(
+            pr,
+            existing_change_id.is_some(),
+            &pr_head,
+            &target,
+            &remote_scope,
+        )?;
+
+        josh_github_changes::sync_change_comments_by_pr_number(
+            self.api,
+            self.owner,
+            self.repo_name,
+            self.transaction,
+            &change,
+            pr.number,
+            &remote_scope,
+        )
+        .await
+    }
+
+    /// Build the local change for a PR: use the head commit directly when it
+    /// carries a change-id trailer, otherwise create a synthetic merge commit
+    /// with one. Stores the change's diff data under the given scope.
+    fn build_change_for_pr(
+        &self,
+        pr: &PrSummary,
+        has_change_id: bool,
+        pr_head: &git2::Commit,
+        target: &git2::Commit,
+        remote_scope: &josh_changes::ChangesRef,
+    ) -> anyhow::Result<josh_changes::Change> {
+        let change = if has_change_id {
+            let mut change = josh_changes::Change::new(self.transaction, pr_head.id())?;
+            let base = match parse_changes_target(&pr.head_ref_name)
+                .and_then(|t| self.target_branch_shas.get(&t))
+            {
+                Some(tip) => self.repo.merge_base(*tip, pr_head.id())?,
+                None => self.repo.merge_base(target.id(), pr_head.id())?,
+            };
+            change.set_base(base);
+            change
+        } else {
+            let change_id = change_id_for_pr(pr, self.owner, self.repo_name);
+            let mut message = pr.title.clone();
+            if !pr.body.is_empty() {
+                message.push_str("\n\n");
+                message.push_str(&pr.body);
+            }
+            message.push_str(&format!("\n\nChange-Id: {}\n", change_id));
+
+            let merge_oid = josh_changes::create_synthetic_merge_commit(
+                self.transaction,
+                pr_head.id(),
+                target.id(),
+                &message,
+            )?;
+
+            let mut change = josh_changes::Change::new(self.transaction, merge_oid)?;
+            change.set_base(target.id());
+            change
+        };
+
+        josh_changes::store_diff_data(self.transaction, &change, remote_scope)?;
+        Ok(change)
+    }
 }
 
 /// Extract the target branch name from a stacked-changes ref name.
