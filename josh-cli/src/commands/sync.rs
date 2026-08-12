@@ -122,134 +122,7 @@ pub fn handle_sync(
                 stats.comments, stats.synced, stats.skipped
             );
 
-            let open_change_ids = collect_open_change_ids(&prs, &owner, &repo_name);
-
-            // Iterate every (change, scope) pair under this remote -- changes may live
-            // under multiple target-branch refs.
-            let remote_scopes: Vec<josh_changes::ChangesRef> =
-                josh_changes::all_changes_refs(transaction)?
-                    .into_iter()
-                    .filter(|r| r.remote() == Some(&remote_name))
-                    .collect();
-            let mut all_changes: Vec<(josh_changes::Change, josh_changes::ChangesRef)> = Vec::new();
-            for scope in &remote_scopes {
-                for c in josh_changes::list_changes(transaction, scope)? {
-                    all_changes.push((c, scope.clone()));
-                }
-            }
-            let mut cleaned = 0usize;
-
-            for (change, remote_scope) in &all_changes {
-                let change_id = match change.id() {
-                    Some(id) => id,
-                    None => continue,
-                };
-
-                if open_change_ids.contains(change_id) {
-                    continue;
-                }
-
-                // Determine the PR number for this change.
-                let pr_number: i64 =
-                    match parse_pr_number_from_change_id(change_id, &owner, &repo_name) {
-                        Some(n) => n,
-                        None => {
-                            // Custom Change-Id; try reading stored PR data.
-                            match josh_changes::read_pr_data(transaction, change_id, remote_scope) {
-                                Ok(Some(json)) => {
-                                    match serde_json::from_str::<serde_json::Value>(&json) {
-                                        Ok(v) => match v.get("number").and_then(|n| n.as_i64()) {
-                                            Some(n) => n,
-                                            None => {
-                                                eprintln!(
-                                                    "  Change '{}': no PR number in stored data \
-                                                 -- skipping",
-                                                    change_id
-                                                );
-                                                continue;
-                                            }
-                                        },
-                                        Err(e) => {
-                                            eprintln!(
-                                                "  Change '{}': invalid stored PR data: {} \
-                                             -- skipping",
-                                                change_id, e
-                                            );
-                                            continue;
-                                        }
-                                    }
-                                }
-                                Ok(None) => {
-                                    // Purely local change with no PR data at all.
-                                    continue;
-                                }
-                                Err(e) => {
-                                    eprintln!(
-                                        "  Change '{}': failed to read PR data: {} -- skipping",
-                                        change_id, e
-                                    );
-                                    continue;
-                                }
-                            }
-                        }
-                    };
-
-                // Fetch the current PR data from GitHub.
-                let pr_data = match api.get_pr_comments(&owner, &repo_name, pr_number).await {
-                    Ok(d) => d,
-                    Err(e) => {
-                        eprintln!(
-                            "  Change '{}' (PR #{}): failed to fetch PR data: {} -- skipping",
-                            change_id, pr_number, e
-                        );
-                        continue;
-                    }
-                };
-
-                // Guard: if the PR is still open, do not delete the change.
-                if pr_data.state == "OPEN" {
-                    // Record the current state even if unexpectedly open.
-                    let json = serde_json::to_string(&pr_data)?;
-                    josh_changes::store_pr_data(transaction, change_id, &json, remote_scope)?;
-                    eprintln!(
-                        "  Change '{}' (PR #{}): unexpectedly still OPEN on GitHub \
-                         -- skipping deletion",
-                        change_id, pr_number
-                    );
-                    continue;
-                }
-
-                // Commit 1: store the updated PR data (final CLOSED/MERGED state).
-                let json = serde_json::to_string(&pr_data)?;
-                if let Err(e) =
-                    josh_changes::store_pr_data(transaction, change_id, &json, remote_scope)
-                {
-                    eprintln!(
-                        "  Change '{}' (PR #{}): failed to store updated PR data: {} \
-                         -- skipping deletion",
-                        change_id, pr_number, e
-                    );
-                    continue;
-                }
-
-                // Commit 2: delete the change from the remote changes ref.
-                if let Err(e) = josh_changes::delete_change(transaction, change_id, remote_scope) {
-                    eprintln!(
-                        "  Change '{}' (PR #{}): failed to delete: {}",
-                        change_id, pr_number, e
-                    );
-                } else {
-                    println!(
-                        "  Cleaned up '{}' (PR #{}: {})",
-                        change_id, pr_number, pr_data.state
-                    );
-                    cleaned += 1;
-                }
-            }
-
-            if cleaned > 0 {
-                println!("Cleaned up {} closed/merged changes.", cleaned);
-            }
+            ctx.gc_closed_changes(&prs).await?;
 
             if args.push {
                 let mut total_posted = 0usize;
@@ -425,6 +298,149 @@ impl GithubSyncCtx<'_> {
             &remote_scope,
         )
         .await
+    }
+
+    /// Delete local changes whose PRs are no longer open on GitHub, after
+    /// recording their final PR state. Returns the number of cleaned changes.
+    async fn gc_closed_changes(&self, prs: &[PrSummary]) -> anyhow::Result<usize> {
+        let open_change_ids = collect_open_change_ids(prs, self.owner, self.repo_name);
+
+        // Iterate every (change, scope) pair under this remote -- changes may live
+        // under multiple target-branch refs.
+        let remote_scopes: Vec<josh_changes::ChangesRef> =
+            josh_changes::all_changes_refs(self.transaction)?
+                .into_iter()
+                .filter(|r| r.remote() == Some(self.remote_name))
+                .collect();
+        let mut all_changes: Vec<(josh_changes::Change, josh_changes::ChangesRef)> = Vec::new();
+        for scope in &remote_scopes {
+            for c in josh_changes::list_changes(self.transaction, scope)? {
+                all_changes.push((c, scope.clone()));
+            }
+        }
+        let mut cleaned = 0usize;
+
+        for (change, remote_scope) in &all_changes {
+            let Some(change_id) = change.id() else {
+                continue;
+            };
+
+            if open_change_ids.contains(change_id) {
+                continue;
+            }
+
+            let Some(pr_number) = self.resolve_pr_number(change_id, remote_scope) else {
+                continue;
+            };
+
+            // Fetch the current PR data from GitHub.
+            let pr_data = match self
+                .api
+                .get_pr_comments(self.owner, self.repo_name, pr_number)
+                .await
+            {
+                Ok(d) => d,
+                Err(e) => {
+                    eprintln!(
+                        "  Change '{}' (PR #{}): failed to fetch PR data: {} -- skipping",
+                        change_id, pr_number, e
+                    );
+                    continue;
+                }
+            };
+
+            // Guard: if the PR is still open, do not delete the change.
+            if pr_data.state == "OPEN" {
+                // Record the current state even if unexpectedly open.
+                let json = serde_json::to_string(&pr_data)?;
+                josh_changes::store_pr_data(self.transaction, change_id, &json, remote_scope)?;
+                eprintln!(
+                    "  Change '{}' (PR #{}): unexpectedly still OPEN on GitHub \
+                     -- skipping deletion",
+                    change_id, pr_number
+                );
+                continue;
+            }
+
+            // Commit 1: store the updated PR data (final CLOSED/MERGED state).
+            let json = serde_json::to_string(&pr_data)?;
+            if let Err(e) =
+                josh_changes::store_pr_data(self.transaction, change_id, &json, remote_scope)
+            {
+                eprintln!(
+                    "  Change '{}' (PR #{}): failed to store updated PR data: {} \
+                     -- skipping deletion",
+                    change_id, pr_number, e
+                );
+                continue;
+            }
+
+            // Commit 2: delete the change from the remote changes ref.
+            if let Err(e) = josh_changes::delete_change(self.transaction, change_id, remote_scope) {
+                eprintln!(
+                    "  Change '{}' (PR #{}): failed to delete: {}",
+                    change_id, pr_number, e
+                );
+            } else {
+                println!(
+                    "  Cleaned up '{}' (PR #{}: {})",
+                    change_id, pr_number, pr_data.state
+                );
+                cleaned += 1;
+            }
+        }
+
+        if cleaned > 0 {
+            println!("Cleaned up {} closed/merged changes.", cleaned);
+        }
+        Ok(cleaned)
+    }
+
+    /// Determine the PR number for a change: parse it from a synthetic
+    /// `{owner}/{repo}/pull/{N}` change ID, or fall back to stored PR data for
+    /// custom Change-Ids. Returns None for purely local changes.
+    fn resolve_pr_number(
+        &self,
+        change_id: &str,
+        remote_scope: &josh_changes::ChangesRef,
+    ) -> Option<i64> {
+        if let Some(n) = parse_pr_number_from_change_id(change_id, self.owner, self.repo_name) {
+            return Some(n);
+        }
+
+        // Custom Change-Id; try reading stored PR data.
+        match josh_changes::read_pr_data(self.transaction, change_id, remote_scope) {
+            Ok(Some(json)) => match serde_json::from_str::<serde_json::Value>(&json) {
+                Ok(v) => match v.get("number").and_then(|n| n.as_i64()) {
+                    Some(n) => Some(n),
+                    None => {
+                        eprintln!(
+                            "  Change '{}': no PR number in stored data -- skipping",
+                            change_id
+                        );
+                        None
+                    }
+                },
+                Err(e) => {
+                    eprintln!(
+                        "  Change '{}': invalid stored PR data: {} -- skipping",
+                        change_id, e
+                    );
+                    None
+                }
+            },
+            Ok(None) => {
+                // Purely local change with no PR data at all.
+                None
+            }
+            Err(e) => {
+                eprintln!(
+                    "  Change '{}': failed to read PR data: {} -- skipping",
+                    change_id, e
+                );
+                None
+            }
+        }
     }
 
     /// Build the local change for a PR: use the head commit directly when it
