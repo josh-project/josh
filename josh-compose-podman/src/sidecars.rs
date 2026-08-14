@@ -93,8 +93,13 @@ fn network_exists(name: &str) -> anyhow::Result<bool> {
 }
 
 fn network_create_internal(name: &str) -> anyhow::Result<()> {
+    // Disable DNS on the internal network: steps reach sidecars by raw IP, and
+    // without this flag podman puts the internal network's aardvark-dns into
+    // resolv.conf alongside the bridge one (in nondeterministic order), which
+    // makes external name resolution in the sidecar fail whenever the internal
+    // resolver — NXDOMAIN-only by design — is consulted first.
     let output = Command::new("podman")
-        .args(["network", "create", "--internal", name])
+        .args(["network", "create", "--internal", "--disable-dns", name])
         .output()
         .context("failed to run podman network create")?;
     if !output.status.success() {
