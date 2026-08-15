@@ -1,5 +1,8 @@
 use std::time::Instant;
 
+pub mod bench;
+pub mod provision_repo;
+
 use tracing::field::{Field, Visit};
 use tracing::span::{Attributes, Id};
 use tracing::{Event, Subscriber};
@@ -85,7 +88,9 @@ where
         };
 
         let extensions = span.extensions();
-        let fields = extensions.get::<Fields>().and_then(|fields| fields.0.as_deref());
+        let fields = extensions
+            .get::<Fields>()
+            .and_then(|fields| fields.0.as_deref());
 
         match fields {
             Some(fields) => eprintln!("[{}] {:.2?} {}", span.name(), elapsed, fields),

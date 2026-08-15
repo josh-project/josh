@@ -30,15 +30,6 @@
 
   $ josh clone ${TESTTMP}/remote/libs :/sub1 libs
   Added remote 'origin' with filter ':/sub1'
-  From file://${TESTTMP}/remote/libs
-   * [new branch]      feature    -> refs/josh/remotes/origin/feature
-   * [new branch]      master     -> refs/josh/remotes/origin/master
-  
-  From file://${TESTTMP}/libs
-   * [new branch]      feature    -> origin/feature
-   * [new branch]      master     -> origin/master
-  
-  Fetched from remote: origin
   Already on 'master'
   
   Cloned repository to: ${TESTTMP}/libs/
@@ -60,15 +51,9 @@
 
   $ cd ${TESTTMP}/libs
 
-  $ josh pull
-  From file://${TESTTMP}/remote/libs
-     667a912..2c470be  master     -> refs/josh/remotes/origin/master
-  
-  From file://${TESTTMP}/libs
-     d8388f5..0974639  master     -> origin/master
-  
-  Fetched from remote: origin
-  Pulled from remote: origin
+  $ josh changes pull
+  updated master (d8388f5..0974639)
+  Fast-forwarded master
 
   $ tree
   .

@@ -71,8 +71,8 @@ fn handle_cache_build(args: &CacheBuildArgs, transaction: &Transaction) -> anyho
                 Err(_) => continue,
             };
             let refname = match reference.name() {
-                Some(n) => n,
-                None => continue,
+                Ok(n) => n,
+                Err(_) => continue,
             };
             if let Some(rest) = refname.strip_prefix("refs/josh/filtered/") {
                 if let Some(heads_pos) = rest.find("/heads/") {
@@ -128,7 +128,7 @@ fn handle_cache_build(args: &CacheBuildArgs, transaction: &Transaction) -> anyho
 
     // Add the config filter as fallback if not already discovered.
     if let Ok(config) = read_remote_config(&repo_path, &args.remote) {
-        let config_filter = config.filter_with_meta.peel();
+        let config_filter = config.semantic_filter();
         let config_steps = flatten_chain(config_filter);
         let config_prefix = remote_ops::step_ref_prefix(config_steps.len() - 1, &config_steps);
         if !full_chains.contains(&config_prefix) {
@@ -145,10 +145,14 @@ fn handle_cache_build(args: &CacheBuildArgs, transaction: &Transaction) -> anyho
 
     // Build a transaction that has ONLY the DistributedCacheBackend — no Sled.
     // This ensures every filter operation writes a new entry to the distributed
-    // cache even if Sled already has a result for that commit.
-    let cache = std::sync::Arc::new(CacheStack::new().with_backend(
-        DistributedCacheBackend::new(&repo_path).context("Failed to open distributed cache")?,
-    ));
+    // cache even if Sled already has a result for that commit. Building is the
+    // intentional cache-producing step, so the backend is opened writable.
+    let cache = std::sync::Arc::new(
+        CacheStack::new().with_backend(
+            DistributedCacheBackend::writable(&repo_path)
+                .context("Failed to open distributed cache")?,
+        ),
+    );
     let build_transaction = TransactionContext::new(&repo_path, cache)
         .with_mem_odb_limit(crate::MAX_MEM_PACK_SIZE)
         .open()
@@ -192,7 +196,7 @@ fn handle_cache_build(args: &CacheBuildArgs, transaction: &Transaction) -> anyho
             let mut next_commits = Vec::new();
 
             for (branch_name, filtered_oid) in filtered {
-                if filtered_oid == git2::Oid::zero() {
+                if filtered_oid == git2::Oid::ZERO_SHA1 {
                     continue;
                 }
                 let filtered_ref =
@@ -223,14 +227,10 @@ fn handle_cache_push(args: &CachePushArgs, transaction: &Transaction) -> anyhow:
     let repo = transaction.repo();
     let repo_path = normalize_repo_path(repo.path());
 
-    let RemoteConfig {
-        url,
-        filter_with_meta,
-        ..
-    } = read_remote_config(&repo_path, &args.remote)
+    let config = read_remote_config(&repo_path, &args.remote)
         .with_context(|| format!("Failed to read remote config for '{}'", args.remote))?;
-
-    let filter = filter_with_meta.peel();
+    let filter = config.semantic_filter();
+    let RemoteConfig { url, .. } = config;
     let steps = flatten_chain(filter);
 
     let default_branch = remote_ops::resolve_default_branch(repo, &args.remote)?;
@@ -310,14 +310,10 @@ fn handle_cache_fetch(args: &CacheFetchArgs, transaction: &Transaction) -> anyho
     let repo = transaction.repo();
     let repo_path = normalize_repo_path(repo.path());
 
-    let RemoteConfig {
-        url,
-        filter_with_meta,
-        ..
-    } = read_remote_config(&repo_path, &args.remote)
+    let config = read_remote_config(&repo_path, &args.remote)
         .with_context(|| format!("Failed to read remote config for '{}'", args.remote))?;
-
-    let filter = filter_with_meta.peel();
+    let filter = config.semantic_filter();
+    let RemoteConfig { url, .. } = config;
 
     fetch_remote_cache(transaction, &url, filter)?;
 

@@ -21,13 +21,6 @@ Test josh filter command - apply filtering without fetching
 
   $ josh clone ${TESTTMP}/remote/libs :/sub1 filtered-repo
   Added remote 'origin' with filter ':/sub1'
-  From file://${TESTTMP}/remote/libs
-   * [new branch]      master     -> refs/josh/remotes/origin/master
-  
-  From file://${TESTTMP}/filtered-repo
-   * [new branch]      master     -> origin/master
-  
-  Fetched from remote: origin
   Already on 'master'
   
   Cloned repository to: ${TESTTMP}/filtered-repo/

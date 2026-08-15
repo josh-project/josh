@@ -1,4 +1,4 @@
-use criterion::{Criterion, criterion_group, criterion_main};
+use criterion::{BatchSize, Criterion, criterion_group, criterion_main};
 use josh_core::git::josh_commit_signature;
 use rand::prelude::*;
 use std::cell::RefCell;
@@ -13,9 +13,22 @@ const N_PER_SUBFOLDER_MAX: usize = 100;
 
 const NESTING_LEVEL: usize = 3;
 
+/// Expected head oid of the cached bench repo. This is the cache validity key:
+/// changing any of the build parameters above changes the produced oid, which
+/// then fails the strict check in `provision_repo` and reports the new value to
+/// paste here. Filled in by running the bench once after a build change.
+const EXPECTED_HEAD: &str = "6daa53b5eaae0d6642b3ad846e327e899095f5c7";
+
+/// Fixed commit timestamp fed to `josh_commit_signature()` via `JOSH_COMMIT_TIME`
+/// so the built history is reproducible. Without it the signature uses the wall
+/// clock, every run produces a different head oid, and `EXPECTED_HEAD` can never
+/// be stable. The value itself is arbitrary.
+const JOSH_BENCH_COMMIT_TIME: &str = "1700000000";
+
 struct PinBench {
-    // Keeps the on-disk repository alive for the duration of the benchmark.
-    _tmp: tempfile::TempDir,
+    // Keeps the on-disk repository (and its tempdir) alive for the duration of
+    // the benchmark.
+    _repo: josh_test_support::provision_repo::ProvisionedRepo,
     // A fresh transaction is opened from this for every iteration.
     context: josh_core::cache::TransactionContext,
     filter: josh_core::filter::Filter,
@@ -26,22 +39,42 @@ impl PinBench {
     fn setup() -> anyhow::Result<Self> {
         let _setup = tracing::info_span!(target: "bench", "setup").entered();
 
-        let tmp = tempfile::tempdir()?;
-        let repo = git2::Repository::init_bare(tmp.path())?;
+        // Pin commit timestamps before building so the head oid is reproducible
+        // and `EXPECTED_HEAD` stays valid across runs. Must run before the cache
+        // miss path invokes the build callback.
+        // SAFETY: setup runs single-threaded, before any benchmark iteration.
+        unsafe {
+            std::env::set_var("JOSH_COMMIT_TIME", JOSH_BENCH_COMMIT_TIME);
+        }
 
-        let (head, paths) = tracing::info_span!(target: "bench", "build_initial_state")
-            .in_scope(|| build_initial_state(&repo))?;
+        // Build (or reuse from cache) the bare repo. The `build_initial_state` /
+        // `build_history` pair runs only inside the callback on a cache miss; the
+        // resulting head oid is checked against `EXPECTED_HEAD` before the repo is
+        // cached and copied into a tempdir for this run.
+        let provisioned = josh_test_support::provision_repo::provision_repo(
+            "ultrawide_pin",
+            &git2::Oid::from_str(EXPECTED_HEAD).expect("EXPECTED_HEAD must be a valid oid"),
+            |repo| {
+                let (head, paths) = tracing::info_span!(target: "bench", "build_initial_state")
+                    .in_scope(|| build_initial_state(repo))?;
 
-        let head = tracing::info_span!(target: "bench", "build_history", n_paths = paths.len())
-            .in_scope(|| build_history(&repo, &paths, head))?;
+                let head =
+                    tracing::info_span!(target: "bench", "build_history", n_paths = paths.len())
+                        .in_scope(|| build_history(repo, &paths, head))?;
 
-        josh_core::cache::sled_load(tmp.path())?;
+                Ok(head)
+            },
+        )?;
+
+        let head = provisioned.head;
+        josh_core::cache::sled_load(provisioned.path())?;
+
         let cache = std::sync::Arc::new(
             josh_core::cache::CacheStack::new()
                 .with_backend(josh_core::cache::SledCacheBackend::default()),
         );
 
-        let context = josh_core::cache::TransactionContext::new(tmp.path(), cache);
+        let context = josh_core::cache::TransactionContext::new(provisioned.path(), cache);
 
         // The filter under benchmark: select the workspace defined by the
         // `workspace/workspace.josh` files generated throughout the history.
@@ -50,7 +83,7 @@ impl PinBench {
             .with_meta("history", "no-splice");
 
         Ok(Self {
-            _tmp: tmp,
+            _repo: provisioned,
             context,
             filter,
             head,
@@ -243,33 +276,43 @@ fn ultrawide_pin(c: &mut Criterion) {
     let bench = PinBench::setup().expect("set up benchmark");
 
     c.bench_function("ultrawide_filter_pin", |b| {
-        b.iter_with_setup_wrapper(|runner| {
+        b.iter_batched(
             // Per-iteration setup (untimed): start from a cold cache and a fresh
             // transaction so every run does the full filtering work instead of
             // hitting memoized results.
-            josh_core::reset_caches().expect("reset caches");
-            let transaction = bench.context.open().expect("open transaction");
+            || {
+                josh_core::reset_caches().expect("reset caches");
+                bench.context.open().expect("open transaction")
+            },
+            // Timed: filter the head commit. The transaction is returned so it is
+            // dropped untimed after the measured section.
+            |transaction| {
+                // Optional: route object writes through an in-memory mempack backend instead
+                // of the loose-file backend, to measure the ODB write-path overhead. Reads of
+                // the pre-built history fall through to the lower-priority loose backend. The
+                // odb is bound first so it outlives the borrowed mempack handle. The mempack
+                // handle borrows the transaction, so it is kept in this scope rather than returned.
+                let mempack_odb = std::env::var_os("JOSH_BENCH_MEMPACK")
+                    .map(|_| transaction.repo().odb().expect("odb"));
+                let _mempack = mempack_odb.as_ref().map(|odb| {
+                    odb.add_new_mempack_backend(1000)
+                        .expect("add mempack backend")
+                });
 
-            // Optional: route object writes through an in-memory mempack backend instead
-            // of the loose-file backend, to measure the ODB write-path overhead. Reads of
-            // the pre-built history fall through to the lower-priority loose backend. The
-            // odb is bound first so it outlives the borrowed mempack handle.
-            let mempack_odb = std::env::var_os("JOSH_BENCH_MEMPACK")
-                .map(|_| transaction.repo().odb().expect("odb"));
-            let _mempack = mempack_odb.as_ref().map(|odb| {
-                odb.add_new_mempack_backend(1000)
-                    .expect("add mempack backend")
-            });
+                let iter_span = tracing::info_span!(target: "bench", "iter").entered();
 
-            let iter_span = tracing::info_span!(target: "bench", "iter").entered();
-
-            runner.run(|| {
                 josh_core::filter_commit(&transaction, bench.filter, bench.head)
-                    .expect("filter commit")
-            });
+                    .expect("filter commit");
 
-            drop(iter_span);
-        });
+                drop(iter_span);
+                // Release the mempack borrows so the transaction can be handed back to the harness
+                // and dropped untimed.
+                drop(_mempack);
+                drop(mempack_odb);
+                transaction
+            },
+            BatchSize::PerIteration,
+        );
     });
 }
 

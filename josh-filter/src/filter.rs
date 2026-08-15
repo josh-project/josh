@@ -1,5 +1,5 @@
 use crate::check_experimental_features_enabled;
-use crate::op::{BlobContent, LazyRef, Op, Regex};
+use crate::op::{InsertContent, LazyRef, Op, Regex, RevMatch};
 use crate::opt;
 use crate::persist::{self, Node, to_filter, to_op};
 use std::sync::LazyLock;
@@ -76,10 +76,26 @@ impl Filter {
         self.chain(to_filter(Op::Exclude(other)))
     }
 
+    pub fn select(self, other: Filter) -> Filter {
+        self.chain(to_filter(Op::Select(other)))
+    }
+
     /// Chain a filter that pins the result of `other`, holding back entries that
     /// would otherwise change across revisions
     pub fn pin(self, other: Filter) -> Filter {
         self.chain(to_filter(Op::Pin(other)))
+    }
+
+    /// Chain a `:rev(...)` filter. Each `(match, tip, then)` arm applies `then` to a commit whose
+    /// relationship to `tip` satisfies `match` (e.g. `AncestorInclusive` is `<=tip`); the first
+    /// matching arm wins and a commit matching none passes through unchanged. Tips are resolved
+    /// oids (`RevMatch::Default` ignores its tip); construct `Op::Rev` directly for lazy refs.
+    pub fn rev(self, arms: Vec<(RevMatch, git2::Oid, Filter)>) -> Filter {
+        self.chain(to_filter(Op::Rev(
+            arms.into_iter()
+                .map(|(m, tip, then)| (m, LazyRef::Resolved(tip), then))
+                .collect(),
+        )))
     }
 
     /// Create a no-op filter that passes everything through unchanged
@@ -161,27 +177,28 @@ impl Filter {
 
     /// Chain a filter that inserts a blob with the given content at the specified path.
     /// Syntax: `:$path="content"` (e.g. `:$label="my label"` inserts a blob at `label` with content "my label").
-    pub fn blob(
+    pub fn insert(
         self,
         path: impl Into<std::path::PathBuf>,
         content: impl Into<String>,
     ) -> anyhow::Result<Filter> {
-        check_experimental_features_enabled("Blob filter")?;
-        Ok(self.chain(to_filter(Op::Blob(
+        Ok(self.chain(to_filter(Op::Insert(
             path.into(),
-            BlobContent::Inline(content.into()),
+            InsertContent::Inline(content.into()),
         ))))
     }
 
-    /// Chain a filter that inserts an existing blob (referenced by its OID) at the specified path.
-    /// Syntax: `:$path=<sha>`. Useful for large blobs that should not be inlined as a string.
-    pub fn blob_oid(
+    /// Chain a filter that inserts an existing object (referenced by its OID) at the specified
+    /// path. Syntax: `:$path=<sha>`. The object may be a blob or a tree; the kind is resolved
+    /// from the repository at apply time. Useful for large blobs or whole subtrees that should
+    /// not be inlined as a string. The special path `.` replaces the whole tree with the
+    /// referenced object and therefore requires a tree OID (a blob at the root is rejected).
+    pub fn insert_oid(
         self,
         path: impl Into<std::path::PathBuf>,
         oid: git2::Oid,
     ) -> anyhow::Result<Filter> {
-        check_experimental_features_enabled("Blob filter")?;
-        Ok(self.chain(to_filter(Op::Blob(path.into(), BlobContent::Oid(oid)))))
+        Ok(self.chain(to_filter(Op::Insert(path.into(), InsertContent::Oid(oid)))))
     }
 
     /// Chain a filter that removes the `.link.josh` marker to produce a standalone history
@@ -192,8 +209,8 @@ impl Filter {
 
     /// Chain a filter that matches files by glob pattern
     /// Only files matching the pattern are included in the result
-    pub fn pattern(self, p: impl Into<String>) -> Filter {
-        self.chain(to_filter(Op::Pattern(p.into())))
+    pub fn pattern(self, p: impl AsRef<str>) -> anyhow::Result<Filter> {
+        Ok(self.chain(to_filter(Op::pattern(p.as_ref())?)))
     }
 
     /// Chain a filter that loads a workspace filter from a `workspace.josh` file
@@ -318,6 +335,23 @@ impl Filter {
             _ => *self,
         }
     }
+
+    /// Remove the given keys from this filter's outermost Meta wrapper, keeping
+    /// all other metadata in place. If no metadata remains the Meta wrapper is
+    /// dropped entirely. Metadata nested deeper inside the filter is untouched.
+    pub fn without_meta_keys(self, keys: &[&str]) -> Filter {
+        match to_op(self) {
+            Op::Meta(mut meta, inner_filter) => {
+                meta.retain(|k, _| !keys.contains(&k.as_str()));
+                if meta.is_empty() {
+                    inner_filter
+                } else {
+                    to_filter(Op::Meta(meta, inner_filter))
+                }
+            }
+            _ => self,
+        }
+    }
 }
 
 impl std::fmt::Debug for Filter {
@@ -339,7 +373,7 @@ pub fn invert(filter: Filter) -> anyhow::Result<Filter> {
 /// The sequence_number filter used for tracking commit sequence numbers. A memoized sentinel
 /// node whose OID is the zero OID, so identity comparison and cache-keying stay correct.
 pub fn sequence_number() -> Filter {
-    static F: LazyLock<Filter> = LazyLock::new(|| persist::sentinel(git2::Oid::zero()));
+    static F: LazyLock<Filter> = LazyLock::new(|| persist::sentinel(git2::Oid::ZERO_SHA1));
     *F
 }
 

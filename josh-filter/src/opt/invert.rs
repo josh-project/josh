@@ -13,6 +13,9 @@ pub fn invert(filter: Filter) -> anyhow::Result<Filter> {
         let result = match to_op_ref(filter) {
             Op::Nop => Some(Op::Nop),
             Op::Message(..) => Some(Op::Nop),
+            // `:SQUASH` only rewrites history; at tree level it is identity,
+            // so content pushed through it maps back unchanged.
+            Op::Squash(None) => Some(Op::Nop),
             Op::Prune => Some(Op::Prune),
             Op::Export => Some(Op::Export),
             Op::Empty => Some(Op::Empty),
@@ -22,14 +25,15 @@ pub fn invert(filter: Filter) -> anyhow::Result<Filter> {
                 Some(Op::File(source_path.clone(), dest_path.clone()))
             }
             Op::Prefix(path) => Some(Op::Subdir(path.clone())),
-            Op::Pattern(pattern) => Some(Op::Pattern(pattern.clone())),
-            Op::Rev(_) => Some(Op::Nop),
+            Op::Pattern(glob) => Some(Op::Pattern(glob.clone())),
             Op::RegexReplace(_) => Some(Op::Nop),
             Op::Pin(_) => Some(Op::Nop),
-            Op::Blob(path, _) => Some(Op::Exclude(to_filter(Op::File(path.clone(), path.clone())))),
-            Op::TreeId(path, _) => {
-                Some(Op::Exclude(to_filter(Op::File(path.clone(), path.clone()))))
-            }
+            // Insert and TreeId are generative: they fabricate tree entries and consume no
+            // input, so their inverse is empty. Using Exclude here would break composition
+            // uniqueness handling, since composing complements (Exclude) unions back to a
+            // no-op and lets sibling groups subtract each other away.
+            Op::Insert(_, _) => Some(Op::Empty),
+            Op::TreeId(_, _) => Some(Op::Empty),
             Op::ObjectDeref(path) => Some(Op::ObjectRef(path.clone())),
             Op::ObjectRef(path) => Some(Op::ObjectDeref(path.clone())),
             _ => None,
@@ -56,6 +60,7 @@ pub fn invert(filter: Filter) -> anyhow::Result<Filter> {
                     .collect::<Result<Vec<_>, _>>()?,
             ),
             Op::Exclude(filter) => Op::Exclude(invert(*filter)?),
+            Op::Select(filter) => Op::Select(invert(*filter)?),
             _ => return Err(anyhow!("no invert {:?}", filter)),
         });
 

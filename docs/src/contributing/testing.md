@@ -14,8 +14,8 @@ cargo test --all
 
 ### 1. Setup the test environment
 Due to the fact that the integration tests need additional tools and a more complex
-environment and due to the fact that the integration test are done using [cram](https://pypi.org/project/cram/).
-you will need to crate an extra environment to run these tests. To simplify the
+environment and due to the fact that the integration test are done using [scrut](https://github.com/facebookincubator/scrut)
+(with cram-style `.t` test files), you will need to crate an extra environment to run these tests. To simplify the
 setup of the integration testing we have set up a [Nix Shell](https://nixos.org/manual/nix/stable/#chap-installation) environment which
 you can start by using the following command if you have installed the [Nix Shell](https://nixos.org/manual/nix/stable/#chap-installation).
 
@@ -50,5 +50,5 @@ cargo build --manifest-path josh-proxy/Cargo.toml
 ### 3. Run the integration tests
 **Attention:** Be aware that all tests except the once in experimental should be green.
 ```shell
-sh run-tests.sh -v tests/
+sh run-tests.sh tests/
 ```

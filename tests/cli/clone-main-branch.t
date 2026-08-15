@@ -52,15 +52,6 @@ Test josh clone with main branch as default
 
   $ josh clone remote.git :/sub1 filtered-repo
   Added remote 'origin' with filter ':/sub1'
-  From file://${TESTTMP}/remote
-   * [new branch]      feature-branch -> refs/josh/remotes/origin/feature-branch
-   * [new branch]      main           -> refs/josh/remotes/origin/main
-  
-  From file://${TESTTMP}/filtered-repo
-   * [new branch]      feature-branch -> origin/feature-branch
-   * [new branch]      main           -> origin/main
-  
-  Fetched from remote: origin
   Switched to a new branch 'main'
   
   Cloned repository to: ${TESTTMP}/filtered-repo/
@@ -111,10 +102,6 @@ Test josh clone with main branch as default
   |   |-- feature-branch
   |   `-- main
   |-- josh
-  |   |-- cache
-  |   |   `-- 28
-  |   |       `-- 0
-  |   |           `-- bf567e0faf634a663d6cef48145a035e1974ab1d
   |   |-- filtered
   |   |   `-- bf567e0faf634a663d6cef48145a035e1974ab1d
   |   |       `-- heads
@@ -137,6 +124,6 @@ Test josh clone with main branch as default
   |       `-- main
   `-- tags
   
-  18 directories, 12 files
+  15 directories, 11 files
 
   $ cd ..

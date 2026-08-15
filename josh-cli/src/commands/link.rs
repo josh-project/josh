@@ -122,7 +122,7 @@ fn handle_link_add(
         .context("Failed to apply export filter")?;
 
     // If the export filter found no local content, fall back to fetching the remote.
-    let initial_oid = if export_oid != git2::Oid::zero() {
+    let initial_oid = if export_oid != git2::Oid::ZERO_SHA1 {
         eprintln!(
             "Using local content at '{}' ({})",
             normalized_path, export_oid
@@ -282,7 +282,7 @@ fn handle_link_update(
         );
         let filtered_oid = josh_core::filter_commit(transaction, roundtrip, head_commit.id())
             .context("Failed to apply filter")?;
-        if filtered_oid == git2::Oid::zero() {
+        if filtered_oid == git2::Oid::ZERO_SHA1 {
             vec![]
         } else {
             let filtered_tree = repo
@@ -404,7 +404,7 @@ fn handle_link_push(
     let exported_commit = josh_core::filter_commit(transaction, combined_filter, head_commit.id())
         .context("Failed to apply export filter")?;
 
-    if exported_commit == git2::Oid::zero() {
+    if exported_commit == git2::Oid::ZERO_SHA1 {
         return Err(anyhow!("No content found at path '{}' to push", args.path));
     }
 

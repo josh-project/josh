@@ -65,9 +65,6 @@ Fetch from central so `--base=master` can be resolved against
 tracking ref is updated — only the unfiltered base is populated.
 
   $ josh fetch --remote central
-  From file://${TESTTMP}/central
-   * [new branch]      master     -> refs/josh/remotes/central/master
-  
   Fetched from remote: central
 
 Push the vendor history into central as a new branch, using central
@@ -114,12 +111,7 @@ confirm the filtered view of `vendor-bring-in` is the original vendor
 history — same commit OIDs, same tree, same file content.
 
   $ josh fetch --remote central
-  From file://${TESTTMP}/central
-   * [new branch]      vendor-bring-in -> refs/josh/remotes/central/vendor-bring-in
-  
-  From file://${TESTTMP}/vendored
-   * [new branch]      vendor-bring-in -> central/vendor-bring-in
-  
+  new branch vendor-bring-in
   Fetched from remote: central
 
 Commit SHA equality: filtering `central/vendor-bring-in` must yield the

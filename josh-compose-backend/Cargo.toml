@@ -1,0 +1,13 @@
+[package]
+authors = ["Josh Project authors <contact@josh-project.dev>"]
+description = "Execution backend traits for josh-compose"
+edition = "2024"
+keywords = ["git", "monorepo", "workflow", "scm"]
+license-file = "../LICENSE"
+name = "josh-compose-backend"
+readme = "../README.md"
+repository = "https://github.com/josh-project/josh"
+version = "26.7.28"
+
+[dependencies]
+anyhow.workspace = true

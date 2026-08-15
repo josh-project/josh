@@ -21,6 +21,7 @@ worktree = :[
     ::Cargo.lock
     ::rust-toolchain.toml
     ::**/.cargo/
+    ::vendor/
     :[
         ::**/lib.rs
         ::**/benches/**/*.rs

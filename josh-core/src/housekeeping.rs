@@ -1,5 +1,5 @@
 use crate::*;
-use anyhow::{Context, anyhow};
+use anyhow::anyhow;
 use itertools::Itertools;
 use std::collections::{BTreeSet, HashMap};
 use std::sync::LazyLock;
@@ -11,7 +11,7 @@ static KNOWN_FILTERS: LazyLock<std::sync::Mutex<KnownViews>> =
     LazyLock::new(|| std::sync::Mutex::new(std::collections::HashMap::new()));
 
 pub fn list_refs(
-    repo: &git2::Repository,
+    transaction: &cache::Transaction,
     upstream_repo: &str,
 ) -> anyhow::Result<Vec<(String, git2::Oid)>> {
     let mut refs = vec![];
@@ -20,24 +20,21 @@ pub fn list_refs(
         .iter()
         .join("/");
 
-    for glob in [
-        format!("{}/refs/heads/*", &prefix),
-        format!("{}/refs/tags/*", &prefix),
+    for iter_prefix in [
+        format!("{}/refs/heads/", &prefix),
+        format!("{}/refs/tags/", &prefix),
     ]
     .iter()
     {
-        for reference in repo.references_glob(glob)? {
-            let reference = reference.context("unable to obtain reference")?;
+        transaction.for_each_ref_prefixed(iter_prefix, |name, target| {
+            let name = name
+                .strip_prefix(&prefix)
+                .and_then(|name| name.strip_prefix('/'))
+                .ok_or_else(|| anyhow!("bug: unexpected result of prefix iteration"))?;
 
-            if let (Some(name), Some(target)) = (reference.name(), reference.target()) {
-                let name = name
-                    .strip_prefix(&prefix)
-                    .and_then(|name| name.strip_prefix('/'))
-                    .ok_or_else(|| anyhow!("bug: unexpected result of a glob"))?;
-
-                refs.push((name.to_owned(), target))
-            }
-        }
+            refs.push((name.to_owned(), target));
+            Ok(())
+        })?;
     }
 
     Ok(refs)
@@ -51,32 +48,32 @@ pub fn remember_filter(upstream_repo: &str, filter_spec: &str) {
     {
         let known_f = &mut known_filters
             .entry(upstream_repo.trim_start_matches('/').to_string())
-            .or_insert_with(|| (git2::Oid::zero(), BTreeSet::new()));
+            .or_insert_with(|| (git2::Oid::ZERO_SHA1, BTreeSet::new()));
 
         known_f.1.insert(filter_spec.to_string());
     }
 }
 
 pub fn default_from_to(
-    repo: &git2::Repository,
+    transaction: &cache::Transaction,
     namespace: &str,
     upstream_repo: &str,
     filter_spec: &str,
-) -> Vec<(String, String)> {
+) -> anyhow::Result<Vec<(String, String)>> {
     let mut refs = vec![];
 
-    for glob in [
-        format!("refs/josh/upstream/{}/refs/heads/*", &to_ns(upstream_repo)),
-        format!("refs/josh/upstream/{}/refs/tags/*", &to_ns(upstream_repo)),
+    for prefix in [
+        format!("refs/josh/upstream/{}/refs/heads/", &to_ns(upstream_repo)),
+        format!("refs/josh/upstream/{}/refs/tags/", &to_ns(upstream_repo)),
     ]
     .iter()
     {
-        for refname in repo.references_glob(glob).unwrap().names() {
-            let refname = refname.unwrap();
+        transaction.for_each_ref_prefixed(prefix, |refname, _| {
             let to_ref = refname.replacen("refs/josh/upstream", "refs/namespaces", 1);
             let to_ref = to_ref.replacen(&to_ns(upstream_repo), namespace, 1);
             refs.push((refname.to_owned(), to_ref.clone()));
-        }
+            Ok(())
+        })?;
     }
 
     // no need to remember the nop filter since we already keep a reference to
@@ -86,23 +83,25 @@ pub fn default_from_to(
     {
         let known_f = &mut known_filters
             .entry(upstream_repo.trim_start_matches('/').to_string())
-            .or_insert_with(|| (git2::Oid::zero(), BTreeSet::new()));
+            .or_insert_with(|| (git2::Oid::ZERO_SHA1, BTreeSet::new()));
 
         known_f.1.insert(filter_spec.to_string());
     }
 
-    refs
+    Ok(refs)
 }
 
 pub fn memorize_from_to(
-    repo: &git2::Repository,
+    transaction: &cache::Transaction,
     namespace: &str,
     upstream_repo: &str,
 ) -> anyhow::Result<((String, git2::Oid), String)> {
     let from = format!("refs/josh/upstream/{}/HEAD", &to_ns(upstream_repo));
     let to_ref = format!("refs/{}/HEAD", &namespace);
 
-    let oid = repo.revparse_single(&from)?.id();
+    let oid = transaction
+        .resolve_ref(&from)?
+        .ok_or_else(|| anyhow!("missing ref: {}", from))?;
     Ok(((from, oid), to_ref))
 }
 
@@ -124,11 +123,10 @@ pub fn discover_filter_candidates(transaction: &cache::Transaction) -> anyhow::R
     let trace_s = span!(Level::TRACE, "discover_filter_candidates");
     let _e = trace_s.enter();
 
-    let refname = "refs/josh/upstream/*.git/HEAD".to_string();
-
-    for reference in repo.references_glob(&refname)? {
-        let r = reference?;
-        let name = r.name().ok_or_else(|| anyhow!("reference without name"))?;
+    transaction.for_each_ref_prefixed("refs/josh/upstream/", |name, target| {
+        if !name.ends_with(".git/HEAD") {
+            return Ok(());
+        }
         tracing::trace!("find: {}", name);
         let name = UpstreamRef::from_str(name)
             .ok_or_else(|| anyhow!("not a ns"))?
@@ -138,32 +136,35 @@ pub fn discover_filter_candidates(transaction: &cache::Transaction) -> anyhow::R
 
         let known_f = &mut known_filters
             .entry(name.clone())
-            .or_insert_with(|| (git2::Oid::zero(), BTreeSet::new()));
+            .or_insert_with(|| (git2::Oid::ZERO_SHA1, BTreeSet::new()));
 
-        if let Some(target) = r.target()
-            && known_f.0 != target
-        {
-            let hs = find_all_workspaces_and_subdirectories(&r.peel_to_tree()?)?;
+        if known_f.0 != target {
+            let tree = repo
+                .find_object(target, None)?
+                .peel(git2::ObjectType::Tree)?;
+            let hs = find_all_workspaces_and_subdirectories(
+                tree.as_tree().ok_or_else(|| anyhow!("not a tree"))?,
+            )?;
             known_f.0 = target;
             for i in hs {
                 known_f.1.insert(i);
             }
         }
-    }
+        Ok(())
+    })?;
 
-    let refname = "josh/filtered/*.git/*/HEAD".to_string();
-    for reference in repo.references_glob(&refname)? {
-        let r = reference?;
-        let name = r.name().ok_or_else(|| anyhow!("reference without name"))?;
+    // This prefix is missing the leading "refs/" and so has never matched anything.
+    transaction.for_each_ref_prefixed("josh/filtered/", |name, _| {
         tracing::trace!("known: {}", name);
         let filtered = FilteredRefRegex::from_str(name).ok_or_else(|| anyhow!("not a ns"))?;
 
         known_filters
             .entry(from_ns(&filtered.upstream_repo))
-            .or_insert_with(|| (git2::Oid::zero(), BTreeSet::new()))
+            .or_insert_with(|| (git2::Oid::ZERO_SHA1, BTreeSet::new()))
             .1
             .insert(from_ns(&filtered.filter_spec));
-    }
+        Ok(())
+    })?;
 
     Ok(())
 }
@@ -178,7 +179,7 @@ pub fn find_all_workspaces_and_subdirectories(
             return 0;
         }
 
-        if entry.name() == Some("workspace.josh") {
+        if entry.name().ok() == Some("workspace.josh") {
             hs.insert(format!(":workspace={}", root.trim_matches('/')));
         }
         let v = format!("::{}/", root.trim_matches('/'));
@@ -198,25 +199,28 @@ pub fn get_info(
 ) -> anyhow::Result<String> {
     let _trace_s = span!(Level::TRACE, "get_info");
 
-    let obj = transaction
+    let refname = transaction.refname(headref);
+    let oid = transaction
+        .resolve_ref(&refname)?
+        .ok_or_else(|| anyhow!("missing ref: {}", refname))?;
+    let commit = transaction
         .repo()
-        .revparse_single(&transaction.refname(headref))?;
-
-    let commit = obj.peel_to_commit()?;
+        .find_object(oid, None)?
+        .peel_to_commit()?;
 
     let mut meta = HashMap::new();
     meta.insert("sha1".to_owned(), "".to_owned());
-    let filtered = filter::apply_to_commit(filter, &commit, transaction)?;
+    let filtered = filter::apply_to_commit(filter, commit.id(), transaction)?;
 
     let parent_ids = |commit: &git2::Commit| {
         commit
             .parent_ids()
             .map(|x| {
-                json!({
+                serde_json::json!({
                     "commit": x.to_string(),
                     "tree": transaction.repo().find_commit(x)
                         .map(|c| { c.tree_id() })
-                        .unwrap_or_else(|_| git2::Oid::zero())
+                        .unwrap_or_else(|_| git2::Oid::ZERO_SHA1)
                         .to_string(),
                 })
             })
@@ -224,20 +228,20 @@ pub fn get_info(
     };
 
     let t = if let Ok(filtered) = transaction.repo().find_commit(filtered) {
-        json!({
+        serde_json::json!({
             "commit": filtered.id().to_string(),
             "tree": filtered.tree_id().to_string(),
             "parents": parent_ids(&filtered),
         })
     } else {
-        json!({
-            "commit": git2::Oid::zero().to_string(),
-            "tree": git2::Oid::zero().to_string(),
-            "parents": json!([]),
+        serde_json::json!({
+            "commit": git2::Oid::ZERO_SHA1.to_string(),
+            "tree": git2::Oid::ZERO_SHA1.to_string(),
+            "parents": serde_json::json!([]),
         })
     };
 
-    let s = json!({
+    let s = serde_json::json!({
         "commit": commit.id().to_string(),
         "tree": commit.tree_id().to_string(),
         "parents": parent_ids(&commit),
@@ -261,7 +265,7 @@ pub fn refresh_known_filters(
             tracing::trace!("background rebuild: {:?} {:?}", upstream_repo, filter_spec);
 
             if let Ok((from, to_ref)) = memorize_from_to(
-                transaction_mirror.repo(),
+                transaction_mirror,
                 &to_filtered_ref(upstream_repo, filter_spec),
                 upstream_repo,
             ) {

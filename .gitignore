@@ -5,5 +5,10 @@ e2e-tests/_remote*
 docs/_build
 .cargo_home
 .idea
-.claude
+.claude/*
+!.claude/skills
 .josh
+.agents/work
+**/.DS_Store
+**/.pixi
+**/__pycache__

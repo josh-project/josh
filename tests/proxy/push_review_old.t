@@ -86,7 +86,7 @@ Flushed credential cache
   .
   |-- josh
   |   `-- cache
-  |       `-- 28
+  |       `-- 33
   |           `-- sled
   |               |-- blobs
   |               |-- conf
@@ -144,10 +144,10 @@ Flushed credential cache
       |   `-- pack
       |       |-- pack-2f3daab2c2bc0fa3c2cb94022cd73dbeb79fba8b.idx
       |       |-- pack-2f3daab2c2bc0fa3c2cb94022cd73dbeb79fba8b.pack
-      |       |-- pack-43b004c57a05484b0057ece370e309a1528a2995.idx
-      |       |-- pack-43b004c57a05484b0057ece370e309a1528a2995.pack
       |       |-- pack-a724713a58e1918b9032aed364764a0a4cece84b.idx
-      |       `-- pack-a724713a58e1918b9032aed364764a0a4cece84b.pack
+      |       |-- pack-a724713a58e1918b9032aed364764a0a4cece84b.pack
+      |       |-- pack-d30dedde21210b124782caf6ef83f7cf4c11a181.idx
+      |       `-- pack-d30dedde21210b124782caf6ef83f7cf4c11a181.pack
       `-- refs
           |-- heads
           |-- namespaces

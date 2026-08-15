@@ -69,11 +69,6 @@
   |-- heads
   |   `-- master
   |-- josh
-  |   |-- cache
-  |   |   `-- 28
-  |   |       `-- 0
-  |   |           |-- 5e165aaee1e65cc624bbb41dc6d1199316dfc1e5
-  |   |           `-- bf567e0faf634a663d6cef48145a035e1974ab1d
   |   `-- filter
   |       `-- libs
   |           |-- foo
@@ -85,7 +80,7 @@
   |       `-- master
   `-- tags
   
-  11 directories, 8 files
+  8 directories, 6 files
 
   $ git read-tree HEAD josh/filter/libs/master josh/filter/libs/foo
   $ git commit -m "sync"

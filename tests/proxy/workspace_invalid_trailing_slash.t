@@ -185,7 +185,7 @@ Flushed credential cache
   .
   |-- josh
   |   `-- cache
-  |       `-- 28
+  |       `-- 33
   |           `-- sled
   |               |-- blobs
   |               |-- conf
@@ -268,8 +268,6 @@ Flushed credential cache
       |       |-- pack-6094f48eea5b3933a6584a6925dac03cf644f01e.pack
       |       |-- pack-721a5e2fcf4ed965e49124b30f161a6faead2313.idx
       |       |-- pack-721a5e2fcf4ed965e49124b30f161a6faead2313.pack
-      |       |-- pack-90b662d3c4386bdd60eaa36cc1699fa799a7dd30.idx
-      |       |-- pack-90b662d3c4386bdd60eaa36cc1699fa799a7dd30.pack
       |       |-- pack-9f918747f4ae3e54ccf603a1e77dd40c584aa821.idx
       |       `-- pack-9f918747f4ae3e54ccf603a1e77dd40c584aa821.pack
       `-- refs
@@ -277,4 +275,4 @@ Flushed credential cache
           |-- namespaces
           `-- tags
   
-  50 directories, 44 files
+  50 directories, 42 files

@@ -7,18 +7,14 @@ license-file = "../LICENSE"
 name = "josh-compose"
 readme = "../README.md"
 repository = "https://github.com/josh-project/josh"
-version = "26.6.11"
+version = "26.7.28"
 
 [dependencies]
 anyhow.workspace = true
-backon.workspace = true
 defer.workspace = true
-hex.workspace = true
-libc.workspace = true
-log.workspace = true
-rand.workspace = true
 git2.workspace = true
 josh-core.workspace = true
 josh-filter.workspace = true
+josh-compose-backend.workspace = true
 
 tar = "0.4"

@@ -1,6 +1,6 @@
 [package]
 name = "josh-github-webhooks"
-version = "26.6.11"
+version = "26.7.28"
 edition = "2024"
 authors = ["Josh Project authors <contact@josh-project.dev>"]
 description = "GitHub webhook handling for Josh"
@@ -19,7 +19,7 @@ serde.workspace = true
 serde_json.workspace = true
 chrono.workspace = true
 
-constant_time_eq = "^0.4"
+constant_time_eq = "^0.5"
 hex = "^0.4"
 
 [dev-dependencies]

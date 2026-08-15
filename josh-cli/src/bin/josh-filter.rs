@@ -1,9 +1,6 @@
 #![warn(unused_extern_crates)]
 
-#[macro_use]
-extern crate rs_tracing;
-
-use anyhow::Context;
+use anyhow::{Context, anyhow};
 use std::fs::read_to_string;
 use std::io::Write;
 
@@ -74,12 +71,6 @@ fn make_app() -> clap::Command {
                 .short('d'),
         )
         .arg(
-            clap::Arg::new("trace")
-                .action(clap::ArgAction::SetTrue)
-                .help("Write a trace in chrome tracing format")
-                .short('t'),
-        )
-        .arg(
             clap::Arg::new("print-filter")
                 .action(clap::ArgAction::SetTrue)
                 .help("Pretty print the filter and exit")
@@ -122,11 +113,6 @@ fn make_app() -> clap::Command {
                 .short('g'),
         )
         .arg(
-            clap::Arg::new("max_comp")
-                .long("max_comp")
-                .short('m'),
-        )
-        .arg(
             clap::Arg::new("reverse").action(clap::ArgAction::SetTrue).long("reverse").help(
                 "reverse-apply the filter to the output reference to update the input reference",
             ),
@@ -134,6 +120,11 @@ fn make_app() -> clap::Command {
         .arg(
             clap::Arg::new("check-roundtrip").action(clap::ArgAction::SetTrue).long("check-roundtrip").help(
                 "If --reverse is also set, check if applying the filter to the result of the reverse filter gives back the input",
+            ),
+        )
+        .arg(
+            clap::Arg::new("force").action(clap::ArgAction::SetTrue).long("force").help(
+                "Allow --reverse to move the input reference to a non-fast-forward result, discarding commits made on it since the filtered reference was created",
             ),
         )
         .arg(
@@ -179,10 +170,6 @@ impl josh_core::cache::FilterHook for GitNotesFilterHook {
 
 fn run_filter(args: Vec<String>) -> anyhow::Result<i32> {
     let args = make_app().get_matches_from(args);
-
-    if args.get_flag("trace") {
-        rs_tracing::open_trace_file!(".").unwrap();
-    }
 
     if args.get_flag("version") {
         println!("Version: {}", josh_core::VERSION);
@@ -320,9 +307,6 @@ fn run_filter(args: Vec<String>) -> anyhow::Result<i32> {
     };
 
     let finish = defer::defer(|| {
-        if args.get_flag("trace") {
-            rs_tracing::close_trace_file!();
-        }
         if args.get_flag("cache-stats") {
             josh_core::cache::sled_print_stats().expect("failed to collect cache stats");
         }
@@ -361,7 +345,7 @@ fn run_filter(args: Vec<String>) -> anyhow::Result<i32> {
     let old_oid = if let Ok(id) = transaction.repo().refname_to_id(target) {
         id
     } else {
-        git2::Oid::zero()
+        git2::Oid::ZERO_SHA1
     };
 
     let (mut updated_refs, errors) = josh_core::filter_refs(&transaction, filterobj, &refs);
@@ -384,16 +368,8 @@ fn run_filter(args: Vec<String>) -> anyhow::Result<i32> {
     josh_core::update_refs(&transaction, updated_refs.clone());
 
     if let Some(searchstring) = args.get_one::<String>("search") {
-        let ifilterobj = filterobj.chain(josh_core::filter::parse(":SQUASH:INDEX")?);
-
-        let max_complexity: usize = args
-            .get_one::<String>("max_comp")
-            .unwrap_or(&"6".to_string())
-            .parse()?;
-
         let commit = repo.revparse_single(&input_ref)?.peel_to_commit()?;
 
-        let index_commit = josh_core::filter_commit(&transaction, ifilterobj, commit.id())?;
         let tree = repo
             .find_commit(josh_core::filter_commit(
                 &transaction,
@@ -401,21 +377,28 @@ fn run_filter(args: Vec<String>) -> anyhow::Result<i32> {
                 commit.id(),
             )?)?
             .tree()?;
-        let index_tree = repo.find_commit(index_commit)?.tree()?;
 
         /* let start = std::time::Instant::now(); */
-        let candidates = josh_core::filter::tree::search_candidates(
-            &transaction,
-            &index_tree,
-            searchstring,
-            max_complexity,
-        )?;
-        let matches = josh_core::filter::tree::search_matches(
-            &transaction,
-            &tree,
-            searchstring,
-            &candidates,
-        )?;
+        // The trigram index is experimental; without it every file is a candidate and
+        // search_matches does all the filtering, so results are identical, just slower.
+        let candidates = if josh_core::filter::experimental_features_enabled() {
+            let ifilterobj = filterobj.chain(josh_core::filter::parse(":SQUASH:INDEX")?);
+            let index_commit = josh_core::filter_commit(&transaction, ifilterobj, commit.id())?;
+            let index_tree = repo.find_commit(index_commit)?.tree()?;
+            josh_search::search_candidates(&repo, &index_tree, &tree, searchstring)?
+        } else {
+            let mut scan = vec![];
+            tree.walk(git2::TreeWalkMode::PreOrder, |root, entry| {
+                if entry.kind() == Some(git2::ObjectType::Blob)
+                    && let Ok(name) = entry.name()
+                {
+                    scan.push(format!("{}{}", root, name));
+                }
+                0
+            })?;
+            scan
+        };
+        let matches = josh_search::search_matches(&repo, &tree, searchstring, &candidates)?;
         /* let duration = start.elapsed(); */
 
         for r in matches {
@@ -441,6 +424,20 @@ fn run_filter(args: Vec<String>) -> anyhow::Result<i32> {
             None,
         ) {
             Ok(rewritten) => {
+                // Concurrent commits on the input reference that are not
+                // represented in the pushed filtered state would be silently
+                // discarded by the ref update: require fast-forward like git.
+                if rewritten != unfiltered_old
+                    && !repo.graph_descendant_of(rewritten, unfiltered_old)?
+                    && !args.get_flag("force")
+                {
+                    return Err(anyhow!(
+                        "refusing non-fast-forward update of {} -- it contains commits that \
+                         the reverse apply would discard. Re-apply the filter and rebase the \
+                         filtered changes onto the result, or pass --force",
+                        input_ref
+                    ));
+                }
                 repo.reference(&input_ref, rewritten, true, "unapply_filter")?;
                 rewritten
             }

@@ -1,4 +1,5 @@
 use super::invert::invert;
+use super::structure::distributes_over_compose;
 use super::{FLATTENED, FLATTENED_FULL};
 use crate::filter::Filter;
 use crate::op::Op;
@@ -65,7 +66,15 @@ fn flatten_impl(filter: Filter, full: bool) -> Filter {
                         .iter()
                         .enumerate()
                         .all(|(j, f)| j == i || invert(*f).is_ok());
-                    if !others_invertible {
+                    // Pulling an element that sits *after* the Compose into each branch is only
+                    // valid if it commutes with `tree::compose`. Elements before the Compose
+                    // always do (`A:(compose C) == compose over c of (A:c)`), but a suffix element
+                    // like `Exclude(File(..))` reads paths that may only meet in the composed tree,
+                    // so distributing it changes the result. Leave the Chain intact in that case.
+                    let suffix_distributes = flattened[i + 1..]
+                        .iter()
+                        .all(|f| distributes_over_compose(*f));
+                    if !others_invertible || !suffix_distributes {
                         break;
                     }
                     // Distributing a trailing Compose with a non-empty prefix is often futile: it
@@ -94,6 +103,7 @@ fn flatten_impl(filter: Filter, full: bool) -> Filter {
         }
         Op::Subtract(a, b) => Op::Subtract(flatten_impl(*a, full), flatten_impl(*b, full)),
         Op::Exclude(b) => Op::Exclude(flatten_impl(*b, full)),
+        Op::Select(b) => Op::Select(flatten_impl(*b, full)),
         Op::Pin(b) => Op::Pin(flatten_impl(*b, full)),
         Op::Starlark(path, sub) => Op::Starlark(path.clone(), flatten_impl(*sub, full)),
         Op::TreeId(path, sub) => Op::TreeId(path.clone(), flatten_impl(*sub, full)),

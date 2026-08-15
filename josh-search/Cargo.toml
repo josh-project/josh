@@ -1,0 +1,26 @@
+[package]
+name = "josh-search"
+version = "26.7.28"
+repository = "https://github.com/josh-project/josh"
+authors = ["Josh Project authors <contact@josh-project.dev>"]
+license-file = "../LICENSE"
+description = "Trigram based code search index for git repositories"
+keywords = ["git", "search", "index", "trigram"]
+readme = "../README.md"
+edition = "2024"
+
+[[bench]]
+name = "trigram"
+harness = false
+
+[dependencies]
+anyhow.workspace = true
+git2.workspace = true
+
+[dev-dependencies]
+criterion2 = { version = "3.0.4" }
+rand = "0.10.2"
+tempfile.workspace = true
+tracing.workspace = true
+josh-core.workspace = true
+josh-test-support = { path = "../devtools/josh-test-support" }

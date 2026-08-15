@@ -166,13 +166,59 @@ Once a PR is approved and its required checks pass, merge it through the forge's
 UI. Then sync your local branch to account for the merged commit:
 
 ```shell
-josh pull --rebase --autostash
+josh changes pull
 ```
 
-This rebases your remaining local commits on top of the updated upstream state.
-`--autostash` ensures any uncommitted changes are preserved across the operation. After
-pulling, the next `josh changes publish` will retarget and promote the next PR in the stack
-from draft to ready for review.
+This fast-forwards your branch to the updated upstream state, skipping local commits
+whose `Change:` footer already appears upstream (i.e. merged changes) and restacking
+your remaining changes on top. After pulling, the next `josh changes publish` will
+retarget and promote the next PR in the stack from draft to ready for review.
+
+## Publishing from a fork
+
+If you cannot push to the target repository, point Josh at your own fork as a separate
+push destination while still opening all pull requests against the target. Configure the
+fork when adding the remote:
+
+```shell
+josh clone https://github.com/UPSTREAM/repo :/ work --push-url https://github.com/ME/repo
+```
+
+(or `josh remote add <name> <upstream-url> <filter> --push-url <fork-url>` for an existing
+repository). `josh changes publish` then pushes the `@changes/…` refs to your fork, and
+opens each pull request against the upstream repository with a cross-fork head
+(`ME:@changes/…`).
+
+Because a pull request's base branch must live in the repository the PR targets, fork
+pull requests base on the upstream **default branch** rather than on an intermediate
+`@base/…` branch. A change that still depends on unmerged predecessors is opened as a
+**draft** — its diff temporarily includes those predecessors — and is promoted to ready
+automatically once they merge and you re-publish.
+
+## Publishing to Gerrit
+
+Select the Gerrit forge when cloning (it cannot be auto-detected from the URL):
+
+```shell
+josh clone https://gerrit.example.com/repo :/ work --forge gerrit
+```
+
+`josh changes publish` then pushes to Gerrit's magic ref `refs/for/<branch>`, where the
+push itself creates or updates the review. No `@changes/@base` refs are written and no
+forge API is called, so there is nothing to `josh auth login`: authentication is handled
+by git (your SSH key or HTTP credential helper).
+
+Two publish modes are available, selected with `--gerrit-mode` and stored per-remote:
+
+- **`independent`** (default) publishes only the changes that have no unmerged
+  dependencies, each as its own separately-submittable review; dependent changes wait
+  until their predecessors merge.
+- **`stack`** publishes the whole history at once as a single Gerrit relation chain.
+
+Josh generates the required `Change-Id: I<40 hex>` trailer for every pushed commit,
+deterministically derived from the change's josh id — re-publishing therefore lands as a
+new patchset on the same Gerrit change rather than a duplicate. See the
+[forge reference](../reference/forge.md#gerrit) for details.
 
 ## Without forge integration
 

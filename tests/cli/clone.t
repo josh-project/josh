@@ -30,15 +30,6 @@
 
   $ josh clone remote/libs :/sub1 libs
   Added remote 'origin' with filter ':/sub1'
-  From file://${TESTTMP}/remote/libs
-   * [new branch]      feature    -> refs/josh/remotes/origin/feature
-   * [new branch]      master     -> refs/josh/remotes/origin/master
-  
-  From file://${TESTTMP}/libs
-   * [new branch]      feature    -> origin/feature
-   * [new branch]      master     -> origin/master
-  
-  Fetched from remote: origin
   Already on 'master'
   
   Cloned repository to: ${TESTTMP}/libs/
@@ -51,10 +42,6 @@
   |-- heads
   |   `-- master
   |-- josh
-  |   |-- cache
-  |   |   `-- 28
-  |   |       `-- 0
-  |   |           `-- bf567e0faf634a663d6cef48145a035e1974ab1d
   |   |-- filtered
   |   |   `-- bf567e0faf634a663d6cef48145a035e1974ab1d
   |   |       `-- heads
@@ -77,7 +64,7 @@
   |       `-- master
   `-- tags
   
-  18 directories, 11 files
+  15 directories, 10 files
 
   $ tree
   .

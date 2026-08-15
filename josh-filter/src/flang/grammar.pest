@@ -20,8 +20,8 @@ char = {
     | "\\" ~ ("\"" | "\'" | "\\" | "/" | "b" | "f" | "n" | "r" | "t" | "u")
 }
 
-blob_oid = @{ ASCII_HEX_DIGIT+ }
-filter_blob = { CMD_START ~ "$" ~ argument ~ "=" ~ (string | blob_oid) }
+object_oid = @{ ASCII_HEX_DIGIT+ }
+filter_insert = { CMD_START ~ "$" ~ argument ~ "=" ~ (string | object_oid) }
 
 filter_spec = { (
     filter_group
@@ -30,7 +30,7 @@ filter_spec = { (
   | filter_unapply
   | filter_replace
   | filter_squash
-  | filter_blob
+  | filter_insert
   | filter_presub
   | filter_subdir
   | filter_stored

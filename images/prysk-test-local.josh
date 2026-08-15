@@ -1,4 +1,0 @@
-bases = :[
-    :#BASE_IMAGE[:+images/prysk-test]
-]
-context = :/images/prysk-test-local

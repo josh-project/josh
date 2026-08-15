@@ -62,8 +62,11 @@ pub enum LazyRef {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
-pub enum BlobContent {
+pub enum InsertContent {
     Inline(String),
+    /// An object referenced by OID. The kind (blob or tree) is resolved against a repository
+    /// when the filter is applied or persisted; `persist::as_tree` references the object as a
+    /// tree entry with the matching mode so it is reachable from the filter tree.
     Oid(git2::Oid),
 }
 
@@ -133,7 +136,7 @@ pub enum Op {
     Index,
     Invert,
 
-    Blob(std::path::PathBuf, BlobContent), // Blob(dest_path, content)
+    Insert(std::path::PathBuf, InsertContent), // Insert(dest_path, content)
     File(std::path::PathBuf, std::path::PathBuf), // File(dest_path, source_path)
     Prefix(std::path::PathBuf),
     Subdir(std::path::PathBuf),
@@ -144,7 +147,7 @@ pub enum Op {
     ObjectDeref(std::path::PathBuf),
     ObjectRef(std::path::PathBuf),
 
-    Pattern(String),
+    Pattern(crate::pattern::CompiledPattern),
     Message(String, Regex),
 
     Unapply(LazyRef, Filter),
@@ -153,7 +156,18 @@ pub enum Op {
     Chain(Vec<Filter>),
     Subtract(Filter, Filter),
     Exclude(Filter),
+    Select(Filter),
     Pin(Filter),
 
     Downstack(LazyRef),
+}
+
+impl Op {
+    /// Construct a `Pattern` op, compiling its glob. A bad glob therefore errors where the
+    /// pattern enters the system (parse, deserialization) instead of on first apply.
+    pub fn pattern(pattern: &str) -> anyhow::Result<Op> {
+        Ok(Op::Pattern(crate::pattern::CompiledPattern::compile(
+            pattern,
+        )?))
+    }
 }

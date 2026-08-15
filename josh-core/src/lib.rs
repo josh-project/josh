@@ -14,9 +14,6 @@ macro_rules! ok_or {
     };
 }
 
-#[macro_use]
-extern crate rs_tracing;
-
 pub mod cache;
 pub mod filter;
 pub mod git;
@@ -26,6 +23,8 @@ pub mod link;
 pub mod submodules;
 pub mod trailers;
 
+pub use josh_gix_ext as objects;
+
 #[derive(
     Clone, Hash, PartialEq, Eq, Copy, PartialOrd, Ord, Debug, serde::Serialize, serde::Deserialize,
 )]
@@ -34,7 +33,7 @@ pub struct Oid(git2::Oid);
 
 impl Default for Oid {
     fn default() -> Self {
-        Oid(git2::Oid::zero())
+        Oid(git2::Oid::ZERO_SHA1)
     }
 }
 
@@ -181,7 +180,7 @@ pub fn filter_commit(
     } else {
         tracing::trace!("apply_to_commit");
 
-        filter::apply_to_commit(filterobj, &original_commit, transaction)?
+        filter::apply_to_commit(filterobj, original_commit.id(), transaction)?
     };
 
     transaction.insert_ref(filterobj, oid, filter_commit);
@@ -194,7 +193,6 @@ pub fn filter_refs(
     filterobj: filter::Filter,
     refs: &[(String, git2::Oid)],
 ) -> (Vec<(String, git2::Oid)>, Vec<(String, anyhow::Error)>) {
-    rs_tracing::trace_scoped!("filter_refs", "spec": filter::spec(filterobj));
     let s = tracing::Span::current();
     let _e = s.enter();
     let mut updated = vec![];
@@ -213,7 +211,7 @@ pub fn filter_refs(
                     warn = true,
                     from = k.0.as_str(),
                 );
-                git2::Oid::zero()
+                git2::Oid::ZERO_SHA1
             }
         };
         updated.push((k.0.to_string(), oid));
@@ -228,11 +226,7 @@ pub fn update_refs(transaction: &cache::Transaction, updated: Vec<(String, git2:
             continue;
         }
 
-        if let Err(e) = transaction
-            .repo()
-            .reference(&refn, filtered_commit, true, "update_refs")
-            .map(|_| ())
-        {
+        if let Err(e) = transaction.update_ref(&refn, filtered_commit, "update_refs") {
             tracing::error!(
                 error = %e,
                 filtered_commit = %filtered_commit,

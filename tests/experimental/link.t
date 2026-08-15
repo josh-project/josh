@@ -21,7 +21,7 @@ Test Link filter (identical to Adapt)
 
   $ cd ${TESTTMP}/main-repo
   $ git submodule add ../submodule-repo libs
-  Cloning into '/tmp/prysk-tests-*/link.t/main-repo/libs'... (glob)
+  Cloning into '/tmp/*/link.t/main-repo/libs'... (glob)
   done.
   $ git add .gitmodules libs
   $ git commit -m "add libs submodule" 1> /dev/null

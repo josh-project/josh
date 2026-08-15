@@ -4,7 +4,7 @@
  */
 
 use crate::filter::Filter;
-use josh_git_data::PassthroughHasher;
+use josh_memodb::PassthroughHasher;
 use std::collections::{HashMap, HashSet};
 use std::hash::BuildHasherDefault;
 use std::sync::LazyLock;

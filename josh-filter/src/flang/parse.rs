@@ -4,7 +4,7 @@ use crate::filter::Filter;
 use crate::opt;
 use crate::opt::invert;
 use crate::persist::to_filter;
-use crate::{BlobContent, LazyRef, Op, Regex, RevMatch};
+use crate::{InsertContent, LazyRef, Op, Regex, RevMatch};
 
 use anyhow::{Context, anyhow};
 use indoc::{formatdoc, indoc};
@@ -91,7 +91,10 @@ fn make_filter(args: &[&str]) -> anyhow::Result<Filter> {
         }
 
         ["PATHS"] => Ok(to_filter(Op::Paths)),
-        ["INDEX"] => Ok(to_filter(Op::Index)),
+        ["INDEX"] => {
+            check_experimental_features_enabled(":INDEX filter")?;
+            Ok(to_filter(Op::Index))
+        }
         ["INVERT"] => Ok(to_filter(Op::Invert)),
         ["FOLD"] => Ok(to_filter(Op::Fold)),
         ["hook", arg] => Ok(f.hook(arg)),
@@ -174,17 +177,16 @@ fn parse_item(pair: pest::iterators::Pair<Rule>) -> anyhow::Result<Filter> {
             let path = unquote(pair.into_inner().next().unwrap().as_str());
             Ok(parse_treederef(&path))
         }
-        Rule::filter_blob => {
-            check_experimental_features_enabled("Blob filter")?;
+        Rule::filter_insert => {
             let mut inner = pair.into_inner();
             let path = Path::new(&unquote(inner.next().unwrap().as_str())).to_owned();
             let content_pair = inner.next().unwrap();
             let content = match content_pair.as_rule() {
-                Rule::string => BlobContent::Inline(unquote(content_pair.as_str())),
-                Rule::blob_oid => BlobContent::Oid(git2::Oid::from_str(content_pair.as_str())?),
+                Rule::string => InsertContent::Inline(unquote(content_pair.as_str())),
+                Rule::object_oid => InsertContent::Oid(git2::Oid::from_str(content_pair.as_str())?),
                 _ => unreachable!(),
             };
-            Ok(to_filter(Op::Blob(path, content)))
+            Ok(to_filter(Op::Insert(path, content)))
         }
         Rule::filter_presub => {
             let mut inner = pair.into_inner();
@@ -202,7 +204,7 @@ fn parse_item(pair: pest::iterators::Pair<Rule>) -> anyhow::Result<Filter> {
                         arg
                     ));
                 }
-                Ok(f.pattern(arg))
+                f.pattern(arg)
             } else {
                 // File case - error if source contains * (patterns not supported in source)
                 if let Some(ref source_arg) = second_arg
@@ -244,6 +246,7 @@ fn parse_item(pair: pest::iterators::Pair<Rule>) -> anyhow::Result<Filter> {
                     match *cmd {
                         "pin" => Ok(to_filter(Op::Pin(to_filter(Op::Compose(g))))),
                         "exclude" => Ok(to_filter(Op::Exclude(to_filter(Op::Compose(g))))),
+                        "select" => Ok(to_filter(Op::Select(to_filter(Op::Compose(g))))),
                         "linear" => Ok(to_filter(Op::Compose(g)).linear()),
                         "invert" => {
                             let filter = to_filter(Op::Compose(g));
@@ -275,7 +278,7 @@ fn parse_item(pair: pest::iterators::Pair<Rule>) -> anyhow::Result<Filter> {
                                 let filter = parse(filter_pair.as_str())?;
                                 entries.push((
                                     RevMatch::Default,
-                                    LazyRef::Resolved(git2::Oid::zero()),
+                                    LazyRef::Resolved(git2::Oid::ZERO_SHA1),
                                     filter,
                                 ));
                             }

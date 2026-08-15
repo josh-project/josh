@@ -30,7 +30,9 @@ RUN apk add --no-cache \
     tree \
     autoconf \
     libgit2-dev \
-    psmisc
+    psmisc \
+    gcompat \
+    libgcc
 
 # Update check: https://github.com/git/git/tags
 ARG GIT_VERSION=2.50.0
@@ -54,12 +56,30 @@ git config -f /opt/git-install/etc/gitconfig --add safe.directory "*"
 git config -f /opt/git-install/etc/gitconfig protocol.file.allow "always"
 EOF
 
-# Update check: https://github.com/prysk/prysk/releases
-ARG PRYSK_VERSION=0.20.0
+# Update check: https://github.com/facebookincubator/scrut/releases
+ARG SCRUT_VERSION=0.4.3
+# sha1 of scrut-v${SCRUT_VERSION}-linux-x86_64.tar.gz from the GitHub release
+ARG SCRUT_SHA1=e3048b47f9bc4a6ec2d14ff9b5b05befe679521c
+ARG TARGETARCH
+RUN <<EOF
+set -eux
 
-# This is a Docker image so --break-system-packages is okay
-RUN pip3 install --break-system-packages \
-  git+https://github.com/prysk/prysk.git@${PRYSK_VERSION}
+if [ "$TARGETARCH" = amd64 ]; then
+    # The prebuilt binary is glibc-linked and needs the gcompat + libgcc
+    # packages (installed above) to run on musl-based Alpine.
+    tarball=scrut-v${SCRUT_VERSION}-linux-x86_64.tar.gz
+    curl -fsSL -o /tmp/${tarball} \
+        https://github.com/facebookincubator/scrut/releases/download/v${SCRUT_VERSION}/${tarball}
+    echo "${SCRUT_SHA1}  /tmp/${tarball}" | sha1sum -c -
+    tar -xzf /tmp/${tarball} -C /tmp
+    install -m 0755 /tmp/scrut-linux-x86_64/scrut /usr/local/bin/scrut
+    rm -rf /tmp/${tarball} /tmp/scrut-linux-x86_64
+else
+    # The upstream aarch64 release tarball is mis-packaged (it contains
+    # an x86-64 binary), so build from source on other architectures.
+    cargo install --verbose --version ${SCRUT_VERSION} scrut
+fi
+EOF
 
 RUN apk add --no-cache go openssh-client patch
 

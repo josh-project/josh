@@ -651,8 +651,10 @@ Test :PATHS
   
   1 directory, 1 file
 
-Test :INDEX
-  $ FILTER_HASH=$(josh-filter -i ':INDEX')
+Test :INDEX (the filter is experimental; parsing it needs the opt-in)
+  $ josh-filter -i ':INDEX' 2>&1 | head -1
+  ERROR: :INDEX filter requires JOSH_EXPERIMENTAL_FEATURES=1
+  $ FILTER_HASH=$(JOSH_EXPERIMENTAL_FEATURES=1 josh-filter -i ':INDEX')
   $ josh-filter -p ${FILTER_HASH}
   :INDEX
   $ git read-tree --reset -u ${FILTER_HASH}

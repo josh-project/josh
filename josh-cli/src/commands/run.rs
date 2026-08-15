@@ -1,4 +1,5 @@
 use josh_compose::{CleanMode, RunOptions};
+use josh_compose_podman::PodmanRuntime;
 
 #[derive(Debug, clap::Parser)]
 pub struct ComposeArgs {
@@ -10,7 +11,7 @@ pub struct ComposeArgs {
 pub enum ComposeCommand {
     /// Run a workspace in a container
     Run(RunArgs),
-    /// List every image (as `ws_image_<oid>`) a `run` with the same args would need
+    /// List every image (as `josh_ws_image_<oid>`) a `run` with the same args would need
     ListImages(ListImagesArgs),
     /// List the job hash of every workspace a `run` with the same args would touch
     ListJobs(ListJobsArgs),
@@ -58,6 +59,7 @@ pub fn handle_run(
         CleanMode::None
     };
 
+    let runtime = PodmanRuntime::new();
     josh_compose::run(
         transaction,
         RunOptions {
@@ -65,6 +67,7 @@ pub fn handle_run(
             input_ref: args.reference.clone(),
             clean,
         },
+        &runtime,
     )
 }
 
@@ -87,6 +90,7 @@ pub fn handle_list_images(
     args: &ListImagesArgs,
     transaction: &josh_core::cache::Transaction,
 ) -> anyhow::Result<()> {
+    let runtime = PodmanRuntime::new();
     let oids = josh_compose::plan_images(
         transaction,
         RunOptions {
@@ -95,10 +99,11 @@ pub fn handle_list_images(
             clean: CleanMode::None,
         },
         args.all,
+        &runtime,
     )?;
 
     for oid in oids {
-        println!("ws_image_{oid}");
+        println!("{}", josh_compose::naming::env(oid));
     }
     Ok(())
 }
@@ -122,6 +127,7 @@ pub fn handle_list_jobs(
     args: &ListJobsArgs,
     transaction: &josh_core::cache::Transaction,
 ) -> anyhow::Result<()> {
+    let runtime = PodmanRuntime::new();
     let oids = josh_compose::plan_jobs(
         transaction,
         RunOptions {
@@ -130,6 +136,7 @@ pub fn handle_list_jobs(
             clean: CleanMode::None,
         },
         args.all,
+        &runtime,
     )?;
 
     for oid in oids {

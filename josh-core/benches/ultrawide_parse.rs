@@ -1,4 +1,4 @@
-use criterion::{Criterion, criterion_group, criterion_main};
+use criterion::{BatchSize, Criterion, criterion_group, criterion_main};
 use rand::RngExt;
 use rand::distr::{Alphabetic, Distribution};
 use rand::rngs::ThreadRng;
@@ -43,14 +43,16 @@ fn generate_filters() -> Vec<Filter> {
 
 fn ultrawide(c: &mut Criterion) {
     c.bench_function("ultrawide_filter_parse", |b| {
-        b.iter_with_setup_wrapper(|runner| {
-            let filter = generate_filters();
-
-            runner.run(move || {
+        b.iter_batched(
+            // Per-iteration setup (untimed): generate a fresh set of random filters.
+            generate_filters,
+            // Timed: compose the generated filters.
+            |filter| {
                 let filter = josh_core::filter::compose(&filter);
                 std::hint::black_box(filter);
-            })
-        });
+            },
+            BatchSize::PerIteration,
+        );
     });
 }
 

@@ -1872,8 +1872,8 @@ msgstr "参数"
 #: src/reference/cli.md:161 src/reference/cli.md:184 src/reference/cli.md:223
 #: src/reference/cli.md:238 src/reference/cli.md:251 src/reference/cli.md:283
 #: src/reference/cli.md:290 src/reference/cli.md:342
-#: src/reference/experimental.md:94 src/reference/experimental.md:101
-#: src/reference/experimental.md:109 src/reference/experimental.md:137
+#: src/reference/experimental.md:108 src/reference/experimental.md:115
+#: src/reference/experimental.md:123 src/reference/experimental.md:151
 #: src/contributing/josh-run.md:69 src/contributing/josh-run.md:85
 msgid "Description"
 msgstr "描述"
@@ -3527,27 +3527,53 @@ msgid "Filters"
 msgstr "过滤器"
 
 #: src/reference/experimental.md:9
-msgid "Blob insertion **`:$path=\"content\"`**"
-msgstr "Blob 插入 **`:$path=\"content\"`**"
+msgid "Insertion **`:$path=content`**"
+msgstr "插入 **`:$path=content`**"
 
 #: src/reference/experimental.md:11
 msgid ""
-"Inserts a new file at `path` in the output tree with the given literal text "
-"as its content. No newline is appended automatically. The path argument "
-"follows the same quoting rules as other filter arguments: quote with double "
-"quotes if the path contains spaces or special characters."
-msgstr ""
-"在输出 tree 的 `path` 处插入一个新文件，并使用给定字面文本作为其内容。不会"
-"自动追加换行符。路径参数遵循与其他过滤器参数相同的引用规则：如果路径包含空格"
-"或特殊字符，请使用双引号引用。"
+"Inserts a git object at `path` in the output tree. The content can be given "
+"in two ways:"
+msgstr "在输出 tree 的 `path` 处插入一个 git 对象。内容可以通过两种方式给出："
 
-#: src/reference/experimental.md:16
+#: src/reference/experimental.md:13
 msgid ""
-"The inverse of `:$path=\"content\"` is `:exclude[::path]`, which removes the "
-"inserted file."
-msgstr "`:$path=\"content\"` 的反向形式是 `:exclude[::path]`，它会移除插入的文件。"
+"**Inline text** — `:$path=\"content\"` writes a new file at `path` containing "
+"the given literal text. No newline is appended automatically."
+msgstr ""
+"**内联文本** — `:$path=\"content\"` 在 `path` 处写入一个新文件，其内容为给定的"
+"字面文本。不会自动追加换行符。"
 
-#: src/reference/experimental.md:20
+#: src/reference/experimental.md:15
+msgid ""
+"**By object id** — `:$path=<oid>` inserts an existing object referenced by "
+"its 40-character SHA-1 hash. The object may be a **blob** (inserted as a "
+"file) or a **tree** (inserted as a subtree); the kind is resolved from the "
+"repository. Referencing an object of any other kind, or one that does not "
+"exist, is an error. This avoids inlining large blobs or whole subtrees as a "
+"string."
+msgstr ""
+"**通过对象 id** — `:$path=<oid>` 插入一个由其 40 字符 SHA-1 哈希引用的已有对"
+"象。该对象可以是 **blob**（作为文件插入）或 **tree**（作为子树插入）；其类型"
+"由仓库解析确定。引用任何其他类型的对象，或引用不存在的对象，都会报错。这可以避"
+"免将大型 blob 或整个子树作为字符串内联。"
+
+#: src/reference/experimental.md:21
+msgid ""
+"The path argument follows the same quoting rules as other filter arguments: "
+"quote with double quotes if the path contains spaces or special characters."
+msgstr ""
+"路径参数遵循与其他过滤器参数相同的引用规则：如果路径包含空格或特殊字符，请使用"
+"双引号引用。"
+
+#: src/reference/experimental.md:24
+msgid ""
+"The inverse of `:$path=content` is `:exclude[::path]`, which removes the "
+"inserted file or subtree."
+msgstr ""
+"`:$path=content` 的反向形式是 `:exclude[::path]`，它会移除插入的文件或子树。"
+
+#: src/reference/experimental.md:28
 msgid ""
 "```\n"
 "# Insert a file named \"VERSION\" containing \"1.0\" at the root\n"
@@ -3555,6 +3581,12 @@ msgid ""
 "\n"
 "# Insert a file whose name contains a space\n"
 ":$\"release notes.txt\"=\"Initial release\"\n"
+"\n"
+"# Insert an existing blob by its SHA\n"
+":$added.txt=e69de29bb2d1d6434b8b29ae775ad8c2e48c5391\n"
+"\n"
+"# Insert an existing tree as a subtree at \"vendored\"\n"
+":$vendored=4b825dc642cb6eb9a060e54bf8d69288fbee4904\n"
 "\n"
 "# Combine with a subdirectory filter to insert the file alongside existing "
 "content\n"
@@ -3568,15 +3600,21 @@ msgstr ""
 "# 插入名称包含空格的文件\n"
 ":$\"release notes.txt\"=\"Initial release\"\n"
 "\n"
+"# 通过 SHA 插入一个已有的 blob\n"
+":$added.txt=e69de29bb2d1d6434b8b29ae775ad8c2e48c5391\n"
+"\n"
+"# 将一个已有的 tree 作为子树插入到 \"vendored\"\n"
+":$vendored=4b825dc642cb6eb9a060e54bf8d69288fbee4904\n"
+"\n"
 "# 与子目录过滤器组合，在现有内容旁插入文件\n"
 ":[:/sub1,:$added.txt=\"hello world\"]\n"
 "```"
 
-#: src/reference/experimental.md:31
+#: src/reference/experimental.md:45
 msgid "Object reference **`:&path`**"
 msgstr "对象引用 **`:&path`**"
 
-#: src/reference/experimental.md:32
+#: src/reference/experimental.md:46
 msgid ""
 "Reads the git object at `path` (a file or directory) and replaces its "
 "content with a text blob containing the object's SHA-1 hash. This turns a "
@@ -3585,11 +3623,11 @@ msgstr ""
 "读取 `path` 处的 git 对象（文件或目录），并将其内容替换为包含该对象 SHA-1 哈希"
 "的文本 blob。这会将真实文件或 tree 转换为轻量指针。"
 
-#: src/reference/experimental.md:35
+#: src/reference/experimental.md:49
 msgid "If `path` does not exist in the input tree, the filter is a no-op."
 msgstr "如果 `path` 在输入 tree 中不存在，该过滤器就是 no-op。"
 
-#: src/reference/experimental.md:37
+#: src/reference/experimental.md:51
 msgid ""
 "Example: `:&sub1` on a commit where `sub1` is a directory produces a file "
 "`sub1` whose content is the 40-character SHA of that directory tree."
@@ -3597,11 +3635,11 @@ msgstr ""
 "示例：在 `sub1` 是目录的提交上使用 `:&sub1`，会生成一个文件 `sub1`，其内容是"
 "该目录 tree 的 40 字符 SHA。"
 
-#: src/reference/experimental.md:40
+#: src/reference/experimental.md:54
 msgid "Object dereference **`:#path`**"
 msgstr "对象解引用 **`:#path`**"
 
-#: src/reference/experimental.md:41
+#: src/reference/experimental.md:55
 msgid ""
 "Reads the SHA-1 hash stored as text in the file at `path` and replaces that "
 "file with the git object the hash points to (a file or a directory tree). "
@@ -3610,7 +3648,7 @@ msgstr ""
 "读取 `path` 处文件中以文本形式存储的 SHA-1 哈希，并将该文件替换为该哈希指向的 "
 "git 对象（文件或目录 tree）。这会跟随 `:&path` 写入的指针。"
 
-#: src/reference/experimental.md:45
+#: src/reference/experimental.md:59
 msgid ""
 "If `path` does not exist the filter is a no-op. If the content is not a "
 "valid SHA or the object is not present in the repository, an error is "
@@ -3619,7 +3657,7 @@ msgstr ""
 "如果 `path` 不存在，该过滤器就是 no-op。如果内容不是有效 SHA，或对象不存在于"
 "仓库中，则返回错误。"
 
-#: src/reference/experimental.md:48
+#: src/reference/experimental.md:62
 msgid ""
 "Example: given a file `sub1` whose content is the SHA of a directory tree, `:"
 "#sub1` replaces that file with the actual directory tree at `sub1`."
@@ -3627,11 +3665,11 @@ msgstr ""
 "示例：给定一个文件 `sub1`，其内容是某个目录 tree 的 SHA，`:#sub1` 会将该文件"
 "替换为 `sub1` 处的实际目录 tree。"
 
-#: src/reference/experimental.md:51
+#: src/reference/experimental.md:65
 msgid "Object dereference into subdirectory **`:#/path`**"
 msgstr "将对象解引用到子目录 **`:#/path`**"
 
-#: src/reference/experimental.md:52
+#: src/reference/experimental.md:66
 msgid ""
 "Dereferences the pointer stored at `path` and then extracts the resulting "
 "object directly at the repository root, discarding the `path` prefix. This "
@@ -3641,12 +3679,12 @@ msgstr ""
 "解引用存储在 `path` 处的指针，然后将得到的对象直接提取到仓库根目录，丢弃 "
 "`path` 前缀。这是恢复之前用 `:&path` 存储的内容的典型方式。"
 
-#: src/reference/experimental.md:56
+#: src/reference/experimental.md:70
 msgid ""
 "Expands to `:#path:/path`. The canonical printed form is the expanded syntax."
 msgstr "会展开为 `:#path:/path`。规范打印形式是展开后的语法。"
 
-#: src/reference/experimental.md:58
+#: src/reference/experimental.md:72
 msgid ""
 "Example: `:#/sub1` on a tree where `sub1` holds a SHA of a directory returns "
 "that directory's contents at the root, as if `sub1` never existed."
@@ -3654,11 +3692,11 @@ msgstr ""
 "示例：在 `sub1` 保存目录 SHA 的 tree 上使用 `:#/sub1`，会在根目录返回该目录的"
 "内容，就像 `sub1` 从未存在一样。"
 
-#: src/reference/experimental.md:61
+#: src/reference/experimental.md:75
 msgid "Tree ID capture **`:#path[filter]`**"
 msgstr "Tree ID 捕获 **`:#path[filter]`**"
 
-#: src/reference/experimental.md:62
+#: src/reference/experimental.md:76
 msgid ""
 "Applies `filter` to the current tree and writes the SHA-1 hash of the "
 "resulting tree as a text file at `path`. The filter itself does not appear "
@@ -3667,23 +3705,23 @@ msgstr ""
 "将 `filter` 应用于当前 tree，并把结果 tree 的 SHA-1 哈希作为文本文件写入 "
 "`path`。过滤器本身不会出现在输出中——只有它生成的哈希会出现。"
 
-#: src/reference/experimental.md:65
+#: src/reference/experimental.md:79
 msgid ""
 "This lets you record a stable, content-addressed reference to a subtree "
 "alongside other files."
 msgstr "这允许你在其他文件旁记录一个稳定、按内容寻址的子 tree 引用。"
 
-#: src/reference/experimental.md:67
+#: src/reference/experimental.md:81
 msgid ""
 "Example: `:#version.txt[:/sub1]` writes the SHA of the `sub1` directory tree "
 "into `version.txt`."
 msgstr "示例：`:#version.txt[:/sub1]` 会将 `sub1` 目录 tree 的 SHA 写入 `version.txt`。"
 
-#: src/reference/experimental.md:69
+#: src/reference/experimental.md:83
 msgid "Starlark filter **`:!path/to/script[context filter]`**"
 msgstr "Starlark 过滤器 **`:!path/to/script[context filter]`**"
 
-#: src/reference/experimental.md:70
+#: src/reference/experimental.md:84
 msgid ""
 "Evaluates a [Starlark](https://github.com/bazelbuild/starlark) script stored "
 "in the repository and uses the filter it produces. The script file is loaded "
@@ -3692,7 +3730,7 @@ msgstr ""
 "求值仓库中存储的 [Starlark](https://github.com/bazelbuild/starlark) 脚本，并"
 "使用它生成的过滤器。脚本文件会从 `path` 加载，并自动追加 `.star` 扩展名。"
 
-#: src/reference/experimental.md:74
+#: src/reference/experimental.md:88
 msgid ""
 "The optional `[context filter]` scopes the tree that is visible to the "
 "script: the context filter is applied to the input tree first, and the "
@@ -3704,17 +3742,17 @@ msgstr ""
 "tree，结果就是脚本看到的 `tree`。上下文过滤器不会影响脚本返回的过滤器——它只"
 "控制脚本可以读取什么。"
 
-#: src/reference/experimental.md:79
+#: src/reference/experimental.md:93
 msgid ""
 "The script file itself is always included in the output tree alongside "
 "whatever the script's filter selects."
 msgstr "脚本文件本身始终会与脚本过滤器选中的内容一起包含在输出 tree 中。"
 
-#: src/reference/experimental.md:82
+#: src/reference/experimental.md:96
 msgid "**Script contract**"
 msgstr "**脚本契约**"
 
-#: src/reference/experimental.md:84
+#: src/reference/experimental.md:98
 msgid ""
 "The script must assign a `Filter` value to the variable named `filter`. At "
 "the start of execution `filter` is pre-set to a no-op filter, so a minimal "
@@ -3725,306 +3763,306 @@ msgstr ""
 "预设为 no-op 过滤器，因此一个什么都不选择的最小脚本可以直接保持它不变，或赋予"
 "新值："
 
-#: src/reference/experimental.md:89
+#: src/reference/experimental.md:103
 msgid "\"src\""
 msgstr "\"src\""
 
-#: src/reference/experimental.md:92
+#: src/reference/experimental.md:106
 msgid "**Global variables available in the script**"
 msgstr "**脚本中可用的全局变量**"
 
-#: src/reference/experimental.md:94
+#: src/reference/experimental.md:108
 msgid "Variable"
 msgstr "变量"
 
-#: src/reference/experimental.md:94
+#: src/reference/experimental.md:108
 msgid "Type"
 msgstr "类型"
 
-#: src/reference/experimental.md:96
+#: src/reference/experimental.md:110
 msgid "`filter`"
 msgstr "`filter`"
 
-#: src/reference/experimental.md:96
+#: src/reference/experimental.md:110
 msgid "`Filter`"
 msgstr "`Filter`"
 
-#: src/reference/experimental.md:96
+#: src/reference/experimental.md:110
 msgid "Starts as a no-op filter. Assign your result here."
 msgstr "初始为 no-op 过滤器。请在这里赋予你的结果。"
 
-#: src/reference/experimental.md:97
+#: src/reference/experimental.md:111
 msgid "`tree`"
 msgstr "`tree`"
 
-#: src/reference/experimental.md:97
+#: src/reference/experimental.md:111
 msgid "`Tree`"
 msgstr "`Tree`"
 
-#: src/reference/experimental.md:97
+#: src/reference/experimental.md:111
 msgid ""
 "The commit tree (or the context-filtered tree if a context filter was given)."
 msgstr "提交 tree（如果给出了上下文过滤器，则为上下文过滤后的 tree）。"
 
-#: src/reference/experimental.md:99
+#: src/reference/experimental.md:113
 msgid "**Global functions**"
 msgstr "**全局函数**"
 
-#: src/reference/experimental.md:101
+#: src/reference/experimental.md:115
 msgid "Function"
 msgstr "函数"
 
-#: src/reference/experimental.md:103
+#: src/reference/experimental.md:117
 msgid "`compose([f1, f2, ...])`"
 msgstr "`compose([f1, f2, ...])`"
 
-#: src/reference/experimental.md:103
+#: src/reference/experimental.md:117
 msgid "Overlay multiple filters, same semantics as `:[f1,f2,...]`."
 msgstr "叠加多个过滤器，语义与 `:[f1,f2,...]` 相同。"
 
-#: src/reference/experimental.md:105
+#: src/reference/experimental.md:119
 msgid "**`Filter` methods**"
 msgstr "**`Filter` 方法**"
 
-#: src/reference/experimental.md:107
+#: src/reference/experimental.md:121
 msgid "All methods return a new `Filter` and can be chained."
 msgstr "所有方法都会返回一个新的 `Filter`，并且可以链式调用。"
 
-#: src/reference/experimental.md:109 src/reference/experimental.md:137
+#: src/reference/experimental.md:123 src/reference/experimental.md:151
 msgid "Method"
 msgstr "方法"
 
-#: src/reference/experimental.md:111
+#: src/reference/experimental.md:125
 msgid "`filter.subdir(path)`"
 msgstr "`filter.subdir(path)`"
 
-#: src/reference/experimental.md:111
+#: src/reference/experimental.md:125
 msgid "Select a subdirectory and make it the root."
 msgstr "选择一个子目录并使其成为根。"
 
-#: src/reference/experimental.md:112
+#: src/reference/experimental.md:126
 msgid "`filter.prefix(path)`"
 msgstr "`filter.prefix(path)`"
 
-#: src/reference/experimental.md:112
+#: src/reference/experimental.md:126
 msgid "Place the tree under a subdirectory prefix."
 msgstr "将 tree 放到某个子目录前缀下。"
 
-#: src/reference/experimental.md:113
+#: src/reference/experimental.md:127
 msgid "`filter.file(path)`"
 msgstr "`filter.file(path)`"
 
-#: src/reference/experimental.md:113
+#: src/reference/experimental.md:127
 msgid "Select a single file, keeping its path."
 msgstr "选择单个文件，并保留其路径。"
 
-#: src/reference/experimental.md:114
+#: src/reference/experimental.md:128
 msgid "`filter.rename(dst, src)`"
 msgstr "`filter.rename(dst, src)`"
 
-#: src/reference/experimental.md:114
+#: src/reference/experimental.md:128
 msgid "Select `src` and place it at `dst`."
 msgstr "选择 `src` 并将其放到 `dst`。"
 
-#: src/reference/experimental.md:115
+#: src/reference/experimental.md:129
 msgid "`filter.pattern(pattern)`"
 msgstr "`filter.pattern(pattern)`"
 
-#: src/reference/experimental.md:115
+#: src/reference/experimental.md:129
 msgid "Select files/directories matching a glob pattern (`*` allowed)."
 msgstr "选择匹配 glob 模式的文件/目录（允许 `*`）。"
 
-#: src/reference/experimental.md:116
+#: src/reference/experimental.md:130
 msgid "`filter.chain(other)`"
 msgstr "`filter.chain(other)`"
 
-#: src/reference/experimental.md:116
+#: src/reference/experimental.md:130
 msgid "Apply `other` after this filter."
 msgstr "在此过滤器之后应用 `other`。"
 
-#: src/reference/experimental.md:117
+#: src/reference/experimental.md:131
 msgid "`filter.nop()`"
 msgstr "`filter.nop()`"
 
-#: src/reference/experimental.md:117
+#: src/reference/experimental.md:131
 msgid "No-op; passes the tree through unchanged."
 msgstr "No-op；让 tree 原样通过。"
 
-#: src/reference/experimental.md:118
+#: src/reference/experimental.md:132
 msgid "`filter.empty()`"
 msgstr "`filter.empty()`"
 
-#: src/reference/experimental.md:118
+#: src/reference/experimental.md:132
 msgid "Produce an empty tree."
 msgstr "生成一个空 tree。"
 
-#: src/reference/experimental.md:119
+#: src/reference/experimental.md:133
 msgid "`filter.linear()`"
 msgstr "`filter.linear()`"
 
-#: src/reference/experimental.md:119
+#: src/reference/experimental.md:133
 msgid "Linearise history (drop merge parents)."
 msgstr "线性化历史（丢弃 merge 父项）。"
 
-#: src/reference/experimental.md:120
+#: src/reference/experimental.md:134
 msgid "`filter.workspace(path)`"
 msgstr "`filter.workspace(path)`"
 
-#: src/reference/experimental.md:120
+#: src/reference/experimental.md:134
 msgid "Apply the workspace filter rooted at `path`."
 msgstr "应用根位于 `path` 的 workspace 过滤器。"
 
-#: src/reference/experimental.md:121
+#: src/reference/experimental.md:135
 msgid "`filter.stored(path)`"
 msgstr "`filter.stored(path)`"
 
-#: src/reference/experimental.md:121
+#: src/reference/experimental.md:135
 msgid "Apply the stored filter at `path.josh`."
 msgstr "应用 `path.josh` 处的存储式过滤器。"
 
-#: src/reference/experimental.md:122
+#: src/reference/experimental.md:136
 msgid "`filter.starlark(path, context_filter)`"
 msgstr "`filter.starlark(path, context_filter)`"
 
-#: src/reference/experimental.md:122
+#: src/reference/experimental.md:136
 msgid "Apply another Starlark filter with an optional context filter."
 msgstr "应用另一个 Starlark 过滤器，并可带一个可选上下文过滤器。"
 
-#: src/reference/experimental.md:123
+#: src/reference/experimental.md:137
 msgid "`filter.author(name, email)`"
 msgstr "`filter.author(name, email)`"
 
-#: src/reference/experimental.md:123
+#: src/reference/experimental.md:137
 msgid "Override the commit author."
 msgstr "覆盖提交作者。"
 
-#: src/reference/experimental.md:124
+#: src/reference/experimental.md:138
 msgid "`filter.committer(name, email)`"
 msgstr "`filter.committer(name, email)`"
 
-#: src/reference/experimental.md:124
+#: src/reference/experimental.md:138
 msgid "Override the committer."
 msgstr "覆盖提交者。"
 
-#: src/reference/experimental.md:125
+#: src/reference/experimental.md:139
 msgid "`filter.message(template)`"
 msgstr "`filter.message(template)`"
 
-#: src/reference/experimental.md:125
+#: src/reference/experimental.md:139
 msgid "Rewrite commit messages using a template."
 msgstr "使用模板重写提交消息。"
 
-#: src/reference/experimental.md:126
+#: src/reference/experimental.md:140
 msgid "`filter.unsign()`"
 msgstr "`filter.unsign()`"
 
-#: src/reference/experimental.md:126
+#: src/reference/experimental.md:140
 msgid "Strip GPG signatures from commits."
 msgstr "从提交中剥离 GPG 签名。"
 
-#: src/reference/experimental.md:127
+#: src/reference/experimental.md:141
 msgid "`filter.prune_trivial_merge()`"
 msgstr "`filter.prune_trivial_merge()`"
 
-#: src/reference/experimental.md:127
+#: src/reference/experimental.md:141
 msgid "Remove merge commits whose tree equals their first parent."
 msgstr "移除 tree 等于其第一个父项的 merge commit。"
 
-#: src/reference/experimental.md:128
+#: src/reference/experimental.md:142
 msgid "`filter.hook(hook)`"
 msgstr "`filter.hook(hook)`"
 
-#: src/reference/experimental.md:128
+#: src/reference/experimental.md:142
 msgid "Apply a hook filter."
 msgstr "应用 hook 过滤器。"
 
-#: src/reference/experimental.md:129
+#: src/reference/experimental.md:143
 msgid "`filter.with_meta(key, value)`"
 msgstr "`filter.with_meta(key, value)`"
 
-#: src/reference/experimental.md:129
+#: src/reference/experimental.md:143
 msgid "Attach metadata to the filter."
 msgstr "将元数据附加到过滤器。"
 
-#: src/reference/experimental.md:130
+#: src/reference/experimental.md:144
 msgid "`filter.is_nop()`"
 msgstr "`filter.is_nop()`"
 
-#: src/reference/experimental.md:130
+#: src/reference/experimental.md:144
 msgid "Returns `True` if the filter is a no-op."
 msgstr "如果过滤器是 no-op，则返回 `True`。"
 
-#: src/reference/experimental.md:131
+#: src/reference/experimental.md:145
 msgid "`filter.peel()`"
 msgstr "`filter.peel()`"
 
-#: src/reference/experimental.md:131
+#: src/reference/experimental.md:145
 msgid "Strip metadata from the filter."
 msgstr "从过滤器中剥离元数据。"
 
-#: src/reference/experimental.md:133
+#: src/reference/experimental.md:147
 msgid "**`Tree` methods**"
 msgstr "**`Tree` 方法**"
 
-#: src/reference/experimental.md:135
+#: src/reference/experimental.md:149
 msgid ""
 "The `tree` object provides read-only access to the commit tree visible to "
 "the script."
 msgstr "`tree` 对象提供对脚本可见提交 tree 的只读访问。"
 
-#: src/reference/experimental.md:139
+#: src/reference/experimental.md:153
 msgid "`tree.file(path)`"
 msgstr "`tree.file(path)`"
 
-#: src/reference/experimental.md:139
+#: src/reference/experimental.md:153
 msgid ""
 "Returns the text content of the file at `path`, or an empty string if absent "
 "or binary."
 msgstr "返回 `path` 处文件的文本内容；如果不存在或为二进制文件，则返回空字符串。"
 
-#: src/reference/experimental.md:140
+#: src/reference/experimental.md:154
 msgid "`tree.files(path)`"
 msgstr "`tree.files(path)`"
 
-#: src/reference/experimental.md:140
+#: src/reference/experimental.md:154
 msgid "Returns a list of file paths that are direct children of `path`."
 msgstr "返回作为 `path` 直接子项的文件路径列表。"
 
-#: src/reference/experimental.md:141
+#: src/reference/experimental.md:155
 msgid "`tree.dirs(path)`"
 msgstr "`tree.dirs(path)`"
 
-#: src/reference/experimental.md:141
+#: src/reference/experimental.md:155
 msgid "Returns a list of directory paths that are direct children of `path`."
 msgstr "返回作为 `path` 直接子项的目录路径列表。"
 
-#: src/reference/experimental.md:142
+#: src/reference/experimental.md:156
 msgid "`tree.tree(path)`"
 msgstr "`tree.tree(path)`"
 
-#: src/reference/experimental.md:142
+#: src/reference/experimental.md:156
 msgid "Returns a `Tree` object rooted at `path`."
 msgstr "返回根位于 `path` 的 `Tree` 对象。"
 
-#: src/reference/experimental.md:144
+#: src/reference/experimental.md:158
 msgid "**Example**"
 msgstr "**示例**"
 
-#: src/reference/experimental.md:146
+#: src/reference/experimental.md:160
 msgid ""
 "A script that dynamically includes every top-level subdirectory as a "
 "prefixed subtree:"
 msgstr "一个将每个顶层子目录动态包含为带前缀子 tree 的脚本："
 
-#: src/reference/experimental.md:149
+#: src/reference/experimental.md:163
 msgid "# st/config.star\n"
 msgstr "# st/config.star\n"
 
-#: src/reference/experimental.md:150
+#: src/reference/experimental.md:164
 msgid "\"\""
 msgstr "\"\""
 
-#: src/reference/experimental.md:154
+#: src/reference/experimental.md:168
 msgid "Applied with `:!st/config`."
 msgstr "使用 `:!st/config` 应用。"
 

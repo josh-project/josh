@@ -7,7 +7,7 @@ license-file = "../LICENSE"
 name = "josh-cli"
 readme = "../README.md"
 repository = "https://github.com/josh-project/josh"
-version = "26.6.11"
+version = "26.7.28"
 
 [dependencies]
 anyhow.workspace = true
@@ -16,7 +16,6 @@ log.workspace = true
 serde_json.workspace = true
 defer.workspace = true
 clap.workspace = true
-rs_tracing.workspace = true
 juniper.workspace = true
 git2.workspace = true
 tokio = { workspace = true, features = ["rt-multi-thread", "macros"] }
@@ -31,6 +30,8 @@ arboard = { version = "^3.6", default-features = false }
 josh-changes.workspace = true
 josh-core.workspace = true
 josh-compose.workspace = true
+josh-compose-podman.workspace = true
+josh-search.workspace = true
 josh-github-auth.workspace = true
 josh-github-keyring.workspace = true
 josh-github-graphql.workspace = true

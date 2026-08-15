@@ -1,0 +1,198 @@
+  $ export TESTTMP=${PWD}
+
+  $ cd ${TESTTMP}
+  $ git init -q repo 1> /dev/null
+  $ cd repo
+
+  $ mkdir sub1
+  $ echo contents1 > sub1/file1
+  $ git add sub1
+  $ git commit -m "add file1" 1> /dev/null
+
+Roundtrip: filter spec is preserved
+  $ josh-filter -p ':$added.txt="hello world"'
+  :$added.txt="hello world"
+
+Roundtrip: path with special chars is quoted
+  $ josh-filter -p ':$"hello world.txt"="content"'
+  :$"hello world.txt"="content"
+
+Roundtrip: blob specified by sha renders as bare hex
+  $ josh-filter -p ':$added.txt=e69de29bb2d1d6434b8b29ae775ad8c2e48c5391'
+  :$added.txt=e69de29bb2d1d6434b8b29ae775ad8c2e48c5391
+
+Roundtrip: root insert renders as :$.=<hex>
+  $ josh-filter -p ':$.=e69de29bb2d1d6434b8b29ae775ad8c2e48c5391'
+  :$.=e69de29bb2d1d6434b8b29ae775ad8c2e48c5391
+
+A multi-component path is split into a leaf blob followed by a prefix
+  $ josh-filter -p ':$a/b/c.txt="hello"'
+  a/b = :$c.txt="hello"
+
+The split form is stable under another round-trip
+  $ josh-filter -p 'a/b = :$c.txt="hello"'
+  a/b = :$c.txt="hello"
+
+Inverse renders as :empty (insert is generative: it fabricates content and consumes no input)
+  $ josh-filter --reverse -p ':$added.txt="hello world"'
+  :empty
+
+Apply: blob is inserted at correct path with correct content
+  $ josh-filter -s ':$added.txt="hello world"' master --update refs/josh/filter/master 1> /dev/null
+  $ git show josh/filter/master:added.txt
+  hello world (no-eol)
+
+Apply: blob at a multi-component path lands at the nested destination
+  $ josh-filter -s ':$a/b/c.txt="hello"' master --update refs/josh/filter/nested 1> /dev/null
+  $ git show josh/filter/nested:a/b/c.txt
+  hello (no-eol)
+
+Apply: compose with blob inserts blob alongside other files
+  $ josh-filter -s ':[:/sub1,:$added.txt="hello world"]' master --update refs/josh/filter/master2 1> /dev/null
+  $ git diff ${EMPTY_TREE}..josh/filter/master2
+  diff --git a/added.txt b/added.txt
+  new file mode 100644
+  index 0000000..95d09f2
+  --- /dev/null
+  +++ b/added.txt
+  @@ -0,0 +1 @@
+  +hello world
+  \ No newline at end of file
+  diff --git a/file1 b/file1
+  new file mode 100644
+  index 0000000..a024003
+  --- /dev/null
+  +++ b/file1
+  @@ -0,0 +1 @@
+  +contents1
+
+Apply: composing many inserts across sibling directories keeps every insert
+(regression: an insert group must invert to :empty, not a union of excludes,
+otherwise the compose uniqueness handling subtracts later groups away)
+  $ josh-filter -s ':[:$x/a="1",:$x/b="2",:$y/a="3",:$y/b="4"]' master --update refs/josh/filter/many 1> /dev/null
+  $ git ls-tree -r --name-only josh/filter/many
+  x/a
+  x/b
+  y/a
+  y/b
+  $ git show josh/filter/many:y/a
+  3 (no-eol)
+  $ git show josh/filter/many:y/b
+  4 (no-eol)
+
+Apply: inserts with the same basename and content in different directories all survive
+(regression: the shared leaf blob :$f="X" must not be hoisted out of the compose, or
+the resulting :prefix compose collapses every branch but the first)
+  $ josh-filter -s ':[:$a/f="X",:$b/f="X",:$c/f="X"]' master --update refs/josh/filter/samebase 1> /dev/null
+  $ git ls-tree -r --name-only josh/filter/samebase
+  a/f
+  b/f
+  c/f
+
+Apply: blob referenced by sha is inserted at the destination path
+  $ OID=$(printf 'big content' | git hash-object -w --stdin)
+  $ josh-filter -s ":\$added.txt=$OID" master --update refs/josh/filter/master3 1> /dev/null
+  $ git show josh/filter/master3:added.txt
+  big content (no-eol)
+
+Apply: referencing a non-blob sha (a commit) fails
+  $ COMMIT=$(git rev-parse HEAD)
+  $ josh-filter -s ":\$bad.txt=$COMMIT" master --update refs/josh/filter/bad 2> /dev/null
+  [1] :$added.txt="hello world"
+  [1] :$added.txt=422057123b178e433e852ef1dfee39368fb5a8ce
+  [1] :$c.txt="hello"
+  [1] :[
+      :/sub1
+      :$added.txt="hello world"
+  ]
+  [1] :[
+      a = :$f="X"
+      b = :$f="X"
+      c = :$f="X"
+  ]
+  [1] :[
+      x = :[
+          :$a="1"
+          :$b="2"
+      ]
+      y = :[
+          :$a="3"
+          :$b="4"
+      ]
+  ]
+  [1] :prefix=a
+  [1] :prefix=b
+  [3] reachable_roots
+  [3] sequence_number
+  [1]
+
+Apply: referencing a nonexistent sha fails
+  $ josh-filter -s ':$bad.txt=0000000000000000000000000000000000000001' master --update refs/josh/filter/bad2 2> /dev/null
+  [1] :$added.txt="hello world"
+  [1] :$added.txt=422057123b178e433e852ef1dfee39368fb5a8ce
+  [1] :$c.txt="hello"
+  [1] :[
+      :/sub1
+      :$added.txt="hello world"
+  ]
+  [1] :[
+      a = :$f="X"
+      b = :$f="X"
+      c = :$f="X"
+  ]
+  [1] :[
+      x = :[
+          :$a="1"
+          :$b="2"
+      ]
+      y = :[
+          :$a="3"
+          :$b="4"
+      ]
+  ]
+  [1] :prefix=a
+  [1] :prefix=b
+  [3] reachable_roots
+  [3] sequence_number
+  [1]
+
+Apply: a tree referenced by sha is inserted as a subtree at the destination path
+  $ TREE=$(git rev-parse 'HEAD^{tree}')
+  $ josh-filter -s ":\$sub=$TREE" master --update refs/josh/filter/tree 1> /dev/null
+  $ git show josh/filter/tree:sub/sub1/file1
+  contents1
+
+Apply: a tree referenced by sha at `.` replaces the whole output tree
+  $ TREE=$(git rev-parse 'HEAD^{tree}')
+  $ josh-filter -s ":\$.=$TREE" master --update refs/josh/filter/root 1> /dev/null
+  $ git show josh/filter/root:sub1/file1
+  contents1
+
+Apply: a blob referenced by sha at `.` is rejected (a blob cannot sit at the tree root)
+  $ OID=$(printf 'big content' | git hash-object -w --stdin)
+  $ josh-filter -s ":\$.=$OID" master --update refs/josh/filter/rootblob 2>&1 >/dev/null; echo "exit:$?"
+  *requires a tree* (glob)
+  exit:1
+  $ git rev-parse --verify -q refs/josh/filter/rootblob > /dev/null; echo "ref:$?"
+  ref:1
+
+Persist: the filter tree references an inserted blob directly, so it is reachable
+in normal git terms (e.g. included when the filter tree is transferred)
+  $ OID=$(printf 'reachable content' | git hash-object -w --stdin)
+  $ FID=$(josh-filter -i ":\$data.txt=$OID" master)
+  $ git rev-list --objects $FID | grep -c $OID
+  1
+
+Persist: an inserted tree is referenced with tree mode, so its contents are reachable too
+  $ TREE=$(git rev-parse 'HEAD^{tree}')
+  $ FID=$(josh-filter -i ":\$sub=$TREE" master)
+  $ git rev-list --objects $FID | grep -c $TREE
+  1
+  $ git rev-list --objects $FID | grep -c $(git rev-parse 'HEAD:sub1/file1')
+  1
+
+Persist: a filter read back from its tree round-trips to the same id and spec
+  $ test "$FID" = "$(josh-filter -i $FID master)" && echo same
+  same
+  $ josh-filter -p $FID
+  :$sub=* (glob)

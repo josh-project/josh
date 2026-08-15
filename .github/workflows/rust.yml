@@ -17,13 +17,21 @@ env:
   # for any branch and the binary is not rebuilt for every PR / merge-queue
   # run). Bump when a backward-incompatible change to `josh compose` requires
   # it; the new SHA must also already be on `origin/master`.
-  JOSH_BOOTSTRAP_SHA: caf2143216c07d2775fe566e52989fcb1b9d417c
+  JOSH_BOOTSTRAP_SHA: 5cf4c32e64a41bcad67afca5e662b3535768b49f
 
 jobs:
   test:
     runs-on: ubuntu-latest
     name: CI
     if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
+    env:
+      # Dependabot PRs run with a restricted token and no repository secrets, so
+      # they can't reach R2 or authenticate the sccache-proxy sidecar. Drop the
+      # sidecars overlay for those runs so the build is fully self-contained
+      # (falls back to the local sccache disk cache), and skip the R2 and
+      # remote-cache checks below.
+      IS_DEPENDABOT: ${{ github.actor == 'dependabot[bot]' }}
+      COMPOSE_FILTER: ${{ github.actor == 'dependabot[bot]' && ':+compose' || ':[::sidecars.josh=ci-sidecars.josh,:/]:+compose' }}
     steps:
     - name: Free up disk space
       shell: bash
@@ -42,9 +50,9 @@ jobs:
           fi
         done
     - name: Setup BuildX
-      uses: docker/setup-buildx-action@4d04d5d9486b7bd6fa91e7baf45bbb4f8b9deedd # v4.0.0
+      uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
     - name: Checkout
-      uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       with:
         fetch-depth: 0
     - name: Get tags
@@ -53,30 +61,32 @@ jobs:
       shell: bash
       run: .github/workflows/scripts/install-podman.sh
     - name: Install Rust toolchain
-      uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
+      uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772 # stable
+      with:
+        toolchain: stable
     - name: Bootstrap josh binary
       env:
         AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
         AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
       run: .github/workflows/scripts/bootstrap-josh.sh
     - name: Pull cached job markers and volumes from R2
-      if: github.event_name != 'pull_request' || !github.event.pull_request.head.repo.fork
+      if: (github.event_name != 'pull_request' || !github.event.pull_request.head.repo.fork) && github.actor != 'dependabot[bot]'
       env:
         AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
         AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
       run: |
         export PATH="$(pwd)/target/release:$PATH"
         export JOSH_EXPERIMENTAL_FEATURES=1
-        .github/workflows/scripts/pull-jobs.sh HEAD ":[::sidecars.josh=ci-sidecars.josh,:/]:+compose"
+        .github/workflows/scripts/pull-jobs.sh HEAD "$COMPOSE_FILTER"
     - name: Pull cached images from R2
-      if: github.event_name != 'pull_request' || !github.event.pull_request.head.repo.fork
+      if: (github.event_name != 'pull_request' || !github.event.pull_request.head.repo.fork) && github.actor != 'dependabot[bot]'
       env:
         AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
         AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
       run: |
         export PATH="$(pwd)/target/release:$PATH"
         export JOSH_EXPERIMENTAL_FEATURES=1
-        .github/workflows/scripts/pull-images.sh HEAD ":[::sidecars.josh=ci-sidecars.josh,:/]:+compose"
+        .github/workflows/scripts/pull-images.sh HEAD "$COMPOSE_FILTER"
     - name: Run tests
       env:
         AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
@@ -84,27 +94,29 @@ jobs:
       run: |
         set -o pipefail
         target/release/josh compose run HEAD \
-          ":[::sidecars.josh=ci-sidecars.josh,:/]:+compose" 2>&1 \
+          "$COMPOSE_FILTER" 2>&1 \
           | tee /tmp/compose-run.log
-        if grep -q SCCACHE_REMOTE_CACHE_MISSING /tmp/compose-run.log; then
+        # Dependabot runs have no sidecar-provided remote cache, so the local
+        # fallback is expected there; only enforce the remote cache otherwise.
+        if [ "$IS_DEPENDABOT" != "true" ] && grep -q SCCACHE_REMOTE_CACHE_MISSING /tmp/compose-run.log; then
           echo "::error::sccache remote cache was not used during the build"
           exit 1
         fi
     - name: Push job markers and volumes to R2
-      if: success() && (github.event_name != 'pull_request' || !github.event.pull_request.head.repo.fork)
+      if: success() && (github.event_name != 'pull_request' || !github.event.pull_request.head.repo.fork) && github.actor != 'dependabot[bot]'
       env:
         AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
         AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
       run: |
         export PATH="$(pwd)/target/release:$PATH"
         export JOSH_EXPERIMENTAL_FEATURES=1
-        .github/workflows/scripts/push-jobs.sh HEAD ":[::sidecars.josh=ci-sidecars.josh,:/]:+compose"
+        .github/workflows/scripts/push-jobs.sh HEAD "$COMPOSE_FILTER"
     - name: Push built images to R2
-      if: success() && (github.event_name != 'pull_request' || !github.event.pull_request.head.repo.fork)
+      if: success() && (github.event_name != 'pull_request' || !github.event.pull_request.head.repo.fork) && github.actor != 'dependabot[bot]'
       env:
         AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
         AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
       run: |
         export PATH="$(pwd)/target/release:$PATH"
         export JOSH_EXPERIMENTAL_FEATURES=1
-        .github/workflows/scripts/push-images.sh HEAD ":[::sidecars.josh=ci-sidecars.josh,:/]:+compose"
+        .github/workflows/scripts/push-images.sh HEAD "$COMPOSE_FILTER"

@@ -23,7 +23,11 @@ static STATE: OnceLock<TraceState> = OnceLock::new();
 
 pub fn try_enable_tracing() {
     STATE.get_or_init(|| {
-        if viewer_ready() {
+        // Only trace when running under a test runner AND the viewer is
+        // listening. Both conditions must be satisfied; this prevents
+        // interactive use from pushing to port 8765 and test runs from
+        // sending traces when no viewer is attached.
+        if is_test_environment() && viewer_ready() {
             eprintln!("trace viewer ready; enabling git tree tracing");
 
             TraceState::Started {
@@ -37,6 +41,24 @@ pub fn try_enable_tracing() {
 
 fn state() -> &'static TraceState {
     STATE.get_or_init(|| TraceState::NotNeeded)
+}
+
+/// Returns `true` when running inside a test runner (cargo test / cargo
+/// nextest). Detects via the `NEXTEST` environment variable or by
+/// checking whether the current executable path contains `deps/` (cargo
+/// test places test binaries in a `deps/` directory).
+fn is_test_environment() -> bool {
+    if std::env::var("NEXTEST").is_ok() {
+        return true;
+    }
+
+    std::env::current_exe()
+        .ok()
+        .and_then(|p| {
+            p.to_str()
+                .map(|s| s.contains("/deps/") || s.contains("\\deps\\"))
+        })
+        .unwrap_or(false)
 }
 
 /// Probe the viewer's readiness endpoint

@@ -24,13 +24,6 @@ Clone with josh filter
 
   $ josh clone ${TESTTMP}/remote :/sub1 filtered
   Added remote 'origin' with filter ':/sub1'
-  From file://${TESTTMP}/remote
-   * [new branch]      master     -> refs/josh/remotes/origin/master
-  
-  From file://${TESTTMP}/filtered
-   * [new branch]      master     -> origin/master
-  
-  Fetched from remote: origin
   Already on 'master'
   
   Cloned repository to: ${TESTTMP}/filtered/
@@ -53,34 +46,7 @@ Set up git config for author
 Push with stacked changes containing binary files
 
   $ josh changes publish
-  Pushing 115b269a011d493259a125fa941fd790b903175f to origin/refs/heads/@base/master/josh@example.com/bin1
-  Pushing 115b269a011d493259a125fa941fd790b903175f to origin/refs/heads/@base/master/josh@example.com/bin2
-  Pushing 61d809929bf6b7a29d194f43368936fc82b033db to origin/refs/heads/@changes/master/josh@example.com/bin1
-  Pushing a4f8ccd2c1cf12aaf3b46eae73e38c71185867e7 to origin/refs/heads/@changes/master/josh@example.com/bin2
-  Pushing bcf10470382d693f9188a7a75872bcf3cd117dbc to origin/refs/heads/@heads/master/josh@example.com
-  To file://${TESTTMP}/remote
-   * [new branch]      115b269a011d493259a125fa941fd790b903175f -> @base/master/josh@example.com/bin1
-   * [new branch]      115b269a011d493259a125fa941fd790b903175f -> @base/master/josh@example.com/bin2
-   * [new branch]      61d809929bf6b7a29d194f43368936fc82b033db -> @changes/master/josh@example.com/bin1
-   * [new branch]      a4f8ccd2c1cf12aaf3b46eae73e38c71185867e7 -> @changes/master/josh@example.com/bin2
-   * [new branch]      bcf10470382d693f9188a7a75872bcf3cd117dbc -> @heads/master/josh@example.com
-  
-  Pushed 5 ref(s) to origin
-  From file://${TESTTMP}/remote
-   * [new branch]      @base/master/josh@example.com/bin1 -> refs/josh/remotes/origin/@base/master/josh@example.com/bin1
-   * [new branch]      @base/master/josh@example.com/bin2 -> refs/josh/remotes/origin/@base/master/josh@example.com/bin2
-   * [new branch]      @changes/master/josh@example.com/bin1 -> refs/josh/remotes/origin/@changes/master/josh@example.com/bin1
-   * [new branch]      @changes/master/josh@example.com/bin2 -> refs/josh/remotes/origin/@changes/master/josh@example.com/bin2
-   * [new branch]      @heads/master/josh@example.com -> refs/josh/remotes/origin/@heads/master/josh@example.com
-  
-  From file://${TESTTMP}/filtered
-   * [new branch]      @base/master/josh@example.com/bin1 -> origin/@base/master/josh@example.com/bin1
-   * [new branch]      @base/master/josh@example.com/bin2 -> origin/@base/master/josh@example.com/bin2
-   * [new branch]      @changes/master/josh@example.com/bin1 -> origin/@changes/master/josh@example.com/bin1
-   * [new branch]      @changes/master/josh@example.com/bin2 -> origin/@changes/master/josh@example.com/bin2
-   * [new branch]      @heads/master/josh@example.com -> origin/@heads/master/josh@example.com
-  
-  Fetched from remote: origin
+  published 2 changes (2 new)
 
 
 Verify binary content is preserved on the change branches

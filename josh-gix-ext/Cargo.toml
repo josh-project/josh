@@ -1,0 +1,19 @@
+[package]
+name = "josh-gix-ext"
+version = "26.7.28"
+repository = "https://github.com/josh-project/josh"
+authors = ["Josh Project authors <contact@josh-project.dev>"]
+license-file = "../LICENSE"
+description = "Gitoxide interop and extension utilities for josh"
+keywords = ["git", "gitoxide", "odb"]
+readme = "../README.md"
+edition = "2024"
+
+[dependencies]
+anyhow.workspace = true
+git2.workspace = true
+gix-hash.workspace = true
+gix-object.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
