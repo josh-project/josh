@@ -17,7 +17,7 @@ env:
   # for any branch and the binary is not rebuilt for every PR / merge-queue
   # run). Bump when a backward-incompatible change to `josh compose` requires
   # it; the new SHA must also already be on `origin/master`.
-  JOSH_BOOTSTRAP_SHA: bd0d646709ea1c88f1a596e254a1eceef30f7d71
+  JOSH_BOOTSTRAP_SHA: 5cf4c32e64a41bcad67afca5e662b3535768b49f
 
 jobs:
   test:
