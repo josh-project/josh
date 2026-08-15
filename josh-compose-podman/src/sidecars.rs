@@ -25,10 +25,14 @@ pub(super) fn start_sidecar(args: SidecarArgs) -> anyhow::Result<SidecarHandle> 
     let bytes: [u8; 4] = rand::random();
     let container_name = format!("josh-sidecar-{}-{}", args.name, hex::encode(bytes));
 
+    // "bridge" must come first: podman treats it as a network *mode* selector,
+    // which is only accepted in the first --network value; in later positions
+    // it is rejected with "can only set extra network names, selected mode
+    // bridge conflicts with bridge".
     run_detached(
         &args.env,
         &container_name,
-        &[SIDECAR_NETWORK, "bridge"],
+        &["bridge", SIDECAR_NETWORK],
         &args.env_vars,
         args.port,
     )?;
@@ -93,8 +97,13 @@ fn network_exists(name: &str) -> anyhow::Result<bool> {
 }
 
 fn network_create_internal(name: &str) -> anyhow::Result<()> {
+    // Disable DNS on the internal network: steps reach sidecars by raw IP, and
+    // without this flag podman puts the internal network's aardvark-dns into
+    // resolv.conf alongside the bridge one (in nondeterministic order), which
+    // makes external name resolution in the sidecar fail whenever the internal
+    // resolver — NXDOMAIN-only by design — is consulted first.
     let output = Command::new("podman")
-        .args(["network", "create", "--internal", name])
+        .args(["network", "create", "--internal", "--disable-dns", name])
         .output()
         .context("failed to run podman network create")?;
     if !output.status.success() {
