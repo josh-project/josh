@@ -24,6 +24,14 @@ jobs:
     runs-on: ubuntu-latest
     name: CI
     if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
+    env:
+      # Fork PRs and dependabot PRs run with a restricted token and no repository
+      # secrets, so they can't reach R2 or authenticate the sccache-proxy sidecar.
+      # Drop the sidecars overlay for those runs so the build is fully
+      # self-contained (falls back to the local sccache disk cache), and skip the
+      # R2 and remote-cache checks below.
+      SECRETLESS: ${{ github.event.pull_request.head.repo.fork == true || github.actor == 'dependabot[bot]' }}
+      COMPOSE_FILTER: ${{ (github.event.pull_request.head.repo.fork == true || github.actor == 'dependabot[bot]') && ':+compose' || ':[::sidecars.josh=ci-sidecars.josh,:/]:+compose' }}
     steps:
     - name: Free up disk space
       shell: bash
@@ -62,23 +70,23 @@ jobs:
         AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
       run: .github/workflows/scripts/bootstrap-josh.sh
     - name: Pull cached job markers and volumes from R2
-      if: github.event_name != 'pull_request' || !github.event.pull_request.head.repo.fork
+      if: env.SECRETLESS != 'true'
       env:
         AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
         AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
       run: |
         export PATH="$(pwd)/target/release:$PATH"
         export JOSH_EXPERIMENTAL_FEATURES=1
-        .github/workflows/scripts/pull-jobs.sh HEAD ":[::sidecars.josh=ci-sidecars.josh,:/]:+compose"
+        .github/workflows/scripts/pull-jobs.sh HEAD "$COMPOSE_FILTER"
     - name: Pull cached images from R2
-      if: github.event_name != 'pull_request' || !github.event.pull_request.head.repo.fork
+      if: env.SECRETLESS != 'true'
       env:
         AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
         AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
       run: |
         export PATH="$(pwd)/target/release:$PATH"
         export JOSH_EXPERIMENTAL_FEATURES=1
-        .github/workflows/scripts/pull-images.sh HEAD ":[::sidecars.josh=ci-sidecars.josh,:/]:+compose"
+        .github/workflows/scripts/pull-images.sh HEAD "$COMPOSE_FILTER"
     - name: Run tests
       env:
         AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
@@ -86,27 +94,29 @@ jobs:
       run: |
         set -o pipefail
         target/release/josh compose run HEAD \
-          ":[::sidecars.josh=ci-sidecars.josh,:/]:+compose" 2>&1 \
+          "$COMPOSE_FILTER" 2>&1 \
           | tee /tmp/compose-run.log
-        if grep -q SCCACHE_REMOTE_CACHE_MISSING /tmp/compose-run.log; then
+        # Secretless runs (forks, dependabot) have no sidecar-provided remote
+        # cache, so the local fallback is expected; only enforce it otherwise.
+        if [ "$SECRETLESS" != "true" ] && grep -q SCCACHE_REMOTE_CACHE_MISSING /tmp/compose-run.log; then
           echo "::error::sccache remote cache was not used during the build"
           exit 1
         fi
     - name: Push job markers and volumes to R2
-      if: success() && (github.event_name != 'pull_request' || !github.event.pull_request.head.repo.fork)
+      if: success() && env.SECRETLESS != 'true'
       env:
         AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
         AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
       run: |
         export PATH="$(pwd)/target/release:$PATH"
         export JOSH_EXPERIMENTAL_FEATURES=1
-        .github/workflows/scripts/push-jobs.sh HEAD ":[::sidecars.josh=ci-sidecars.josh,:/]:+compose"
+        .github/workflows/scripts/push-jobs.sh HEAD "$COMPOSE_FILTER"
     - name: Push built images to R2
-      if: success() && (github.event_name != 'pull_request' || !github.event.pull_request.head.repo.fork)
+      if: success() && env.SECRETLESS != 'true'
       env:
         AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
         AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
       run: |
         export PATH="$(pwd)/target/release:$PATH"
         export JOSH_EXPERIMENTAL_FEATURES=1
-        .github/workflows/scripts/push-images.sh HEAD ":[::sidecars.josh=ci-sidecars.josh,:/]:+compose"
+        .github/workflows/scripts/push-images.sh HEAD "$COMPOSE_FILTER"
