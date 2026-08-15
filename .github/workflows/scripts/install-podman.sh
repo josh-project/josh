@@ -28,6 +28,11 @@ for bin in podman crun runc pasta fuse-overlayfs fusermount3; do
     sudo ln -sf "${PREFIX}/usr/local/bin/${bin}" "/usr/local/bin/${bin}"
 done
 
+sudo mkdir -p /usr/local/libexec/podman
+for helper in "${PREFIX}"/usr/local/lib/podman/*; do
+    sudo ln -sf "${helper}" "/usr/local/libexec/podman/$(basename "${helper}")"
+done
+
 sudo mkdir -p /etc/containers
 sudo install -m 0644 "${PODMAN_DIR}/containers.conf" /etc/containers/containers.conf
 
