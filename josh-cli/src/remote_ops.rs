@@ -45,11 +45,16 @@ pub fn get_head_branch(
 /// Returns an error if the symref cannot be resolved (e.g. the remote
 /// has not been fetched yet or does not advertise HEAD).
 pub fn resolve_default_branch(
-    repo: &git2::Repository,
+    transaction: &josh_core::cache::Transaction,
     remote_name: &str,
 ) -> anyhow::Result<String> {
     let head_symref = format!("refs/remotes/{}/HEAD", remote_name);
-    repo.find_reference(&head_symref)
+    // PORT: symbolic-target read needs the target name, not the oid, so it is not
+    // expressible via resolve_ref; stays on the git2 handle until flag day (gix
+    // try_find_reference then).
+    transaction
+        .repo()
+        .find_reference(&head_symref)
         .ok()
         .and_then(|r| r.symbolic_target().ok().flatten().map(|s| s.to_string()))
         .and_then(|target| {
@@ -73,17 +78,14 @@ pub fn get_backing_refs(
     transaction: &josh_core::cache::Transaction,
     remote_name: &str,
 ) -> anyhow::Result<Vec<(String, git2::Oid)>> {
-    let repo = transaction.repo();
     let mut input_refs = Vec::new();
-    let josh_remotes = repo.references_glob(&format!("refs/josh/remotes/{}/*", remote_name))?;
-
-    for reference in josh_remotes {
-        let reference = reference?;
-        if let Some(target) = reference.target() {
-            let ref_name = reference.name().unwrap().to_string();
-            input_refs.push((ref_name, target));
-        }
-    }
+    transaction.for_each_ref_prefixed(
+        &format!("refs/josh/remotes/{}/", remote_name),
+        |name, oid| {
+            input_refs.push((name.to_string(), oid));
+            Ok(())
+        },
+    )?;
 
     if input_refs.is_empty() {
         return Err(anyhow::anyhow!(
@@ -163,7 +165,13 @@ pub fn apply_josh_filtering(
             if branch_name == default_branch {
                 let filtered_ref =
                     format!("refs/josh/filtered/{}/heads/{}", prefix_path, branch_name);
-                repo.reference(&filtered_ref, *filtered_oid, true, "josh filter")
+                transaction
+                    .update_ref(
+                        &filtered_ref,
+                        josh_core::cache::Expected::Any,
+                        *filtered_oid,
+                        "josh filter",
+                    )
                     .with_context(|| format!("failed to write filtered ref '{}'", filtered_ref))?;
             }
 
@@ -179,7 +187,13 @@ pub fn apply_josh_filtering(
             "refs/namespaces/josh-{}/refs/heads/{}",
             remote_name, branch_name
         );
-        repo.reference(&ns_ref, *filtered_oid, true, "josh filter")
+        transaction
+            .update_ref(
+                &ns_ref,
+                josh_core::cache::Expected::Any,
+                *filtered_oid,
+                "josh filter",
+            )
             .context("failed to create filtered reference")?;
     }
 

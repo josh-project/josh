@@ -3203,6 +3203,7 @@ dependencies = [
  "dirs",
  "env_logger",
  "git2",
+ "glob",
  "josh-changes",
  "josh-compose",
  "josh-compose-podman",

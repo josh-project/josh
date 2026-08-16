@@ -197,13 +197,15 @@ pub fn render_fetch_summary(
 /// different remote than the one the branch tracks is an error (mirroring
 /// `git pull <other-remote>` without a branch argument).
 fn resolve_upstream_ref(
-    repo: &git2::Repository,
+    transaction: &josh_core::cache::Transaction,
     branch_ref: &str,
     remote: &str,
 ) -> anyhow::Result<String> {
     let expected_prefix = format!("refs/remotes/{}/", remote);
 
-    if let Ok(upstream_buf) = repo.branch_upstream_name(branch_ref) {
+    // PORT: config-based upstream resolution stays on the git2 handle until flag day
+    // (gix branch_remote_tracking_ref_name then).
+    if let Ok(upstream_buf) = transaction.repo().branch_upstream_name(branch_ref) {
         if let Ok(upstream) = upstream_buf.as_str() {
             if !upstream.starts_with(&expected_prefix) {
                 return Err(anyhow::anyhow!(
@@ -309,6 +311,8 @@ pub fn integrate(
 ) -> anyhow::Result<IntegrateReport> {
     let repo = transaction.repo();
 
+    // PORT: symbolic-HEAD read is not expressible via resolve_ref; move to a
+    // Transaction helper at flag day (gix head_name()).
     let head = repo.head().context("Failed to resolve HEAD")?;
     if !head.is_branch() {
         anyhow::bail!("HEAD is detached; cannot integrate pull");
@@ -322,16 +326,22 @@ pub fn integrate(
         .unwrap_or(&branch_ref)
         .to_string();
 
-    let upstream_refname = resolve_upstream_ref(repo, &branch_ref, remote)?;
+    let upstream_refname = resolve_upstream_ref(transaction, &branch_ref, remote)?;
+    let new = transaction
+        .resolve_ref(&upstream_refname)?
+        .ok_or_else(|| anyhow::anyhow!("failed to resolve upstream ref '{}'", upstream_refname))?;
     let new = repo
-        .find_reference(&upstream_refname)
-        .and_then(|r| r.peel_to_commit())
+        .find_object(new, None)?
+        .peel_to_commit()
         .with_context(|| format!("failed to resolve upstream ref '{}'", upstream_refname))?
         .id();
     let old = head
         .peel_to_commit()
         .context("failed to resolve HEAD commit")?
         .id();
+    // The ref's stored target, which the CAS guard on the write below compares against;
+    // differs from the peeled `old` only if the branch points at an annotated tag.
+    let old_target = head.target().context("HEAD branch has no direct target")?;
 
     if old == new {
         return Ok(IntegrateReport::UpToDate);
@@ -407,7 +417,12 @@ pub fn integrate(
         Some(git2::build::CheckoutBuilder::new().safe()),
     )
     .context("failed to update working tree; local changes conflict with the pulled state")?;
-    repo.reference(&branch_ref, new_tip, true, "josh changes pull")?;
+    transaction.update_ref(
+        &branch_ref,
+        josh_core::cache::Expected::At(old_target),
+        new_tip,
+        "josh changes pull",
+    )?;
 
     Ok(report)
 }

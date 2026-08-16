@@ -60,27 +60,18 @@ fn handle_cache_build(args: &CacheBuildArgs, transaction: &Transaction) -> anyho
     let repo = transaction.repo();
     let repo_path = normalize_repo_path(repo.path());
 
-    let default_branch = remote_ops::resolve_default_branch(repo, &args.remote)?;
+    let default_branch = remote_ops::resolve_default_branch(transaction, &args.remote)?;
 
     // Discover known filter chains from refs/josh/filtered/ refs.
     let mut chain_prefixes: HashSet<String> = HashSet::new();
-    if let Ok(refs) = repo.references_glob("refs/josh/filtered/*") {
-        for reference in refs {
-            let reference = match reference {
-                Ok(r) => r,
-                Err(_) => continue,
-            };
-            let refname = match reference.name() {
-                Ok(n) => n,
-                Err(_) => continue,
-            };
-            if let Some(rest) = refname.strip_prefix("refs/josh/filtered/") {
-                if let Some(heads_pos) = rest.find("/heads/") {
-                    chain_prefixes.insert(rest[..heads_pos].to_string());
-                }
+    transaction.for_each_ref_prefixed("refs/josh/filtered/", |refname, _| {
+        if let Some(rest) = refname.strip_prefix("refs/josh/filtered/") {
+            if let Some(heads_pos) = rest.find("/heads/") {
+                chain_prefixes.insert(rest[..heads_pos].to_string());
             }
         }
-    }
+        Ok(())
+    })?;
 
     // Keep only the longest prefixes (full chains).
     // A shorter prefix like "B/A" is an intermediate step of "C/B/A".
@@ -162,16 +153,14 @@ fn handle_cache_build(args: &CacheBuildArgs, transaction: &Transaction) -> anyho
     let backing_prefix = format!("refs/josh/remotes/{}/", args.remote);
     let default_branch_ref = format!("{}{}", backing_prefix, default_branch);
     let default_branch_oid = build_transaction
-        .repo()
-        .find_reference(&default_branch_ref)
-        .with_context(|| {
-            format!(
+        .resolve_ref(&default_branch_ref)?
+        .ok_or_else(|| {
+            anyhow::anyhow!(
                 "Default branch '{}' not found in refs/josh/remotes/{}/",
-                default_branch, args.remote
+                default_branch,
+                args.remote
             )
-        })?
-        .target()
-        .context("Default branch ref has no target")?;
+        })?;
 
     let seed_commits = vec![(default_branch.clone(), default_branch_oid)];
 
@@ -201,11 +190,18 @@ fn handle_cache_build(args: &CacheBuildArgs, transaction: &Transaction) -> anyho
                 }
                 let filtered_ref =
                     format!("refs/josh/filtered/{}/heads/{}", prefix_path, branch_name);
-                // `filtered_oid`'s objects are in `build_transaction`'s in-memory store, so resolve
-                // the ref through its repo, not the outer one.
+                // The filtered objects live only in build_transaction's mem-odb until it
+                // flushes (on drop), so the refs briefly dangle for external readers:
+                // write them through the transaction that owns the objects, and route any
+                // future git subprocess that must see them through build_transaction's
+                // git_command (or run it after the drop, as `josh cache push` does).
                 build_transaction
-                    .repo()
-                    .reference(&filtered_ref, filtered_oid, true, "josh cache build")
+                    .update_ref(
+                        &filtered_ref,
+                        josh_core::cache::Expected::Any,
+                        filtered_oid,
+                        "josh cache build",
+                    )
                     .with_context(|| format!("failed to write filtered ref '{}'", filtered_ref))?;
                 next_commits.push((branch_name, filtered_oid));
             }
@@ -233,7 +229,7 @@ fn handle_cache_push(args: &CachePushArgs, transaction: &Transaction) -> anyhow:
     let RemoteConfig { url, .. } = config;
     let steps = flatten_chain(filter);
 
-    let default_branch = remote_ops::resolve_default_branch(repo, &args.remote)?;
+    let default_branch = remote_ops::resolve_default_branch(transaction, &args.remote)?;
 
     // Push all cache refs for the current cache version
     let cache_refspec = format!(
@@ -253,7 +249,7 @@ fn handle_cache_push(args: &CachePushArgs, transaction: &Transaction) -> anyhow:
             prefix_path, default_branch
         );
 
-        if repo.find_reference(&local_ref).is_err() {
+        if transaction.resolve_ref(&local_ref)?.is_none() {
             eprintln!(
                 "Warning: filtered ref '{}' not found — run 'josh cache build' first",
                 local_ref

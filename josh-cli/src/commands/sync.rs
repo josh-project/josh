@@ -31,18 +31,19 @@ pub fn handle_sync(
 ) -> anyhow::Result<()> {
     let repo = transaction.repo();
 
+    // PORT: symbolic-HEAD read is not expressible via resolve_ref; move to a
+    // Transaction helper at flag day (gix head_name()).
     let head = repo.head()?.peel_to_commit()?;
     let branch = repo.head()?.shorthand().ok().map(|s| s.to_string());
 
-    let base_oid = branch
-        .as_ref()
-        .and_then(|b| {
-            repo.find_reference(&format!("refs/remotes/origin/{}", b))
-                .ok()
-                .and_then(|r| r.peel_to_commit().ok())
-                .map(|c| c.id())
-        })
-        .unwrap_or(git2::Oid::ZERO_SHA1);
+    let base_oid = if let Some(b) = &branch {
+        match transaction.resolve_ref(&format!("refs/remotes/origin/{}", b))? {
+            Some(oid) => repo.find_object(oid, None)?.peel_to_commit()?.id(),
+            None => git2::Oid::ZERO_SHA1,
+        }
+    } else {
+        git2::Oid::ZERO_SHA1
+    };
 
     let resolved = args.scope.resolve(transaction)?;
     let remote_name = match &resolved {
@@ -66,9 +67,7 @@ pub fn handle_sync(
             }
         }
         for scope in to_delete {
-            if let Ok(mut r) = repo.find_reference(&scope.ref_name()) {
-                r.delete()?;
-            }
+            transaction.delete_ref(&scope.ref_name(), josh_core::cache::Expected::Any)?;
         }
     }
 
@@ -723,6 +722,8 @@ fn fetch_target_branch_tips(
         transaction
             .spawn_git(&["fetch", &github_url, "--no-tags", &refspec], &[])
             .with_context(|| format!("Failed to fetch target branch {}", target))?;
+        // PORT: FETCH_HEAD pseudo-ref read stays on the git2 handle until flag day
+        // (gix multi-entry FETCH_HEAD semantics still unresolved).
         let oid = repo
             .find_reference("FETCH_HEAD")
             .context("Failed to find FETCH_HEAD after target branch fetch")?

@@ -99,6 +99,8 @@ fn handle_link_add(
     let target = args.target.as_deref().unwrap_or("HEAD");
 
     // Get the current HEAD commit
+    // PORT: symbolic-HEAD read is not expressible via resolve_ref; move to a
+    // Transaction helper at flag day (gix head_name()).
     let head_ref = repo.head().context("Failed to get HEAD")?;
     let head_commit = head_ref
         .peel_to_commit()
@@ -138,6 +140,8 @@ fn handle_link_add(
             .spawn_git(&["fetch", &args.url, target], &[])
             .context("Failed to execute git fetch")?;
 
+        // PORT: FETCH_HEAD pseudo-ref read stays on the git2 handle until flag day
+        // (gix multi-entry FETCH_HEAD semantics still unresolved).
         let fetched_oid = repo
             .find_reference("FETCH_HEAD")
             .context("Failed to find FETCH_HEAD after fetch")?
@@ -168,7 +172,13 @@ fn handle_link_add(
     let branch_name = "refs/heads/josh-link";
 
     // Create or update the branch reference
-    repo.reference(branch_name, commit_oid, true, "josh link add")
+    transaction
+        .update_ref(
+            branch_name,
+            josh_core::cache::Expected::Any,
+            commit_oid,
+            "josh link add",
+        )
         .with_context(|| format!("Failed to create branch '{}'", branch_name))?;
 
     eprintln!(
@@ -186,6 +196,8 @@ fn handle_link_fetch(
 ) -> anyhow::Result<()> {
     let repo = transaction.repo();
 
+    // PORT: symbolic-HEAD read is not expressible via resolve_ref; move to a
+    // Transaction helper at flag day (gix head_name()).
     let head_commit = repo
         .head()
         .context("Failed to get HEAD")?
@@ -267,6 +279,8 @@ fn handle_link_update(
 ) -> anyhow::Result<()> {
     let repo = transaction.repo();
 
+    // PORT: symbolic-HEAD read is not expressible via resolve_ref; move to a
+    // Transaction helper at flag day (gix head_name()).
     let head_ref = repo.head().context("Failed to get HEAD")?;
     let head_commit = head_ref
         .peel_to_commit()
@@ -321,6 +335,8 @@ fn handle_link_update(
             .spawn_git(&["fetch", &remote, &branch], &[])
             .with_context(|| format!("git fetch failed for '{}'", path.display()))?;
 
+        // PORT: FETCH_HEAD pseudo-ref read stays on the git2 handle until flag day
+        // (gix multi-entry FETCH_HEAD semantics still unresolved).
         let new_oid = repo
             .find_reference("FETCH_HEAD")
             .context("Failed to find FETCH_HEAD")?
@@ -345,13 +361,14 @@ fn handle_link_update(
     };
 
     let branch_name = "refs/heads/josh-link";
-    repo.reference(
-        branch_name,
-        result.filtered_commit,
-        true,
-        "josh link update",
-    )
-    .with_context(|| format!("Failed to update branch '{}'", branch_name))?;
+    transaction
+        .update_ref(
+            branch_name,
+            josh_core::cache::Expected::Any,
+            result.filtered_commit,
+            "josh link update",
+        )
+        .with_context(|| format!("Failed to update branch '{}'", branch_name))?;
 
     eprintln!("Updated {} link file(s)", link_files.len());
     eprintln!("Updated branch: {}", branch_name);
@@ -366,6 +383,8 @@ fn handle_link_push(
     let repo = transaction.repo();
 
     // Get current HEAD commit
+    // PORT: symbolic-HEAD read is not expressible via resolve_ref; move to a
+    // Transaction helper at flag day (gix head_name()).
     let head_commit = repo
         .head()
         .context("Failed to get HEAD")?
