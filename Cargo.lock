@@ -3396,6 +3396,7 @@ dependencies = [
  "anyhow",
  "git2",
  "josh-changes",
+ "josh-core",
  "josh-github-graphql",
  "josh-github-webhooks",
  "serde_json",

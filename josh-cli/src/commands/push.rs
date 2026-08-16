@@ -216,20 +216,21 @@ fn prepare_push(
     let to_push = match (forge, push_mode) {
         (Some(Forge::Gerrit), PushMode::Publish(_)) => match gerrit_mode {
             GerritMode::Independent => josh_changes::build_gerrit_independent_push(
-                repo,
                 transaction,
                 remote_ref,
                 unfiltered_oid,
                 original_target,
             )
             .context("Failed to build Gerrit push")?,
-            GerritMode::Stack => {
-                josh_changes::build_gerrit_push(repo, remote_ref, unfiltered_oid, original_target)
-                    .context("Failed to build Gerrit push")?
-            }
+            GerritMode::Stack => josh_changes::build_gerrit_push(
+                transaction,
+                remote_ref,
+                unfiltered_oid,
+                original_target,
+            )
+            .context("Failed to build Gerrit push")?,
         },
         _ => build_to_push(
-            repo,
             transaction,
             push_mode,
             remote_ref,
@@ -244,7 +245,7 @@ fn prepare_push(
 
     let pr_infos =
         if !dry_run && matches!(push_mode, PushMode::Publish(_)) && *forge == Some(Forge::Github) {
-            josh_github_changes::collect_pr_infos(repo, &to_push)
+            josh_github_changes::collect_pr_infos(transaction, &to_push)
         } else {
             vec![]
         };

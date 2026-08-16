@@ -292,8 +292,9 @@ pub fn DetailView(sha: String, scope: josh_changes::ChangesRef, mut page: Signal
 }
 
 pub fn load_detail(sha: &str, scope: &josh_changes::ChangesRef) -> anyhow::Result<DetailData> {
-    let repo = git2::Repository::discover(".")?;
+    let transaction = crate::common::open_transaction()?;
     let oid = git2::Oid::from_str(sha)?;
+    let repo = transaction.repo();
     let commit = repo.find_commit(oid)?;
 
     let msg = commit.message().unwrap_or("");
@@ -329,12 +330,12 @@ pub fn load_detail(sha: &str, scope: &josh_changes::ChangesRef) -> anyhow::Resul
         });
     }
 
-    let mut change = josh_changes::Change::new(&repo, &commit);
+    let mut change = josh_changes::Change::new(&transaction, oid)?;
 
     let mut stack: Vec<StackCommit> = Vec::new();
     let mut pr_info: Option<PrInfo> = None;
     if let Some(ref cid) = change_id {
-        pr_info = josh_changes::read_pr_data(&repo, cid, scope)
+        pr_info = josh_changes::read_pr_data(&transaction, cid, scope)
             .ok()
             .flatten()
             .and_then(|json| serde_json::from_str::<serde_json::Value>(&json).ok())
@@ -346,7 +347,7 @@ pub fn load_detail(sha: &str, scope: &josh_changes::ChangesRef) -> anyhow::Resul
             });
 
         // Adopt the base oid recorded under the selected scope, if present.
-        if let Ok(all) = josh_changes::list_changes(&repo, scope) {
+        if let Ok(all) = josh_changes::list_changes(&transaction, scope) {
             if let Some(c) = all.iter().find(|c| c.id() == Some(cid.as_str())) {
                 let base = c.base();
                 if base != git2::Oid::ZERO_SHA1 {
@@ -354,7 +355,7 @@ pub fn load_detail(sha: &str, scope: &josh_changes::ChangesRef) -> anyhow::Resul
                 }
             }
         }
-        for oid in change.contributing(&repo).unwrap_or_default() {
+        for oid in change.contributing(&transaction).unwrap_or_default() {
             if let Ok(c) = repo.find_commit(oid) {
                 let msg = c.message().unwrap_or("");
                 let c_subject = msg.lines().next().unwrap_or("").to_string();
@@ -372,12 +373,12 @@ pub fn load_detail(sha: &str, scope: &josh_changes::ChangesRef) -> anyhow::Resul
 
     let comments = change_id
         .as_deref()
-        .map(|cid| josh_changes::read_comments(&repo, cid, scope).unwrap_or_default())
+        .map(|cid| josh_changes::read_comments(&transaction, cid, scope).unwrap_or_default())
         .unwrap_or_default();
-    let revisions = josh_changes::read_revisions(&repo, &change, scope).unwrap_or_default();
+    let revisions = josh_changes::read_revisions(&transaction, &change, scope).unwrap_or_default();
     let local_vote = change_id
         .as_ref()
-        .and_then(|cid| josh_changes::read_vote(&repo, cid, None, scope).ok())
+        .and_then(|cid| josh_changes::read_vote(&transaction, cid, None, scope).ok())
         .flatten();
 
     Ok(DetailData {
@@ -404,10 +405,9 @@ pub fn save_comment(
     message: &str,
     scope: &josh_changes::ChangesRef,
 ) -> anyhow::Result<String> {
-    let repo = git2::Repository::discover(".")?;
+    let transaction = crate::common::open_transaction()?;
     let oid = git2::Oid::from_str(sha)?;
-    let commit = repo.find_commit(oid)?;
-    let change = josh_changes::Change::new(&repo, &commit);
+    let change = josh_changes::Change::new(&transaction, oid)?;
 
     let meta = josh_changes::CommentMeta {
         message: message.to_string(),
@@ -422,14 +422,18 @@ pub fn save_comment(
         update_of: None,
     };
 
-    match scope {
+    let content_hash = match scope {
         josh_changes::ChangesRef::Remote { .. } => {
-            josh_changes::write_outbox_comment(&repo, &change, &meta, None, None, scope)
+            josh_changes::write_outbox_comment(&transaction, &change, &meta, None, None, scope)?
         }
         josh_changes::ChangesRef::Local { .. } => {
-            josh_changes::write_comment(&repo, &change, &meta, None, None, scope)
+            josh_changes::write_comment(&transaction, &change, &meta, None, None, scope)?
         }
-    }
+    };
+    // The write went into the transaction's in-memory odb; make it durable (and
+    // surface flush errors) before reporting success.
+    transaction.flush_mem_odb()?;
+    Ok(content_hash)
 }
 
 pub fn save_vote(
@@ -438,10 +442,9 @@ pub fn save_vote(
     body: &str,
     scope: &josh_changes::ChangesRef,
 ) -> anyhow::Result<String> {
-    let repo = git2::Repository::discover(".")?;
+    let transaction = crate::common::open_transaction()?;
     let oid = git2::Oid::from_str(sha)?;
-    let commit = repo.find_commit(oid)?;
-    let change = josh_changes::Change::new(&repo, &commit);
+    let change = josh_changes::Change::new(&transaction, oid)?;
 
     let body_meta = || josh_changes::CommentMeta {
         message: body.to_string(),
@@ -451,11 +454,11 @@ pub fn save_vote(
         update_of: None,
     };
 
-    match scope {
+    let content_hash = match scope {
         josh_changes::ChangesRef::Remote { .. } => {
             if !body.trim().is_empty() {
                 josh_changes::write_outbox_comment(
-                    &repo,
+                    &transaction,
                     &change,
                     &body_meta(),
                     None,
@@ -463,13 +466,24 @@ pub fn save_vote(
                     scope,
                 )?;
             }
-            josh_changes::write_outbox_vote(&repo, &change, state, None, None, scope)
+            josh_changes::write_outbox_vote(&transaction, &change, state, None, None, scope)?
         }
         josh_changes::ChangesRef::Local { .. } => {
             if !body.trim().is_empty() {
-                josh_changes::write_comment(&repo, &change, &body_meta(), None, None, scope)?;
+                josh_changes::write_comment(
+                    &transaction,
+                    &change,
+                    &body_meta(),
+                    None,
+                    None,
+                    scope,
+                )?;
             }
-            josh_changes::write_vote(&repo, &change, state, None, None, scope)
+            josh_changes::write_vote(&transaction, &change, state, None, None, scope)?
         }
-    }
+    };
+    // The write went into the transaction's in-memory odb; make it durable (and
+    // surface flush errors) before reporting success.
+    transaction.flush_mem_odb()?;
+    Ok(content_hash)
 }

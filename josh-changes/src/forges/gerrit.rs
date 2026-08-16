@@ -133,7 +133,7 @@ fn rewrite_chain_with_gerrit_ids(
 /// where every change appears once with exactly one parent. Each commit is
 /// rewritten to carry a deterministic Gerrit `Change-Id`.
 pub fn build_gerrit_push(
-    repo: &git2::Repository,
+    transaction: &josh_core::cache::Transaction,
     branch: &str,
     tip: git2::Oid,
     base: git2::Oid,
@@ -142,7 +142,7 @@ pub fn build_gerrit_push(
         return Ok(vec![]);
     }
 
-    let new_tip = rewrite_chain_with_gerrit_ids(repo, tip, base)?;
+    let new_tip = rewrite_chain_with_gerrit_ids(transaction.repo(), tip, base)?;
     Ok(vec![PushRef {
         ref_name: format!("refs/for/{}", branch),
         oid: new_tip,
@@ -163,13 +163,13 @@ pub fn build_gerrit_push(
 /// The returned `PushRef`s all target the same `refs/for/<branch>` ref with
 /// distinct oids; the caller pushes each in its own `git push` invocation.
 pub fn build_gerrit_independent_push(
-    repo: &git2::Repository,
     transaction: &josh_core::cache::Transaction,
     branch: &str,
     tip: git2::Oid,
     base: git2::Oid,
 ) -> anyhow::Result<Vec<PushRef>> {
-    let changes = get_changes(repo, tip, base)?;
+    let repo = transaction.repo();
+    let changes = get_changes(transaction, tip, base)?;
     let changes = split_changes(transaction, changes)?;
 
     // `get_changes` collects into a HashMap, so sort for a deterministic push order.

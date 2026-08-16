@@ -14,8 +14,8 @@ pub fn handle_list(
     transaction: &josh_core::cache::Transaction,
 ) -> anyhow::Result<()> {
     let repo = transaction.repo();
-    let scope = args.scope.resolve(repo)?;
-    let changes = josh_changes::list_changes(repo, &scope)?;
+    let scope = args.scope.resolve(transaction)?;
+    let changes = josh_changes::list_changes(transaction, &scope)?;
 
     let scope_label = match &scope {
         josh_changes::ChangesRef::Local { branch } => format!("Local [{}]", branch),
@@ -44,7 +44,7 @@ pub fn handle_list(
 
         println!("{} {}{} ({})", id, subject, series, change.author());
 
-        let contributing = change.contributing(repo)?;
+        let contributing = change.contributing(transaction)?;
         for oid in &contributing {
             if let Ok(c) = repo.find_commit(*oid) {
                 let c_subject = c.message().unwrap_or("").lines().next().unwrap_or("");
@@ -55,7 +55,7 @@ pub fn handle_list(
 
         let comments = change
             .id()
-            .map(|cid| josh_changes::read_comments(repo, cid, &scope).unwrap_or_default())
+            .map(|cid| josh_changes::read_comments(transaction, cid, &scope).unwrap_or_default())
             .unwrap_or_default();
         if !comments.is_empty() {
             println!();

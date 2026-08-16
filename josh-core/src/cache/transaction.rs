@@ -15,6 +15,18 @@ pub trait FilterHook {
     ) -> anyhow::Result<crate::filter::Filter>;
 }
 
+/// What [`Transaction::update_ref`] requires the ref to currently be before it is
+/// repointed at the new target.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Expected {
+    /// No requirement: overwrite whatever is there.
+    Any,
+    /// The ref must not exist yet.
+    Absent,
+    /// The ref must currently point at exactly this oid.
+    At(git2::Oid),
+}
+
 static REF_CACHE: LazyLock<RwLock<HashMap<git2::Oid, HashMap<git2::Oid, git2::Oid>>>> =
     LazyLock::new(Default::default);
 
@@ -321,15 +333,34 @@ impl Transaction {
         }
     }
 
-    /// Force-create or update a direct ref to point at `target`. An existing ref is
-    /// overwritten unconditionally; updating to the value a ref already has is a no-op.
+    /// Create or update the direct ref `refname` to point at `target`, guarded by
+    /// `expected`: with `Expected::Any` an existing ref is overwritten unconditionally
+    /// (updating to the value a ref already has is a no-op); `Expected::At(oid)` asserts
+    /// the ref currently points at `oid`; `Expected::Absent` asserts it does not exist.
+    /// On a failed assertion — including a ref that appeared or disappeared
+    /// concurrently — an error is returned and the ref is unchanged. Writers that derive
+    /// `target` from the ref's old value pass `At`/`Absent` so they never overwrite a
+    /// concurrent update. (gix mapping: `PreviousValue::Any` / `MustExistAndMatch` /
+    /// `MustNotExist`.)
     pub fn update_ref(
         &self,
         refname: &str,
+        expected: Expected,
         target: git2::Oid,
         log_message: &str,
     ) -> anyhow::Result<()> {
-        self.repo.reference(refname, target, true, log_message)?;
+        match expected {
+            Expected::Any => {
+                self.repo.reference(refname, target, true, log_message)?;
+            }
+            Expected::At(old) => {
+                self.repo
+                    .reference_matching(refname, target, true, old, log_message)?;
+            }
+            Expected::Absent => {
+                self.repo.reference(refname, target, false, log_message)?;
+            }
+        }
         Ok(())
     }
 
@@ -784,7 +815,7 @@ mod tests {
         let (_dir, transaction) = test_transaction();
         let oid = commit(&transaction, "a");
         transaction
-            .update_ref("refs/heads/main", oid, "test")
+            .update_ref("refs/heads/main", Expected::Any, oid, "test")
             .unwrap();
         transaction
             .repo()
@@ -814,17 +845,113 @@ mod tests {
         let a = commit(&transaction, "a");
         let b = commit(&transaction, "b");
         transaction
-            .update_ref("refs/heads/main", a, "test")
+            .update_ref("refs/heads/main", Expected::Any, a, "test")
             .unwrap();
         transaction
-            .update_ref("refs/heads/main", b, "test")
+            .update_ref("refs/heads/main", Expected::Any, b, "test")
             .unwrap();
         assert_eq!(transaction.resolve_ref("refs/heads/main").unwrap(), Some(b));
         // Re-writing the current value succeeds as a no-op.
         transaction
-            .update_ref("refs/heads/main", b, "test")
+            .update_ref("refs/heads/main", Expected::Any, b, "test")
             .unwrap();
         assert_eq!(transaction.resolve_ref("refs/heads/main").unwrap(), Some(b));
+    }
+
+    #[test]
+    fn update_ref_absent_creates() {
+        let (_dir, transaction) = test_transaction();
+        let a = commit(&transaction, "a");
+        transaction
+            .update_ref("refs/heads/main", Expected::Absent, a, "test")
+            .unwrap();
+        assert_eq!(transaction.resolve_ref("refs/heads/main").unwrap(), Some(a));
+    }
+
+    #[test]
+    fn update_ref_absent_fails_on_existing_ref() {
+        let (_dir, transaction) = test_transaction();
+        let a = commit(&transaction, "a");
+        let b = commit(&transaction, "b");
+        transaction
+            .update_ref("refs/heads/main", Expected::Any, a, "test")
+            .unwrap();
+        assert!(
+            transaction
+                .update_ref("refs/heads/main", Expected::Absent, b, "test")
+                .is_err()
+        );
+        assert_eq!(transaction.resolve_ref("refs/heads/main").unwrap(), Some(a));
+    }
+
+    #[test]
+    fn update_ref_at_updates_on_match() {
+        let (_dir, transaction) = test_transaction();
+        let a = commit(&transaction, "a");
+        let b = commit(&transaction, "b");
+        transaction
+            .update_ref("refs/heads/main", Expected::Any, a, "test")
+            .unwrap();
+        transaction
+            .update_ref("refs/heads/main", Expected::At(a), b, "test")
+            .unwrap();
+        assert_eq!(transaction.resolve_ref("refs/heads/main").unwrap(), Some(b));
+    }
+
+    #[test]
+    fn update_ref_at_fails_on_mismatch() {
+        let (_dir, transaction) = test_transaction();
+        let a = commit(&transaction, "a");
+        let b = commit(&transaction, "b");
+        let c = commit(&transaction, "c");
+        transaction
+            .update_ref("refs/heads/main", Expected::Any, a, "test")
+            .unwrap();
+        assert!(
+            transaction
+                .update_ref("refs/heads/main", Expected::At(b), c, "test")
+                .is_err()
+        );
+        assert_eq!(transaction.resolve_ref("refs/heads/main").unwrap(), Some(a));
+    }
+
+    #[test]
+    fn update_ref_at_fails_on_missing_ref() {
+        let (_dir, transaction) = test_transaction();
+        let a = commit(&transaction, "a");
+        let b = commit(&transaction, "b");
+        assert!(
+            transaction
+                .update_ref("refs/heads/missing", Expected::At(a), b, "test")
+                .is_err()
+        );
+        assert_eq!(transaction.resolve_ref("refs/heads/missing").unwrap(), None);
+    }
+
+    #[test]
+    fn update_ref_at_matches_packed_ref() {
+        let (dir, transaction) = test_transaction();
+        let a = commit(&transaction, "a");
+        let b = commit(&transaction, "b");
+        transaction
+            .update_ref("refs/josh/a", Expected::Any, a, "test")
+            .unwrap();
+        // Pack the ref by hand (git2 exposes no pack-refs API): the CAS must see the
+        // packed value, not conclude the ref is absent.
+        std::fs::write(
+            dir.path().join("packed-refs"),
+            format!(
+                "# pack-refs with: peeled fully-peeled sorted\n{} refs/josh/a\n",
+                a
+            ),
+        )
+        .unwrap();
+        std::fs::remove_file(dir.path().join("refs/josh/a")).unwrap();
+
+        transaction
+            .update_ref("refs/josh/a", Expected::At(a), b, "test")
+            .unwrap();
+        assert_eq!(transaction.resolve_ref("refs/josh/a").unwrap(), Some(b));
     }
 
     #[test]
@@ -833,10 +960,14 @@ mod tests {
         let oid = commit(&transaction, "a");
         // Insertion order deliberately unsorted; refs/josh-x/ must not match the
         // refs/josh/ prefix; the symbolic ref sorts inside the range but is skipped.
-        transaction.update_ref("refs/josh/b", oid, "test").unwrap();
-        transaction.update_ref("refs/josh/a", oid, "test").unwrap();
         transaction
-            .update_ref("refs/josh-x/c", oid, "test")
+            .update_ref("refs/josh/b", Expected::Any, oid, "test")
+            .unwrap();
+        transaction
+            .update_ref("refs/josh/a", Expected::Any, oid, "test")
+            .unwrap();
+        transaction
+            .update_ref("refs/josh-x/c", Expected::Any, oid, "test")
             .unwrap();
         transaction
             .repo()
@@ -871,8 +1002,12 @@ mod tests {
     fn for_each_ref_prefixed_propagates_callback_errors() {
         let (_dir, transaction) = test_transaction();
         let oid = commit(&transaction, "a");
-        transaction.update_ref("refs/josh/a", oid, "test").unwrap();
-        transaction.update_ref("refs/josh/b", oid, "test").unwrap();
+        transaction
+            .update_ref("refs/josh/a", Expected::Any, oid, "test")
+            .unwrap();
+        transaction
+            .update_ref("refs/josh/b", Expected::Any, oid, "test")
+            .unwrap();
 
         let mut calls = 0;
         let result = transaction.for_each_ref_prefixed("refs/josh/", |_, _| {

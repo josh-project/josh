@@ -13,7 +13,14 @@ pub struct Change {
 }
 
 impl Change {
-    pub fn new(_repo: &git2::Repository, commit: &git2::Commit) -> Self {
+    pub fn new(
+        transaction: &josh_core::cache::Transaction,
+        commit: git2::Oid,
+    ) -> anyhow::Result<Self> {
+        Ok(Self::from_commit(&transaction.repo().find_commit(commit)?))
+    }
+
+    pub(crate) fn from_commit(commit: &git2::Commit) -> Self {
         let mut change = Self {
             author: commit.author().email().unwrap_or("").to_string(),
             id: None,
@@ -52,8 +59,11 @@ impl Change {
         self.base = base;
     }
 
-    pub fn contributing(&self, repo: &git2::Repository) -> anyhow::Result<Vec<git2::Oid>> {
-        let mut walk = repo.revwalk()?;
+    pub fn contributing(
+        &self,
+        transaction: &josh_core::cache::Transaction,
+    ) -> anyhow::Result<Vec<git2::Oid>> {
+        let mut walk = transaction.repo().revwalk()?;
         walk.simplify_first_parent()?;
         walk.set_sorting(git2::Sort::TOPOLOGICAL)?;
         walk.push(self.commit)?;
@@ -97,10 +107,11 @@ pub(crate) fn split_changes(
 }
 
 pub(crate) fn get_changes(
-    repo: &git2::Repository,
+    transaction: &josh_core::cache::Transaction,
     tip: git2::Oid,
     base: git2::Oid,
 ) -> anyhow::Result<std::collections::HashMap<git2::Oid, Change>> {
+    let repo = transaction.repo();
     let mut walk = repo.revwalk()?;
     walk.set_sorting(git2::Sort::REVERSE | git2::Sort::TOPOLOGICAL)?;
     walk.simplify_first_parent()?;
@@ -112,7 +123,7 @@ pub(crate) fn get_changes(
     let mut changes = std::collections::HashMap::new();
     for rev in walk {
         let commit = repo.find_commit(rev?)?;
-        let mut change = Change::new(repo, &commit);
+        let mut change = Change::from_commit(&commit);
         if change.id.is_none() {
             continue;
         }
@@ -124,27 +135,30 @@ pub(crate) fn get_changes(
 }
 
 pub fn sync_changes(
-    repo: &git2::Repository,
     transaction: &josh_core::cache::Transaction,
     tip: git2::Oid,
     base: git2::Oid,
     branch: &str,
 ) -> anyhow::Result<Vec<Change>> {
-    let changes = get_changes(repo, tip, base)?;
+    let changes = get_changes(transaction, tip, base)?;
     let changes = split_changes(transaction, changes)?;
     let scope = ChangesRef::Local {
         branch: branch.to_string(),
     };
     for c in &changes {
-        let _ = store_diff_data(repo, c, &scope);
+        let _ = store_diff_data(transaction, c, &scope);
     }
     Ok(changes)
 }
 
-pub fn list_changes(repo: &git2::Repository, scope: &ChangesRef) -> anyhow::Result<Vec<Change>> {
-    let tree = match repo.find_reference(&scope.ref_name()) {
-        Ok(r) => r.peel_to_tree()?,
-        Err(_) => return Ok(Vec::new()),
+pub fn list_changes(
+    transaction: &josh_core::cache::Transaction,
+    scope: &ChangesRef,
+) -> anyhow::Result<Vec<Change>> {
+    let repo = transaction.repo();
+    let tree = match transaction.resolve_ref(&scope.ref_name())? {
+        Some(oid) => repo.find_commit(oid)?.tree()?,
+        None => return Ok(Vec::new()),
     };
 
     let diffs_tree = match tree
@@ -193,7 +207,7 @@ pub fn list_changes(repo: &git2::Repository, scope: &ChangesRef) -> anyhow::Resu
             Ok(c) => c,
             Err(_) => continue,
         };
-        let mut change = Change::new(repo, &commit);
+        let mut change = Change::from_commit(&commit);
         change.base = base_oid;
         if change.id.is_none() {
             change.id = Some(change_id);
@@ -204,21 +218,23 @@ pub fn list_changes(repo: &git2::Repository, scope: &ChangesRef) -> anyhow::Resu
 }
 
 pub fn resolve_change(
-    repo: &git2::Repository,
+    transaction: &josh_core::cache::Transaction,
     head: git2::Oid,
     spec: &str,
 ) -> anyhow::Result<Change> {
+    let repo = transaction.repo();
     // Try as a full OID first.
     if let Ok(oid) = git2::Oid::from_str(spec) {
         if let Ok(commit) = repo.find_commit(oid) {
-            return Ok(Change::new(repo, &commit));
+            return Ok(Change::from_commit(&commit));
         }
     }
 
     // Try as a revparse (branch, tag, short SHA).
+    // PORT: rev-parse stays on the git2 handle until flag day (gix rev_parse then).
     if let Ok(obj) = repo.revparse_single(spec) {
         if let Ok(commit) = obj.peel_to_commit() {
-            return Ok(Change::new(repo, &commit));
+            return Ok(Change::from_commit(&commit));
         }
     }
 
@@ -232,7 +248,7 @@ pub fn resolve_change(
         if let Ok(c) = repo.find_commit(oid) {
             let (id, _) = parse_change_meta(c.message().unwrap_or(""));
             if id.as_deref() == Some(spec) {
-                return Ok(Change::new(repo, &c));
+                return Ok(Change::from_commit(&c));
             }
         }
     }

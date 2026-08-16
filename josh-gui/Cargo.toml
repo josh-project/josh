@@ -16,6 +16,7 @@ clap = { version = "4", features = ["derive"] }
 dioxus = { version = "0.7", features = ["desktop"] }
 serde_json = "1.0"
 josh-changes = { path = "../josh-changes" }
+josh-core = { path = "../josh-core" }
 git2 = { version = "0.21.0", default-features = false, features = ["vendored-libgit2"] }
 
 # Same as the root workspace: use the vendored glob fork, which keeps the

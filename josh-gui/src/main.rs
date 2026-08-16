@@ -40,9 +40,9 @@ fn main() {
 
 fn resolve_initial_scope(cli: &Cli) -> josh_changes::ChangesRef {
     let branch = cli.branch.clone().unwrap_or_else(|| {
-        git2::Repository::discover(".")
+        common::open_transaction()
             .ok()
-            .and_then(|r| josh_changes::head_branch(&r).ok())
+            .and_then(|transaction| josh_changes::head_branch(&transaction).ok())
             .unwrap_or_default()
     });
     match &cli.remote {

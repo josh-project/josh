@@ -43,7 +43,7 @@ pub fn handle_sync(
         })
         .unwrap_or(git2::Oid::ZERO_SHA1);
 
-    let resolved = args.scope.resolve(repo)?;
+    let resolved = args.scope.resolve(transaction)?;
     let remote_name = match &resolved {
         josh_changes::ChangesRef::Remote { remote, .. } => Some(remote.clone()),
         josh_changes::ChangesRef::Local { .. } => None,
@@ -54,7 +54,7 @@ pub fn handle_sync(
         // `refs/josh/changes/<branch>`. For Remote: every
         // `refs/josh/remotes/<remote>/changes/<branch>` for the chosen remote.
         let mut to_delete: Vec<josh_changes::ChangesRef> = Vec::new();
-        for scope in josh_changes::all_changes_refs(repo)? {
+        for scope in josh_changes::all_changes_refs(transaction)? {
             let keep = match (&scope, remote_name.as_deref()) {
                 (josh_changes::ChangesRef::Local { .. }, None) => true,
                 (josh_changes::ChangesRef::Remote { remote, .. }, Some(name)) => remote == name,
@@ -160,7 +160,7 @@ pub fn handle_sync(
 
                 let result = (|| -> anyhow::Result<(josh_changes::Change, i64)> {
                     let change = if existing_change_id.is_some() {
-                        let mut change = josh_changes::Change::new(repo, &pr_head);
+                        let mut change = josh_changes::Change::new(transaction, pr_head.id())?;
                         let base = match parse_changes_target(&pr.head_ref_name)
                             .and_then(|t| target_branch_shas.get(&t))
                         {
@@ -179,16 +179,18 @@ pub fn handle_sync(
                         message.push_str(&format!("\n\nChange-Id: {}\n", change_id));
 
                         let merge_oid = josh_changes::create_synthetic_merge_commit(
-                            repo, &pr_head, &target, &message,
+                            transaction,
+                            pr_head.id(),
+                            target.id(),
+                            &message,
                         )?;
 
-                        let merge = repo.find_commit(merge_oid)?;
-                        let mut change = josh_changes::Change::new(repo, &merge);
+                        let mut change = josh_changes::Change::new(transaction, merge_oid)?;
                         change.set_base(target.id());
                         change
                     };
 
-                    josh_changes::store_diff_data(repo, &change, &remote_scope)?;
+                    josh_changes::store_diff_data(transaction, &change, &remote_scope)?;
                     Ok((change, pr.number))
                 })();
 
@@ -198,7 +200,7 @@ pub fn handle_sync(
                             &api,
                             &owner,
                             &repo_name,
-                            repo,
+                            transaction,
                             &change,
                             pr_number,
                             &remote_scope,
@@ -233,13 +235,13 @@ pub fn handle_sync(
             // Iterate every (change, scope) pair under this remote -- changes may live
             // under multiple target-branch refs.
             let remote_scopes: Vec<josh_changes::ChangesRef> =
-                josh_changes::all_changes_refs(repo)?
+                josh_changes::all_changes_refs(transaction)?
                     .into_iter()
                     .filter(|r| r.remote() == Some(&remote_name))
                     .collect();
             let mut all_changes: Vec<(josh_changes::Change, josh_changes::ChangesRef)> = Vec::new();
             for scope in &remote_scopes {
-                for c in josh_changes::list_changes(repo, scope)? {
+                for c in josh_changes::list_changes(transaction, scope)? {
                     all_changes.push((c, scope.clone()));
                 }
             }
@@ -261,7 +263,7 @@ pub fn handle_sync(
                         Some(n) => n,
                         None => {
                             // Custom Change-Id; try reading stored PR data.
-                            match josh_changes::read_pr_data(repo, change_id, remote_scope) {
+                            match josh_changes::read_pr_data(transaction, change_id, remote_scope) {
                                 Ok(Some(json)) => {
                                     match serde_json::from_str::<serde_json::Value>(&json) {
                                         Ok(v) => match v.get("number").and_then(|n| n.as_i64()) {
@@ -316,7 +318,7 @@ pub fn handle_sync(
                 if pr_data.state == "OPEN" {
                     // Record the current state even if unexpectedly open.
                     let json = serde_json::to_string(&pr_data)?;
-                    josh_changes::store_pr_data(repo, change_id, &json, remote_scope)?;
+                    josh_changes::store_pr_data(transaction, change_id, &json, remote_scope)?;
                     eprintln!(
                         "  Change '{}' (PR #{}): unexpectedly still OPEN on GitHub \
                          -- skipping deletion",
@@ -327,7 +329,9 @@ pub fn handle_sync(
 
                 // Commit 1: store the updated PR data (final CLOSED/MERGED state).
                 let json = serde_json::to_string(&pr_data)?;
-                if let Err(e) = josh_changes::store_pr_data(repo, change_id, &json, remote_scope) {
+                if let Err(e) =
+                    josh_changes::store_pr_data(transaction, change_id, &json, remote_scope)
+                {
                     eprintln!(
                         "  Change '{}' (PR #{}): failed to store updated PR data: {} \
                          -- skipping deletion",
@@ -337,7 +341,7 @@ pub fn handle_sync(
                 }
 
                 // Commit 2: delete the change from the remote changes ref.
-                if let Err(e) = josh_changes::delete_change(repo, change_id, remote_scope) {
+                if let Err(e) = josh_changes::delete_change(transaction, change_id, remote_scope) {
                     eprintln!(
                         "  Change '{}' (PR #{}): failed to delete: {}",
                         change_id, pr_number, e
@@ -370,7 +374,7 @@ pub fn handle_sync(
                         Ok(Some((pr_node_id, _, _))) => {
                             match josh_github_changes::post_local_comments(
                                 &api,
-                                repo,
+                                transaction,
                                 &change_id,
                                 &pr_node_id,
                                 &remote_scope,
@@ -396,7 +400,7 @@ pub fn handle_sync(
 
                             match josh_github_changes::post_local_votes(
                                 &api,
-                                repo,
+                                transaction,
                                 &change_id,
                                 &pr_node_id,
                                 &pr.head_oid,
@@ -445,8 +449,7 @@ pub fn handle_sync(
             josh_changes::ChangesRef::Remote { .. } => unreachable!(),
         };
         let _ = branch;
-        let changes =
-            josh_changes::sync_changes(repo, transaction, head.id(), base_oid, &local_branch)?;
+        let changes = josh_changes::sync_changes(transaction, head.id(), base_oid, &local_branch)?;
         if changes.is_empty() {
             println!("No local changes found.");
             return Ok(());
