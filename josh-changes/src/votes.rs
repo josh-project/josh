@@ -29,9 +29,9 @@ pub fn write_vote(
 }
 
 /// Write a vote into the outbox subtree of a `Remote` ref. The vote is queued
-/// for the next `sync --push` to post as a PR review, after which the
-/// `gh_vote_ids` mapping records the post and the outbox entry can be
-/// cleaned up.
+/// for the next `sync --push` to post to the forge, after which the forge's
+/// posted-vote tracking records the post and the outbox entry can be cleaned
+/// up.
 pub fn write_outbox_vote(
     transaction: &Transaction,
     change: &Change,
@@ -223,31 +223,19 @@ fn list_votes_at_prefix(
     Ok(votes)
 }
 
-/// Remove outbox vote entries whose `(state, sha)` matches an entry in
-/// `posted` (the forge's record of already-posted votes, keyed by user).
-/// Called by forge sync paths after a successful push so the outbox doesn't
-/// accumulate forever.
-pub fn cleanup_posted_outbox_votes(
+/// Delete the outbox vote entries of the given users from `scope`'s ref.
+/// Returns the number of entries removed.
+pub fn delete_outbox_votes(
     transaction: &Transaction,
     change_id: &str,
     scope: &ChangesRef,
-    posted: &std::collections::HashMap<String, VoteData>,
+    users: &[String],
 ) -> anyhow::Result<usize> {
-    if !matches!(scope, ChangesRef::Remote { .. }) {
-        return Err(anyhow::anyhow!(
-            "cleanup_posted_outbox_votes requires a Remote scope"
-        ));
+    if users.is_empty() {
+        return Ok(0);
     }
 
     let repo = transaction.repo();
-    if posted.is_empty() {
-        return Ok(0);
-    }
-    let outbox = list_outbox_votes(transaction, change_id, scope)?;
-    if outbox.is_empty() {
-        return Ok(0);
-    }
-
     let encoded = encode_change_id_path(change_id);
     let ref_name = scope.ref_name();
     let prev_commit = match transaction.resolve_ref(&ref_name)? {
@@ -257,14 +245,7 @@ pub fn cleanup_posted_outbox_votes(
     let mut tree = prev_commit.tree()?;
 
     let mut removed = 0usize;
-    for (user, data) in &outbox {
-        let posted = match posted.get(user) {
-            Some(p) => p,
-            None => continue,
-        };
-        if posted.state != data.state || posted.sha != data.sha {
-            continue;
-        }
+    for user in users {
         let path = std::path::Path::new("outbox/votes")
             .join(&encoded)
             .join(user);
@@ -279,7 +260,7 @@ pub fn cleanup_posted_outbox_votes(
     }
 
     let sig = repo.signature()?;
-    let msg = format!("cleanup posted outbox votes on {}\n", ref_name);
+    let msg = format!("delete outbox votes on {}\n", ref_name);
     let new_oid = repo.commit(None, &sig, &sig, &msg, &tree, &[&prev_commit])?;
     transaction.update_ref(&ref_name, Expected::At(prev_commit.id()), new_oid, &msg)?;
 

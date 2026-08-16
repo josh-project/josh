@@ -264,35 +264,56 @@ pub fn record_fetched_comments(
     Ok(())
 }
 
-/// Votes queued in the outbox that have not been posted to GitHub yet,
-/// i.e. those whose `(state, sha)` is not already recorded in `gh_vote_ids`.
+/// Filter `votes` (as loaded by [`josh_changes::list_outbox_votes`]) down to
+/// those not yet posted to GitHub, i.e. whose `(state, sha)` is not already
+/// recorded in `gh_vote_ids`.
 pub fn pending_votes(
     transaction: &Transaction,
     change_id: &str,
     scope: &josh_changes::ChangesRef,
+    votes: &[(String, josh_changes::VoteData)],
 ) -> anyhow::Result<Vec<(String, josh_changes::VoteData)>> {
-    let votes = josh_changes::list_outbox_votes(transaction, change_id, scope)?;
     if votes.is_empty() {
-        return Ok(votes);
+        return Ok(Vec::new());
     }
 
     let tracked = crate::ids::read_github_vote_ids(transaction, change_id, scope)?;
     Ok(votes
-        .into_iter()
+        .iter()
         .filter(|(user, data)| match tracked.get(user) {
             Some(t) => t.state != data.state || t.sha != data.sha,
             None => true,
         })
+        .cloned()
         .collect())
 }
 
-/// Remove outbox vote entries whose post is recorded in `gh_vote_ids`.
-/// Safe to call unconditionally -- it's a no-op when nothing needs cleaning.
+/// Remove outbox vote entries from `votes` (as loaded by
+/// [`josh_changes::list_outbox_votes`]) whose `(state, sha)` is recorded in
+/// `gh_vote_ids`, i.e. votes already posted to GitHub. Safe to call
+/// unconditionally -- it's a no-op when nothing needs cleaning.
 pub fn cleanup_posted_outbox_votes(
     transaction: &Transaction,
     change_id: &str,
     scope: &josh_changes::ChangesRef,
+    votes: &[(String, josh_changes::VoteData)],
 ) -> anyhow::Result<usize> {
+    if votes.is_empty() {
+        return Ok(0);
+    }
+
     let tracked = crate::ids::read_github_vote_ids(transaction, change_id, scope)?;
-    josh_changes::cleanup_posted_outbox_votes(transaction, change_id, scope, &tracked)
+    if tracked.is_empty() {
+        return Ok(0);
+    }
+
+    let users: Vec<String> = votes
+        .iter()
+        .filter(|(user, data)| match tracked.get(user) {
+            Some(t) => t.state == data.state && t.sha == data.sha,
+            None => false,
+        })
+        .map(|(user, _)| user.clone())
+        .collect();
+    josh_changes::delete_outbox_votes(transaction, change_id, scope, &users)
 }
