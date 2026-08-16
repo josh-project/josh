@@ -8,6 +8,7 @@ version = "0.1.0"
 [tasks]
 select-folders = "python -m bench select-folders"
 rust-lang = "python -m bench rust-lang"
+rustc-josh-sync = "python -m bench rustc-josh-sync"
 
 [dependencies]
 python = ">=3.14.6,<3.15"
