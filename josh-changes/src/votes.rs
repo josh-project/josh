@@ -186,28 +186,6 @@ pub fn list_outbox_votes(
     list_votes_at_prefix(transaction, change_id, scope, "outbox/votes")
 }
 
-/// Votes queued in the outbox that have not been posted to the forge yet,
-/// i.e. those whose `(state, sha)` is not already recorded in `gh_vote_ids`.
-pub fn pending_votes(
-    transaction: &Transaction,
-    change_id: &str,
-    scope: &ChangesRef,
-) -> anyhow::Result<Vec<(String, VoteData)>> {
-    let votes = list_outbox_votes(transaction, change_id, scope)?;
-    if votes.is_empty() {
-        return Ok(votes);
-    }
-
-    let tracked = crate::forges::github::read_github_vote_ids(transaction, change_id, scope)?;
-    Ok(votes
-        .into_iter()
-        .filter(|(user, data)| match tracked.get(user) {
-            Some(t) => t.state != data.state || t.sha != data.sha,
-            None => true,
-        })
-        .collect())
-}
-
 fn list_votes_at_prefix(
     transaction: &Transaction,
     change_id: &str,
@@ -245,13 +223,15 @@ fn list_votes_at_prefix(
     Ok(votes)
 }
 
-/// Remove outbox vote entries whose `(state, sha)` has already been recorded
-/// in the `gh_vote_ids` map for the change. Called by the sync push path after
-/// a successful push so the outbox doesn't accumulate forever.
+/// Remove outbox vote entries whose `(state, sha)` matches an entry in
+/// `posted` (the forge's record of already-posted votes, keyed by user).
+/// Called by forge sync paths after a successful push so the outbox doesn't
+/// accumulate forever.
 pub fn cleanup_posted_outbox_votes(
     transaction: &Transaction,
     change_id: &str,
     scope: &ChangesRef,
+    posted: &std::collections::HashMap<String, VoteData>,
 ) -> anyhow::Result<usize> {
     if !matches!(scope, ChangesRef::Remote { .. }) {
         return Err(anyhow::anyhow!(
@@ -260,8 +240,7 @@ pub fn cleanup_posted_outbox_votes(
     }
 
     let repo = transaction.repo();
-    let tracked = crate::forges::github::read_github_vote_ids(transaction, change_id, scope)?;
-    if tracked.is_empty() {
+    if posted.is_empty() {
         return Ok(0);
     }
     let outbox = list_outbox_votes(transaction, change_id, scope)?;
@@ -279,7 +258,7 @@ pub fn cleanup_posted_outbox_votes(
 
     let mut removed = 0usize;
     for (user, data) in &outbox {
-        let posted = match tracked.get(user) {
+        let posted = match posted.get(user) {
             Some(p) => p,
             None => continue,
         };

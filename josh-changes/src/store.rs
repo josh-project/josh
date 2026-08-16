@@ -23,7 +23,12 @@ pub(crate) fn parse_timestamp(s: Option<&str>) -> git2::Time {
     git2::Time::new(dt.timestamp(), dt.offset().local_minus_utc() / 60)
 }
 
-pub(crate) fn write_changes_tree(
+/// Write `blob_oid` at `path` inside `scope`'s ref, committing the updated
+/// tree onto the ref. No-op when the same blob is already present at `path`.
+///
+/// This is the generic write primitive for path-keyed metadata on changes
+/// refs; forge crates build their on-ref layouts on top of it.
+pub fn write_changes_tree(
     transaction: &Transaction,
     path: &std::path::Path,
     blob_oid: git2::Oid,
@@ -80,6 +85,37 @@ pub(crate) fn write_changes_tree(
         &msg,
     )?;
     Ok(())
+}
+
+/// Read a flat subtree of `scope`'s ref at `path` as a map of entry name to
+/// blob contents (UTF-8, lossy). Entries that are not blobs are skipped.
+/// Returns an empty map when the ref or the subtree does not exist.
+pub fn read_blob_map(
+    transaction: &Transaction,
+    scope: &ChangesRef,
+    path: &std::path::Path,
+) -> anyhow::Result<std::collections::HashMap<String, String>> {
+    let repo = transaction.repo();
+    let tree = match transaction.resolve_ref(&scope.ref_name())? {
+        Some(oid) => repo.find_commit(oid)?.tree()?,
+        None => return Ok(Default::default()),
+    };
+    let subtree = match get_tree(repo, &tree, path) {
+        Some(t) => t,
+        None => return Ok(Default::default()),
+    };
+    let mut map = std::collections::HashMap::new();
+    for entry in subtree.iter() {
+        if let Ok(name) = entry.name() {
+            if let Ok(blob) = entry.to_object(repo).and_then(|o| o.peel_to_blob()) {
+                map.insert(
+                    name.to_string(),
+                    String::from_utf8_lossy(blob.content()).to_string(),
+                );
+            }
+        }
+    }
+    Ok(map)
 }
 
 pub fn store_diff_data(

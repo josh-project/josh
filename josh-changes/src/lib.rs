@@ -1,6 +1,6 @@
 //! Stacked-changes metadata store for josh: change identity, comments, votes,
-//! revisions, and forge-specific publishing (GitHub-style stacked refs and
-//! Gerrit), persisted in `refs/josh/...` refs.
+//! revisions, and stacked-changes push machinery (including Gerrit-style
+//! publishing), persisted in `refs/josh/...` refs.
 //!
 //! The public API is flat: everything is re-exported at the crate root.
 
@@ -11,6 +11,7 @@ mod comments;
 mod forges;
 mod refs;
 mod revisions;
+mod stacked;
 mod store;
 mod votes;
 
@@ -19,5 +20,6 @@ pub use comments::*;
 pub use forges::*;
 pub use refs::*;
 pub use revisions::*;
+pub use stacked::*;
 pub use store::*;
 pub use votes::*;

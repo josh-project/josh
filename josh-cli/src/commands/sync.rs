@@ -227,7 +227,19 @@ impl GithubSyncCtx<'_> {
         josh_changes::store_pr_data(self.transaction, change_id, &json, &remote_scope)?;
 
         let fetched = josh_github_changes::fetched_comments(&pr_data);
-        josh_changes::store_fetched_comments(self.transaction, &change, &fetched, &remote_scope)
+        let written = josh_changes::store_fetched_comments(
+            self.transaction,
+            &change,
+            &fetched,
+            &remote_scope,
+        )?;
+        josh_github_changes::record_fetched_comments(
+            self.transaction,
+            change_id,
+            &written,
+            &remote_scope,
+        )?;
+        Ok(written.len())
     }
 
     /// Delete local changes whose PRs are no longer open on GitHub, after
@@ -435,10 +447,25 @@ impl GithubSyncCtx<'_> {
             {
                 Ok(Some((pr_node_id, _, _))) => {
                     'comments: {
-                        let pending = match josh_changes::pending_comments(
+                        let comments = match josh_changes::read_comments(
                             self.transaction,
                             &change_id,
                             &remote_scope,
+                        ) {
+                            Ok(c) => c,
+                            Err(e) => {
+                                eprintln!(
+                                    "  PR #{}: failed to load local comments: {}",
+                                    pr.number, e
+                                );
+                                break 'comments;
+                            }
+                        };
+                        let pending = match josh_github_changes::pending_comments(
+                            self.transaction,
+                            &change_id,
+                            &remote_scope,
+                            comments,
                         ) {
                             Ok(p) => p,
                             Err(e) => {
@@ -454,7 +481,7 @@ impl GithubSyncCtx<'_> {
                                 .await;
                         let mut recorded = 0usize;
                         for p in &outcome.posted {
-                            if let Err(e) = josh_changes::store_github_id(
+                            if let Err(e) = josh_github_changes::store_github_id(
                                 self.transaction,
                                 &change_id,
                                 &p.local_id,
@@ -479,7 +506,7 @@ impl GithubSyncCtx<'_> {
                     }
 
                     'votes: {
-                        let pending_votes = match josh_changes::pending_votes(
+                        let pending_votes = match josh_github_changes::pending_votes(
                             self.transaction,
                             &change_id,
                             &remote_scope,
@@ -499,7 +526,7 @@ impl GithubSyncCtx<'_> {
                         .await;
                         let mut recorded_votes = 0usize;
                         for (user, data) in &outcome.posted {
-                            if let Err(e) = josh_changes::store_github_vote_id(
+                            if let Err(e) = josh_github_changes::store_github_vote_id(
                                 self.transaction,
                                 &change_id,
                                 user,
@@ -516,7 +543,7 @@ impl GithubSyncCtx<'_> {
                         }
                         // Drop outbox entries whose post is now reflected in gh_vote_ids.
                         // Safe to call unconditionally -- it's a no-op when nothing needs cleaning.
-                        if let Err(e) = josh_changes::cleanup_posted_outbox_votes(
+                        if let Err(e) = josh_github_changes::cleanup_posted_outbox_votes(
                             self.transaction,
                             &change_id,
                             &remote_scope,

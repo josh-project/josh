@@ -1,8 +1,10 @@
-//! Posting local comments and votes to GitHub, and converting fetched PR
-//! comments into the forge-neutral shape `josh-changes` stores.
+//! Posting local comments and votes to GitHub, converting fetched PR
+//! comments into the forge-neutral shape `josh-changes` stores, and composing
+//! `josh-changes` storage primitives with the GitHub ID tracking in `ids`.
 
 use std::collections::HashMap;
 
+use josh_core::cache::Transaction;
 use josh_github_graphql::connection::GithubApiConnection;
 use josh_github_graphql::operations::pull_request::PrData;
 
@@ -177,7 +179,7 @@ pub async fn post_votes(
     };
 
     for (user, vote_data) in votes {
-        let event = josh_changes::vote_state_to_github_review(&vote_data.state);
+        let event = vote_state_to_github_review(&vote_data.state);
         let body = format!("josh vote: {}", vote_data.state);
 
         match connection
@@ -193,4 +195,104 @@ pub async fn post_votes(
     }
 
     outcome
+}
+
+/// Map a josh vote state to a GitHub pull request review event.
+fn vote_state_to_github_review(state: &str) -> &'static str {
+    match state {
+        "approve" => "APPROVE",
+        "discuss" => "COMMENT",
+        "revise" => "REQUEST_CHANGES",
+        _ => "COMMENT",
+    }
+}
+
+/// Filter `comments` (as loaded by [`josh_changes::read_comments`]) down to
+/// those not yet posted to GitHub, plus the GitHub node IDs of already-posted
+/// comments so [`post_comments`] can thread replies.
+pub fn pending_comments(
+    transaction: &Transaction,
+    change_id: &str,
+    scope: &josh_changes::ChangesRef,
+    comments: Vec<josh_changes::Comment>,
+) -> anyhow::Result<josh_changes::PendingComments> {
+    // Pending comments live in `outbox/comments/...` on the Remote ref. Anything
+    // already under `comments/...` was either fetched from the remote or has
+    // already been posted; either way it should not be re-posted.
+    let posted_ids = crate::ids::read_github_ids(transaction, change_id, scope)?;
+    let to_post = comments
+        .into_iter()
+        .filter(|c| c.pending && !posted_ids.contains_key(&c.id))
+        .collect();
+
+    Ok(josh_changes::PendingComments {
+        to_post,
+        posted_ids,
+    })
+}
+
+/// Record GitHub metadata for comments just stored by
+/// [`josh_changes::store_fetched_comments`]: track each written comment's
+/// node ID so it is marked as already posted, and drop outbox entries whose
+/// recorded node ID was observed in the fetch (the canonical copy now lives
+/// under `comments/...` on the ref).
+///
+/// `written` is the `(local hash, GitHub node ID)` pair list returned by
+/// `josh_changes::store_fetched_comments`.
+pub fn record_fetched_comments(
+    transaction: &Transaction,
+    change_id: &str,
+    written: &[(String, String)],
+    scope: &josh_changes::ChangesRef,
+) -> anyhow::Result<()> {
+    for (local_hash, github_id) in written {
+        crate::ids::store_github_id(transaction, change_id, local_hash, github_id, scope)?;
+    }
+
+    let fetched: std::collections::HashSet<&str> = written
+        .iter()
+        .map(|(_, github_id)| github_id.as_str())
+        .collect();
+    let gh_ids = crate::ids::read_github_ids(transaction, change_id, scope)?;
+    let to_remove: Vec<String> = gh_ids
+        .into_iter()
+        .filter(|(_, github_id)| fetched.contains(github_id.as_str()))
+        .map(|(local_hash, _)| local_hash)
+        .collect();
+    josh_changes::delete_outbox_comments(transaction, change_id, scope, &to_remove)?;
+
+    Ok(())
+}
+
+/// Votes queued in the outbox that have not been posted to GitHub yet,
+/// i.e. those whose `(state, sha)` is not already recorded in `gh_vote_ids`.
+pub fn pending_votes(
+    transaction: &Transaction,
+    change_id: &str,
+    scope: &josh_changes::ChangesRef,
+) -> anyhow::Result<Vec<(String, josh_changes::VoteData)>> {
+    let votes = josh_changes::list_outbox_votes(transaction, change_id, scope)?;
+    if votes.is_empty() {
+        return Ok(votes);
+    }
+
+    let tracked = crate::ids::read_github_vote_ids(transaction, change_id, scope)?;
+    Ok(votes
+        .into_iter()
+        .filter(|(user, data)| match tracked.get(user) {
+            Some(t) => t.state != data.state || t.sha != data.sha,
+            None => true,
+        })
+        .collect())
+}
+
+/// Remove outbox vote entries whose post is recorded in `gh_vote_ids`.
+/// Safe to call unconditionally -- it's a no-op when nothing needs cleaning.
+pub fn cleanup_posted_outbox_votes(
+    transaction: &Transaction,
+    change_id: &str,
+    scope: &josh_changes::ChangesRef,
+) -> anyhow::Result<usize> {
+    let tracked = crate::ids::read_github_vote_ids(transaction, change_id, scope)?;
+    josh_changes::cleanup_posted_outbox_votes(transaction, change_id, scope, &tracked)
 }

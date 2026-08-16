@@ -1,5 +1,5 @@
-use super::github::PushRef;
 use crate::change::{Change, get_changes, split_changes};
+use crate::stacked::PushRef;
 use anyhow::anyhow;
 
 /// A valid Gerrit Change-Id is the letter `I` followed by 40 hex digits.
