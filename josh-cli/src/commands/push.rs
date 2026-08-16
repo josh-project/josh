@@ -124,6 +124,8 @@ fn prepare_push(
         .strip_prefix("refs/heads/")
         .unwrap_or(&remote_ref);
 
+    // PORT: DWIM short-name resolution stays on the git2 handle until flag day (gix
+    // partial-name find_reference then).
     let local_commit = repo
         .resolve_reference_from_short_name(&local_ref)
         .with_context(|| format!("Failed to resolve local ref '{}'", local_ref))?
@@ -132,9 +134,7 @@ fn prepare_push(
 
     let dest_remote_ref = format!("refs/josh/remotes/{}/{}", remote_name, remote_ref);
     let (dest_oid, old_filtered_oid) =
-        if let Ok(remote_reference) = repo.find_reference(&dest_remote_ref) {
-            let dest_oid = remote_reference.target().unwrap_or(git2::Oid::ZERO_SHA1);
-
+        if let Some(dest_oid) = transaction.resolve_ref(&dest_remote_ref)? {
             let (filtered_oids, errors) =
                 josh_core::filter_refs(transaction, filter, &[(dest_remote_ref.clone(), dest_oid)]);
 
@@ -155,15 +155,15 @@ fn prepare_push(
 
     let original_target = if let Some(base) = base {
         let base_remote_ref = format!("refs/josh/remotes/{}/{}", remote_name, base);
-        repo.find_reference(&base_remote_ref)
+        transaction
+            .resolve_ref(&base_remote_ref)?
+            .ok_or_else(|| anyhow!("no such ref: '{}'", base_remote_ref))
             .with_context(|| {
                 format!(
                     "Failed to resolve --base ref (looked up '{}')",
                     base_remote_ref
                 )
             })?
-            .target()
-            .with_context(|| format!("Base ref '{}' has no target", base_remote_ref))?
     } else {
         dest_oid
     };
@@ -522,6 +522,8 @@ fn orchestrate_push(
     let push_target = push_url.as_deref().unwrap_or(&url);
 
     let refspecs = if refspecs_arg.is_empty() {
+        // PORT: symbolic-HEAD read is not expressible via resolve_ref; move to a
+        // Transaction helper at flag day (gix head_name()).
         let head = repo.head().context("Failed to get HEAD")?;
         let current_branch = head
             .shorthand()

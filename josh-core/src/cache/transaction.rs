@@ -369,6 +369,56 @@ impl Transaction {
         Ok(())
     }
 
+    /// Delete the ref `refname`, guarded by `expected`: `Expected::Any` deletes whatever
+    /// is there and treats an absent ref as a no-op; `Expected::At(oid)` asserts the ref
+    /// currently points at `oid` and errors, leaving the ref in place, on mismatch or
+    /// absence. `Expected::Absent` is a contract error. The ref entry itself is deleted
+    /// (a symbolic ref is deleted, not followed); loose and packed entries and the reflog
+    /// are removed. Under git2 an `Any` delete of a ref concurrently modified (not
+    /// deleted) mid-call may error (libgit2 CASes against the value read at find time);
+    /// gix's Any-delete succeeds -- acceptable widening at flag day. (gix mapping: RefEdit
+    /// Change::Delete with PreviousValue::Any / MustExistAndMatch, RefLog::AndReference.)
+    pub fn delete_ref(&self, refname: &str, expected: Expected) -> anyhow::Result<()> {
+        match expected {
+            Expected::Absent => Err(anyhow!("delete_ref: Expected::Absent is not a valid guard")),
+            Expected::Any => match self.repo.find_reference(refname) {
+                Err(e) if e.code() == git2::ErrorCode::NotFound => Ok(()),
+                Err(e) => Err(e.into()),
+                Ok(mut reference) => match reference.delete() {
+                    Err(e) if e.code() == git2::ErrorCode::NotFound => Ok(()),
+                    other => Ok(other?),
+                },
+            },
+            Expected::At(old) => {
+                let mut reference = self.repo.find_reference(refname)?;
+                if reference.target() != Some(old) {
+                    return Err(anyhow!(
+                        "delete_ref: '{}' does not point at {}",
+                        refname,
+                        old
+                    ));
+                }
+                Ok(reference.delete()?)
+            }
+        }
+    }
+
+    /// Force-create or update the symbolic ref `refname` to point at the ref named
+    /// `target`, which is validated for refname format but need not exist (dangling
+    /// symrefs are allowed). Always overwrites, like `Expected::Any`; grow a guard
+    /// parameter only when a consumer needs one (as update_ref did). (gix mapping:
+    /// RefEdit Change::Update with Target::Symbolic, PreviousValue::Any.)
+    pub fn create_symref(
+        &self,
+        refname: &str,
+        target: &str,
+        log_message: &str,
+    ) -> anyhow::Result<()> {
+        self.repo
+            .reference_symbolic(refname, target, true, log_message)?;
+        Ok(())
+    }
+
     /// Run `cb` for every direct ref whose full name starts with `prefix`, byte-sorted by
     /// name. `prefix` must consist of refname-valid characters. Symbolic refs and refs
     /// with non-UTF-8 names are skipped. Errors from `cb` abort the iteration.
@@ -1029,5 +1079,186 @@ mod tests {
         });
         assert!(result.is_err());
         assert_eq!(calls, 1);
+    }
+
+    #[test]
+    fn delete_ref_any_deletes_existing() {
+        let (_dir, transaction) = test_transaction();
+        let oid = commit(&transaction, "a");
+        transaction
+            .update_ref("refs/josh/a", Expected::Any, oid, "test")
+            .unwrap();
+        transaction
+            .delete_ref("refs/josh/a", Expected::Any)
+            .unwrap();
+        assert_eq!(transaction.resolve_ref("refs/josh/a").unwrap(), None);
+    }
+
+    #[test]
+    fn delete_ref_any_absent_is_noop() {
+        let (_dir, transaction) = test_transaction();
+        transaction
+            .delete_ref("refs/josh/missing", Expected::Any)
+            .unwrap();
+        assert_eq!(transaction.resolve_ref("refs/josh/missing").unwrap(), None);
+    }
+
+    #[test]
+    fn delete_ref_at_deletes_on_match() {
+        let (_dir, transaction) = test_transaction();
+        let oid = commit(&transaction, "a");
+        transaction
+            .update_ref("refs/josh/a", Expected::Any, oid, "test")
+            .unwrap();
+        transaction
+            .delete_ref("refs/josh/a", Expected::At(oid))
+            .unwrap();
+        assert_eq!(transaction.resolve_ref("refs/josh/a").unwrap(), None);
+    }
+
+    #[test]
+    fn delete_ref_at_fails_on_mismatch() {
+        let (_dir, transaction) = test_transaction();
+        let a = commit(&transaction, "a");
+        let b = commit(&transaction, "b");
+        transaction
+            .update_ref("refs/josh/a", Expected::Any, a, "test")
+            .unwrap();
+        assert!(
+            transaction
+                .delete_ref("refs/josh/a", Expected::At(b))
+                .is_err()
+        );
+        assert_eq!(transaction.resolve_ref("refs/josh/a").unwrap(), Some(a));
+    }
+
+    #[test]
+    fn delete_ref_at_fails_on_missing_ref() {
+        let (_dir, transaction) = test_transaction();
+        let a = commit(&transaction, "a");
+        assert!(
+            transaction
+                .delete_ref("refs/josh/missing", Expected::At(a))
+                .is_err()
+        );
+    }
+
+    #[test]
+    fn delete_ref_absent_is_contract_error() {
+        let (_dir, transaction) = test_transaction();
+        assert!(
+            transaction
+                .delete_ref("refs/josh/missing", Expected::Absent)
+                .is_err()
+        );
+    }
+
+    #[test]
+    fn delete_ref_removes_packed_ref() {
+        let (dir, transaction) = test_transaction();
+        let a = commit(&transaction, "a");
+        transaction
+            .update_ref("refs/josh/a", Expected::Any, a, "test")
+            .unwrap();
+        // Pack the ref by hand (git2 exposes no pack-refs API): delete must remove the
+        // packed entry, not conclude the ref is absent.
+        std::fs::write(
+            dir.path().join("packed-refs"),
+            format!(
+                "# pack-refs with: peeled fully-peeled sorted\n{} refs/josh/a\n",
+                a
+            ),
+        )
+        .unwrap();
+        std::fs::remove_file(dir.path().join("refs/josh/a")).unwrap();
+
+        transaction
+            .delete_ref("refs/josh/a", Expected::Any)
+            .unwrap();
+        assert_eq!(transaction.resolve_ref("refs/josh/a").unwrap(), None);
+    }
+
+    #[test]
+    fn create_symref_resolves_through() {
+        let (_dir, transaction) = test_transaction();
+        let oid = commit(&transaction, "a");
+        transaction
+            .update_ref("refs/heads/main", Expected::Any, oid, "test")
+            .unwrap();
+        transaction
+            .create_symref("refs/josh/sym", "refs/heads/main", "test")
+            .unwrap();
+        assert_eq!(transaction.resolve_ref("refs/josh/sym").unwrap(), Some(oid));
+    }
+
+    #[test]
+    fn create_symref_dangling_target_allowed() {
+        let (_dir, transaction) = test_transaction();
+        transaction
+            .create_symref("refs/josh/sym", "refs/heads/missing", "test")
+            .unwrap();
+        assert_eq!(transaction.resolve_ref("refs/josh/sym").unwrap(), None);
+    }
+
+    #[test]
+    fn create_symref_overwrites() {
+        let (_dir, transaction) = test_transaction();
+        let a = commit(&transaction, "a");
+        let b = commit(&transaction, "b");
+        transaction
+            .update_ref("refs/heads/a", Expected::Any, a, "test")
+            .unwrap();
+        transaction
+            .update_ref("refs/heads/b", Expected::Any, b, "test")
+            .unwrap();
+        transaction
+            .create_symref("refs/josh/sym", "refs/heads/a", "test")
+            .unwrap();
+        transaction
+            .create_symref("refs/josh/sym", "refs/heads/b", "test")
+            .unwrap();
+        assert_eq!(transaction.resolve_ref("refs/josh/sym").unwrap(), Some(b));
+    }
+
+    #[test]
+    fn create_symref_skipped_by_for_each_ref_prefixed() {
+        let (_dir, transaction) = test_transaction();
+        let oid = commit(&transaction, "a");
+        transaction
+            .update_ref("refs/josh/a", Expected::Any, oid, "test")
+            .unwrap();
+        transaction
+            .create_symref("refs/josh/sym", "refs/josh/a", "test")
+            .unwrap();
+
+        let mut seen = vec![];
+        transaction
+            .for_each_ref_prefixed("refs/josh/", |name, _| {
+                seen.push(name.to_owned());
+                Ok(())
+            })
+            .unwrap();
+        assert_eq!(seen, ["refs/josh/a"]);
+    }
+
+    #[test]
+    fn delete_ref_any_deletes_symref_not_target() {
+        let (_dir, transaction) = test_transaction();
+        let oid = commit(&transaction, "a");
+        transaction
+            .update_ref("refs/heads/main", Expected::Any, oid, "test")
+            .unwrap();
+        transaction
+            .create_symref("refs/josh/sym", "refs/heads/main", "test")
+            .unwrap();
+        transaction
+            .delete_ref("refs/josh/sym", Expected::Any)
+            .unwrap();
+        // The symref entry is gone; the branch it pointed at survives.
+        assert!(transaction.repo().find_reference("refs/josh/sym").is_err());
+        assert_eq!(
+            transaction.resolve_ref("refs/heads/main").unwrap(),
+            Some(oid)
+        );
     }
 }

@@ -390,6 +390,9 @@ fn handle_clone(
         // Read the remote HEAD symref to get the default branch
         let head_ref = "refs/remotes/origin/HEAD".to_string();
 
+        // PORT: symbolic-target read needs the target name, not the oid, so it is not
+        // expressible via resolve_ref; stays on the git2 handle until flag day (gix
+        // try_find_reference then).
         let head_reference = repo
             .find_reference(&head_ref)
             .with_context(|| format!("Failed to find remote HEAD reference {}", head_ref))?;
@@ -553,7 +556,7 @@ fn handle_filter(
         filter_str, args.remote
     );
 
-    let default_branch = josh_cli::remote_ops::resolve_default_branch(repo, &args.remote)?;
+    let default_branch = josh_cli::remote_ops::resolve_default_branch(transaction, &args.remote)?;
 
     josh_cli::remote_ops::apply_josh_filtering(transaction, filter, &args.remote, &default_branch)?;
 

@@ -5,14 +5,17 @@ use std::fs::read_to_string;
 use std::io::Write;
 
 fn resolve_input_ref(
-    repo: &git2::Repository,
+    transaction: &josh_core::cache::Transaction,
     input_ref: &str,
 ) -> anyhow::Result<(String, git2::Oid)> {
+    let repo = transaction.repo();
     let oid = josh_core::git::resolve_snapshot_input(repo, input_ref)?;
     let ref_string = if input_ref == "+" || input_ref == "." {
         oid.to_string()
     } else if git2::Oid::from_str(input_ref).is_ok() {
         input_ref.to_string()
+    // PORT: DWIM short-name resolution stays on the git2 handle until flag day (gix
+    // partial-name find_reference then).
     } else if let Ok(reference) = repo.resolve_reference_from_short_name(input_ref) {
         reference.name().unwrap().to_string()
     } else {
@@ -230,7 +233,7 @@ fn run_filter(args: Vec<String>) -> anyhow::Result<i32> {
     let mut refs = vec![];
     let mut ids: Vec<(git2::Oid, josh_core::filter::Filter)> = vec![];
 
-    let (input_ref, oid) = resolve_input_ref(repo, input_ref)?;
+    let (input_ref, oid) = resolve_input_ref(&transaction, input_ref)?;
     refs.push((input_ref.clone(), oid));
 
     if args.get_flag("single") {
@@ -240,16 +243,19 @@ fn run_filter(args: Vec<String>) -> anyhow::Result<i32> {
     }
 
     if let Some(pattern) = args.get_one::<String>("squash-pattern") {
-        let pattern = pattern.to_string();
-        for reference in repo.references_glob(&pattern).unwrap() {
-            let reference = reference?;
-            let target = reference.peel_to_commit()?.id();
-            ids.push((
-                target,
-                josh_core::filter::Filter::new().message(reference.name().unwrap()),
-            ));
-            refs.push((reference.name().unwrap().to_string(), target));
-        }
+        // Iterate over the pattern's literal prefix before its first metacharacter.
+        // `glob`'s default `MatchOptions` let `*` and `?` match across `/`.
+        let matcher = glob::Pattern::new(pattern)?;
+        let literal_len = pattern.find(['*', '?', '[', '\\']).unwrap_or(pattern.len());
+        transaction.for_each_ref_prefixed(&pattern[..literal_len], |name, oid| {
+            if !matcher.matches(name) {
+                return Ok(());
+            }
+            let target = repo.find_object(oid, None)?.peel_to_commit()?.id();
+            ids.push((target, josh_core::filter::Filter::new().message(name)));
+            refs.push((name.to_string(), target));
+            Ok(())
+        })?;
         filterobj = josh_core::filter::Filter::new()
             .squash(Some(&ids))
             .chain(filterobj);
@@ -321,6 +327,7 @@ fn run_filter(args: Vec<String>) -> anyhow::Result<i32> {
     });
 
     if args.get_flag("discover") {
+        // PORT: rev-parse stays on the git2 handle until flag day (gix rev_parse then).
         let r = repo.revparse_single(&input_ref)?;
         let hs =
             josh_core::housekeeping::find_all_workspaces_and_subdirectories(&r.peel_to_tree()?)?;
@@ -341,11 +348,9 @@ fn run_filter(args: Vec<String>) -> anyhow::Result<i32> {
 
     let reverse = args.get_flag("reverse");
 
-    let old_oid = if let Ok(id) = transaction.repo().refname_to_id(target) {
-        id
-    } else {
-        git2::Oid::ZERO_SHA1
-    };
+    let old_oid = transaction
+        .resolve_ref(target)?
+        .unwrap_or(git2::Oid::ZERO_SHA1);
 
     let (mut updated_refs, errors) = josh_core::filter_refs(&transaction, filterobj, &refs);
 
@@ -367,6 +372,7 @@ fn run_filter(args: Vec<String>) -> anyhow::Result<i32> {
     josh_core::update_refs(&transaction, updated_refs.clone());
 
     if let Some(searchstring) = args.get_one::<String>("search") {
+        // PORT: rev-parse stays on the git2 handle until flag day (gix rev_parse then).
         let commit = repo.revparse_single(&input_ref)?.peel_to_commit()?;
 
         let tree = repo
@@ -409,6 +415,7 @@ fn run_filter(args: Vec<String>) -> anyhow::Result<i32> {
     }
 
     if reverse {
+        // PORT: rev-parse stays on the git2 handle until flag day (gix rev_parse then).
         let new = repo.revparse_single(target).unwrap().id();
         let old = repo.revparse_single("JOSH_TMP").unwrap().id();
         let unfiltered_old = repo.revparse_single(&input_ref).unwrap().id();
@@ -437,7 +444,12 @@ fn run_filter(args: Vec<String>) -> anyhow::Result<i32> {
                         input_ref
                     ));
                 }
-                repo.reference(&input_ref, rewritten, true, "unapply_filter")?;
+                transaction.update_ref(
+                    &input_ref,
+                    josh_core::cache::Expected::At(unfiltered_old),
+                    rewritten,
+                    "unapply_filter",
+                )?;
                 rewritten
             }
             Err(e) => {
@@ -503,7 +515,9 @@ fn run_filter(args: Vec<String>) -> anyhow::Result<i32> {
         let transaction = josh_core::cache::TransactionContext::from_env(cache.clone())?
             .with_mem_odb_limit(josh_cli::MAX_MEM_PACK_SIZE)
             .open()?;
-        let commit_id = transaction.repo().refname_to_id(update_target)?;
+        let commit_id = transaction
+            .resolve_ref(update_target)?
+            .ok_or_else(|| anyhow!("update target '{}' not found", update_target))?;
 
         print!(
             "{}",

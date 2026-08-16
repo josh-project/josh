@@ -75,11 +75,10 @@ pub fn handle_fetch(
             )
         })?;
 
-    repo.reference_symbolic(&head_ref, &default_branch_ref, true, "josh remote HEAD")?;
-    repo.reference_symbolic(
+    transaction.create_symref(&head_ref, &default_branch_ref, "josh remote HEAD")?;
+    transaction.create_symref(
         &format!("refs/namespaces/josh-{}/{}", args.remote, "HEAD"),
         &format!("refs/heads/{}", default_branch),
-        true,
         "josh remote HEAD",
     )?;
 
