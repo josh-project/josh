@@ -342,7 +342,7 @@ impl TrigramBench {
             // transaction's in-memory odb.
             let index_tree = josh_search::trigram_index(
                 repo,
-                &transaction,
+                &transaction.trigram_index_cache(tip),
                 &mut josh_search::Indexer::default(),
                 tip_tree.clone(),
             )?;
@@ -393,13 +393,24 @@ impl TrigramBench {
             let mut indexer = josh_search::Indexer::default();
             let mut chain_indexes = vec![(
                 root_tree.id(),
-                josh_search::trigram_index(repo, &transaction, &mut indexer, root_tree)?.id(),
+                josh_search::trigram_index(
+                    repo,
+                    &transaction.trigram_index_cache(chain[0]),
+                    &mut indexer,
+                    root_tree,
+                )?
+                .id(),
             )];
             for &oid in &chain[1..] {
                 let tree = repo.find_commit(oid)?.tree()?;
                 let tree_oid = tree.id();
-                let index_oid =
-                    josh_search::trigram_index(repo, &transaction, &mut indexer, tree)?.id();
+                let index_oid = josh_search::trigram_index(
+                    repo,
+                    &transaction.trigram_index_cache(oid),
+                    &mut indexer,
+                    tree,
+                )?
+                .id();
                 chain_indexes.push((tree_oid, index_oid));
             }
             let root_index_oid = chain_indexes.first().expect("chain is never empty").1;
@@ -460,8 +471,13 @@ fn trigram_benches(c: &mut Criterion) {
                 let mut indexer = josh_search::Indexer::default();
 
                 runner.run(|| {
-                    josh_search::trigram_index(repo, &transaction, &mut indexer, tip_tree.clone())
-                        .expect("index tree")
+                    josh_search::trigram_index(
+                        repo,
+                        &transaction.trigram_index_cache(case.tip()),
+                        &mut indexer,
+                        tip_tree.clone(),
+                    )
+                    .expect("index tree")
                 });
             });
         });
@@ -490,8 +506,13 @@ fn trigram_benches(c: &mut Criterion) {
                 // One indexer state across the warm root and the whole chain, matching how
                 // josh keeps one per transaction.
                 let mut indexer = josh_search::Indexer::default();
-                josh_search::trigram_index(repo, &transaction, &mut indexer, root_tree)
-                    .expect("warm root index");
+                josh_search::trigram_index(
+                    repo,
+                    &transaction.trigram_index_cache(case.chain[0]),
+                    &mut indexer,
+                    root_tree,
+                )
+                .expect("warm root index");
 
                 runner.run(|| {
                     for &oid in &case.chain[1..] {
@@ -500,8 +521,13 @@ fn trigram_benches(c: &mut Criterion) {
                             .expect("find churn commit")
                             .tree()
                             .expect("churn tree");
-                        josh_search::trigram_index(repo, &transaction, &mut indexer, tree)
-                            .expect("incremental index");
+                        josh_search::trigram_index(
+                            repo,
+                            &transaction.trigram_index_cache(oid),
+                            &mut indexer,
+                            tree,
+                        )
+                        .expect("incremental index");
                     }
                 });
             });
