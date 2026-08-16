@@ -110,7 +110,7 @@ pub fn handle_comment(
         (short_file, short_location)
     };
 
-    let change = josh_changes::resolve_change(repo, head, &args.change)?;
+    let change = josh_changes::resolve_change(transaction, head, &args.change)?;
     let meta = josh_changes::CommentMeta {
         message: args.message.clone(),
         file: file.or(args.file.clone()),
@@ -119,14 +119,14 @@ pub fn handle_comment(
         update_of: args.update_of.clone(),
     };
 
-    let scope = args.scope.resolve(repo)?;
+    let scope = args.scope.resolve(transaction)?;
     match &scope {
         josh_changes::ChangesRef::Remote { remote, .. } => {
-            josh_changes::write_outbox_comment(repo, &change, &meta, None, None, &scope)?;
+            josh_changes::write_outbox_comment(transaction, &change, &meta, None, None, &scope)?;
             println!("Comment queued in outbox for remote '{}'.", remote);
         }
         josh_changes::ChangesRef::Local { .. } => {
-            josh_changes::write_comment(repo, &change, &meta, None, None, &scope)?;
+            josh_changes::write_comment(transaction, &change, &meta, None, None, &scope)?;
             println!("Comment saved (private to local ref).");
         }
     }

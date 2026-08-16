@@ -17,7 +17,10 @@ pub struct PrInfo {
 
 /// Collect PR info from a set of refs to push.
 /// Uses the @base ref for each change as the base branch. Title and body come from the head commit message.
-pub fn collect_pr_infos(repo: &git2::Repository, to_push: &[josh_changes::PushRef]) -> Vec<PrInfo> {
+pub fn collect_pr_infos(
+    transaction: &josh_core::cache::Transaction,
+    to_push: &[josh_changes::PushRef],
+) -> Vec<PrInfo> {
     #[derive(Default)]
     struct ByIdEntry {
         head_branch: Option<String>,
@@ -61,7 +64,7 @@ pub fn collect_pr_infos(repo: &git2::Repository, to_push: &[josh_changes::PushRe
                 entry.head_oid?,
                 entry.base_oid?,
             );
-            let commit = repo.find_commit(head_oid).ok()?;
+            let commit = transaction.repo().find_commit(head_oid).ok()?;
             let raw_message = commit.message().unwrap_or("");
             let message = raw_message.trim_end();
             let title = message.lines().next().unwrap_or("").trim().to_string();

@@ -2,6 +2,7 @@ use crate::change::{Change, encode_change_id_path};
 use crate::refs::ChangesRef;
 use crate::store::{get_tree, write_changes_tree};
 use anyhow::anyhow;
+use josh_core::cache::{Expected, Transaction};
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct Location {
@@ -25,18 +26,18 @@ pub struct CommentMeta {
 }
 
 pub fn write_comment(
-    repo: &git2::Repository,
+    transaction: &Transaction,
     change: &Change,
     meta: &CommentMeta,
     author: Option<&str>,
     timestamp: Option<&str>,
     scope: &ChangesRef,
 ) -> anyhow::Result<String> {
-    write_comment_with_commit(repo, change, meta, author, timestamp, None, scope)
+    write_comment_with_commit(transaction, change, meta, author, timestamp, None, scope)
 }
 
 pub fn write_comment_with_commit(
-    repo: &git2::Repository,
+    transaction: &Transaction,
     change: &Change,
     meta: &CommentMeta,
     author: Option<&str>,
@@ -45,7 +46,7 @@ pub fn write_comment_with_commit(
     scope: &ChangesRef,
 ) -> anyhow::Result<String> {
     write_comment_inner(
-        repo,
+        transaction,
         change,
         meta,
         author,
@@ -60,7 +61,7 @@ pub fn write_comment_with_commit(
 /// pending posts to the remote; the cleanup runs on the next fetch when the
 /// posted comment is observed coming back from the remote.
 pub fn write_outbox_comment(
-    repo: &git2::Repository,
+    transaction: &Transaction,
     change: &Change,
     meta: &CommentMeta,
     author: Option<&str>,
@@ -74,7 +75,7 @@ pub fn write_outbox_comment(
         ));
     }
     write_comment_inner(
-        repo,
+        transaction,
         change,
         meta,
         author,
@@ -87,7 +88,7 @@ pub fn write_outbox_comment(
 
 #[allow(clippy::too_many_arguments)]
 fn write_comment_inner(
-    repo: &git2::Repository,
+    transaction: &Transaction,
     change: &Change,
     meta: &CommentMeta,
     author: Option<&str>,
@@ -100,6 +101,7 @@ fn write_comment_inner(
         return Err(anyhow::anyhow!("comment message must not be empty"));
     }
 
+    let repo = transaction.repo();
     let change_id = change
         .id()
         .ok_or_else(|| anyhow::anyhow!("commit {} has no Change-Id", change.commit()))?;
@@ -133,7 +135,7 @@ fn write_comment_inner(
             .join(encode_change_id_path(&change_id))
             .join(&content_hash)
     };
-    write_changes_tree(repo, &path, blob_oid, author, timestamp, scope)?;
+    write_changes_tree(transaction, &path, blob_oid, author, timestamp, scope)?;
 
     Ok(content_hash)
 }
@@ -154,21 +156,22 @@ pub struct Comment {
 }
 
 pub fn comment_author(
-    repo: &git2::Repository,
+    transaction: &Transaction,
     change: &Change,
     comment_id: &str,
     file: Option<&str>,
     scope: &ChangesRef,
 ) -> anyhow::Result<(String, String)> {
+    let repo = transaction.repo();
     let change_id = match change.id() {
         Some(id) => id,
         None => return Err(anyhow!("change has no Change-Id")),
     };
 
     let ref_name = scope.ref_name();
-    let head = match repo.find_reference(&ref_name) {
-        Ok(r) => r.peel_to_commit()?,
-        Err(_) => return Err(anyhow!("{} not found", ref_name)),
+    let head = match transaction.resolve_ref(&ref_name)? {
+        Some(oid) => repo.find_commit(oid)?,
+        None => return Err(anyhow!("{} not found", ref_name)),
     };
 
     let path = if let Some(f) = file {
@@ -253,15 +256,17 @@ fn parse_comment_blob(
 }
 
 pub fn read_comments(
-    repo: &git2::Repository,
+    transaction: &Transaction,
     change_id: &str,
     scope: &ChangesRef,
 ) -> anyhow::Result<Vec<Comment>> {
+    let repo = transaction.repo();
     let ref_name = scope.ref_name();
-    let tree = match repo.find_reference(&ref_name) {
-        Ok(r) => r.peel_to_tree()?,
-        Err(_) => return Ok(Vec::new()),
+    let head_commit = match transaction.resolve_ref(&ref_name)? {
+        Some(oid) => repo.find_commit(oid)?,
+        None => return Ok(Vec::new()),
     };
+    let tree = head_commit.tree()?;
 
     let mut comments = Vec::new();
 
@@ -278,34 +283,53 @@ pub fn read_comments(
     )?;
 
     // Walk history once to resolve author/timestamp for all comments.
-    if let Ok(head) = repo.find_reference(&ref_name) {
-        if let Ok(head_commit) = head.peel_to_commit() {
-            let mut walk = repo.revwalk().unwrap_or_else(|_| repo.revwalk().unwrap());
-            let _ = walk.simplify_first_parent();
-            let _ = walk.push(head_commit.id());
-            'outer: for oid in walk.flatten() {
-                if let Ok(commit) = repo.find_commit(oid) {
-                    let tree = commit.tree().unwrap();
-                    let parent_tree = commit.parent(0).ok().and_then(|p| p.tree().ok());
-                    for c in &mut comments {
-                        if c.author.is_some() {
-                            continue;
+    let mut walk = repo.revwalk().unwrap_or_else(|_| repo.revwalk().unwrap());
+    let _ = walk.simplify_first_parent();
+    let _ = walk.push(head_commit.id());
+    'outer: for oid in walk.flatten() {
+        if let Ok(commit) = repo.find_commit(oid) {
+            let tree = commit.tree().unwrap();
+            let parent_tree = commit.parent(0).ok().and_then(|p| p.tree().ok());
+            for c in &mut comments {
+                if c.author.is_some() {
+                    continue;
+                }
+                let prefix = if c.pending {
+                    "outbox/comments"
+                } else {
+                    "comments"
+                };
+                if c.file.is_none() {
+                    let p = std::path::Path::new(prefix)
+                        .join("C")
+                        .join(encode_change_id_path(change_id))
+                        .join(&c.id);
+                    if let Ok(entry) = tree.get_path(&p) {
+                        let is_new = parent_tree
+                            .as_ref()
+                            .and_then(|pt| pt.get_path(&p).ok())
+                            .map_or(true, |e| e.id() != entry.id());
+                        if is_new {
+                            let time = commit.time();
+                            let ts = time.seconds().to_string();
+                            c.author = Some(commit.author().email().unwrap_or("").to_string());
+                            c.timestamp = Some(ts);
                         }
-                        let prefix = if c.pending {
-                            "outbox/comments"
-                        } else {
-                            "comments"
-                        };
-                        if c.file.is_none() {
-                            let p = std::path::Path::new(prefix)
-                                .join("C")
-                                .join(encode_change_id_path(change_id))
-                                .join(&c.id);
-                            if let Ok(entry) = tree.get_path(&p) {
-                                let is_new = parent_tree
+                    }
+                } else {
+                    let cid_path = std::path::Path::new(prefix)
+                        .join("F")
+                        .join(encode_change_id_path(change_id));
+                    if let Some(cid_tree) = get_tree(repo, &tree, &cid_path) {
+                        for blob_entry in cid_tree.iter() {
+                            let blob_name = blob_entry.name().unwrap_or("");
+                            let sub = std::path::Path::new(c.file.as_ref().unwrap()).join(&c.id);
+                            let full_path = cid_path.join(blob_name).join(&sub);
+                            if let Ok(entry) = tree.get_path(&full_path) {
+                                let parent_entry = parent_tree
                                     .as_ref()
-                                    .and_then(|pt| pt.get_path(&p).ok())
-                                    .map_or(true, |e| e.id() != entry.id());
+                                    .and_then(|pt| pt.get_path(&full_path).ok());
+                                let is_new = parent_entry.map_or(true, |e| e.id() != entry.id());
                                 if is_new {
                                     let time = commit.time();
                                     let ts = time.seconds().to_string();
@@ -314,39 +338,12 @@ pub fn read_comments(
                                     c.timestamp = Some(ts);
                                 }
                             }
-                        } else {
-                            let cid_path = std::path::Path::new(prefix)
-                                .join("F")
-                                .join(encode_change_id_path(change_id));
-                            if let Some(cid_tree) = get_tree(repo, &tree, &cid_path) {
-                                for blob_entry in cid_tree.iter() {
-                                    let blob_name = blob_entry.name().unwrap_or("");
-                                    let sub =
-                                        std::path::Path::new(c.file.as_ref().unwrap()).join(&c.id);
-                                    let full_path = cid_path.join(blob_name).join(&sub);
-                                    if let Ok(entry) = tree.get_path(&full_path) {
-                                        let parent_entry = parent_tree
-                                            .as_ref()
-                                            .and_then(|pt| pt.get_path(&full_path).ok());
-                                        let is_new =
-                                            parent_entry.map_or(true, |e| e.id() != entry.id());
-                                        if is_new {
-                                            let time = commit.time();
-                                            let ts = time.seconds().to_string();
-                                            c.author = Some(
-                                                commit.author().email().unwrap_or("").to_string(),
-                                            );
-                                            c.timestamp = Some(ts);
-                                        }
-                                    }
-                                }
-                            }
                         }
                     }
-                    if comments.iter().all(|c| c.author.is_some()) {
-                        break 'outer;
-                    }
                 }
+            }
+            if comments.iter().all(|c| c.author.is_some()) {
+                break 'outer;
             }
         }
     }
@@ -441,7 +438,7 @@ fn collect_comments_under_into(
 /// the remote. Pass the set of local content hashes whose `gh_ids` entry is
 /// known to be reflected in `comments/...` already.
 pub fn delete_outbox_comments(
-    repo: &git2::Repository,
+    transaction: &Transaction,
     change_id: &str,
     scope: &ChangesRef,
     content_hashes: &[String],
@@ -449,13 +446,15 @@ pub fn delete_outbox_comments(
     if content_hashes.is_empty() {
         return Ok(0);
     }
+    let repo = transaction.repo();
     let want: std::collections::HashSet<&str> = content_hashes.iter().map(|s| s.as_str()).collect();
 
     let ref_name = scope.ref_name();
-    let mut tree = match repo.find_reference(&ref_name) {
-        Ok(r) => r.peel_to_tree()?,
-        Err(_) => return Ok(0),
+    let prev_commit = match transaction.resolve_ref(&ref_name)? {
+        Some(oid) => repo.find_commit(oid)?,
+        None => return Ok(0),
     };
+    let mut tree = prev_commit.tree()?;
 
     let encoded = encode_change_id_path(change_id);
     let mut paths_to_remove: Vec<std::path::PathBuf> = Vec::new();
@@ -489,19 +488,9 @@ pub fn delete_outbox_comments(
     }
 
     let sig = repo.signature()?;
-    let parent_commit = repo
-        .find_reference(&ref_name)
-        .ok()
-        .and_then(|r| r.peel_to_commit().ok());
-    let parents: Vec<&git2::Commit> = parent_commit.iter().collect();
-    repo.commit(
-        Some(&ref_name),
-        &sig,
-        &sig,
-        &format!("cleanup posted outbox comments on {}\n", ref_name),
-        &tree,
-        &parents,
-    )?;
+    let msg = format!("cleanup posted outbox comments on {}\n", ref_name);
+    let new_oid = repo.commit(None, &sig, &sig, &msg, &tree, &[&prev_commit])?;
+    transaction.update_ref(&ref_name, Expected::At(prev_commit.id()), new_oid, &msg)?;
 
     Ok(paths_to_remove.len())
 }

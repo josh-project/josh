@@ -299,9 +299,9 @@ pub fn ListView(
 }
 
 pub fn load_rows(scope: &josh_changes::ChangesRef) -> anyhow::Result<ListData> {
-    let repo = git2::Repository::discover(".")?;
+    let transaction = crate::common::open_transaction()?;
 
-    let changes = josh_changes::list_changes(&repo, scope)?;
+    let changes = josh_changes::list_changes(&transaction, scope)?;
 
     let mut oid_to_change_id: HashMap<String, String> = HashMap::new();
     for change in &changes {
@@ -315,7 +315,7 @@ pub fn load_rows(scope: &josh_changes::ChangesRef) -> anyhow::Result<ListData> {
     let mut dependencies: HashMap<String, Vec<String>> = HashMap::new();
 
     for change in &changes {
-        let commit = repo.find_commit(change.commit())?;
+        let commit = transaction.repo().find_commit(change.commit())?;
         let subject = commit
             .message()
             .unwrap_or("")
@@ -327,7 +327,7 @@ pub fn load_rows(scope: &josh_changes::ChangesRef) -> anyhow::Result<ListData> {
         let change_id = change.id().unwrap_or("").to_string();
 
         let mut deps: Vec<String> = Vec::new();
-        for oid in change.contributing(&repo)? {
+        for oid in change.contributing(&transaction)? {
             let oid_str = oid.to_string();
             if let Some(dep_id) = oid_to_change_id.get(&oid_str) {
                 if dep_id != &change_id {
@@ -368,11 +368,11 @@ pub fn load_rows(scope: &josh_changes::ChangesRef) -> anyhow::Result<ListData> {
 }
 
 fn load_metadata(
-    repo: &git2::Repository,
+    transaction: &josh_core::cache::Transaction,
     scope: &josh_changes::ChangesRef,
     change_id: &str,
 ) -> RowMetadata {
-    let (review_decision, check_status) = josh_changes::read_pr_data(repo, change_id, scope)
+    let (review_decision, check_status) = josh_changes::read_pr_data(transaction, change_id, scope)
         .ok()
         .flatten()
         .and_then(|json| {
@@ -392,12 +392,12 @@ fn load_metadata(
         })
         .unwrap_or_default();
 
-    let local_vote = josh_changes::read_vote(repo, change_id, None, scope)
+    let local_vote = josh_changes::read_vote(transaction, change_id, None, scope)
         .ok()
         .flatten()
         .map(|v| v.state);
 
-    let comments_count = josh_changes::read_comments(repo, change_id, scope)
+    let comments_count = josh_changes::read_comments(transaction, change_id, scope)
         .map(|c| c.len())
         .unwrap_or(0);
 
@@ -416,11 +416,11 @@ pub fn load_metadata_batch(
     if change_ids.is_empty() {
         return Vec::new();
     }
-    let Ok(repo) = git2::Repository::discover(".") else {
+    let Ok(transaction) = crate::common::open_transaction() else {
         return Vec::new();
     };
     change_ids
         .iter()
-        .map(|cid| (cid.clone(), load_metadata(&repo, scope, cid)))
+        .map(|cid| (cid.clone(), load_metadata(&transaction, scope, cid)))
         .collect()
 }

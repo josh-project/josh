@@ -493,7 +493,6 @@ pub fn process_repo_update(repo_update: RepoUpdate) -> anyhow::Result<String> {
         };
 
         let to_push = build_to_push(
-            transaction.repo(),
             &transaction,
             &push_mode,
             &baseref,

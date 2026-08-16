@@ -15,7 +15,14 @@ pub struct ScopeArgs {
 }
 
 impl ScopeArgs {
-    pub fn resolve(&self, repo: &git2::Repository) -> anyhow::Result<josh_changes::ChangesRef> {
-        josh_changes::ChangesRef::resolve(repo, self.branch.as_deref(), self.remote.as_deref())
+    pub fn resolve(
+        &self,
+        transaction: &josh_core::cache::Transaction,
+    ) -> anyhow::Result<josh_changes::ChangesRef> {
+        josh_changes::ChangesRef::resolve(
+            transaction,
+            self.branch.as_deref(),
+            self.remote.as_deref(),
+        )
     }
 }

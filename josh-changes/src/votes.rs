@@ -1,6 +1,7 @@
 use crate::change::{Change, encode_change_id_path};
 use crate::refs::ChangesRef;
 use crate::store::{get_tree, parse_timestamp};
+use josh_core::cache::{Expected, Transaction};
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct VoteData {
@@ -9,14 +10,22 @@ pub struct VoteData {
 }
 
 pub fn write_vote(
-    repo: &git2::Repository,
+    transaction: &Transaction,
     change: &Change,
     state: &str,
     author: Option<&str>,
     timestamp: Option<&str>,
     scope: &ChangesRef,
 ) -> anyhow::Result<String> {
-    write_vote_inner(repo, change, state, author, timestamp, scope, "votes")
+    write_vote_inner(
+        transaction,
+        change,
+        state,
+        author,
+        timestamp,
+        scope,
+        "votes",
+    )
 }
 
 /// Write a vote into the outbox subtree of a `Remote` ref. The vote is queued
@@ -24,7 +33,7 @@ pub fn write_vote(
 /// `gh_vote_ids` mapping records the post and the outbox entry can be
 /// cleaned up.
 pub fn write_outbox_vote(
-    repo: &git2::Repository,
+    transaction: &Transaction,
     change: &Change,
     state: &str,
     author: Option<&str>,
@@ -38,7 +47,7 @@ pub fn write_outbox_vote(
         ));
     }
     write_vote_inner(
-        repo,
+        transaction,
         change,
         state,
         author,
@@ -49,7 +58,7 @@ pub fn write_outbox_vote(
 }
 
 fn write_vote_inner(
-    repo: &git2::Repository,
+    transaction: &Transaction,
     change: &Change,
     state: &str,
     author: Option<&str>,
@@ -57,6 +66,7 @@ fn write_vote_inner(
     scope: &ChangesRef,
     path_prefix: &str,
 ) -> anyhow::Result<String> {
+    let repo = transaction.repo();
     let change_id = change
         .id()
         .ok_or_else(|| anyhow::anyhow!("commit {} has no Change-Id", change.commit()))?;
@@ -81,10 +91,12 @@ fn write_vote_inner(
         .join(&user);
 
     let ref_name = scope.ref_name();
-    let base_tree = repo
-        .find_reference(&ref_name)
-        .ok()
-        .and_then(|r| r.peel_to_tree().ok())
+    let prev_commit = transaction
+        .resolve_ref(&ref_name)?
+        .and_then(|oid| repo.find_commit(oid).ok());
+    let base_tree = prev_commit
+        .as_ref()
+        .and_then(|c| c.tree().ok())
         .unwrap_or_else(|| repo.find_tree(josh_core::filter::tree::empty_id()).unwrap());
 
     if let Some(existing) = base_tree
@@ -107,32 +119,31 @@ fn write_vote_inner(
         }
         None => repo.signature()?,
     };
-    let parent_commit = repo
-        .find_reference(&ref_name)
-        .ok()
-        .and_then(|r| r.peel_to_commit().ok());
-    let parents: Vec<&git2::Commit> = parent_commit.iter().collect();
-    repo.commit(
-        Some(&ref_name),
-        &sig,
-        &sig,
-        &format!("update {}\n", ref_name),
-        &tree,
-        &parents,
+    let parents: Vec<&git2::Commit> = prev_commit.iter().collect();
+    let msg = format!("update {}\n", ref_name);
+    let new_oid = repo.commit(None, &sig, &sig, &msg, &tree, &parents)?;
+    transaction.update_ref(
+        &ref_name,
+        prev_commit
+            .as_ref()
+            .map_or(Expected::Absent, |c| Expected::At(c.id())),
+        new_oid,
+        &msg,
     )?;
 
     Ok(content_hash)
 }
 
 pub fn read_vote(
-    repo: &git2::Repository,
+    transaction: &Transaction,
     change_id: &str,
     user: Option<&str>,
     scope: &ChangesRef,
 ) -> anyhow::Result<Option<VoteData>> {
-    let tree = match repo.find_reference(&scope.ref_name()) {
-        Ok(r) => r.peel_to_tree()?,
-        Err(_) => return Ok(None),
+    let repo = transaction.repo();
+    let tree = match transaction.resolve_ref(&scope.ref_name())? {
+        Some(oid) => repo.find_commit(oid)?.tree()?,
+        None => return Ok(None),
     };
 
     let user = match user {
@@ -158,32 +169,33 @@ pub fn read_vote(
 }
 
 pub fn list_votes(
-    repo: &git2::Repository,
+    transaction: &Transaction,
     change_id: &str,
     scope: &ChangesRef,
 ) -> anyhow::Result<Vec<(String, VoteData)>> {
-    list_votes_at_prefix(repo, change_id, scope, "votes")
+    list_votes_at_prefix(transaction, change_id, scope, "votes")
 }
 
 /// List votes queued in the outbox subtree of `scope` (must be Remote in
 /// practice; this just returns empty for refs that lack `outbox/votes`).
 pub fn list_outbox_votes(
-    repo: &git2::Repository,
+    transaction: &Transaction,
     change_id: &str,
     scope: &ChangesRef,
 ) -> anyhow::Result<Vec<(String, VoteData)>> {
-    list_votes_at_prefix(repo, change_id, scope, "outbox/votes")
+    list_votes_at_prefix(transaction, change_id, scope, "outbox/votes")
 }
 
 fn list_votes_at_prefix(
-    repo: &git2::Repository,
+    transaction: &Transaction,
     change_id: &str,
     scope: &ChangesRef,
     path_prefix: &str,
 ) -> anyhow::Result<Vec<(String, VoteData)>> {
-    let tree = match repo.find_reference(&scope.ref_name()) {
-        Ok(r) => r.peel_to_tree()?,
-        Err(_) => return Ok(Default::default()),
+    let repo = transaction.repo();
+    let tree = match transaction.resolve_ref(&scope.ref_name())? {
+        Some(oid) => repo.find_commit(oid)?.tree()?,
+        None => return Ok(Default::default()),
     };
     let path = std::path::Path::new(path_prefix).join(encode_change_id_path(change_id));
     let subtree = match get_tree(repo, &tree, &path) {
@@ -215,7 +227,7 @@ fn list_votes_at_prefix(
 /// in the `gh_vote_ids` map for the change. Called by `post_local_votes` after
 /// a successful push so the outbox doesn't accumulate forever.
 pub fn cleanup_posted_outbox_votes(
-    repo: &git2::Repository,
+    transaction: &Transaction,
     change_id: &str,
     scope: &ChangesRef,
 ) -> anyhow::Result<usize> {
@@ -225,21 +237,23 @@ pub fn cleanup_posted_outbox_votes(
         ));
     }
 
-    let tracked = crate::forges::github::read_github_vote_ids(repo, change_id, scope)?;
+    let repo = transaction.repo();
+    let tracked = crate::forges::github::read_github_vote_ids(transaction, change_id, scope)?;
     if tracked.is_empty() {
         return Ok(0);
     }
-    let outbox = list_outbox_votes(repo, change_id, scope)?;
+    let outbox = list_outbox_votes(transaction, change_id, scope)?;
     if outbox.is_empty() {
         return Ok(0);
     }
 
     let encoded = encode_change_id_path(change_id);
     let ref_name = scope.ref_name();
-    let mut tree = match repo.find_reference(&ref_name) {
-        Ok(r) => r.peel_to_tree()?,
-        Err(_) => return Ok(0),
+    let prev_commit = match transaction.resolve_ref(&ref_name)? {
+        Some(oid) => repo.find_commit(oid)?,
+        None => return Ok(0),
     };
+    let mut tree = prev_commit.tree()?;
 
     let mut removed = 0usize;
     for (user, data) in &outbox {
@@ -264,19 +278,9 @@ pub fn cleanup_posted_outbox_votes(
     }
 
     let sig = repo.signature()?;
-    let parent_commit = repo
-        .find_reference(&ref_name)
-        .ok()
-        .and_then(|r| r.peel_to_commit().ok());
-    let parents: Vec<&git2::Commit> = parent_commit.iter().collect();
-    repo.commit(
-        Some(&ref_name),
-        &sig,
-        &sig,
-        &format!("cleanup posted outbox votes on {}\n", ref_name),
-        &tree,
-        &parents,
-    )?;
+    let msg = format!("cleanup posted outbox votes on {}\n", ref_name);
+    let new_oid = repo.commit(None, &sig, &sig, &msg, &tree, &[&prev_commit])?;
+    transaction.update_ref(&ref_name, Expected::At(prev_commit.id()), new_oid, &msg)?;
 
     Ok(removed)
 }

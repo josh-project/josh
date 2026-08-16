@@ -3476,6 +3476,7 @@ dependencies = [
  "dioxus",
  "git2",
  "josh-changes",
+ "josh-core",
  "serde_json",
 ]
 

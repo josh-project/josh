@@ -214,13 +214,13 @@ impl ChangesRef {
     /// `remote` selects the `Remote` variant for that remote; `None` selects
     /// the `Local` variant.
     pub fn resolve(
-        repo: &git2::Repository,
+        transaction: &josh_core::cache::Transaction,
         branch: Option<&str>,
         remote: Option<&str>,
     ) -> anyhow::Result<ChangesRef> {
         let branch = match branch {
             Some(b) => b.to_string(),
-            None => head_branch(repo)?,
+            None => head_branch(transaction)?,
         };
         Ok(match remote {
             Some(remote) => ChangesRef::Remote {
@@ -255,10 +255,13 @@ impl ChangesRef {
     }
 }
 
-/// Read `repo.head()` and return the current branch shorthand. Errors on a
+/// Read HEAD and return the current branch shorthand. Errors on a
 /// detached HEAD with a message asking the caller to pass an explicit branch.
-pub fn head_branch(repo: &git2::Repository) -> anyhow::Result<String> {
-    let head = repo
+// PORT: symbolic-HEAD read is not expressible via resolve_ref; move to a
+// Transaction helper at flag day (gix head_name()).
+pub fn head_branch(transaction: &josh_core::cache::Transaction) -> anyhow::Result<String> {
+    let head = transaction
+        .repo()
         .head()
         .map_err(|e| anyhow!("failed to read HEAD: {}", e))?;
     if !head.is_branch() {
@@ -272,29 +275,29 @@ pub fn head_branch(repo: &git2::Repository) -> anyhow::Result<String> {
 /// Return every changes ref that currently exists, as `ChangesRef` values.
 /// `(remote, branch)` pairs are sorted for deterministic iteration; Local
 /// entries come first.
-pub fn all_changes_refs(repo: &git2::Repository) -> anyhow::Result<Vec<ChangesRef>> {
+pub fn all_changes_refs(
+    transaction: &josh_core::cache::Transaction,
+) -> anyhow::Result<Vec<ChangesRef>> {
     let mut locals: Vec<String> = Vec::new();
     let mut remotes: Vec<(String, String)> = Vec::new();
-    for r in repo.references()? {
-        let r = r?;
-        let name = match r.name() {
-            Ok(n) => n,
-            Err(_) => continue,
-        };
-        if let Some(branch) = name.strip_prefix("refs/josh/changes/") {
-            if !branch.is_empty() {
-                locals.push(branch.to_string());
-            }
-        } else if let Some(rest) = name.strip_prefix("refs/josh/remotes/") {
-            // `<remote>/changes/<branch>` -- branch may contain `/`, so split
-            // on the literal `/changes/` separator.
-            if let Some((remote, branch)) = rest.split_once("/changes/") {
-                if !remote.is_empty() && !branch.is_empty() {
-                    remotes.push((remote.to_string(), branch.to_string()));
-                }
+    transaction.for_each_ref_prefixed("refs/josh/changes/", |name, _| {
+        let branch = &name["refs/josh/changes/".len()..];
+        if !branch.is_empty() {
+            locals.push(branch.to_string());
+        }
+        Ok(())
+    })?;
+    transaction.for_each_ref_prefixed("refs/josh/remotes/", |name, _| {
+        // `<remote>/changes/<branch>` -- branch may contain `/`, so split
+        // on the literal `/changes/` separator.
+        let rest = &name["refs/josh/remotes/".len()..];
+        if let Some((remote, branch)) = rest.split_once("/changes/") {
+            if !remote.is_empty() && !branch.is_empty() {
+                remotes.push((remote.to_string(), branch.to_string()));
             }
         }
-    }
+        Ok(())
+    })?;
     locals.sort();
     locals.dedup();
     remotes.sort();

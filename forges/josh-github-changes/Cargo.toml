@@ -15,5 +15,6 @@ url.workspace = true
 serde_json.workspace = true
 
 josh-changes.workspace = true
+josh-core.workspace = true
 josh-github-graphql.workspace = true
 josh-github-webhooks.workspace = true

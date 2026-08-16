@@ -9,18 +9,19 @@ pub struct Revision {
 }
 
 pub fn read_revisions(
-    repo: &git2::Repository,
+    transaction: &josh_core::cache::Transaction,
     change: &Change,
     scope: &ChangesRef,
 ) -> anyhow::Result<Vec<Revision>> {
+    let repo = transaction.repo();
     let change_id = match change.id() {
         Some(id) => id,
         None => return Ok(Vec::new()),
     };
 
-    let head = match repo.find_reference(&scope.ref_name()) {
-        Ok(r) => r.peel_to_commit()?,
-        Err(_) => return Ok(Vec::new()),
+    let head = match transaction.resolve_ref(&scope.ref_name())? {
+        Some(oid) => repo.find_commit(oid)?,
+        None => return Ok(Vec::new()),
     };
 
     let mut revs: Vec<Revision> = Vec::new();
