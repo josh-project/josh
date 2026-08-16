@@ -5,6 +5,7 @@ mod prs;
 pub mod repo;
 
 pub use comments::{
-    post_local_comments, post_local_votes, sync_change_comments, sync_change_comments_by_pr_number,
+    fetched_comments, post_comments, post_votes, PostCommentsOutcome, PostVotesOutcome,
+    PostedComment,
 };
 pub use prs::{collect_pr_infos, create_or_update_prs, PrInfo};

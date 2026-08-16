@@ -1,179 +1,59 @@
-//! Syncing PR comments from GitHub and posting local comments and votes.
+//! Posting local comments and votes to GitHub, and converting fetched PR
+//! comments into the forge-neutral shape `josh-changes` stores.
 
 use std::collections::HashMap;
 
 use josh_github_graphql::connection::GithubApiConnection;
+use josh_github_graphql::operations::pull_request::PrData;
 
-/// Write PR comments into the given changes ref. Shared by both sync paths.
-fn write_pr_comments(
-    transaction: &josh_core::cache::Transaction,
-    change: &josh_changes::Change,
-    pr_data: &josh_github_graphql::operations::pull_request::PrData,
-    scope: &josh_changes::ChangesRef,
-) -> anyhow::Result<usize> {
-    let mut id_map: HashMap<String, String> = HashMap::new();
-    for comment in &pr_data.comments {
-        let location =
-            comment
-                .path
-                .as_ref()
-                .zip(comment.line)
-                .map(|(_, line)| josh_changes::Location {
-                    start_line: line as u32,
-                    end_line: line as u32,
-                    start_col: 1,
-                    end_col: u32::MAX,
-                });
-        let reply_to = comment
-            .reply_to
-            .as_ref()
-            .and_then(|gh_id| id_map.get(gh_id))
-            .cloned();
-        let meta = josh_changes::CommentMeta {
-            message: comment.body.clone(),
-            file: comment.path.clone(),
-            location,
-            reply_to,
-            update_of: None,
-        };
-
-        let blob_commit = comment.commit_oid.clone();
-
-        let hash = josh_changes::write_comment_with_commit(
-            transaction,
-            change,
-            &meta,
-            Some(&comment.author),
-            Some(&comment.timestamp),
-            blob_commit.as_deref(),
-            scope,
-        )?;
-        // Record the GitHub node ID so this comment is tracked as "already posted".
-        if let Some(change_id) = change.id() {
-            josh_changes::store_github_id(transaction, change_id, &hash, &comment.id, scope)?;
-        }
-        id_map.insert(comment.id.clone(), hash);
-    }
-
-    // Cleanup: any outbox entry whose `gh_ids[hash]` points at a GitHub node
-    // we just observed in the fetch can now be dropped — the canonical copy
-    // lives under `comments/...` on this ref.
-    if let Some(change_id) = change.id() {
-        let fetched: std::collections::HashSet<&str> =
-            pr_data.comments.iter().map(|c| c.id.as_str()).collect();
-        let gh_ids = josh_changes::read_github_ids(transaction, change_id, scope)?;
-        let to_remove: Vec<String> = gh_ids
-            .into_iter()
-            .filter(|(_, gh_id)| fetched.contains(gh_id.as_str()))
-            .map(|(local_hash, _)| local_hash)
-            .collect();
-        josh_changes::delete_outbox_comments(transaction, change_id, scope, &to_remove)?;
-    }
-
-    Ok(pr_data.comments.len())
-}
-
-/// Sync GitHub PR comments for a single change into the given remote changes ref.
-/// Returns the number of comments synced.
-pub async fn sync_change_comments(
-    connection: &GithubApiConnection,
-    owner: &str,
-    repo_name: &str,
-    transaction: &josh_core::cache::Transaction,
-    change: &josh_changes::Change,
-    head_ref: &str,
-    scope: &josh_changes::ChangesRef,
-) -> anyhow::Result<usize> {
-    let change_id = match change.id() {
-        Some(id) => id,
-        None => return Ok(0),
-    };
-
-    let pr = match connection
-        .find_pull_request_by_head(owner, repo_name, head_ref, None)
-        .await?
-    {
-        Some((_node_id, number, _draft)) => {
-            println!("Found PR #{} for change {}", number, change_id);
-            number
-        }
-        None => {
-            eprintln!(
-                "No open PR found for change {} (branch {})",
-                change_id, head_ref
-            );
-            return Ok(0);
-        }
-    };
-
-    let pr_data = connection.get_pr_comments(owner, repo_name, pr).await?;
-    let json = serde_json::to_string(&pr_data)?;
-    josh_changes::store_pr_data(transaction, change_id, &json, scope)?;
-
-    write_pr_comments(transaction, change, &pr_data, scope)
-}
-
-/// Sync GitHub PR comments for a change identified directly by PR number.
-pub async fn sync_change_comments_by_pr_number(
-    connection: &GithubApiConnection,
-    owner: &str,
-    repo_name: &str,
-    transaction: &josh_core::cache::Transaction,
-    change: &josh_changes::Change,
-    pr_number: i64,
-    scope: &josh_changes::ChangesRef,
-) -> anyhow::Result<usize> {
-    let change_id = match change.id() {
-        Some(id) => id,
-        None => return Ok(0),
-    };
-
-    let pr_data = connection
-        .get_pr_comments(owner, repo_name, pr_number)
-        .await?;
-    let json = serde_json::to_string(&pr_data)?;
-    josh_changes::store_pr_data(transaction, change_id, &json, scope)?;
-
-    write_pr_comments(transaction, change, &pr_data, scope)
-}
-
-/// Post local comments (those without a `github_id`) to a GitHub PR.
-/// Reads drafts from `remote_scope`, dedupes against its `gh_ids` map,
-/// and writes new mappings back into `remote_scope`.
-/// Returns the number of comments successfully posted.
-pub async fn post_local_comments(
-    connection: &GithubApiConnection,
-    transaction: &josh_core::cache::Transaction,
-    change_id: &str,
-    pr_node_id: &str,
-    remote_scope: &josh_changes::ChangesRef,
-) -> anyhow::Result<usize> {
-    // Pending comments live in `outbox/comments/...` on the Remote ref. Anything
-    // already under `comments/...` was either fetched from the remote or has
-    // already been posted; either way it should not be re-posted.
-    let comments: Vec<josh_changes::Comment> =
-        josh_changes::read_comments(transaction, change_id, remote_scope)?
-            .into_iter()
-            .filter(|c| c.pending)
-            .collect();
-    if comments.is_empty() {
-        return Ok(0);
-    }
-
-    let github_ids = josh_changes::read_github_ids(transaction, change_id, remote_scope)?;
-
-    // Collect unposted comments (no github_id mapping yet).
-    let mut unposted: Vec<&josh_changes::Comment> = comments
+/// Convert fetched GitHub PR comments into the forge-neutral shape
+/// `josh_changes::store_fetched_comments` consumes.
+pub fn fetched_comments(pr_data: &PrData) -> Vec<josh_changes::FetchedComment> {
+    pr_data
+        .comments
         .iter()
-        .filter(|c| !github_ids.contains_key(&c.id))
-        .collect();
-    if unposted.is_empty() {
-        return Ok(0);
-    }
+        .map(|c| josh_changes::FetchedComment {
+            forge_id: c.id.clone(),
+            author: c.author.clone(),
+            body: c.body.clone(),
+            timestamp: c.timestamp.clone(),
+            path: c.path.clone(),
+            line: c.line,
+            reply_to: c.reply_to.clone(),
+            commit_oid: c.commit_oid.clone(),
+        })
+        .collect()
+}
+
+/// A comment posted to GitHub: the local content hash paired with the GitHub
+/// node ID it was posted as.
+pub struct PostedComment {
+    pub local_id: String,
+    pub github_id: String,
+}
+
+/// Result of a [`post_comments`] run: everything posted before an eventual
+/// failure, plus the first error encountered (posting stops at that point).
+pub struct PostCommentsOutcome {
+    pub posted: Vec<PostedComment>,
+    pub error: Option<anyhow::Error>,
+}
+
+/// Post pending comments to a GitHub PR. Recording the returned IDs into
+/// local refs is the caller's job.
+pub async fn post_comments(
+    connection: &GithubApiConnection,
+    pr_node_id: &str,
+    pending: &josh_changes::PendingComments,
+) -> PostCommentsOutcome {
+    let mut outcome = PostCommentsOutcome {
+        posted: Vec::new(),
+        error: None,
+    };
 
     // Topological sort: post parents before children that reply to them.
-    let mut posted_count = 0usize;
-    let mut new_ids: std::collections::HashMap<String, String> = github_ids;
+    let mut new_ids: HashMap<String, String> = pending.posted_ids.clone();
+    let mut unposted: Vec<&josh_changes::Comment> = pending.to_post.iter().collect();
 
     while !unposted.is_empty() {
         let mut progressed = false;
@@ -189,18 +69,22 @@ pub async fn post_local_comments(
                 continue;
             }
 
-            let github_id = if let Some(ref file) = comment.file {
+            let result = if let Some(ref file) = comment.file {
                 if let Some(parent_hash) = &comment.reply_to {
-                    let parent_gh_id = match new_ids.get(parent_hash.as_str()) {
-                        Some(id) => id,
+                    match new_ids.get(parent_hash.as_str()) {
+                        Some(parent_gh_id) => {
+                            connection
+                                .add_pull_request_review_thread_reply(
+                                    parent_gh_id,
+                                    &comment.message,
+                                )
+                                .await
+                        }
                         None => {
                             remaining.push(comment);
                             continue;
                         }
-                    };
-                    connection
-                        .add_pull_request_review_thread_reply(parent_gh_id, &comment.message)
-                        .await?
+                    }
                 } else {
                     let line = comment
                         .location
@@ -208,28 +92,32 @@ pub async fn post_local_comments(
                         .map_or(1, |loc| loc.start_line as i64);
                     connection
                         .add_pull_request_review_thread(pr_node_id, &comment.message, file, line)
-                        .await?
+                        .await
                 }
             } else {
-                connection.add_comment(pr_node_id, &comment.message).await?
+                connection.add_comment(pr_node_id, &comment.message).await
             };
 
-            josh_changes::store_github_id(
-                transaction,
-                change_id,
-                &comment.id,
-                &github_id,
-                remote_scope,
-            )?;
-            new_ids.insert(comment.id.clone(), github_id);
-            posted_count += 1;
-            progressed = true;
+            match result {
+                Ok(github_id) => {
+                    new_ids.insert(comment.id.clone(), github_id.clone());
+                    outcome.posted.push(PostedComment {
+                        local_id: comment.id.clone(),
+                        github_id,
+                    });
+                    progressed = true;
+                }
+                Err(e) => {
+                    outcome.error = Some(e);
+                    return outcome;
+                }
+            }
         }
 
         if !progressed {
             // Orphan reply_to references — post remaining as standalone.
             for comment in remaining.drain(..) {
-                let github_id = if comment.file.is_some() {
+                let result = if comment.file.is_some() {
                     let line = comment
                         .location
                         .as_ref()
@@ -241,19 +129,23 @@ pub async fn post_local_comments(
                             comment.file.as_deref().unwrap_or(""),
                             line,
                         )
-                        .await?
+                        .await
                 } else {
-                    connection.add_comment(pr_node_id, &comment.message).await?
+                    connection.add_comment(pr_node_id, &comment.message).await
                 };
-                josh_changes::store_github_id(
-                    transaction,
-                    change_id,
-                    &comment.id,
-                    &github_id,
-                    remote_scope,
-                )?;
-                new_ids.insert(comment.id.clone(), github_id);
-                posted_count += 1;
+                match result {
+                    Ok(github_id) => {
+                        new_ids.insert(comment.id.clone(), github_id.clone());
+                        outcome.posted.push(PostedComment {
+                            local_id: comment.id.clone(),
+                            github_id,
+                        });
+                    }
+                    Err(e) => {
+                        outcome.error = Some(e);
+                        return outcome;
+                    }
+                }
             }
             break;
         }
@@ -261,49 +153,44 @@ pub async fn post_local_comments(
         unposted = remaining;
     }
 
-    Ok(posted_count)
+    outcome
 }
 
-/// Post local votes (those not yet pushed to GitHub) as pull request reviews.
-/// Reads from `local_scope`, dedupes against the remote's `gh_vote_ids`, and
-/// writes the tracking entry into `remote_scope`.
-pub async fn post_local_votes(
+/// Result of a [`post_votes`] run: every vote posted before an eventual
+/// failure, plus the first error encountered (posting stops at that point).
+pub struct PostVotesOutcome {
+    pub posted: Vec<(String, josh_changes::VoteData)>,
+    pub error: Option<anyhow::Error>,
+}
+
+/// Post pending votes to a GitHub PR as pull request reviews. Recording the
+/// returned votes into local refs is the caller's job.
+pub async fn post_votes(
     connection: &GithubApiConnection,
-    transaction: &josh_core::cache::Transaction,
-    change_id: &str,
     pr_node_id: &str,
     commit_oid: &str,
-    remote_scope: &josh_changes::ChangesRef,
-) -> anyhow::Result<usize> {
-    let votes = josh_changes::list_outbox_votes(transaction, change_id, remote_scope)?;
-    if votes.is_empty() {
-        return Ok(0);
-    }
+    votes: &[(String, josh_changes::VoteData)],
+) -> PostVotesOutcome {
+    let mut outcome = PostVotesOutcome {
+        posted: Vec::new(),
+        error: None,
+    };
 
-    let tracked = josh_changes::read_github_vote_ids(transaction, change_id, remote_scope)?;
-
-    let mut posted = 0usize;
-    for (user, vote_data) in &votes {
-        if let Some(tracked_data) = tracked.get(user) {
-            if tracked_data.state == vote_data.state && tracked_data.sha == vote_data.sha {
-                continue;
-            }
-        }
-
+    for (user, vote_data) in votes {
         let event = josh_changes::vote_state_to_github_review(&vote_data.state);
         let body = format!("josh vote: {}", vote_data.state);
 
-        let _review_id = connection
+        match connection
             .add_pull_request_review(pr_node_id, event, Some(&body), Some(commit_oid))
-            .await?;
-
-        josh_changes::store_github_vote_id(transaction, change_id, user, vote_data, remote_scope)?;
-        posted += 1;
+            .await
+        {
+            Ok(_review_id) => outcome.posted.push((user.clone(), vote_data.clone())),
+            Err(e) => {
+                outcome.error = Some(e);
+                return outcome;
+            }
+        }
     }
 
-    // Drop outbox entries whose post is now reflected in gh_vote_ids. Safe to
-    // call unconditionally -- it's a no-op when nothing needs cleaning.
-    josh_changes::cleanup_posted_outbox_votes(transaction, change_id, remote_scope)?;
-
-    Ok(posted)
+    outcome
 }
