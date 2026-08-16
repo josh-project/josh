@@ -1,6 +1,6 @@
 # git2 -> gix port: status
 
-Last updated: 2026-08-16. See `PLAN.md` in this directory for the full phased plan.
+Last updated: 2026-08-16 (post-2.3). See `PLAN.md` in this directory for the full phased plan.
 
 ## Landed on master (one commit per step, each suite-green and bench-validated)
 
@@ -16,6 +16,8 @@ Last updated: 2026-08-16. See `PLAN.md` in this directory for the full phased pl
 | 2.1 | 32340023 | Transaction ref API: `resolve_ref` (Option-not-error, symrefs followed, unpeeled), `update_ref` (always force, explicit log message), `for_each_ref_prefixed` (prefix-not-glob, byte-sorted -- the one deliberate observable change -- skips symbolic/non-UTF-8/corrupt refs); flag-day contract pinned in the method doc comments AND by unit tests (incl. a hand-packed ref exercising the loose+packed sort). Ported: `update_refs`, `list_refs`/`default_from_to`/`memorize_from_to` (now `&Transaction`), `discover_filter_candidates` (prefix + `ends_with(".git/HEAD")`; the dead `josh/filtered/` loop kept verbatim), `get_info`, josh-proxy caller, refs_filter_update bench. NOT covered (deliberate): `git.rs` (allowlisted), `cache/distributed.rs` (own repo below the cache stack -- needs its own port step in phase 3, plan gap) | `refs_filter_update` **-3 to -4%**, rest at post-1.5 levels, no regressions |
 
 | 2.2 | c3320d47 | josh-changes onto the Transaction ref API: all public fns take `&Transaction` (redundant `(repo, transaction)` pairs collapsed; `Change::new`/`create_synthetic_merge_commit` take oids, `Change::new` now fallible); ref reads via `resolve_ref`, enumeration via two `for_each_ref_prefixed` calls, and every `repo.commit(Some(&ref))` split into `repo.commit(None, ..)` + `Transaction::update_ref`, reshaped to take an `Expected` guard (`Any`/`Absent`/`At(oid)`, mirroring gix `PreviousValue`); `At`/`Absent` preserve libgit2's first-parent-must-be-tip check on the metadata refs (contract pinned by 6 unit tests incl. packed-ref match and error-on-vanished). Object I/O, git2 revwalks, `repo.head()` (symbolic HEAD) and `revparse_single` stay on `transaction.repo()` until flag day (`// PORT:` markers). Deliberate divergences: corrupt-ref errors propagate instead of reading as absent (2.1 contract), symbolic refs under `refs/josh/{changes,remotes}/` no longer enumerate, reflog message text differs. Callers ported: josh-cli, josh-proxy, josh-github-changes (+josh-core dep), josh-gui (+josh-core dep; per-callback `TransactionContext` over an empty `CacheStack`) | flat (`refs_filter_update` no-change vs pre-gix; josh-core hot paths untouched) |
+
+| 2.3 | bd1b18f5 | josh-graphql onto the Transaction ref API: all five ref sites (reads only, all on the mirror transaction) — the two Markers `revparse_single` sites -> `resolve_ref` (absent -> empty-tree fallback kept; objects still read on the overlay via disk alternate), `Reference::rev` -> `resolve_ref` + explicit missing-ref error, `Repository::refs` -> `for_each_ref_prefixed` over ns + the pattern's literal prefix, names matched ns-stripped against the pattern with the vendored `glob` crate (default `MatchOptions` = wildmatch flags 0: `*`/`?` cross `/`; ns never enters glob syntax); `format_marker` -> new `josh_gix_ext::hash_blob` (byte-identical). `Repository::rev`'s user rev-syntax revparse stays on `transaction.repo()` (PORT marker), as do object I/O and the prysk-pinned history revwalk. Deliberate divergences (refs listing has zero in-repo callers/tests): byte-sorted listing, symrefs/non-UTF-8/corrupt refs skip instead of enumerate/error, glob-crate edge patterns (mid-string `**` errors, no `[^a]`/POSIX classes). New graphql_refs.t pins the matcher contract, a unit test pins `hash_blob` | flat (josh-core untouched; `refs_filter_update` -3%, deephistory at post-1.5 levels on clean-master control; NOTE: `deephistory_{subdir,rev}/100` read +290% vs pre-gix on clean master too — bisected to 0993209a (refcounted sled lifetime: per-iteration transaction drops close/reopen the db, whose flush/reopen I/O dominates short cases); fixed by pinning the db in bench setups, restoring -23%/-21%) |
 
 Phase 1.2 is complete: no `treebuilder` use remains in `josh-core/src/filter/tree.rs`.
 
@@ -41,9 +43,10 @@ write); blob writes are plain odb writes that memodb intercepts.
 
 ## Next steps
 
-1. **2.2** josh-changes: public fns `&git2::Repository` -> `&Transaction`; internals onto the
-   ref API + `ObjectId` currency. Then **2.3-2.5** josh-graphql, josh-cli, josh-filter
-   (`Filter::id()`, `LazyRef::Resolved`), josh-link/starlark/templates; **2.6** audit
+1. **2.4** josh-cli: ref sites onto the Transaction ref API (usage map in 2.1-research.md;
+   watch the two-transaction cache-build path and the order-sensitive squash-pattern glob in
+   josh-filter.rs). Then **2.5** josh-filter (`Filter::id()`, `LazyRef::Resolved`),
+   josh-link/starlark/templates; **2.6** audit
    (remaining `transaction.repo()` callers only transaction.rs, git.rs, housekeeping.rs
    object reads, memodb registration). Ref-usage maps for all leaf crates are in
    `.agents/work/gix-port/2.1-research.md`. The ref API will need deletion/symbolic-create
