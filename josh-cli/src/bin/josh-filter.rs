@@ -196,13 +196,12 @@ fn run_filter(args: Vec<String>) -> anyhow::Result<i32> {
         josh_core::filter::from_tree(&repo, tree_oid)?
     };
 
-    if !args.get_flag("no-cache") {
-        josh_core::cache::sled_load(&repo_path)?;
-    }
-
     let cache = std::sync::Arc::new({
-        let cache = josh_core::cache::CacheStack::new()
-            .with_backend(josh_core::cache::SledCacheBackend::default());
+        let mut cache = josh_core::cache::CacheStack::new();
+
+        if !args.get_flag("no-cache") {
+            cache = cache.with_backend(josh_core::cache::SledCacheBackend::new(&repo_path));
+        }
 
         if args.get_flag("distributed-cache") {
             cache.with_backend(josh_core::cache::DistributedCacheBackend::new(&repo_path)?)

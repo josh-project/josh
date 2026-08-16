@@ -92,6 +92,8 @@ criterion = "0.8"
 tempfile.workspace = true
 git2.workspace = true
 josh-test-support = { path = "../devtools/josh-test-support" }
+# Used by tests/cache_lock.rs to probe the sled file lock directly.
+sled = "0.34.7"
 
 [[bench]]
 name = "unapply"

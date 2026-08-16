@@ -6,99 +6,96 @@ use super::backend::{CacheBackend, HistoryGraphHint};
 use crate::filter;
 use crate::filter::Filter;
 
-static DB: LazyLock<std::sync::Mutex<Option<sled::Db>>> = LazyLock::new(Default::default);
-
-/// Remove all entries from every tree in the global on-disk cache.
+/// Process-wide state of the on-disk sled cache.
 ///
-/// This nukes the persistent sled cache. Doing so is safe: the sled cache is
-/// ephemeral and, when configured, backed by a remote cache. Primarily intended
-/// for benchmarks and tests that need a cold cache between runs. Does nothing if
-/// the cache has not been loaded.
-pub fn sled_clear() -> anyhow::Result<()> {
-    let db = DB.lock().unwrap();
-    let Some(db) = db.as_ref() else {
-        return Ok(());
-    };
-
-    for name in db.tree_names() {
-        db.open_tree(&name)?.clear()?;
-    }
-
-    Ok(())
+/// sled takes a process-exclusive file lock on the cache directory and permits only one open handle
+/// per path per process, so the db is a single shared instance rather than per-backend -- every
+/// [`SledCacheBackend`] forwards here. Its lifetime is driven by `active`, the number of live
+/// transactions (plus any [`SledCacheBackend::pin`]): the db is opened lazily on the first
+/// transaction and dropped once the last one ends, releasing the lock.
+struct State {
+    /// Cache directory, set by [`SledCacheBackend::new`]. `None` until the first backend is built.
+    path: Option<std::path::PathBuf>,
+    db: Option<sled::Db>,
+    trees: std::collections::HashMap<git2::Oid, sled::Tree>,
+    active: usize,
 }
 
-pub fn sled_print_stats() -> anyhow::Result<()> {
-    let db = DB.lock().unwrap();
-    let db = match db.as_ref() {
-        Some(db) => db,
-        None => return Err(anyhow!("cache not initialized")),
-    };
+static STATE: LazyLock<std::sync::Mutex<State>> = LazyLock::new(|| {
+    std::sync::Mutex::new(State {
+        path: None,
+        db: None,
+        trees: Default::default(),
+        active: 0,
+    })
+});
 
-    db.flush()?;
-    log::debug!("Trees:");
-
-    let mut v = vec![];
-    for name in db.tree_names() {
-        let name = String::from_utf8(name.to_vec())?;
-        let t = db.open_tree(&name)?;
-
-        if !t.is_empty() {
-            let name = if let Ok(filter) = filter::parse(&name) {
-                filter::pretty(filter, 4)
-            } else {
-                name.clone()
-            };
-            v.push((t.len(), name));
+impl State {
+    /// Open the db if it isn't already. Errors if no [`SledCacheBackend::new`] ever configured a
+    /// cache path.
+    fn ensure_open(&mut self) -> anyhow::Result<&sled::Db> {
+        if self.db.is_none() {
+            let path = self
+                .path
+                .as_ref()
+                .ok_or_else(|| anyhow!("sled cache path not configured"))?;
+            self.db = Some(
+                sled::Config::default()
+                    .path(path.join(format!("josh/cache/{}/sled/", CACHE_VERSION)))
+                    .flush_every_ms(Some(200))
+                    .open()?,
+            );
         }
+        Ok(self.db.as_ref().unwrap())
     }
 
-    v.sort();
-
-    for (len, name) in v.iter() {
-        println!("[{}] {}", len, name);
+    fn tree(&mut self, filter: Filter) -> anyhow::Result<sled::Tree> {
+        if let Some(tree) = self.trees.get(&filter.id()) {
+            return Ok(tree.clone());
+        }
+        let tree = self.ensure_open()?.open_tree(filter::spec(filter))?;
+        self.trees.insert(filter.id(), tree.clone());
+        Ok(tree)
     }
 
-    Ok(())
-}
-
-/// Flush any pending writes of the global cache db to disk. No-op if the cache is not loaded.
-pub fn sled_flush() -> anyhow::Result<()> {
-    if let Some(db) = DB.lock().unwrap().as_ref() {
-        db.flush()?;
+    /// Flush pending writes, then drop the cached tree handles and the db, releasing sled's file
+    /// lock on the cache directory.
+    fn close(&mut self) {
+        if let Some(Err(e)) = self.db.as_ref().map(|db| db.flush()) {
+            log::error!("failed to flush sled cache: {e}");
+        }
+        self.trees.clear();
+        self.db = None;
     }
-    Ok(())
 }
 
-/// Drop the global cache db, releasing sled's exclusive file lock on the cache directory. Any
-/// remaining `sled::Tree` handles keep the underlying store (and its lock) alive, so callers must
-/// drop those first; see [`crate::cache::Transaction::release_cache`].
-pub fn sled_unload() {
-    *DB.lock().unwrap() = None;
-}
+/// Per-filter on-disk cache backed by sled.
+///
+/// The backend is a thin handle onto the process-wide sled db (see [`State`]); the db itself is
+/// opened lazily and dropped automatically once no transaction is active. Constructing a backend
+/// with [`SledCacheBackend::new`] configures the cache directory; a long-running process (the proxy)
+/// that wants the cache hot for its whole lifetime additionally calls [`SledCacheBackend::pin`].
+#[derive(Clone, Default)]
+pub struct SledCacheBackend;
 
-pub fn sled_load(path: &std::path::Path) -> anyhow::Result<()> {
-    let db = sled::Config::default()
-        .path(path.join(format!("josh/cache/{}/sled/", CACHE_VERSION)))
-        .flush_every_ms(Some(200))
-        .open()?;
+impl SledCacheBackend {
+    /// Configure the on-disk cache directory and return a backend handle. Must be called before any
+    /// transaction opens; later calls repoint the shared cache path.
+    pub fn new(path: impl AsRef<std::path::Path>) -> Self {
+        STATE.lock().unwrap().path = Some(path.as_ref().to_path_buf());
+        Self
+    }
 
-    *DB.lock().unwrap() = Some(db);
-
-    Ok(())
-}
-
-#[derive(Default)]
-pub struct SledCacheBackend {
-    trees: std::sync::Mutex<std::collections::HashMap<git2::Oid, sled::Tree>>,
-}
-
-fn insert_sled_tree(filter: Filter) -> sled::Tree {
-    DB.lock()
-        .unwrap()
-        .as_ref()
-        .expect("Sled DB not initialized")
-        .open_tree(filter::spec(filter))
-        .expect("Failed to insert Sled tree")
+    /// Keep the db open for the lifetime of the process regardless of transaction activity. This is
+    /// an unbalanced [`CacheBackend::begin`]: it opens the db and bumps the active count once
+    /// without a matching `end`, so the cache stays hot and the lock is held until the process
+    /// exits.
+    pub fn pin(&self) -> anyhow::Result<()> {
+        let mut state = STATE.lock().unwrap();
+        state.ensure_open()?;
+        state.active += 1;
+        Ok(())
+    }
 }
 
 impl CacheBackend for SledCacheBackend {
@@ -107,15 +104,12 @@ impl CacheBackend for SledCacheBackend {
         filter: Filter,
         from: git2::Oid,
         _hint: HistoryGraphHint,
+        // Sled stores records by filter alone, so the key kind needs no special handling.
+        _tree_keyed: bool,
     ) -> anyhow::Result<Option<git2::Oid>> {
-        let mut trees = self.trees.lock().unwrap();
-        let tree = trees
-            .entry(filter.id())
-            .or_insert_with(|| insert_sled_tree(filter));
-
+        let tree = STATE.lock().unwrap().tree(filter)?;
         if let Some(oid) = tree.get(from.as_bytes())? {
-            let oid = git2::Oid::from_bytes(&oid)?;
-            Ok(Some(oid))
+            Ok(Some(git2::Oid::from_bytes(&oid)?))
         } else {
             Ok(None)
         }
@@ -127,19 +121,101 @@ impl CacheBackend for SledCacheBackend {
         from: git2::Oid,
         to: git2::Oid,
         _hint: HistoryGraphHint,
+        _tree_keyed: bool,
     ) -> anyhow::Result<()> {
-        let mut trees = self.trees.lock().unwrap();
-        let tree = trees
-            .entry(filter.id())
-            .or_insert_with(|| insert_sled_tree(filter));
-
+        let tree = STATE.lock().unwrap().tree(filter)?;
         tree.insert(from.as_bytes(), to.as_bytes())?;
         Ok(())
     }
 
-    /// Drop the cached per-filter tree handles so that, once the global db is unloaded, sled's file
-    /// lock is released. A later read/write transparently reopens the trees.
-    fn release(&self) {
-        self.trees.lock().unwrap().clear();
+    /// Open the db (if needed) and count this transaction as active.
+    fn begin(&self) {
+        let mut state = STATE.lock().unwrap();
+        if let Err(e) = state.ensure_open() {
+            log::error!("failed to open sled cache: {e}");
+            return;
+        }
+        state.active += 1;
     }
+
+    /// Drop this transaction from the active count; when the last one ends, flush and close the db,
+    /// releasing sled's exclusive lock. A later [`CacheBackend::begin`] reopens it transparently.
+    fn end(&self) {
+        let mut state = STATE.lock().unwrap();
+        state.active = state.active.saturating_sub(1);
+        if state.active == 0 {
+            state.close();
+        }
+    }
+}
+
+/// Run a maintenance closure against the shared db, opening it temporarily if no transaction is
+/// holding it open and closing it again afterwards. Returns `None` if no cache path is configured.
+fn with_maintenance_db<T>(
+    f: impl FnOnce(&sled::Db) -> anyhow::Result<T>,
+) -> anyhow::Result<Option<T>> {
+    let mut state = STATE.lock().unwrap();
+    if state.path.is_none() {
+        return Ok(None);
+    }
+    let opened_here = state.db.is_none();
+    let result = f(state.ensure_open()?);
+    // If we opened the db just for this maintenance op, close it again to keep the "open only while
+    // a transaction is active" invariant.
+    if opened_here && state.active == 0 {
+        state.close();
+    }
+    result.map(Some)
+}
+
+/// Remove all entries from every tree in the on-disk cache.
+///
+/// This nukes the persistent sled cache. Doing so is safe: the sled cache is
+/// ephemeral and, when configured, backed by a remote cache. Primarily intended
+/// for benchmarks and tests that need a cold cache between runs. Does nothing if
+/// no cache directory has been configured.
+pub fn sled_clear() -> anyhow::Result<()> {
+    with_maintenance_db(|db| {
+        for name in db.tree_names() {
+            db.open_tree(&name)?.clear()?;
+        }
+        Ok(())
+    })?;
+    Ok(())
+}
+
+pub fn sled_print_stats() -> anyhow::Result<()> {
+    let printed = with_maintenance_db(|db| {
+        db.flush()?;
+        log::debug!("Trees:");
+
+        let mut v = vec![];
+        for name in db.tree_names() {
+            let name = String::from_utf8(name.to_vec())?;
+            let t = db.open_tree(&name)?;
+
+            if !t.is_empty() {
+                let name = if let Ok(filter) = filter::parse(&name) {
+                    filter::pretty(filter, 4)
+                } else {
+                    name.clone()
+                };
+                v.push((t.len(), name));
+            }
+        }
+
+        v.sort();
+
+        for (len, name) in v.iter() {
+            println!("[{}] {}", len, name);
+        }
+
+        Ok(())
+    })?;
+
+    if printed.is_none() {
+        return Err(anyhow!("cache not initialized"));
+    }
+
+    Ok(())
 }

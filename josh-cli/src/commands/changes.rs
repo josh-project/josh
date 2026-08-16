@@ -1,32 +1,35 @@
+use crate::commands::scope::ScopeArgs;
+
 /// Arguments for `josh changes list`.
 #[derive(Debug, clap::Parser)]
 pub struct ListArgs {
-    /// Target branch to list changes for (defaults to HEAD's branch).
-    #[arg(short = 'b', long = "branch")]
-    pub branch: Option<String>,
+    #[command(flatten)]
+    pub scope: ScopeArgs,
 }
 
-/// Print changes read from refs/josh/changes/<branch> + refs/josh/remotes/*/changes/<branch>
-/// (populated by `josh changes sync`).
+/// Print changes read from the resolved changes ref (Local by default, or the
+/// remote selected by `--remote`). Populated by `josh changes sync`.
 pub fn handle_list(
     args: &ListArgs,
     transaction: &josh_core::cache::Transaction,
 ) -> anyhow::Result<()> {
     let repo = transaction.repo();
-    let branch = match &args.branch {
-        Some(b) => b.clone(),
-        None => josh_changes::head_branch(repo)?,
+    let scope = args.scope.resolve(repo)?;
+    let changes = josh_changes::list_changes(repo, &scope)?;
+
+    let scope_label = match &scope {
+        josh_changes::ChangesRef::Local { branch } => format!("Local [{}]", branch),
+        josh_changes::ChangesRef::Remote { remote, branch } => {
+            format!("remote '{}' [{}]", remote, branch)
+        }
     };
 
-    let scopes = josh_changes::refs_on_branch(repo, &branch)?;
-    let changes = josh_changes::list_changes_in_scopes(repo, &scopes)?;
-
     if changes.is_empty() {
-        println!("No local changes found for branch '{}'.", branch);
+        println!("No changes found on {}.", scope_label);
         return Ok(());
     }
 
-    println!("Changes targeting '{}':\n", branch);
+    println!("Changes on {}:\n", scope_label);
 
     for change in &changes {
         let commit = repo.find_commit(change.commit())?;
@@ -52,9 +55,7 @@ pub fn handle_list(
 
         let comments = change
             .id()
-            .map(|cid| {
-                josh_changes::read_comments_in_scopes(repo, cid, &scopes).unwrap_or_default()
-            })
+            .map(|cid| josh_changes::read_comments(repo, cid, &scope).unwrap_or_default())
             .unwrap_or_default();
         if !comments.is_empty() {
             println!();

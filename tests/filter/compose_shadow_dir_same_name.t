@@ -89,6 +89,14 @@
 
   $ josh-filter -s ":[:/sub/xx::file3,:/sub1,:/xx,:/sub/xx]"
   f9da6dcfc582a60447a9870b596eb9f28a7e03ec
+  [2] :[
+      :/sub1
+      :/xx
+  ]
+  [2] :[
+      :/xx
+      :/sub1
+  ]
   [3] :[
       :/sub/xx::file3
       :/sub1

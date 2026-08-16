@@ -27,30 +27,31 @@ static POPULATE_MAP: LazyLock<RwLock<HashMap<(git2::Oid, git2::Oid), git2::Oid>>
 static GLOB_MAP: LazyLock<RwLock<HashMap<(git2::Oid, git2::Oid, u64), git2::Oid>>> =
     LazyLock::new(Default::default);
 
-// Trigram index memoization, keyed by source tree oid -> index tree oid. The index is a pure
-// function of the source tree, and `:INDEX` walks commits parent-first, so when a child commit is
-// indexed the subtrees it shares with its parent are already memoized here from the parent's run --
-// which is where reuse almost always comes from. An in-process map captures that without the
-// persistence (and file lock) of an on-disk cache.
-static TRIGRAM_INDEX_MAP: LazyLock<RwLock<HashMap<git2::Oid, git2::Oid>>> =
-    LazyLock::new(Default::default);
-
 // Path-projection memoization for `:PATHS` and its inverse, keyed by (input tree oid, root path).
 // Both are pure functions of the input tree, and workspace filters walk commits parent-first, so a
-// child commit reuses the projections its parent just computed for the subtrees they share -- the
-// same parent-reuse the trigram index relies on, so an in-process map suffices here too.
+// child commit reuses the projections its parent just computed for the subtrees they share, which
+// an in-process map captures.
 static PATHS_MAP: LazyLock<RwLock<HashMap<(git2::Oid, String), git2::Oid>>> =
     LazyLock::new(Default::default);
 
 static INVERT_MAP: LazyLock<RwLock<HashMap<(git2::Oid, String), git2::Oid>>> =
     LazyLock::new(Default::default);
 
+/// Placeholder hint for tree-keyed records with no commit context. Sequence 0 is
+/// eligible and lands in shard 0 of the distributed backend; the local backend
+/// ignores the hint.
+const TREE_KEYED_FALLBACK_HINT: HistoryGraphHint = HistoryGraphHint {
+    sequence_number: 0,
+    parent_count: 1,
+    jump_delta: 1,
+    jump_is_second: false,
+};
+
 /// Clear the process-global in-memory caches shared across all transactions.
 pub fn clear_global_caches() {
     REF_CACHE.write().unwrap().clear();
     POPULATE_MAP.write().unwrap().clear();
     GLOB_MAP.write().unwrap().clear();
-    TRIGRAM_INDEX_MAP.write().unwrap().clear();
     PATHS_MAP.write().unwrap().clear();
     INVERT_MAP.write().unwrap().clear();
 }
@@ -137,6 +138,9 @@ struct Transaction2 {
     tree_cache: TreeCache,
 
     cache: std::sync::Arc<CacheStack>,
+    // In-transaction memoization of the trigram index (source tree -> index tree); the
+    // cache backend behind it holds the durable, cross-transaction copy.
+    index_map: HashMap<git2::Oid, git2::Oid>,
     missing: Vec<(usize, crate::filter::Filter, git2::Oid)>,
     misses: usize,
     nesting_level: usize,
@@ -157,6 +161,10 @@ pub struct Transaction {
 
 impl Drop for Transaction {
     fn drop(&mut self) {
+        // Balance the `begin` from `Transaction::new`, even for ephemeral transactions, so a
+        // locking backend can release once the last transaction ends.
+        self.t2.borrow().cache.end();
+
         // Skip flushing to disk, the mem odb will be lost, as requested.
         if self.ephemeral {
             return;
@@ -194,6 +202,10 @@ impl Transaction {
         let mem_odb = josh_memodb::MemOdb::new(mem_odb_limit, repo.path().to_owned());
         mem_odb.register(&repo);
 
+        // Balanced in `Drop`; lets a locking backend (sled) hold its lock only while a
+        // transaction is live.
+        cache.begin();
+
         log::debug!("new transaction");
 
         Transaction {
@@ -210,6 +222,7 @@ impl Transaction {
                 last_written_commit: None,
                 tree_cache: Default::default(),
                 cache,
+                index_map: HashMap::new(),
                 missing: vec![],
                 misses: 0,
                 nesting_level: 0,
@@ -237,21 +250,6 @@ impl Transaction {
 
     pub fn repo(&self) -> &git2::Repository {
         &self.repo
-    }
-
-    /// Close the on-disk cache, releasing sled's exclusive lock on the cache directory so other
-    /// josh processes can open it. This flushes pending writes, then drops the remaining sled
-    /// handles: the shared backend's per-filter trees and the process-global database.
-    ///
-    /// Call once no further cache reads or writes will happen. The repo and in-memory object store
-    /// stay usable, so a filtering phase can hand its result to a long, cache-free tail (for
-    /// example running containers) without pinning the lock. A later cache read or write reopens
-    /// what it needs.
-    pub fn release_cache(&self) -> anyhow::Result<()> {
-        crate::cache::sled::sled_flush()?;
-        self.t2.borrow().cache.release();
-        crate::cache::sled::sled_unload();
-        Ok(())
     }
 
     /// Read the raw bytes of the tree `oid` through the per-transaction [`TreeCache`]
@@ -508,16 +506,49 @@ impl Transaction {
         INVERT_MAP.read().unwrap().get(&tree).cloned()
     }
 
-    pub fn insert_trigram_index(&self, tree: git2::Oid, result: git2::Oid) {
-        TRIGRAM_INDEX_MAP
-            .write()
-            .unwrap()
-            .entry(tree)
-            .or_insert(result);
+    /// Build a josh-search index cache that shards records by `commit`'s history-graph
+    /// position. Pass [`git2::Oid::ZERO_SHA1`] for a bare tree with no commit context.
+    pub fn trigram_index_cache(&self, commit: git2::Oid) -> TrigramIndexCache<'_> {
+        TrigramIndexCache {
+            transaction: self,
+            hint: self.tree_keyed_hint(commit),
+        }
     }
 
-    pub fn get_trigram_index(&self, tree: git2::Oid) -> Option<git2::Oid> {
-        TRIGRAM_INDEX_MAP.read().unwrap().get(&tree).cloned()
+    /// Trees carry no history position of their own, so tree-keyed records use the hint
+    /// of the commit being indexed. Falls back to the placeholder when there is no commit
+    /// context or the hint cannot be computed.
+    fn tree_keyed_hint(&self, commit: git2::Oid) -> HistoryGraphHint {
+        if commit == git2::Oid::ZERO_SHA1 {
+            return TREE_KEYED_FALLBACK_HINT;
+        }
+        compute_history_hint(self, commit).unwrap_or(TREE_KEYED_FALLBACK_HINT)
+    }
+
+    fn insert_trigram_index(&self, tree: git2::Oid, result: git2::Oid, hint: HistoryGraphHint) {
+        let filter = crate::filter::index();
+        let mut t2 = self.t2.borrow_mut();
+        t2.index_map.entry(tree).or_insert(result);
+        if let Err(e) = t2.cache.write_all(filter, tree, result, hint, true) {
+            log::warn!("trigram index cache write failed: {e}");
+        }
+    }
+
+    fn get_trigram_index(&self, tree: git2::Oid, hint: HistoryGraphHint) -> Option<git2::Oid> {
+        let filter = crate::filter::index();
+        let t2 = self.t2.borrow_mut();
+        if let Some(oid) = t2.index_map.get(&tree).cloned() {
+            // Written this transaction, so the index tree is live in the mem odb -- no odb check.
+            return Some(oid);
+        }
+        let oid = t2.cache.read_propagate(filter, tree, hint, true).ok()??;
+        // Per-subtree index trees are anchored by no ref, so gc may have pruned a
+        // cached one; treat a dangling hit as a miss and reindex.
+        if self.repo.odb().ok()?.exists(oid) {
+            Some(oid)
+        } else {
+            None
+        }
     }
 
     pub fn insert_populate(&self, tree: (git2::Oid, git2::Oid), result: git2::Oid) {
@@ -608,7 +639,7 @@ impl Transaction {
         // random extra commits (probability 1/256) to avoid long searches for filters that reduce
         // the history length by a very large factor.
         if store || from.as_bytes()[0] == 0 {
-            t2.cache.write_all(filter, from, to, hint)?;
+            t2.cache.write_all(filter, from, to, hint, false)?;
         }
         Ok(())
     }
@@ -675,7 +706,7 @@ impl Transaction {
             return Ok(Some(oid));
         }
 
-        let oid = t2.cache.read_propagate(filter, from, hint)?;
+        let oid = t2.cache.read_propagate(filter, from, hint, false)?;
 
         if let Some(oid) = oid {
             if oid == git2::Oid::ZERO_SHA1 {
@@ -696,16 +727,23 @@ impl Transaction {
     }
 }
 
-/// Back josh-search's index memoization with the process-global trigram map, so `:INDEX` (and any
-/// other in-transaction indexing) stays incremental across transactions within a process -- keyed
-/// by source tree oid, so a child commit reuses the subtrees its parent just indexed.
-impl josh_search::IndexCache for Transaction {
+/// josh-search index memoization backed by the cache backend under the `:INDEX`
+/// filter: durable (sled) and shareable (distributed) across processes, keyed by
+/// source tree oid. The bound `hint` is the indexed commit's history position,
+/// resolved once per commit and reused for every per-subtree lookup of its walk.
+pub struct TrigramIndexCache<'a> {
+    transaction: &'a Transaction,
+    hint: HistoryGraphHint,
+}
+
+impl josh_search::IndexCache for TrigramIndexCache<'_> {
     fn get_index(&self, tree: git2::Oid) -> Option<git2::Oid> {
-        self.get_trigram_index(tree)
+        self.transaction.get_trigram_index(tree, self.hint)
     }
 
     fn set_index(&self, tree: git2::Oid, index: git2::Oid) {
-        self.insert_trigram_index(tree, index)
+        self.transaction
+            .insert_trigram_index(tree, index, self.hint)
     }
 }
 
@@ -714,15 +752,8 @@ mod tests {
     use super::*;
 
     fn test_transaction() -> (tempfile::TempDir, Transaction) {
-        // The sled cache is a process-global, so it gets one directory for the whole test
-        // binary rather than one per transaction.
-        static SLED_DIR: std::sync::LazyLock<tempfile::TempDir> = std::sync::LazyLock::new(|| {
-            let dir = tempfile::tempdir().unwrap();
-            crate::cache::sled_load(dir.path()).unwrap();
-            dir
-        });
-        let _ = &*SLED_DIR;
-
+        // These tests exercise ref/commit machinery, not the on-disk cache, so an empty cache
+        // stack (no sled backend) is enough.
         let dir = tempfile::tempdir().unwrap();
         git2::Repository::init_bare(dir.path()).unwrap();
         let context = TransactionContext::new(
