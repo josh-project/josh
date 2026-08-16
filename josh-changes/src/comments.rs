@@ -433,10 +433,9 @@ fn collect_comments_under_into(
     Ok(())
 }
 
-/// Remove specific outbox comment entries by content hash. Used by the fetch
-/// path to drop entries whose posted counterparts have just come back from
-/// the remote. Pass the set of local content hashes whose `gh_ids` entry is
-/// known to be reflected in `comments/...` already.
+/// Remove specific outbox comment entries by content hash. Used by forge
+/// sync paths to drop entries whose posted counterparts have been observed
+/// on the forge and stored under `comments/...` already.
 pub fn delete_outbox_comments(
     transaction: &Transaction,
     change_id: &str,
@@ -527,7 +526,7 @@ pub struct FetchedComment {
 ///
 /// Recording which local hash maps to which forge ID (so the comment is
 /// tracked as already posted) and dropping outbox entries observed in the
-/// fetch are the caller's job; see `josh_github_changes::store_fetched_comments`
+/// fetch are the caller's job; see `josh_github_changes::record_fetched_comments`
 /// for the GitHub composition.
 pub fn store_fetched_comments(
     transaction: &Transaction,

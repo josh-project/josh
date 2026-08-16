@@ -506,10 +506,22 @@ impl GithubSyncCtx<'_> {
                     }
 
                     'votes: {
+                        let outbox_votes = match josh_changes::list_outbox_votes(
+                            self.transaction,
+                            &change_id,
+                            &remote_scope,
+                        ) {
+                            Ok(v) => v,
+                            Err(e) => {
+                                eprintln!("  PR #{}: failed to load local votes: {}", pr.number, e);
+                                break 'votes;
+                            }
+                        };
                         let pending_votes = match josh_github_changes::pending_votes(
                             self.transaction,
                             &change_id,
                             &remote_scope,
+                            &outbox_votes,
                         ) {
                             Ok(v) => v,
                             Err(e) => {
@@ -547,6 +559,7 @@ impl GithubSyncCtx<'_> {
                             self.transaction,
                             &change_id,
                             &remote_scope,
+                            &outbox_votes,
                         ) {
                             eprintln!(
                                 "  PR #{}: failed to clean up posted votes: {}",
