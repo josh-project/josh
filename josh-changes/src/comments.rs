@@ -498,36 +498,14 @@ pub fn delete_outbox_comments(
 /// Pending (not yet posted to the forge) comments for a change, loaded from
 /// the outbox subtree of `scope`, plus the forge IDs of already-posted
 /// comments so a publisher can thread replies.
+///
+/// Constructed by forge crates (e.g. `josh_github_changes::pending_comments`),
+/// which combine [`read_comments`] with their forge-ID tracking.
 pub struct PendingComments {
     /// Outbox comments with no forge ID mapping yet.
     pub to_post: Vec<Comment>,
     /// local hash -> forge node ID for already-posted comments (reply threading).
     pub posted_ids: std::collections::HashMap<String, String>,
-}
-
-pub fn pending_comments(
-    transaction: &Transaction,
-    change_id: &str,
-    scope: &ChangesRef,
-) -> anyhow::Result<PendingComments> {
-    // Pending comments live in `outbox/comments/...` on the Remote ref. Anything
-    // already under `comments/...` was either fetched from the remote or has
-    // already been posted; either way it should not be re-posted.
-    let comments: Vec<Comment> = read_comments(transaction, change_id, scope)?
-        .into_iter()
-        .filter(|c| c.pending)
-        .collect();
-
-    let posted_ids = crate::forges::github::read_github_ids(transaction, change_id, scope)?;
-    let to_post = comments
-        .into_iter()
-        .filter(|c| !posted_ids.contains_key(&c.id))
-        .collect();
-
-    Ok(PendingComments {
-        to_post,
-        posted_ids,
-    })
 }
 
 /// A comment fetched from a forge, in forge-neutral form. `forge_id` is the
@@ -545,13 +523,19 @@ pub struct FetchedComment {
 }
 
 /// Write comments fetched from a forge into the given changes ref.
-/// Returns the number of comments stored.
+/// Returns the `(local hash, forge ID)` pairs written, in fetch order.
+///
+/// Recording which local hash maps to which forge ID (so the comment is
+/// tracked as already posted) and dropping outbox entries observed in the
+/// fetch are the caller's job; see `josh_github_changes::store_fetched_comments`
+/// for the GitHub composition.
 pub fn store_fetched_comments(
     transaction: &Transaction,
     change: &Change,
     comments: &[FetchedComment],
     scope: &ChangesRef,
-) -> anyhow::Result<usize> {
+) -> anyhow::Result<Vec<(String, String)>> {
+    let mut written = Vec::with_capacity(comments.len());
     let mut id_map: std::collections::HashMap<String, String> = std::collections::HashMap::new();
     for comment in comments {
         let location = comment
@@ -586,35 +570,11 @@ pub fn store_fetched_comments(
             comment.commit_oid.as_deref(),
             scope,
         )?;
-        // Record the forge ID so this comment is tracked as "already posted".
-        if let Some(change_id) = change.id() {
-            crate::forges::github::store_github_id(
-                transaction,
-                change_id,
-                &hash,
-                &comment.forge_id,
-                scope,
-            )?;
-        }
-        id_map.insert(comment.forge_id.clone(), hash);
+        id_map.insert(comment.forge_id.clone(), hash.clone());
+        written.push((hash, comment.forge_id.clone()));
     }
 
-    // Cleanup: any outbox entry whose `gh_ids[hash]` points at a forge comment
-    // we just observed in the fetch can now be dropped — the canonical copy
-    // lives under `comments/...` on this ref.
-    if let Some(change_id) = change.id() {
-        let fetched: std::collections::HashSet<&str> =
-            comments.iter().map(|c| c.forge_id.as_str()).collect();
-        let gh_ids = crate::forges::github::read_github_ids(transaction, change_id, scope)?;
-        let to_remove: Vec<String> = gh_ids
-            .into_iter()
-            .filter(|(_, forge_id)| fetched.contains(forge_id.as_str()))
-            .map(|(local_hash, _)| local_hash)
-            .collect();
-        delete_outbox_comments(transaction, change_id, scope, &to_remove)?;
-    }
-
-    Ok(comments.len())
+    Ok(written)
 }
 
 fn collect_outbox_file_paths(

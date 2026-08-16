@@ -82,6 +82,34 @@ pub fn encode_change_id_path(id: &str) -> String {
     id.replace('/', "%2F")
 }
 
+/// Create a real merge commit that has the target branch tip and the change
+/// head as its two parents. The tree is the change head's tree (no content
+/// merge needed). Author and committer are copied from the head commit.
+pub fn create_synthetic_merge_commit(
+    transaction: &josh_core::cache::Transaction,
+    pr_head: git2::Oid,
+    target_branch_tip: git2::Oid,
+    message: &str,
+) -> anyhow::Result<git2::Oid> {
+    let repo = transaction.repo();
+    let pr_head = repo.find_commit(pr_head)?;
+    let target_branch_tip = repo.find_commit(target_branch_tip)?;
+    let tree = pr_head.tree()?;
+    let author = pr_head.author();
+    let committer = pr_head.committer();
+
+    let oid = repo.commit(
+        None,
+        &author,
+        &committer,
+        message,
+        &tree,
+        &[&target_branch_tip, &pr_head],
+    )?;
+
+    Ok(oid)
+}
+
 pub(crate) fn decode_change_id_path(enc: &str) -> String {
     enc.replace("%2F", "/")
 }

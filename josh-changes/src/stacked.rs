@@ -1,37 +1,11 @@
-use crate::change::{Change, encode_change_id_path, get_changes, split_changes};
-use crate::refs::{ChangesRef, StackedChangeRef, StackedRef};
-use crate::store::{get_tree, write_changes_tree};
-use crate::votes::VoteData;
+//! Stacked-changes push machinery: deciding which refs a push must create or
+//! update. Handles `refs/for`/`refs/drafts`/`refs/publish/for` ref syntax and
+//! is used by both the GitHub-style stacked-refs flow and the Gerrit flow.
+
+use crate::change::{Change, get_changes, split_changes};
+use crate::refs::{StackedChangeRef, StackedRef};
 use anyhow::anyhow;
 use josh_core::cache::Transaction;
-
-/// Create a real merge commit that has the target branch tip and PR head as its two parents.
-/// The tree is the PR head's tree (no content merge needed).
-/// Author and committer are copied from the PR head commit.
-pub fn create_synthetic_merge_commit(
-    transaction: &Transaction,
-    pr_head: git2::Oid,
-    target_branch_tip: git2::Oid,
-    message: &str,
-) -> anyhow::Result<git2::Oid> {
-    let repo = transaction.repo();
-    let pr_head = repo.find_commit(pr_head)?;
-    let target_branch_tip = repo.find_commit(target_branch_tip)?;
-    let tree = pr_head.tree()?;
-    let author = pr_head.author();
-    let committer = pr_head.committer();
-
-    let oid = repo.commit(
-        None,
-        &author,
-        &committer,
-        message,
-        &tree,
-        &[&target_branch_tip, &pr_head],
-    )?;
-
-    Ok(oid)
-}
 
 #[derive(PartialEq, Clone, Debug)]
 pub enum PushMode {
@@ -176,103 +150,5 @@ pub fn build_to_push(
             oid: oid_to_push,
             change_id: "JOSH_PUSH".to_string(),
         }]),
-    }
-}
-
-/// Store a GitHub node ID for a local comment, marking it as posted.
-pub fn store_github_id(
-    transaction: &Transaction,
-    change_id: &str,
-    local_hash: &str,
-    github_id: &str,
-    scope: &ChangesRef,
-) -> anyhow::Result<()> {
-    let blob_oid = transaction.repo().blob(github_id.as_bytes())?;
-    let path = std::path::Path::new("gh_ids")
-        .join(encode_change_id_path(change_id))
-        .join(local_hash);
-    write_changes_tree(transaction, &path, blob_oid, None, None, scope)?;
-    Ok(())
-}
-
-/// Read all GitHub node IDs for a change's comments.
-/// Returns a map from local comment hash → GitHub node ID.
-pub fn read_github_ids(
-    transaction: &Transaction,
-    change_id: &str,
-    scope: &ChangesRef,
-) -> anyhow::Result<std::collections::HashMap<String, String>> {
-    let repo = transaction.repo();
-    let tree = match transaction.resolve_ref(&scope.ref_name())? {
-        Some(oid) => repo.find_commit(oid)?.tree()?,
-        None => return Ok(Default::default()),
-    };
-    let gh_ids_path = std::path::Path::new("gh_ids").join(encode_change_id_path(change_id));
-    let subtree = match get_tree(repo, &tree, &gh_ids_path) {
-        Some(t) => t,
-        None => return Ok(Default::default()),
-    };
-    let mut map = std::collections::HashMap::new();
-    for entry in subtree.iter() {
-        if let Ok(name) = entry.name() {
-            if let Ok(blob) = entry.to_object(repo).and_then(|o| o.peel_to_blob()) {
-                let github_id = String::from_utf8_lossy(blob.content()).trim().to_string();
-                map.insert(name.to_string(), github_id);
-            }
-        }
-    }
-    Ok(map)
-}
-
-pub fn store_github_vote_id(
-    transaction: &Transaction,
-    change_id: &str,
-    user: &str,
-    vote_data: &VoteData,
-    scope: &ChangesRef,
-) -> anyhow::Result<()> {
-    let json = serde_json::to_string(vote_data)?;
-    let blob_oid = transaction.repo().blob(json.as_bytes())?;
-    let path = std::path::Path::new("gh_vote_ids")
-        .join(encode_change_id_path(change_id))
-        .join(user);
-    write_changes_tree(transaction, &path, blob_oid, None, None, scope)?;
-    Ok(())
-}
-
-pub fn read_github_vote_ids(
-    transaction: &Transaction,
-    change_id: &str,
-    scope: &ChangesRef,
-) -> anyhow::Result<std::collections::HashMap<String, VoteData>> {
-    let repo = transaction.repo();
-    let tree = match transaction.resolve_ref(&scope.ref_name())? {
-        Some(oid) => repo.find_commit(oid)?.tree()?,
-        None => return Ok(Default::default()),
-    };
-    let path = std::path::Path::new("gh_vote_ids").join(encode_change_id_path(change_id));
-    let subtree = match get_tree(repo, &tree, &path) {
-        Some(t) => t,
-        None => return Ok(Default::default()),
-    };
-    let mut map = std::collections::HashMap::new();
-    for entry in subtree.iter() {
-        if let Ok(user) = entry.name() {
-            if let Ok(blob) = entry.to_object(repo).and_then(|o| o.peel_to_blob()) {
-                if let Ok(data) = serde_json::from_slice::<VoteData>(blob.content()) {
-                    map.insert(user.to_string(), data);
-                }
-            }
-        }
-    }
-    Ok(map)
-}
-
-pub fn vote_state_to_github_review(state: &str) -> &'static str {
-    match state {
-        "approve" => "APPROVE",
-        "discuss" => "COMMENT",
-        "revise" => "REQUEST_CHANGES",
-        _ => "COMMENT",
     }
 }
