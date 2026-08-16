@@ -95,8 +95,6 @@ impl SubdirBench {
 
         let filter = Filter::new().subdir(SUBDIR);
 
-        josh_core::cache::sled_load(provisioned.path())?;
-
         // Correctness + shape gate (untimed): confirm the subdir filter produces exactly the SUBDIR
         // subtree of the raw head, and that the filtered history is far shorter than the input history
         // -- otherwise this bench would stop measuring the input >> output regime it exists for.
@@ -105,7 +103,7 @@ impl SubdirBench {
         {
             let cache = std::sync::Arc::new(
                 josh_core::cache::CacheStack::new()
-                    .with_backend(josh_core::cache::SledCacheBackend::default()),
+                    .with_backend(josh_core::cache::SledCacheBackend::new(provisioned.path())),
             );
             let context = josh_core::cache::TransactionContext::new(provisioned.path(), cache);
             let transaction = context.open()?;
@@ -292,7 +290,7 @@ fn deephistory_subdir_distributed(c: &mut Criterion) {
                     clear_cache_refs(&bench.repo.repo).expect("clear cache refs");
                     let cache = std::sync::Arc::new(
                         josh_core::cache::CacheStack::new()
-                            .with_backend(josh_core::cache::SledCacheBackend::default())
+                            .with_backend(josh_core::cache::SledCacheBackend)
                             .with_backend(
                                 josh_core::cache::DistributedCacheBackend::writable(&path)
                                     .expect("open distributed cache"),

@@ -155,7 +155,9 @@ async fn run_proxy(args: josh_proxy::cli::Args) -> anyhow::Result<i32> {
     let io_thread = tokio::task::spawn_blocking(move || io_thread(io_thread_rx));
 
     josh_proxy::service::create_repo(&local, None)?;
-    josh_core::cache::sled_load(&local)?;
+    // The proxy serves many concurrent transactions and should keep the cache hot rather than
+    // reopen it in the gaps between them, so pin the sled db open for the whole process.
+    josh_core::cache::SledCacheBackend::new(&local).pin()?;
 
     let proxy_service = make_service()
         .port(args.port)

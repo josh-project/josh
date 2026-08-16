@@ -2,10 +2,42 @@
 
 import os
 import shutil
+import subprocess
 from pathlib import Path
 
 from bench.result import ToolResult
 from bench.shell import run
+
+
+def ref_exists(repo: str | Path, ref: str) -> bool:
+    """True if `ref` resolves in `repo`."""
+    return (
+        subprocess.run(
+            ["git", "-C", str(repo), "rev-parse", "--verify", "-q", ref],
+            capture_output=True,
+        ).returncode
+        == 0
+    )
+
+
+def repo_at(repo: str | Path, revision: str, bare: bool = False) -> bool:
+    """True if `repo` is a repo of the requested kind with `HEAD` at `revision`."""
+    repo = Path(repo)
+    # `git -C` walks up to an enclosing repo, so make sure `repo` is a repo root.
+    if not (repo / ".git").exists() and not (repo / "objects").exists():
+        return False
+    p = subprocess.run(
+        ["git", "-C", str(repo), "rev-parse", "HEAD", "--is-bare-repository"],
+        capture_output=True,
+        text=True,
+    )
+    out = p.stdout.split()
+    return (
+        p.returncode == 0
+        and len(out) == 2
+        and out[0] == revision
+        and (out[1] == "true") == bare
+    )
 
 
 def fetch_repo(
@@ -15,15 +47,26 @@ def fetch_repo(
     target_dir: str | Path,
     *,
     bare: bool = False,
+    force: bool = False,
 ) -> Path:
-    """Fetch `revision` from `remote` into `target_dir/name`, returning its path.
+    """Ensure `target_dir/name` is a repo at `revision`, returning its path.
 
-    The destination is recreated from scratch each time. When `bare` is set the
-    result is a bare repository with `HEAD` pointing at `revision` via
-    `refs/heads/main`, so object-level tools (josh-filter) that read `HEAD`
-    resolve it without a checkout.
+    An assertion rather than a command: when the destination is already a repo
+    of the requested kind with `HEAD` at `revision` it is returned unchanged, so
+    whatever a caller keeps inside it (e.g. a cargo target dir) survives.
+    Otherwise it is fetched from `remote` from scratch, which also replaces the
+    leftovers of an interrupted earlier fetch -- `HEAD` only reaches `revision`
+    once the fetch completed. `force` refetches unconditionally.
+
+    `revision` must be a full commit sha, as `HEAD` is compared against it
+    literally. When `bare` is set the result is a bare repository with `HEAD`
+    pointing at `revision` via `refs/heads/main`, so object-level tools
+    (josh-filter) that read `HEAD` resolve it without a checkout.
     """
     repo_dir = Path(target_dir) / name
+
+    if not force and repo_at(repo_dir, revision, bare):
+        return repo_dir
 
     if repo_dir.exists():
         shutil.rmtree(repo_dir)

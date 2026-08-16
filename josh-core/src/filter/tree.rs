@@ -1167,8 +1167,9 @@ mod tests {
     }
 
     fn open_transaction(td: &tempfile::TempDir) -> cache::Transaction {
-        cache::sled_load(td.path()).unwrap();
-        let ctx = cache::TransactionContext::new(td.path(), cache::CacheStack::default().into());
+        let cachestack =
+            cache::CacheStack::new().with_backend(cache::SledCacheBackend::new(td.path()));
+        let ctx = cache::TransactionContext::new(td.path(), cachestack.into());
         ctx.open().unwrap()
     }
 

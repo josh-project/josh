@@ -1,46 +1,60 @@
-//! `Transaction::release_cache` must free sled's exclusive lock on the cache directory so another
-//! opener can take it. This lives in its own integration binary because it loads and unloads the
-//! process-global cache db; sharing that global with the unit tests (which keep it loaded for the
-//! whole run) would race.
+//! The sled cache holds a process-exclusive lock on the cache directory only while a transaction is
+//! active: it is opened lazily on the first transaction and dropped once the last one ends. This
+//! lives in its own integration binary because it exercises that process-global lifetime; sharing
+//! it with the unit tests (which configure a cache for the whole run) would race.
 
 use std::sync::Arc;
 
-use josh_core::cache::{CacheStack, TransactionContext, sled_load, sled_unload};
+use josh_core::cache::{CACHE_VERSION, CacheStack, SledCacheBackend, TransactionContext};
 use josh_core::filter;
 
+/// The directory sled locks for a cache rooted at `repo` (mirrors the backend's own layout).
+fn sled_dir(repo: &std::path::Path) -> std::path::PathBuf {
+    repo.join(format!("josh/cache/{}/sled/", CACHE_VERSION))
+}
+
+/// Try to open the sled db directly. `Err` means the cache directory is still locked by someone
+/// else; the db opened here is closed again immediately.
+fn open_is_locked(repo: &std::path::Path) -> bool {
+    sled::Config::default().path(sled_dir(repo)).open().is_err()
+}
+
 #[test]
-fn release_cache_frees_the_sled_lock() {
+fn sled_lock_follows_transaction_lifetime() {
     let dir = tempfile::tempdir().unwrap();
     let repo = dir.path();
     git2::Repository::init_bare(repo).unwrap();
 
-    sled_load(repo).unwrap();
-    let transaction = TransactionContext::new(repo, Arc::new(CacheStack::default()))
-        .open()
-        .unwrap();
+    let cache = Arc::new(CacheStack::new().with_backend(SledCacheBackend::new(repo)));
+    let transaction = TransactionContext::new(repo, cache).open().unwrap();
 
-    // Force a backend cache write so the SledCacheBackend opens a per-filter tree -- that handle,
-    // plus the global db, is what release_cache has to drop to free the lock.
-    let git = transaction.repo();
-    let sig = git2::Signature::new("t", "t@example.com", &git2::Time::new(0, 0)).unwrap();
-    let tree = git
-        .find_tree(git.treebuilder(None).unwrap().write().unwrap())
-        .unwrap();
-    let commit = git.commit(None, &sig, &sig, "c", &tree, &[]).unwrap();
-    transaction
-        .insert(filter::parse(":/").unwrap(), commit, commit, true)
-        .unwrap();
+    // Force a backend cache write so the sled db (and a per-filter tree) is open -- that is what
+    // holds the exclusive lock on the cache directory. Scoped so the git borrows of `transaction`
+    // end before it is dropped below.
+    {
+        let git = transaction.repo();
+        let sig = git2::Signature::new("t", "t@example.com", &git2::Time::new(0, 0)).unwrap();
+        let tree = git
+            .find_tree(git.treebuilder(None).unwrap().write().unwrap())
+            .unwrap();
+        let commit = git.commit(None, &sig, &sig, "c", &tree, &[]).unwrap();
+        transaction
+            .insert(filter::parse(":/").unwrap(), commit, commit, true)
+            .unwrap();
+    }
 
-    // A second open of the same cache dir must fail while those handles are live: sled_load opens
-    // before swapping the global db in, so it observes the still-held lock and errors.
+    // While the transaction is alive the cache directory is locked: a direct open must fail.
     assert!(
-        sled_load(repo).is_err(),
-        "cache should be locked while the transaction holds it"
+        open_is_locked(repo),
+        "cache should be locked while a transaction is active"
     );
 
-    transaction.release_cache().unwrap();
+    drop(transaction);
 
-    // With every sled handle dropped, the cache dir opens cleanly again.
-    sled_load(repo).expect("cache still locked after release_cache");
-    sled_unload();
+    // Dropping the last transaction closes the sled db and releases the lock, so a fresh open
+    // succeeds again.
+    assert!(
+        !open_is_locked(repo),
+        "cache still locked after the transaction was dropped"
+    );
 }

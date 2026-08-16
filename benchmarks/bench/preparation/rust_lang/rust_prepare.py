@@ -13,10 +13,9 @@ See :mod:`bench.preparation.rust_lang.inject_filter` for the injection mechanism
 
 from __future__ import annotations
 
-import subprocess
 from pathlib import Path
 
-from bench.git import clone_pristine, fetch_repo
+from bench.git import clone_pristine, fetch_repo, ref_exists, repo_at
 from bench.preparation.rust_lang.inject_filter import DEFAULT_REF, inject_filter
 from bench.shell import run
 
@@ -24,31 +23,6 @@ from bench.shell import run
 # after the first fetch so the large download only happens once.
 RUST_REMOTE = "https://github.com/rust-lang/rust"
 RUST_REVISION = "656ccbe796ff98def9b555c118e1620c5389e3b2"
-
-
-def _reachable(repo: Path, revision: str) -> bool:
-    """True if `repo` exists as a git repo and contains `revision`."""
-    if not (repo / "objects").exists():
-        return False
-    # `cat-file -e` exits 0 iff the object is present.
-    return (
-        subprocess.run(
-            ["git", "-C", str(repo), "cat-file", "-e", revision],
-            capture_output=True,
-        ).returncode
-        == 0
-    )
-
-
-def _ref_exists(repo: Path, ref: str) -> bool:
-    """True if `ref` resolves in `repo`."""
-    return (
-        subprocess.run(
-            ["git", "-C", str(repo), "rev-parse", "--verify", "-q", ref],
-            capture_output=True,
-        ).returncode
-        == 0
-    )
 
 
 def prepare_rust_source(
@@ -62,9 +36,9 @@ def prepare_rust_source(
     """Clone rust-lang at `revision` into a cached, repacked repo; return its path.
 
     The cache lives at ``<target_dir>/rust-lang-source/<short-sha>``. On a cache
-    hit (the dir exists and contains `revision`, and `force` is False) the existing
-    repo is reused unchanged. On a miss it is fetched (bare by default) and
-    repacked into a single pack.
+    hit (the dir is a repo at `revision`, and `force` is False) the existing repo
+    is reused unchanged. On a miss it is fetched (bare by default) and repacked
+    into a single pack.
 
     Pass ``remote=<path>`` to clone from a local checkout (e.g. a
     ``~/Projects/rust-lang`` clone) instead of github, avoiding the network fetch.
@@ -75,13 +49,15 @@ def prepare_rust_source(
     target_dir = Path(target_dir)
     cache_dir = target_dir / "rust-lang-source" / revision[:12]
 
-    if not force and _reachable(cache_dir, revision):
+    if not force and repo_at(cache_dir, revision, bare):
         return cache_dir
 
-    # fetch_repo recreates cache_dir from scratch, so a partial/interrupted
-    # cache is replaced cleanly. It creates `<target_dir>/<name>`; pass the
-    # cache dir as (parent, leaf name).
-    fetch_repo(remote, cache_dir.name, revision, cache_dir.parent, bare=bare)
+    # Reaching here means the cache is not valid, so refetch from scratch
+    # (force) rather than let fetch_repo's own hit check skip it. fetch_repo
+    # creates `<target_dir>/<name>`; pass the cache dir as (parent, leaf name).
+    fetch_repo(
+        remote, cache_dir.name, revision, cache_dir.parent, bare=bare, force=True
+    )
 
     # Consolidate into one tight pack for faster subsequent reads.
     run("git repack -a -d -q", cwd=str(cache_dir))
@@ -116,7 +92,7 @@ def prepare_injected_repo(
     target_dir = Path(target_dir)
     injected_dir = target_dir / "rust-lang-injected" / revision[:12]
 
-    if not force and _ref_exists(injected_dir, DEFAULT_REF):
+    if not force and ref_exists(injected_dir, DEFAULT_REF):
         return injected_dir
 
     source = prepare_rust_source(
