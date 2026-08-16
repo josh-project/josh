@@ -215,16 +215,19 @@ impl GithubSyncCtx<'_> {
             &remote_scope,
         )?;
 
-        josh_github_changes::sync_change_comments_by_pr_number(
-            self.api,
-            self.owner,
-            self.repo_name,
-            self.transaction,
-            &change,
-            pr.number,
-            &remote_scope,
-        )
-        .await
+        let Some(change_id) = change.id() else {
+            return Ok(0);
+        };
+
+        let pr_data = self
+            .api
+            .get_pr_comments(self.owner, self.repo_name, pr.number)
+            .await?;
+        let json = serde_json::to_string(&pr_data)?;
+        josh_changes::store_pr_data(self.transaction, change_id, &json, &remote_scope)?;
+
+        let fetched = josh_github_changes::fetched_comments(&pr_data);
+        josh_changes::store_fetched_comments(self.transaction, &change, &fetched, &remote_scope)
     }
 
     /// Delete local changes whose PRs are no longer open on GitHub, after
@@ -431,43 +434,103 @@ impl GithubSyncCtx<'_> {
                 .await
             {
                 Ok(Some((pr_node_id, _, _))) => {
-                    match josh_github_changes::post_local_comments(
-                        self.api,
-                        self.transaction,
-                        &change_id,
-                        &pr_node_id,
-                        &remote_scope,
-                    )
-                    .await
-                    {
-                        Ok(n) => {
-                            total_posted += n;
-                            if n > 0 {
-                                println!("  PR #{}: posted {} local comments", pr.number, n);
+                    'comments: {
+                        let pending = match josh_changes::pending_comments(
+                            self.transaction,
+                            &change_id,
+                            &remote_scope,
+                        ) {
+                            Ok(p) => p,
+                            Err(e) => {
+                                eprintln!(
+                                    "  PR #{}: failed to load local comments: {}",
+                                    pr.number, e
+                                );
+                                break 'comments;
                             }
+                        };
+                        let outcome =
+                            josh_github_changes::post_comments(self.api, &pr_node_id, &pending)
+                                .await;
+                        let mut recorded = 0usize;
+                        for p in &outcome.posted {
+                            if let Err(e) = josh_changes::store_github_id(
+                                self.transaction,
+                                &change_id,
+                                &p.local_id,
+                                &p.github_id,
+                                &remote_scope,
+                            ) {
+                                eprintln!(
+                                    "  PR #{}: failed to record posted comment: {}",
+                                    pr.number, e
+                                );
+                                continue;
+                            }
+                            recorded += 1;
                         }
-                        Err(e) => {
+                        total_posted += recorded;
+                        if recorded > 0 {
+                            println!("  PR #{}: posted {} local comments", pr.number, recorded);
+                        }
+                        if let Some(e) = outcome.error {
                             eprintln!("  PR #{}: failed to post comments: {}", pr.number, e);
                         }
                     }
 
-                    match josh_github_changes::post_local_votes(
-                        self.api,
-                        self.transaction,
-                        &change_id,
-                        &pr_node_id,
-                        &pr.head_oid,
-                        &remote_scope,
-                    )
-                    .await
-                    {
-                        Ok(n) => {
-                            total_votes_posted += n;
-                            if n > 0 {
-                                println!("  PR #{}: posted {} votes", pr.number, n);
+                    'votes: {
+                        let pending_votes = match josh_changes::pending_votes(
+                            self.transaction,
+                            &change_id,
+                            &remote_scope,
+                        ) {
+                            Ok(v) => v,
+                            Err(e) => {
+                                eprintln!("  PR #{}: failed to load local votes: {}", pr.number, e);
+                                break 'votes;
                             }
+                        };
+                        let outcome = josh_github_changes::post_votes(
+                            self.api,
+                            &pr_node_id,
+                            &pr.head_oid,
+                            &pending_votes,
+                        )
+                        .await;
+                        let mut recorded_votes = 0usize;
+                        for (user, data) in &outcome.posted {
+                            if let Err(e) = josh_changes::store_github_vote_id(
+                                self.transaction,
+                                &change_id,
+                                user,
+                                data,
+                                &remote_scope,
+                            ) {
+                                eprintln!(
+                                    "  PR #{}: failed to record posted vote: {}",
+                                    pr.number, e
+                                );
+                                continue;
+                            }
+                            recorded_votes += 1;
                         }
-                        Err(e) => {
+                        // Drop outbox entries whose post is now reflected in gh_vote_ids.
+                        // Safe to call unconditionally -- it's a no-op when nothing needs cleaning.
+                        if let Err(e) = josh_changes::cleanup_posted_outbox_votes(
+                            self.transaction,
+                            &change_id,
+                            &remote_scope,
+                        ) {
+                            eprintln!(
+                                "  PR #{}: failed to clean up posted votes: {}",
+                                pr.number, e
+                            );
+                        }
+                        total_votes_posted += recorded_votes;
+                        if recorded_votes > 0 {
+                            println!("  PR #{}: posted {} votes", pr.number, recorded_votes);
+                        }
+                        if let Some(e) = outcome.error {
                             eprintln!("  PR #{}: failed to post votes: {}", pr.number, e);
                         }
                     }
