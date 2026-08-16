@@ -7,7 +7,7 @@ pub fn find_link_files(
     let mut link_files = Vec::new();
 
     tree.walk(git2::TreeWalkMode::PreOrder, |root, entry| {
-        if let Some(name) = entry.name() {
+        if let Ok(name) = entry.name() {
             if name == ".link.josh" {
                 // Found a link file
                 let link_blob = match repo.find_blob(entry.id()) {

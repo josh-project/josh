@@ -74,7 +74,7 @@ pub fn collect_all_link_refs(
     let filtered_commit = josh_core::filter_commit(transaction, link_file_filter, commit)
         .context("Failed to apply .link.josh filter")?;
 
-    if filtered_commit == git2::Oid::zero() {
+    if filtered_commit == git2::Oid::ZERO_SHA1 {
         return Ok(HashSet::new());
     }
 

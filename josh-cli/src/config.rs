@@ -1,15 +1,22 @@
 use anyhow::{Context, anyhow};
 
-use crate::forge::Forge;
+use crate::forge::{Forge, GerritMode};
 
 /// Meta keys that configure the remote itself rather than the filter semantics.
-pub const TRANSPORT_META_KEYS: &[&str] = &["url", "fetch", "forge"];
+pub const TRANSPORT_META_KEYS: &[&str] = &["url", "fetch", "forge", "push", "gerrit-mode"];
 
 pub struct RemoteConfig {
     pub url: String,
     pub ref_spec: String,
     pub filter_with_meta: josh_core::filter::Filter,
     pub forge: Option<Forge>,
+    /// Optional separate push destination (a fork). When set, branches are
+    /// pushed here while `url` remains the fetch source and PR target. Analogous
+    /// to git's `remote.<name>.pushurl`.
+    pub push_url: Option<String>,
+    /// How `josh changes publish` maps a stack onto Gerrit changes. Only
+    /// meaningful when `forge` is `Gerrit`; defaults to `Independent`.
+    pub gerrit_mode: GerritMode,
 }
 
 impl RemoteConfig {
@@ -70,8 +77,17 @@ pub fn migrate_legacy_config(
         .with_context(|| format!("Legacy config missing fetch for remote '{}'", remote_name))?;
 
     // Migrate to new format by writing the file
-    write_remote_config(repo_path, remote_name, &url, &filter_str, &fetch, None)
-        .context("Failed to migrate legacy config to new format")?;
+    write_remote_config(
+        repo_path,
+        remote_name,
+        &url,
+        &filter_str,
+        &fetch,
+        None,
+        None,
+        None,
+    )
+    .context("Failed to migrate legacy config to new format")?;
 
     // Parse the filter to return
     let filter_obj = josh_core::filter::parse(&filter_str)
@@ -89,6 +105,8 @@ pub fn migrate_legacy_config(
         ref_spec: fetch,
         filter_with_meta,
         forge: None,
+        push_url: None,
+        gerrit_mode: GerritMode::default(),
     })
 }
 
@@ -138,15 +156,30 @@ pub fn read_remote_config(
         .transpose()
         .map_err(|f| anyhow!("Unknown forge: {f}"))?;
 
+    let push_url = filter.get_meta("push");
+
+    let gerrit_mode = filter
+        .get_meta("gerrit-mode")
+        .map(|m| {
+            use clap::ValueEnum;
+            GerritMode::from_str(&m, true)
+        })
+        .transpose()
+        .map_err(|m| anyhow!("Unknown gerrit-mode: {m}"))?
+        .unwrap_or_default();
+
     Ok(RemoteConfig {
         url,
         ref_spec: fetch,
         filter_with_meta: filter,
         forge,
+        push_url,
+        gerrit_mode,
     })
 }
 
 /// Write remote configuration to .git/josh/remotes/<name>.josh file
+#[allow(clippy::too_many_arguments)]
 pub fn write_remote_config(
     repo_path: &std::path::Path,
     remote_name: &str,
@@ -154,6 +187,8 @@ pub fn write_remote_config(
     filter: &str,
     fetch: &str,
     forge: Option<Forge>,
+    push_url: Option<&str>,
+    gerrit_mode: Option<GerritMode>,
 ) -> anyhow::Result<()> {
     let remotes_dir = remotes_dir(repo_path)?;
 
@@ -185,6 +220,14 @@ pub fn write_remote_config(
 
     if let Some(forge) = forge {
         filter_with_meta = filter_with_meta.with_meta("forge", forge.to_string());
+    }
+
+    if let Some(push_url) = push_url {
+        filter_with_meta = filter_with_meta.with_meta("push", push_url);
+    }
+
+    if let Some(gerrit_mode) = gerrit_mode {
+        filter_with_meta = filter_with_meta.with_meta("gerrit-mode", gerrit_mode.to_string());
     }
 
     // Serialize the filter with metadata

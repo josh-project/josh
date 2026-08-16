@@ -4,6 +4,9 @@ pub mod middleware;
 
 pub const APP_CLIENT_ID: &str = "Ov23lijvAWwDiQDwZGhN";
 
+// Matches official github CLI and other github-adjacent tools
+pub const GITHUB_USER_TOKEN_ENV: &str = "GH_TOKEN";
+
 /// Check if the given URL is a GitHub URL.
 pub fn is_github_url(url: &str) -> bool {
     url::Url::parse(url)

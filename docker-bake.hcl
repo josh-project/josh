@@ -39,3 +39,12 @@ target "run" {
     josh-build = "target:build"
   }
 }
+
+target "josh-test-webhook-service" {
+  # Context is the repo root: the crate is a workspace member and the build
+  # needs the whole workspace (Cargo.lock, sibling crates, etc.).
+  context    = "."
+  dockerfile = "deployment/josh-test-webhook-service.Dockerfile"
+  target     = "release"
+  tags       = ["josh-test-webhook-service:latest"]
+}

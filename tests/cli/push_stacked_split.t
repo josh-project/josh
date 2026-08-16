@@ -25,13 +25,6 @@ Clone with josh filter
 
   $ josh clone ${TESTTMP}/remote :/sub1 filtered
   Added remote 'origin' with filter ':/sub1'
-  From file://${TESTTMP}/remote
-   * [new branch]      master     -> refs/josh/remotes/origin/master
-  
-  From file://${TESTTMP}/filtered
-   * [new branch]      master     -> origin/master
-  
-  Fetched from remote: origin
   Already on 'master'
   
   Cloned repository to: ${TESTTMP}/filtered/
@@ -71,42 +64,7 @@ Set up git config for author
 Publish changes (josh changes publish should create multiple refs for each change)
 
   $ josh changes publish
-  Pushing 6ed6c1ca90cb15fe4edf8d133f0e2e44562aa77d to origin/refs/heads/@base/master/josh@example.com/1234
-  Pushing c61c37f4a3d5eb447f41dde15620eee1a181d60b to origin/refs/heads/@base/master/josh@example.com/1235
-  Pushing 6ed6c1ca90cb15fe4edf8d133f0e2e44562aa77d to origin/refs/heads/@base/master/josh@example.com/foo7
-  Pushing c61c37f4a3d5eb447f41dde15620eee1a181d60b to origin/refs/heads/@changes/master/josh@example.com/1234
-  Pushing ef7c3c85ad4c5875f308003d42a6e11d9b14aeb9 to origin/refs/heads/@changes/master/josh@example.com/1235
-  Pushing 955da8395478e58213ad4ae975d9d885f87fdcec to origin/refs/heads/@changes/master/josh@example.com/foo7
-  Pushing 929b441481dc5e1a946004a5615592d837ad564b to origin/refs/heads/@heads/master/josh@example.com
-  To file://${TESTTMP}/remote
-   * [new branch]      6ed6c1ca90cb15fe4edf8d133f0e2e44562aa77d -> @base/master/josh@example.com/1234
-   * [new branch]      c61c37f4a3d5eb447f41dde15620eee1a181d60b -> @base/master/josh@example.com/1235
-   * [new branch]      6ed6c1ca90cb15fe4edf8d133f0e2e44562aa77d -> @base/master/josh@example.com/foo7
-   * [new branch]      c61c37f4a3d5eb447f41dde15620eee1a181d60b -> @changes/master/josh@example.com/1234
-   * [new branch]      ef7c3c85ad4c5875f308003d42a6e11d9b14aeb9 -> @changes/master/josh@example.com/1235
-   * [new branch]      955da8395478e58213ad4ae975d9d885f87fdcec -> @changes/master/josh@example.com/foo7
-   * [new branch]      929b441481dc5e1a946004a5615592d837ad564b -> @heads/master/josh@example.com
-  
-  Pushed 7 ref(s) to origin
-  From file://${TESTTMP}/remote
-   * [new branch]      @base/master/josh@example.com/1234 -> refs/josh/remotes/origin/@base/master/josh@example.com/1234
-   * [new branch]      @base/master/josh@example.com/1235 -> refs/josh/remotes/origin/@base/master/josh@example.com/1235
-   * [new branch]      @base/master/josh@example.com/foo7 -> refs/josh/remotes/origin/@base/master/josh@example.com/foo7
-   * [new branch]      @changes/master/josh@example.com/1234 -> refs/josh/remotes/origin/@changes/master/josh@example.com/1234
-   * [new branch]      @changes/master/josh@example.com/1235 -> refs/josh/remotes/origin/@changes/master/josh@example.com/1235
-   * [new branch]      @changes/master/josh@example.com/foo7 -> refs/josh/remotes/origin/@changes/master/josh@example.com/foo7
-   * [new branch]      @heads/master/josh@example.com -> refs/josh/remotes/origin/@heads/master/josh@example.com
-  
-  From file://${TESTTMP}/filtered
-   * [new branch]      @base/master/josh@example.com/1234 -> origin/@base/master/josh@example.com/1234
-   * [new branch]      @base/master/josh@example.com/1235 -> origin/@base/master/josh@example.com/1235
-   * [new branch]      @base/master/josh@example.com/foo7 -> origin/@base/master/josh@example.com/foo7
-   * [new branch]      @changes/master/josh@example.com/1234 -> origin/@changes/master/josh@example.com/1234
-   * [new branch]      @changes/master/josh@example.com/1235 -> origin/@changes/master/josh@example.com/1235
-   * [new branch]      @changes/master/josh@example.com/foo7 -> origin/@changes/master/josh@example.com/foo7
-   * [new branch]      @heads/master/josh@example.com -> origin/@heads/master/josh@example.com
-  
-  Fetched from remote: origin
+  published 3 changes (3 new)
 
 Verify the refs were created in the remote
 

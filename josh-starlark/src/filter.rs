@@ -1,7 +1,7 @@
 use allocative::Allocative;
 use josh_filter::Filter;
 use starlark::{
-    environment::{MethodsBuilder, MethodsStatic},
+    environment::MethodsBuilder,
     starlark_module, starlark_simple_value,
     values::{NoSerialize, ProvidesStaticType, StarlarkValue, StringValue},
 };
@@ -41,8 +41,8 @@ impl<'v> StarlarkValue<'v> for StarlarkFilter {
     }
 
     fn get_methods() -> Option<&'static starlark::environment::Methods> {
-        static RES: MethodsStatic = MethodsStatic::new();
-        RES.methods(filter_methods)
+        starlark::methods_static!(RES = filter_methods);
+        Some(RES.methods())
     }
 }
 
@@ -88,7 +88,7 @@ fn filter_methods(builder: &mut MethodsBuilder) {
         this.starlark(path, *subfilter)
     }
     fn pattern(this: &StarlarkFilter, pattern: StringValue) -> anyhow::Result<StarlarkFilter> {
-        Ok(this.pattern(pattern))
+        this.pattern(pattern)
     }
     fn workspace(this: &StarlarkFilter, path: StringValue) -> anyhow::Result<StarlarkFilter> {
         Ok(this.workspace(path))
@@ -241,10 +241,10 @@ impl StarlarkFilter {
     }
 
     /// Pattern filter
-    pub fn pattern(&self, pattern: StringValue) -> StarlarkFilter {
-        StarlarkFilter {
-            filter: self.filter.pattern(pattern.as_str()),
-        }
+    pub fn pattern(&self, pattern: StringValue) -> anyhow::Result<StarlarkFilter> {
+        Ok(StarlarkFilter {
+            filter: self.filter.pattern(pattern.as_str())?,
+        })
     }
 
     /// Workspace filter

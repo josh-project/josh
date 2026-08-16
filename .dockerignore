@@ -15,11 +15,13 @@
 !josh-templates
 !josh-graphql
 !josh-link
-!josh-cq
+!cq/josh-cq
+!cq/josh-cq-test-components
 !forges/josh-github-changes
 !forges/josh-github-auth
 !forges/josh-github-codegen-graphql
 !forges/josh-github-graphql
+!forges/josh-github-keyring
 !forges/josh-github-webhooks
 !josh-ui/*.json
 !josh-ui/*.rs
@@ -31,6 +33,7 @@
 !josh-ui/src
 !deployment/josh-test-webhook-client
 !deployment/josh-test-webhook-service
+!deployment/josh-command-middleware
 !lfs-test-server
 !run-josh.sh
 # Runtime scripts needed by the run image

@@ -33,7 +33,7 @@ fn find_paths(
     let mut ws = vec![];
     tree.walk(git2::TreeWalkMode::PreOrder, |root, entry| {
         if Some(kind) == entry.kind()
-            && let Some(name) = entry.name()
+            && let Ok(name) = entry.name()
         {
             let path = std::path::Path::new(root).join(name);
             if let Some(limit) = depth
@@ -102,17 +102,18 @@ impl Revision {
 
     fn hash(&self, context: &Context) -> FieldResult<String> {
         let transaction = context.transaction.lock().unwrap();
-        let commit = transaction.repo().find_commit(self.commit_id)?;
-        let filter_commit = filter::apply_to_commit(self.filter, &commit, &transaction)?;
+        // Existence/type probe: a bogus id (e.g. the zero oid from a target-less symbolic
+        // ref) must error here, not filter to a bogus hash under a nop filter.
+        transaction.repo().find_commit(self.commit_id)?;
+        let filter_commit = filter::apply_to_commit(self.filter, self.commit_id, &transaction)?;
         Ok(format!("{}", filter_commit))
     }
 
     fn author_email(&self, context: &Context) -> FieldResult<String> {
         let transaction = context.transaction.lock().unwrap();
-        let commit = transaction.repo().find_commit(self.commit_id)?;
         let filter_commit = transaction.repo().find_commit(filter::apply_to_commit(
             self.filter,
-            &commit,
+            self.commit_id,
             &transaction,
         )?)?;
         let a = filter_commit.author();
@@ -121,21 +122,24 @@ impl Revision {
 
     fn summary(&self, context: &Context) -> FieldResult<String> {
         let transaction = context.transaction.lock().unwrap();
-        let commit = transaction.repo().find_commit(self.commit_id)?;
         let filter_commit = transaction.repo().find_commit(filter::apply_to_commit(
             self.filter,
-            &commit,
+            self.commit_id,
             &transaction,
         )?)?;
-        Ok(filter_commit.summary().unwrap_or("").to_owned())
+        Ok(filter_commit
+            .summary()
+            .ok()
+            .flatten()
+            .unwrap_or("")
+            .to_owned())
     }
 
     fn message(&self, context: &Context) -> FieldResult<String> {
         let transaction = context.transaction.lock().unwrap();
-        let commit = transaction.repo().find_commit(self.commit_id)?;
         let filter_commit = transaction.repo().find_commit(filter::apply_to_commit(
             self.filter,
-            &commit,
+            self.commit_id,
             &transaction,
         )?)?;
         Ok(filter_commit.message().unwrap_or("").to_owned())
@@ -143,10 +147,9 @@ impl Revision {
 
     fn date(&self, format: String, context: &Context) -> FieldResult<String> {
         let transaction = context.transaction.lock().unwrap();
-        let commit = transaction.repo().find_commit(self.commit_id)?;
         let filter_commit = transaction.repo().find_commit(filter::apply_to_commit(
             self.filter,
-            &commit,
+            self.commit_id,
             &transaction,
         )?)?;
 
@@ -165,10 +168,9 @@ impl Revision {
     ) -> FieldResult<Option<Revision>> {
         let commit_id = if let Some(true) = original {
             let transaction = context.transaction.lock().unwrap();
-            let commit = transaction.repo().find_commit(self.commit_id)?;
             let filter_commit = transaction.repo().find_commit(filter::apply_to_commit(
                 self.filter,
-                &commit,
+                self.commit_id,
                 &transaction,
             )?)?;
 
@@ -191,15 +193,10 @@ impl Revision {
 
     fn parents(&self, context: &Context) -> FieldResult<Vec<Revision>> {
         let transaction = context.transaction.lock().unwrap();
-        let commit = transaction.repo().find_commit(self.commit_id)?;
-        let filter_commit = transaction.repo().find_commit(filter::apply_to_commit(
-            self.filter,
-            &commit,
-            &transaction,
-        )?)?;
+        let filter_commit_id = filter::apply_to_commit(self.filter, self.commit_id, &transaction)?;
 
-        let parents = filter_commit
-            .parent_ids()
+        let parents = josh_core::git::read_parent_ids(transaction.repo(), filter_commit_id)?
+            .into_iter()
             .map(|id| Revision {
                 filter: self.filter,
                 commit_id: history::find_original(
@@ -209,7 +206,7 @@ impl Revision {
                     id,
                     false,
                 )
-                .unwrap_or_else(|_| git2::Oid::zero()),
+                .unwrap_or_else(|_| git2::Oid::ZERO_SHA1),
             })
             .collect();
 
@@ -225,10 +222,9 @@ impl Revision {
         let limit = limit.unwrap_or(1) as usize;
         let offset = offset.unwrap_or(0) as usize;
         let transaction = context.transaction.lock().unwrap();
-        let commit = transaction.repo().find_commit(self.commit_id)?;
         let filter_commit = transaction.repo().find_commit(filter::apply_to_commit(
             self.filter,
-            &commit,
+            self.commit_id,
             &transaction,
         )?)?;
 
@@ -241,7 +237,7 @@ impl Revision {
         let mut ids = {
             walk.skip(offset)
                 .take(limit)
-                .map(|id| id.unwrap_or(git2::Oid::zero()))
+                .map(|id| id.unwrap_or(git2::Oid::ZERO_SHA1))
                 .collect::<Vec<git2::Oid>>()
         };
 
@@ -250,12 +246,10 @@ impl Revision {
                 let orig =
                     history::find_original(&transaction, self.filter, contained_in, ids[i], true)?;
 
-                if orig != git2::Oid::zero() {
+                if orig != git2::Oid::ZERO_SHA1 {
                     ids[i] = orig;
-                    contained_in = transaction
-                        .repo()
-                        .find_commit(ids[i])?
-                        .parent_ids()
+                    contained_in = josh_core::git::read_parent_ids(transaction.repo(), ids[i])?
+                        .into_iter()
                         .next()
                         .unwrap_or(ids[i]);
                 } else {
@@ -299,10 +293,9 @@ impl Revision {
         context: &Context,
     ) -> FieldResult<Option<Vec<DiffPath>>> {
         let transaction = context.transaction.lock().unwrap();
-        let commit = transaction.repo().find_commit(self.commit_id)?;
         let filter_commit = transaction.repo().find_commit(filter::apply_to_commit(
             self.filter,
-            &commit,
+            self.commit_id,
             &transaction,
         )?)?;
 
@@ -310,7 +303,7 @@ impl Revision {
             .parents()
             .next()
             .map(|p| (p.id(), p.tree_id()))
-            .unwrap_or((git2::Oid::zero(), git2::Oid::zero()));
+            .unwrap_or((git2::Oid::ZERO_SHA1, git2::Oid::ZERO_SHA1));
 
         let d = filter::tree::diff_paths(
             transaction.repo(),
@@ -429,27 +422,36 @@ impl Revision {
         Ok(Some(warnings))
     }
 
-    fn search(
-        &self,
-        string: String,
-        max_complexity: Option<i32>,
-        context: &Context,
-    ) -> FieldResult<Option<Vec<SearchResult>>> {
-        let max_complexity = max_complexity.unwrap_or(6) as usize;
+    fn search(&self, string: String, context: &Context) -> FieldResult<Option<Vec<SearchResult>>> {
         let transaction = context.transaction.lock().unwrap();
-        let ifilterobj = filter::parse(":SQUASH:INDEX")?;
         let tree = transaction.repo().find_commit(self.commit_id)?.tree()?;
 
         let x = filter::apply(&transaction, self.filter, Rewrite::from_tree(tree))?;
-        let index_tree = filter::apply(&transaction, ifilterobj, x.clone())?;
 
         /* let start = std::time::Instant::now(); */
-        let candidates = josh_search::search_candidates(
-            transaction.repo(),
-            index_tree.tree(),
-            &string,
-            max_complexity,
-        )?;
+        // The trigram index is experimental; without it every file is a candidate and
+        // search_matches does all the filtering, so results are identical, just slower.
+        let candidates = if filter::experimental_features_enabled() {
+            let ifilterobj = filter::parse(":SQUASH:INDEX")?;
+            let index_tree = filter::apply(&transaction, ifilterobj, x.clone())?;
+            josh_search::search_candidates(
+                transaction.repo(),
+                index_tree.tree(),
+                x.tree(),
+                &string,
+            )?
+        } else {
+            let mut scan = vec![];
+            x.tree().walk(git2::TreeWalkMode::PreOrder, |root, entry| {
+                if entry.kind() == Some(git2::ObjectType::Blob)
+                    && let Ok(name) = entry.name()
+                {
+                    scan.push(format!("{}{}", root, name));
+                }
+                0
+            })?;
+            scan
+        };
         let results =
             josh_search::search_matches(transaction.repo(), x.tree(), &string, &candidates)?;
         /* let duration = start.elapsed(); */
@@ -591,7 +593,7 @@ impl Markers {
                     id: s
                         .next()
                         .and_then(|x| git2::Oid::from_str(x).ok())
-                        .unwrap_or_else(git2::Oid::zero),
+                        .unwrap_or(git2::Oid::ZERO_SHA1),
                     value: s
                         .next()
                         .and_then(|x| serde_json::from_str::<serde_json::Value>(x).ok())
@@ -794,7 +796,7 @@ impl Document {
         if let serde_json::Value::Array(a) = &self.pointer(at) {
             for x in a.iter() {
                 v.push(Document {
-                    id: git2::Oid::zero(),
+                    id: git2::Oid::ZERO_SHA1,
                     value: x.clone(),
                 });
             }
@@ -806,7 +808,7 @@ impl Document {
 
     fn value(&self, at: String) -> Option<Document> {
         self.value.pointer(&at).map(|x| Document {
-            id: git2::Oid::zero(),
+            id: git2::Oid::ZERO_SHA1,
             value: x.to_owned(),
         })
     }
@@ -836,7 +838,7 @@ impl Reference {
             .repo()
             .find_reference(&self.refname)?
             .target()
-            .unwrap_or_else(git2::Oid::zero);
+            .unwrap_or(git2::Oid::ZERO_SHA1);
 
         Ok(Revision {
             filter: filter::parse(&filter.unwrap_or_else(|| ":/".to_string()))?,
@@ -928,15 +930,10 @@ struct RevMut {
 impl RevMut {
     fn push(&self, target: String, repo: Option<String>, context: &Context) -> FieldResult<bool> {
         let transaction = context.transaction.lock().unwrap();
-        let transaction_mirror = context.transaction_mirror.lock().unwrap();
-
-        let commit = transaction_mirror
-            .repo()
-            .find_commit(git2::Oid::from_str(&self.at)?)?;
 
         let filter_commit = transaction.repo().find_commit(filter::apply_to_commit(
             self.filter,
-            &commit,
+            git2::Oid::from_str(&self.at)?,
             &transaction,
         )?)?;
 
@@ -1024,7 +1021,7 @@ impl Repository {
 
         for reference in transaction_mirror.repo().references_glob(&refname)? {
             let r = reference?;
-            let name = r.name().ok_or_else(|| anyhow!("reference without name"))?;
+            let name = r.name()?;
 
             refs.push(Reference {
                 refname: name.to_string(),

@@ -80,8 +80,8 @@
   $ josh-filter -s :exclude[::sub2/] --reverse master --update refs/heads/hidden_master
   1496b9e75273ad3a0de58812a731a7a50b0d2a66
   [3] :exclude[::sub2/]
-  [3] reachable_roots
-  [3] sequence_number
+  [8] reachable_roots
+  [8] sequence_number
 
   $ git checkout master
   Switched to branch 'master'

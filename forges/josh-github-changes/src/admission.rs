@@ -4,6 +4,7 @@ use josh_github_webhooks::webhook_types::{
     PullRequestReviewEventDetails, PullRequestReviewState,
 };
 
+#[derive(Debug, Clone, Default)]
 pub struct AdmissionState {
     pub required_checks: std::collections::BTreeMap<RequiredStatusCheck, bool>,
     pub maintainer_reviews: std::collections::BTreeMap<String, PullRequestReviewState>,
@@ -46,6 +47,34 @@ impl AdmissionState {
                     PullRequestReviewEventDetails::Edited => {}
                 }
             });
+    }
+
+    /// Directly set review states from fetched reviews (non-webhook path).
+    pub fn apply_review_states(&mut self, reviews: &[(String, PullRequestReviewState)]) {
+        for (login, state) in reviews {
+            if self.maintainers.contains(login.as_str()) {
+                match state {
+                    PullRequestReviewState::Dismissed => {
+                        self.maintainer_reviews.remove(login.as_str());
+                    }
+                    _ => {
+                        self.maintainer_reviews.insert(login.clone(), state.clone());
+                    }
+                }
+            }
+        }
+    }
+
+    /// Directly set check run results (non-webhook path).
+    pub fn apply_check_results(&mut self, results: &[(String, Option<i64>, bool)]) {
+        for (context, integration_id, passed) in results {
+            if let Some(entry) = self.required_checks.get_mut(&RequiredStatusCheck {
+                context: context.clone(),
+                integration_id: *integration_id,
+            }) {
+                *entry = *passed;
+            }
+        }
     }
 
     pub fn admissible(&self) -> bool {

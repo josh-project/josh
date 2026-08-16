@@ -71,8 +71,13 @@ filter = compose([f1, f2])
 
 // Helper function to create a test repository with files and directories
 fn create_test_repo() -> anyhow::Result<(git2::Repository, git2::Oid)> {
+    // Process id and a counter keep the directory unique across parallel tests; the
+    // timestamp alone collides when two tests read the clock in the same tick.
+    static DIR_COUNTER: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
     let temp_dir = std::env::temp_dir().join(format!(
-        "josh_starlark_tree_test_{}",
+        "josh_starlark_tree_test_{}_{}_{}",
+        std::process::id(),
+        DIR_COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed),
         std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)?
             .as_nanos()

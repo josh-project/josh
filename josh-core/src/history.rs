@@ -1,6 +1,5 @@
 use super::*;
 use anyhow::anyhow;
-use std::cell::RefCell;
 use std::collections::{BTreeMap, HashMap, HashSet};
 
 pub enum GpgsigMode {
@@ -24,40 +23,31 @@ pub fn walk2(
         return Ok(());
     }
 
-    let input_commit = ok_or!(transaction.repo().find_commit(input), {
-        return Ok(());
-    });
+    let odb = transaction.repo().odb()?;
 
-    let walk = {
-        let mut walk = transaction.repo().revwalk()?;
-        if history_flag(filter.get_meta("history").as_deref(), "linear") {
-            walk.simplify_first_parent()?;
-        }
-        walk.set_sorting(git2::Sort::REVERSE | git2::Sort::TOPOLOGICAL)?;
-
-        walk.push(input)?;
-        walk
-    };
-    // The callback cannot propagate errors, so treat a failed lookup as "not known": the walk
-    // then visits the commit and the fallible body reports the same error properly.
-    let mut hide_callback = |id| transaction.known(filter, id).unwrap_or(false);
-    let walk = walk.with_hide_callback(&mut hide_callback)?;
+    // `walk.push` rejects a missing or non-commit input as a hard error.
+    let mut walk = objects::RevWalk::new(&odb);
+    if history_flag(filter.get_meta("history").as_deref(), "linear") {
+        walk.simplify_first_parent();
+    }
+    walk.push(input)?;
 
     log::info!(
         "Walking {} commits for: {} {:?}",
         crate::cache::compute_sequence_number(transaction, input)?,
         filter::spec(filter),
-        input_commit,
+        input,
     );
+
+    // The prune callback cannot propagate errors, so treat a failed lookup as "not known":
+    // the walk then visits the commit and the fallible body reports the same error properly.
+    let sorted = walk.into_topo_vec(|id| transaction.known(filter, id).unwrap_or(false))?;
+
     let mut n_in = 0;
     let mut n_out = 0;
 
-    for original_commit_id in walk {
-        let id = original_commit_id?;
-
-        if filter::apply_to_commit2(filter, &transaction.repo().find_commit(id)?, transaction)?
-            .is_some()
-        {
+    for &id in sorted.iter().rev() {
+        if filter::apply_to_commit2(filter, id, transaction)?.is_some() {
             n_out += 1;
         } else {
             break;
@@ -99,124 +89,70 @@ fn find_unapply_base(
         return Ok(*original);
     }
 
-    if contained_in == git2::Oid::zero() {
+    if contained_in == git2::Oid::ZERO_SHA1 {
         tracing::info!("contained in zero",);
-        return Ok(git2::Oid::zero());
+        return Ok(git2::Oid::ZERO_SHA1);
     }
 
-    let contained_in_commit = transaction.repo().find_commit(contained_in)?;
-    let oid = filter::apply_to_commit(filter, &contained_in_commit, transaction)?;
-    if oid != git2::Oid::zero() {
+    let oid = filter::apply_to_commit(filter, contained_in, transaction)?;
+    if oid != git2::Oid::ZERO_SHA1 {
         filtered_to_original.insert(oid, contained_in);
     }
 
-    // Start a revwalk in the original history tree starting from the
-    // contained_in "hint"
-    let mut walk = transaction.repo().revwalk()?;
-    walk.set_sorting(git2::Sort::TOPOLOGICAL)?;
+    // Walk the original history starting from the contained_in "hint" in lazy
+    // discovery order (the tip first, then the parents of each visited commit as
+    // the frontier expands), stopping at the first match. Because discovery order
+    // is only loosely child-before-parent, commits are held as pending until at
+    // least one other commit references them as a parent ("unlocked"); the start
+    // commit has no children in this subgraph, so it's unlocked immediately.
+    // Processing a commit may unlock pending ones, which are then processed too.
+    let odb = transaction.repo().odb()?;
+    let mut walk = objects::RevWalk::new(&odb);
     walk.push(contained_in)?;
 
-    // libgit2 does not read the list of commits lazily; instead,
-    // it reads the whole list, sorts it according to user's preference,
-    // and then lets the user iterate.
-    //
-    // while this does ensure the desired iteration order, it also means
-    // revwalks don't really scale. this approach below uses "hide callbacks"
-    // feature to stop iteration early - for real this time. hide callbacks
-    // are invoked during commit graph index read, and affect which commits
-    // are added to the traversal list.
-    //
-    // because we still want topological order - but it would be impossible to
-    // guarantee without reading full graph - we instead use something like
-    // "best effort" topo sorting, where commits are held as pending until
-    // at least one other commit references them as a parent.
-    #[derive(Default)]
-    struct CallbackContext {
-        result: Option<anyhow::Result<(git2::Oid, git2::Oid)>>,
-        unlocked: HashSet<git2::Oid>,
-        pending: HashSet<git2::Oid>,
-    }
+    let mut result: Option<(git2::Oid, git2::Oid)> = None;
+    let mut unlocked = HashSet::new();
+    let mut pending = HashSet::new();
+    unlocked.insert(contained_in);
 
-    let ctx = RefCell::new(CallbackContext::default());
-
-    // The start commit has no children in this subgraph, so it's immediately unlocked
-    ctx.borrow_mut().unlocked.insert(contained_in);
-
-    let mut hide_callback = |oid: git2::Oid| {
-        let mut ctx = ctx.borrow_mut();
-
-        // Returning true once is not enough: we need to ensure
-        // we don't add more commits to walk list as the loop
-        // in libgit2 continues if callback returns true
-        //
-        // https://github.com/libgit2/libgit2/blob/610dcaac065c0f27daca84b87795ed26926864f5/src/libgit2/revwalk.c#L428-L429
-        if ctx.result.is_some() {
-            return true;
-        }
-
-        ctx.pending.insert(oid);
-        if !ctx.unlocked.contains(&oid) {
-            return false;
+    walk.discover(|oid| {
+        pending.insert(oid);
+        if !unlocked.contains(&oid) {
+            return Ok(std::ops::ControlFlow::Continue(()));
         }
 
         // Check if any pending commits are now unlocked
         // Processing one might unlock another
-        while let Some(&pending_oid) = ctx
-            .pending
+        while let Some(&pending_oid) = pending
             .iter()
-            .find(|&pending_oid| ctx.unlocked.contains(pending_oid))
+            .find(|&pending_oid| unlocked.contains(pending_oid))
         {
-            ctx.pending.remove(&pending_oid);
+            pending.remove(&pending_oid);
 
-            let commit = match transaction.repo().find_commit(pending_oid) {
-                Ok(commit) => commit,
-                Err(e) => {
-                    ctx.result = Some(Err(e.into()));
-                    return true;
-                }
-            };
-
-            let original_filtered = match filter::apply_to_commit(filter, &commit, transaction) {
-                Ok(oid) => oid,
-                Err(e) => {
-                    ctx.result = Some(Err(e));
-                    return true;
-                }
-            };
+            let original_filtered = filter::apply_to_commit(filter, pending_oid, transaction)?;
 
             if filtered == original_filtered {
-                ctx.result = Some(Ok((filtered, pending_oid)));
-                return true;
+                result = Some((filtered, pending_oid));
+                return Ok(std::ops::ControlFlow::Break(()));
             }
 
-            for parent_id in commit.parent_ids() {
-                ctx.unlocked.insert(parent_id);
+            for parent_id in git::read_parent_ids(transaction.repo(), pending_oid)? {
+                unlocked.insert(parent_id);
             }
         }
 
-        false
-    };
+        Ok(std::ops::ControlFlow::Continue(()))
+    })?;
 
-    let walk = walk.with_hide_callback(&mut hide_callback)?;
-    for original in walk {
-        // Only propagate errors; value is unused. Drives iteration to trigger hide_callback.
-        original?;
-
-        if ctx.borrow().result.is_some() {
-            break;
-        }
-    }
-
-    match ctx.into_inner().result {
-        Some(Ok((filtered, original))) => {
+    match result {
+        Some((filtered, original)) => {
             filtered_to_original.insert(filtered, original);
             tracing::info!("found original properly {}", original);
             Ok(original)
         }
-        Some(Err(e)) => Err(e),
         None => {
             tracing::info!("Didn't find original",);
-            Ok(git2::Oid::zero())
+            Ok(git2::Oid::ZERO_SHA1)
         }
     }
 }
@@ -228,45 +164,41 @@ pub fn find_original(
     filtered: git2::Oid,
     linear: bool,
 ) -> anyhow::Result<git2::Oid> {
-    if contained_in == git2::Oid::zero() {
-        return Ok(git2::Oid::zero());
+    if contained_in == git2::Oid::ZERO_SHA1 {
+        return Ok(git2::Oid::ZERO_SHA1);
     }
     if filter.is_nop() {
         return Ok(filtered);
     }
-    let mut walk = transaction.repo().revwalk()?;
-    walk.set_sorting(git2::Sort::TOPOLOGICAL)?;
+    let odb = transaction.repo().odb()?;
+    let mut walk = objects::RevWalk::new(&odb);
     if linear {
-        walk.simplify_first_parent()?;
+        walk.simplify_first_parent();
     }
     walk.push(contained_in)?;
 
-    for original in walk {
-        let original = transaction.repo().find_commit(original?)?;
-        if filtered == filter::apply_to_commit(filter, &original, transaction)? {
-            if original.parent_ids().count() == 1 {
-                let fp = filter::apply_to_commit(
-                    filter,
-                    &original.parents().next().unwrap(),
-                    transaction,
-                )?;
+    for original in walk.into_topo_vec(|_| false)? {
+        if filtered == filter::apply_to_commit(filter, original, transaction)? {
+            let parent_ids = git::read_parent_ids(transaction.repo(), original)?;
+            if parent_ids.len() == 1 {
+                let fp = filter::apply_to_commit(filter, parent_ids[0], transaction)?;
 
                 if fp == filtered {
                     continue;
                 }
             }
-            return Ok(original.id());
+            return Ok(original);
         }
     }
 
-    Ok(git2::Oid::zero())
+    Ok(git2::Oid::ZERO_SHA1)
 }
 
 // takes everything from base except its tree and replaces it with the tree
 // given
 pub fn rewrite_commit(
     repo: &git2::Repository,
-    base: &git2::Commit,
+    base: &objects::CommitData,
     parents: &[git2::Oid],
     rewrite_data: filter::Rewrite,
     gpgsig: GpgsigMode,
@@ -274,8 +206,6 @@ pub fn rewrite_commit(
     use gix_object::bstr::BString;
 
     let odb = repo.odb()?;
-    let odb_commit = odb.read(base.id())?;
-    assert_eq!(odb_commit.kind(), git2::ObjectType::Commit);
 
     // gix_object::CommitRef uses byte strings for Oids, but in hex representation, not raw bytes.
     // Its `Format` implementation writes out hex-encoded bytes. Because of CommitRef's reference
@@ -288,9 +218,9 @@ pub fn rewrite_commit(
 
     let mut author = None;
     let mut committer = None;
-    let message = rewrite_data.message.map(|s| BString::from(s));
+    let message = rewrite_data.message;
 
-    let mut commit = gix_object::CommitRef::from_bytes(odb_commit.data())?;
+    let mut commit = gix_object::CommitRef::from_bytes(base.bytes(), gix_hash::Kind::Sha1)?;
     commit.tree = tree_id.as_ref();
 
     commit.parents.clear();
@@ -298,36 +228,38 @@ pub fn rewrite_commit(
         .parents
         .extend(parent_ids.iter().map(BString::as_ref));
 
-    let rewrite_signature = |name: String, email: String, time: &str| -> anyhow::Result<BString> {
-        let name = BString::from(name);
-        let email = BString::from(email);
+    let rewrite_signature =
+        |name: BString, email: BString, time: &str| -> anyhow::Result<BString> {
+            let signature = gix_actor::SignatureRef {
+                name: name.as_ref(),
+                email: email.as_ref(),
+                time,
+            };
 
-        let signature = gix_actor::SignatureRef {
-            name: name.as_ref(),
-            email: email.as_ref(),
-            time,
+            let mut buffer = Vec::new();
+            signature.write_to(&mut buffer)?;
+
+            Ok(BString::from(buffer))
         };
 
-        let mut buffer = Vec::new();
-        signature.write_to(&mut buffer)?;
-
-        Ok(BString::from(buffer))
-    };
-
-    if let Some(rewrite_author) = rewrite_data
-        .author
-        .map(|(name, email)| rewrite_signature(name, email, commit.author()?.time))
-        .transpose()?
-    {
-        author = Some(rewrite_author);
+    // NameEmail re-serializes with the base commit's own timestamp; Raw is a verbatim
+    // byte transplant of a complete signature field, nothing parsed.
+    if let Some(sig) = rewrite_data.author {
+        author = Some(match sig {
+            filter::SigRewrite::NameEmail(name, email) => {
+                rewrite_signature(name, email, commit.author()?.time)?
+            }
+            filter::SigRewrite::Raw(raw) => raw,
+        });
     }
 
-    if let Some(rewrite_committer) = rewrite_data
-        .committer
-        .map(|(name, email)| rewrite_signature(name, email, commit.committer()?.time))
-        .transpose()?
-    {
-        committer = Some(rewrite_committer);
+    if let Some(sig) = rewrite_data.committer {
+        committer = Some(match sig {
+            filter::SigRewrite::NameEmail(name, email) => {
+                rewrite_signature(name, email, commit.committer()?.time)?
+            }
+            filter::SigRewrite::Raw(raw) => raw,
+        });
     }
 
     if let Some(author) = &author {
@@ -373,21 +305,15 @@ fn find_oldest_similar_commit(
     filter: filter::Filter,
     unfiltered: git2::Oid,
 ) -> anyhow::Result<git2::Oid> {
-    let walk = {
-        let mut walk = transaction.repo().revwalk()?;
-        walk.set_sorting(git2::Sort::TOPOLOGICAL)?;
-        walk.push(unfiltered)?;
-        walk
-    };
+    let odb = transaction.repo().odb()?;
+    let mut walk = objects::RevWalk::new(&odb);
+    walk.push(unfiltered)?;
     tracing::info!("oldest similar?");
-    let unfiltered_commit = transaction.repo().find_commit(unfiltered)?;
-    let filtered = filter::apply_to_commit(filter, &unfiltered_commit, transaction)?;
+    let filtered = filter::apply_to_commit(filter, unfiltered, transaction)?;
     let mut prev_rev = unfiltered;
-    for rev in walk {
-        let rev = rev?;
+    for rev in walk.into_topo_vec(|_| false)? {
         tracing::info!("next");
-        let rev_commit = transaction.repo().find_commit(rev)?;
-        if filtered != filter::apply_to_commit(filter, &rev_commit, transaction)? {
+        if filtered != filter::apply_to_commit(filter, rev, transaction)? {
             tracing::info!("diff! {}", prev_rev);
             return Ok(prev_rev);
         }
@@ -405,20 +331,16 @@ fn find_new_branch_base(
     contained_in: git2::Oid,
     filtered: git2::Oid,
 ) -> anyhow::Result<git2::Oid> {
-    let walk = {
-        let mut walk = transaction.repo().revwalk()?;
-        walk.set_sorting(git2::Sort::TOPOLOGICAL)?;
-        walk.push(filtered)?;
-        walk
-    };
+    let odb = transaction.repo().odb()?;
+    let mut walk = objects::RevWalk::new(&odb);
+    walk.push(filtered)?;
     tracing::info!("new branch base?");
 
     // Walk filtered history, trying to find a base for every commit
-    for rev in walk {
-        let rev = rev?;
+    for rev in walk.into_topo_vec(|_| false)? {
         if let Ok(base) =
             find_unapply_base(transaction, filtered_to_original, filter, contained_in, rev)
-            && base != git2::Oid::zero()
+            && base != git2::Oid::ZERO_SHA1
         {
             tracing::info!("new branch base: {:?} mapping to {:?}", base, rev);
             let base = if let Ok(new_base) = find_oldest_similar_commit(transaction, filter, base) {
@@ -434,7 +356,7 @@ fn find_new_branch_base(
         }
     }
     tracing::info!("new branch base not found");
-    Ok(git2::Oid::zero())
+    Ok(git2::Oid::ZERO_SHA1)
 }
 
 #[derive(Clone, Debug)]
@@ -457,7 +379,7 @@ pub fn unapply_filter(
     let mut filtered_to_original = HashMap::new();
     let mut ret = original_target;
 
-    let old_filtered_oid = if old_filtered_oid == git2::Oid::zero() {
+    let old_filtered_oid = if old_filtered_oid == git2::Oid::ZERO_SHA1 {
         match find_new_branch_base(
             transaction,
             &mut filtered_to_original,
@@ -501,26 +423,32 @@ pub fn unapply_filter(
 
     tracing::info!("before walk");
 
-    let walk = {
-        let mut walk = transaction.repo().revwalk()?;
+    let odb = transaction.repo().odb()?;
 
-        walk.set_sorting(git2::Sort::REVERSE | git2::Sort::TOPOLOGICAL)?;
+    // The old filtered oid can be missing from the repo (e.g. a new branch);
+    // there is no range to exclude then, so take everything reachable.
+    let old_filtered_exists = matches!(
+        odb.read_header(old_filtered_oid),
+        Ok((_, git2::ObjectType::Commit))
+    );
+    let revs = if old_filtered_exists {
+        // The sequence lookup computes hints on demand and is only consulted
+        // when the fast-forward path cannot answer, so linear pushes never
+        // touch the hint cache; computed hints persist, making later
+        // non-linear walks incremental. The hint walk is itself a plain
+        // pruned RevWalk, so the nested walker cannot recurse further.
+        let walk =
+            objects::RangeWalk::new(&odb, |oid| cache::compute_sequence_number(transaction, oid));
+        walk.into_topo_vec(new_filtered_oid, old_filtered_oid)?
+    } else {
+        tracing::warn!("range walk: old filtered oid not found");
+        let mut walk = objects::RevWalk::new(&odb);
         walk.push(new_filtered_oid)?;
-
-        // The main reason hide() can fail is if old_filtered_oid is not found in the repo
-        if walk.hide(old_filtered_oid).is_ok() {
-            tracing::info!("walk: hidden {}", old_filtered_oid);
-        } else {
-            tracing::warn!("walk: can't hide");
-        }
-
-        walk
+        walk.into_topo_vec(|_| false)?
     };
 
-    // Walk starting from new filtered OID
-    for rev in walk {
-        let rev = rev?;
-
+    // Walk starting from new filtered OID, parents before children
+    for &rev in revs.iter().rev() {
         let span = tracing::span!(tracing::Level::TRACE, "walk commit", ?rev);
         let _span_guard = span.enter();
 
@@ -553,7 +481,7 @@ pub fn unapply_filter(
                           '-o merge' to import new history by creating merge commit
                           '-o edit' if you are editing a stored filter or workspace
                         "###,
-                        module_commit.summary().unwrap_or_default(),
+                        module_commit.summary().ok().flatten().unwrap_or_default(),
                         module_commit.id(),
                     )));
                 }
@@ -574,7 +502,7 @@ pub fn unapply_filter(
             })
             .filter(|unapply_base| {
                 if let Ok(oid) = unapply_base {
-                    *oid != git2::Oid::zero()
+                    *oid != git2::Oid::ZERO_SHA1
                 } else {
                     true
                 }
@@ -599,7 +527,11 @@ pub fn unapply_filter(
         // Convert original_parents to a vector of (rust) references
         let original_parents: Vec<&git2::Commit> = original_parents.iter().collect();
         let tree = module_commit.tree()?;
-        let commit_message = module_commit.summary().unwrap_or("NO COMMIT MESSAGE");
+        let commit_message = module_commit
+            .summary()
+            .ok()
+            .flatten()
+            .unwrap_or("NO COMMIT MESSAGE");
 
         let new_trees: anyhow::Result<Vec<_>> = {
             let span = tracing::span!(
@@ -672,7 +604,7 @@ pub fn unapply_filter(
             // This will typically be parent_count == 2 and mean we are dealing with a merge
             // where the parents have differences outside of the filter.
             parent_count => {
-                let mut tid = git2::Oid::zero();
+                let mut tid = git2::Oid::ZERO_SHA1;
                 for i in 0..parent_count {
                     // If one of the parents is a descendant of the target branch and the other is
                     // not, pick the tree of the one that is a descendant.
@@ -686,7 +618,7 @@ pub fn unapply_filter(
                     }
                 }
 
-                if tid == git2::Oid::zero() && parent_count == 2 {
+                if tid == git2::Oid::ZERO_SHA1 && parent_count == 2 {
                     // If we could not select one of the parents, try to merge them.
                     // We expect conflicts to occur only in the paths that are present in
                     // the filtered commit.
@@ -740,14 +672,14 @@ pub fn unapply_filter(
                     }
                 }
 
-                if tid == git2::Oid::zero() {
+                if tid == git2::Oid::ZERO_SHA1 {
                     // We give up. If we see this message again we need to investigate once
                     // more and maybe consider allowing a manual override as last resort.
                     tracing::warn!("rejecting merge");
                     return Err(anyhow!(
                         "rejecting merge with {} parents:\n{:?} ({:?})\n1) {:?} ({:?})\n2) {:?} ({:?})",
                         parent_count,
-                        module_commit.summary().unwrap_or_default(),
+                        module_commit.summary().ok().flatten().unwrap_or_default(),
                         module_commit.id(),
                         original_parents[0].summary().unwrap_or_default(),
                         original_parents[0].id(),
@@ -766,7 +698,7 @@ pub fn unapply_filter(
             original_parents.iter().map(|c| c.id()).collect();
         ret = rewrite_commit(
             transaction.repo(),
-            &module_commit,
+            &objects::CommitData::read(&odb, module_commit.id())?,
             &original_parent_oids,
             apply,
             GpgsigMode::Preserve,
@@ -789,29 +721,35 @@ pub fn unapply_filter(
 }
 
 fn select_parent_commits(
-    original_commit: &git2::Commit,
+    repo: &git2::Repository,
+    original_commit: &objects::CommitData,
     filtered_tree_id: git2::Oid,
     filtered_parents: &[(git2::Oid, git2::Oid)],
-) -> Vec<git2::Oid> {
+) -> anyhow::Result<Vec<git2::Oid>> {
     let affects_filtered = filtered_parents
         .iter()
         .any(|(_, tree_id)| filtered_tree_id != *tree_id);
 
-    let all_diffs_empty = original_commit
-        .parents()
-        .all(|x| x.tree_id() == original_commit.tree_id());
+    let original_tree_id = original_commit.tree_id()?;
+    let mut all_diffs_empty = true;
+    for p in original_commit.parent_ids() {
+        if git::read_tree_id(repo, p)? != original_tree_id {
+            all_diffs_empty = false;
+            break;
+        }
+    }
 
-    if affects_filtered || all_diffs_empty {
+    Ok(if affects_filtered || all_diffs_empty {
         filtered_parents.iter().map(|(id, _)| *id).collect()
     } else {
         vec![]
-    }
+    })
 }
 
 // parents={none, linear, keep-trivial, default}
 
 pub fn drop_commit(
-    original_commit: &git2::Commit,
+    original_commit: git2::Oid,
     filtered_parent_ids: Vec<git2::Oid>,
     transaction: &cache::Transaction,
     filter: filter::Filter,
@@ -819,16 +757,16 @@ pub fn drop_commit(
     let r = if let Some(id) = filtered_parent_ids.first() {
         *id
     } else {
-        git2::Oid::zero()
+        git2::Oid::ZERO_SHA1
     };
 
-    transaction.insert(filter, original_commit.id(), r, false)?;
+    transaction.insert(filter, original_commit, r, false)?;
 
     Ok(r)
 }
 
 pub fn create_filtered_commit_with_meta(
-    original_commit: &git2::Commit,
+    original_commit: &objects::CommitData,
     filtered_parent_ids: Vec<git2::Oid>,
     rewrite_data: filter::Rewrite,
     transaction: &cache::Transaction,
@@ -843,7 +781,7 @@ pub fn create_filtered_commit_with_meta(
         meta,
     )?;
 
-    let store = is_new || original_commit.parent_ids().len() != 1;
+    let store = is_new || original_commit.parent_count() != 1;
 
     transaction.insert(filter, original_commit.id(), r, store)?;
 
@@ -851,7 +789,7 @@ pub fn create_filtered_commit_with_meta(
 }
 
 pub fn create_filtered_commit(
-    original_commit: &git2::Commit,
+    original_commit: &objects::CommitData,
     filtered_parent_ids: Vec<git2::Oid>,
     rewrite_data: filter::Rewrite,
     transaction: &cache::Transaction,
@@ -867,9 +805,9 @@ pub fn create_filtered_commit(
     )
 }
 
-fn create_filtered_commit2<'a>(
-    transaction: &'a cache::Transaction,
-    original_commit: &'a git2::Commit,
+fn create_filtered_commit2(
+    transaction: &cache::Transaction,
+    original_commit: &objects::CommitData,
     filtered_parent_ids: Vec<git2::Oid>,
     rewrite_data: filter::Rewrite,
     options: BTreeMap<String, String>,
@@ -877,7 +815,7 @@ fn create_filtered_commit2<'a>(
     let repo = transaction.repo();
     let mut filtered_parents: Vec<(git2::Oid, git2::Oid)> = filtered_parent_ids
         .iter()
-        .filter(|x| **x != git2::Oid::zero())
+        .filter(|x| **x != git2::Oid::ZERO_SHA1)
         .map(|x| Ok((*x, filtered_parent_tree_id(transaction, *x)?)))
         .collect::<anyhow::Result<_>>()?;
 
@@ -893,7 +831,7 @@ fn create_filtered_commit2<'a>(
         let nonzero_parent_ids: Vec<_> = filtered_parent_ids
             .iter()
             .copied()
-            .filter(|x| *x != git2::Oid::zero())
+            .filter(|x| *x != git2::Oid::ZERO_SHA1)
             .collect();
         let is_initial_merge = nonzero_parent_ids.len() > 1
             && !cache::parents_share_root(transaction, &nonzero_parent_ids)?;
@@ -919,10 +857,12 @@ fn create_filtered_commit2<'a>(
     ) {
         if filtered_parents.len() > 1 {
             let is_trivial_merge = filtered_parents[0].1 == rewrite_data.tree().id();
-            let was_trivial_merge = original_commit
-                .parents()
-                .next()
-                .is_some_and(|c| c.tree_id() == original_commit.tree_id());
+            // No first parent is not a trivial merge; a present first parent
+            // must have a readable tree.
+            let was_trivial_merge = match original_commit.first_parent_id() {
+                Some(parent) => git::read_tree_id(repo, parent)? == original_commit.tree_id()?,
+                None => false,
+            };
 
             if is_trivial_merge && !was_trivial_merge {
                 // Returning the parent id here means the commit is dropped from the output history
@@ -931,18 +871,23 @@ fn create_filtered_commit2<'a>(
         }
     }
 
-    let selected_filtered_parent_ids: Vec<git2::Oid> =
-        select_parent_commits(original_commit, rewrite_data.tree().id(), &filtered_parents);
+    let selected_filtered_parent_ids: Vec<git2::Oid> = select_parent_commits(
+        repo,
+        original_commit,
+        rewrite_data.tree().id(),
+        &filtered_parents,
+    )?;
 
     if selected_filtered_parent_ids.is_empty()
-        && !(original_commit.parents().len() == 0 && is_empty_root(repo, &original_commit.tree()?))
+        && !(original_commit.parent_count() == 0
+            && is_empty_root(repo, &repo.find_tree(original_commit.tree_id()?)?))
     {
         if !filtered_parents.is_empty() {
             // Returning the parent id here means the commit is dropped from the output history
             return Ok((filtered_parents[0].0, false));
         }
         if rewrite_data.tree().id() == filter::tree::empty_id() {
-            return Ok((git2::Oid::zero(), false));
+            return Ok((git2::Oid::ZERO_SHA1, false));
         }
     }
 
@@ -970,7 +915,7 @@ fn create_filtered_commit2<'a>(
 /// child, so the parent is almost always the last commit josh wrote and its tree is served from the
 /// transaction's single-slot cache; anything else (merge parents, non-linear order) falls back to
 /// parsing the commit from the odb.
-fn filtered_parent_tree_id(
+pub(crate) fn filtered_parent_tree_id(
     transaction: &cache::Transaction,
     oid: git2::Oid,
 ) -> anyhow::Result<git2::Oid> {
@@ -979,7 +924,7 @@ fn filtered_parent_tree_id(
             return Ok(tree_id);
         }
     }
-    Ok(transaction.repo().find_commit(oid)?.tree_id())
+    git::read_tree_id(transaction.repo(), oid)
 }
 
 fn is_empty_root(repo: &git2::Repository, tree: &git2::Tree) -> bool {

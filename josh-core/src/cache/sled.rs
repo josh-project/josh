@@ -61,18 +61,19 @@ pub fn sled_print_stats() -> anyhow::Result<()> {
     Ok(())
 }
 
-pub fn sled_open_josh_trees() -> anyhow::Result<(sled::Tree, sled::Tree, sled::Tree)> {
-    let db = DB.lock().unwrap();
-    let db = match db.as_ref() {
-        Some(db) => db,
-        None => return Err(anyhow!("cache not initialized")),
-    };
+/// Flush any pending writes of the global cache db to disk. No-op if the cache is not loaded.
+pub fn sled_flush() -> anyhow::Result<()> {
+    if let Some(db) = DB.lock().unwrap().as_ref() {
+        db.flush()?;
+    }
+    Ok(())
+}
 
-    let path_tree = db.open_tree("_paths")?;
-    let invert_tree = db.open_tree("_invert")?;
-    let trigram_index_tree = db.open_tree("_trigram_index")?;
-
-    Ok((path_tree, invert_tree, trigram_index_tree))
+/// Drop the global cache db, releasing sled's exclusive file lock on the cache directory. Any
+/// remaining `sled::Tree` handles keep the underlying store (and its lock) alive, so callers must
+/// drop those first; see [`crate::cache::Transaction::release_cache`].
+pub fn sled_unload() {
+    *DB.lock().unwrap() = None;
 }
 
 pub fn sled_load(path: &std::path::Path) -> anyhow::Result<()> {
@@ -134,5 +135,11 @@ impl CacheBackend for SledCacheBackend {
 
         tree.insert(from.as_bytes(), to.as_bytes())?;
         Ok(())
+    }
+
+    /// Drop the cached per-filter tree handles so that, once the global db is unloaded, sled's file
+    /// lock is released. A later read/write transparently reopens the trees.
+    fn release(&self) {
+        self.trees.lock().unwrap().clear();
     }
 }

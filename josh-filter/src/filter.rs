@@ -209,8 +209,8 @@ impl Filter {
 
     /// Chain a filter that matches files by glob pattern
     /// Only files matching the pattern are included in the result
-    pub fn pattern(self, p: impl Into<String>) -> Filter {
-        self.chain(to_filter(Op::Pattern(p.into())))
+    pub fn pattern(self, p: impl AsRef<str>) -> anyhow::Result<Filter> {
+        Ok(self.chain(to_filter(Op::pattern(p.as_ref())?)))
     }
 
     /// Chain a filter that loads a workspace filter from a `workspace.josh` file
@@ -373,7 +373,7 @@ pub fn invert(filter: Filter) -> anyhow::Result<Filter> {
 /// The sequence_number filter used for tracking commit sequence numbers. A memoized sentinel
 /// node whose OID is the zero OID, so identity comparison and cache-keying stay correct.
 pub fn sequence_number() -> Filter {
-    static F: LazyLock<Filter> = LazyLock::new(|| persist::sentinel(git2::Oid::zero()));
+    static F: LazyLock<Filter> = LazyLock::new(|| persist::sentinel(git2::Oid::ZERO_SHA1));
     *F
 }
 

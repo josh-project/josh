@@ -95,7 +95,7 @@ Near the start of the output, `josh compose run` prints the `WS_TREE` SHA:
 WS_TREE: abc123def456...
 ```
 
-The prysk-updated `.t` test files (showing diffs for any failures) are stored in the podman volume `out_<WS_TREE>` under `tests/`, not in the working directory.
+The scrut-updated `.t` test files (rewritten with the actual output for any failures) are stored in the podman volume `out_<WS_TREE>` under `tests/`, not in the working directory.
 
 ```sh
 # List all test result files
@@ -105,12 +105,12 @@ podman volume export out_<WS_TREE> | tar -tvf - tests/
 podman volume export out_<WS_TREE> | tar -xOf - tests/filter/foo.t
 ```
 
-For failing tests the prysk diff format shows: the shell command that failed, the expected output (indented two spaces), and the actual output (preceded by `+`).
+For failing tests the scrut diff format shows: the shell expression that failed, the expected output (preceded by `-`), and the actual output (preceded by `+`).
 
-The final lines of output report the overall result:
+Each test file prints a result line, and the final lines of output report the overall result:
 
 ```
-# Ran N tests, M skipped, K failed.
+Result: 1 document(s) with N testcase(s): N succeeded, 0 failed and 0 skipped
 SUCCESS: <safe-name>
 ```
 

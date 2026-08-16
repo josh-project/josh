@@ -1,5 +1,4 @@
 use anyhow::{Context, anyhow};
-use gix_object::WriteTo;
 use gix_object::bstr::BString;
 use std::collections::HashMap;
 use std::sync::{LazyLock, OnceLock};
@@ -27,11 +26,16 @@ pub fn peel_op(filter: Filter) -> Op {
 }
 
 pub fn peel_op_ref(filter: Filter) -> &'static Op {
-    let op = to_op_ref(filter);
-    if let Op::Meta(_, f) = op {
-        peel_op_ref(*f)
+    to_op_ref(peel_filter(filter))
+}
+
+/// The filter stripped of `Meta` wrappers: the node whose op `peel_op_ref` returns. Its id is
+/// the meta-independent identity of the filter, e.g. the glob cache key of a `Pattern` op.
+pub fn peel_filter(filter: Filter) -> Filter {
+    if let Op::Meta(_, f) = to_op_ref(filter) {
+        peel_filter(*f)
     } else {
-        op
+        filter
     }
 }
 
@@ -92,8 +96,7 @@ fn push_tree_entries(
 }
 
 struct InMemoryBuilder<'a> {
-    // Map from hash to (kind, raw bytes)
-    pending_writes: HashMap<gix_hash::ObjectId, (gix_object::Kind, Vec<u8>)>,
+    staging: josh_gix_ext::StagingOdb<'a>,
     /// Present when building for persistence (`as_tree`): used to resolve the object kind of
     /// `InsertContent::Oid` so the object can be referenced as a tree entry with the correct
     /// mode. Absent when computing `Filter::id`, which must stay repository-independent.
@@ -105,16 +108,8 @@ struct InMemoryBuilder<'a> {
 
 impl<'a> InMemoryBuilder<'a> {
     fn new(repo: Option<&'a git2::Repository>) -> Self {
-        // Add an empty blob because we use a shortcut for them below
-        // in write_blob
-        let mut pending_writes = HashMap::new();
-        pending_writes.insert(
-            gix_hash::ObjectId::empty_blob(gix_hash::Kind::Sha1),
-            (gix_object::Kind::Blob, Vec::new()),
-        );
-
         Self {
-            pending_writes,
+            staging: josh_gix_ext::StagingOdb::new(),
             repo,
             persist_ids: HashMap::new(),
         }
@@ -130,26 +125,16 @@ impl<'a> InMemoryBuilder<'a> {
     }
 
     fn write_blob(&mut self, data: &[u8]) -> gix_hash::ObjectId {
-        if data.is_empty() {
-            return gix_hash::ObjectId::empty_blob(gix_hash::Kind::Sha1);
-        }
-
-        let hash = gix_object::compute_hash(gix_hash::Kind::Sha1, gix_object::Kind::Blob, data)
-            .expect("failed to compute hash");
-        self.pending_writes
-            .insert(hash, (gix_object::Kind::Blob, data.to_vec()));
-        hash
+        self.staging.write_blob(data)
     }
 
+    /// Persisted filter trees sort by plain filename bytes -- NOT canonical git tree order (which
+    /// treats tree entry names as if they had a trailing '/'). The two differ when one name is a
+    /// strict prefix of another; this order is part of the persisted filter format and must stay
+    /// as is for filter ids to remain stable.
     fn write_tree(&mut self, mut tree: gix_object::Tree) -> gix_hash::ObjectId {
         tree.entries.sort_by(|a, b| a.filename.cmp(&b.filename));
-        let mut buffer = Vec::with_capacity(tree.size() as usize);
-        tree.write_to(&mut buffer).expect("failed to write tree");
-        let hash = gix_object::compute_hash(gix_hash::Kind::Sha1, gix_object::Kind::Tree, &buffer)
-            .expect("failed to compute hash");
-        self.pending_writes
-            .insert(hash, (gix_object::Kind::Tree, buffer));
-        hash
+        self.staging.write_tree(&tree)
     }
 
     fn build_str_params(&mut self, params: &[&str]) -> gix_hash::ObjectId {
@@ -463,8 +448,8 @@ impl<'a> InMemoryBuilder<'a> {
                 let params_tree = self.build_str_params(&[path.to_string_lossy().as_ref()]);
                 push_tree_entries(&mut entries, [("embed", params_tree)]);
             }
-            Op::Pattern(pattern) => {
-                let params_tree = self.build_str_params(&[pattern.as_ref()]);
+            Op::Pattern(glob) => {
+                let params_tree = self.build_str_params(&[glob.as_str()]);
                 push_tree_entries(&mut entries, [("pattern", params_tree)]);
             }
             Op::Workspace(path) => {
@@ -669,23 +654,7 @@ pub fn as_tree(repo: &git2::Repository, filter: Filter) -> anyhow::Result<git2::
     let root_oid = builder.build_persist(&odb, filter)?;
     let root_oid = git2::Oid::from_bytes(root_oid.as_bytes())?;
 
-    // Write all pending objects to the git2 repository
-    for (oid, (kind, data)) in builder.pending_writes {
-        let oid = git2::Oid::from_bytes(oid.as_bytes())?;
-
-        // On some platforms, .exists() is cheaper in terms of i/o
-        // than .write(), because .write() updates file access time
-        // in loose object backend
-        if !odb.exists(oid) {
-            let git2_type = match kind {
-                gix_object::Kind::Tree => git2::ObjectType::Tree,
-                gix_object::Kind::Blob => git2::ObjectType::Blob,
-                gix_object::Kind::Commit => git2::ObjectType::Commit,
-                gix_object::Kind::Tag => git2::ObjectType::Tag,
-            };
-            odb.write(git2_type, &data)?;
-        }
-    }
+    builder.staging.flush(&odb)?;
 
     // Now the tree should really be in the ODB
     Ok(root_oid)
@@ -885,8 +854,7 @@ fn from_tree2(repo: &git2::Repository, tree_oid: git2::Oid) -> anyhow::Result<Op
                     .context("pattern: missing pattern")?
                     .id(),
             )?;
-            let pattern = std::str::from_utf8(pattern_blob.content())?.to_string();
-            Ok(Op::Pattern(pattern))
+            Op::pattern(std::str::from_utf8(pattern_blob.content())?)
         }
         "workspace" => {
             let inner = repo.find_tree(entry.id())?;
@@ -1066,7 +1034,7 @@ fn from_tree2(repo: &git2::Repository, tree_oid: git2::Oid) -> anyhow::Result<Op
                 // Parse match operator from key
                 let (match_op, lazy_ref) = if key == "_" {
                     // Default filter - no SHA needed
-                    (RevMatch::Default, LazyRef::Resolved(git2::Oid::zero()))
+                    (RevMatch::Default, LazyRef::Resolved(git2::Oid::ZERO_SHA1))
                 } else if let Some(ref_str) = key.strip_prefix("<=") {
                     (RevMatch::AncestorInclusive, LazyRef::parse(ref_str)?)
                 } else if let Some(ref_str) = key.strip_prefix('<') {

@@ -5,11 +5,11 @@ use serde::Serialize;
 use josh_github_codegen_graphql::{
     add_comment, add_pull_request_review, add_pull_request_review_thread,
     add_pull_request_review_thread_reply, close_pull_request, convert_pull_request_to_draft,
-    create_pull_request, get_pr_by_head, get_pr_comments, list_open_p_rs,
+    create_pull_request, get_pr_by_head, get_pr_comments, get_prs_by_sha, list_open_p_rs,
     mark_pull_request_ready_for_review, update_pull_request, AddComment, AddPullRequestReview,
     AddPullRequestReviewThread, AddPullRequestReviewThreadReply, ClosePullRequest,
-    ConvertPullRequestToDraft, CreatePullRequest, GetPrByHead, GetPrComments, ListOpenPRs,
-    MarkPullRequestReadyForReview, UpdatePullRequest,
+    ConvertPullRequestToDraft, CreatePullRequest, GetPrByHead, GetPrComments, GetPrsBySha,
+    ListOpenPRs, MarkPullRequestReadyForReview, UpdatePullRequest,
 };
 
 #[derive(Debug, Serialize)]
@@ -75,11 +75,17 @@ pub struct PrSummary {
 
 impl GithubApiConnection {
     /// Find an open PR by head branch name. Returns (node_id, number, is_draft) if found.
+    ///
+    /// `head_owner`, when set, restricts the match to a PR whose head lives in
+    /// that owner's repository — needed to disambiguate cross-fork PRs, where
+    /// several forks may push the same head branch name. When `None`, the first
+    /// open PR with the given head branch name is returned.
     pub async fn find_pull_request_by_head(
         &self,
         owner: &str,
         name: &str,
         head_ref_name: &str,
+        head_owner: Option<&str>,
     ) -> anyhow::Result<Option<(String, i64, bool)>> {
         let variables = get_pr_by_head::Variables {
             owner: owner.to_string(),
@@ -92,8 +98,45 @@ impl GithubApiConnection {
             None => return Ok(None),
         };
         let nodes = repo.pull_requests.nodes.unwrap_or_default();
-        let pr = nodes.into_iter().flatten().next();
+        let pr = nodes.into_iter().flatten().find(|n| match head_owner {
+            Some(head_owner) => n
+                .head_repository_owner
+                .as_ref()
+                .is_some_and(|o| o.login == head_owner),
+            None => true,
+        });
         Ok(pr.map(|n| (n.id, n.number, n.is_draft)))
+    }
+
+    /// Find open PRs whose head commit is the given SHA. Returns `(node_id, number)` for each.
+    pub async fn find_open_prs_by_head_sha(
+        &self,
+        owner: &str,
+        name: &str,
+        sha: &str,
+    ) -> anyhow::Result<Vec<(String, i64)>> {
+        let variables = get_prs_by_sha::Variables {
+            owner: owner.to_string(),
+            name: name.to_string(),
+            sha: sha.to_string(),
+        };
+        let response = self.make_request::<GetPrsBySha>(variables).await?;
+        let prs = response
+            .repository
+            .and_then(|r| r.object)
+            .and_then(|o| match o {
+                get_prs_by_sha::GetPrsByShaRepositoryObject::Commit(c) => {
+                    c.associated_pull_requests
+                }
+                _ => None,
+            })
+            .and_then(|p| p.nodes)
+            .unwrap_or_default()
+            .into_iter()
+            .flatten()
+            .map(|n| (n.id, n.number))
+            .collect();
+        Ok(prs)
     }
 
     /// List all open pull requests with pagination.

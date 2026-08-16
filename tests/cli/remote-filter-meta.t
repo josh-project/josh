@@ -52,15 +52,6 @@ Clone with the meta args: the kept merge must show up in the filtered history
 
   $ josh clone ${TESTTMP}/remote/libs ':~(history="keep-trivial-merges",gpgsig="norm-lf")[:/sub1]' libs
   Added remote 'origin' with filter ':~(history="keep-trivial-merges",gpgsig="norm-lf")[:/sub1]'
-  From file://${TESTTMP}/remote/libs
-   * [new branch]      branch1    -> refs/josh/remotes/origin/branch1
-   * [new branch]      master     -> refs/josh/remotes/origin/master
-  
-  From file://${TESTTMP}/libs
-   * [new branch]      branch1    -> origin/branch1
-   * [new branch]      master     -> origin/master
-  
-  Fetched from remote: origin
   Already on 'master'
   
   Cloned repository to: ${TESTTMP}/libs/
@@ -91,16 +82,6 @@ distinguishes the two and the args do not leak into the plain path)
   $ cd ${TESTTMP}
   $ josh clone ${TESTTMP}/remote/libs ':/sub1' libs-plain
   Added remote 'origin' with filter ':/sub1'
-  From file://${TESTTMP}/remote/libs
-   * [new branch]      branch1    -> refs/josh/remotes/origin/branch1
-   * [new branch]      expected   -> refs/josh/remotes/origin/expected
-   * [new branch]      master     -> refs/josh/remotes/origin/master
-  
-  From file://${TESTTMP}/libs-plain
-   * [new branch]      branch1    -> origin/branch1
-   * [new branch]      master     -> origin/master
-  
-  Fetched from remote: origin
   Already on 'master'
   
   Cloned repository to: ${TESTTMP}/libs-plain/
@@ -125,15 +106,8 @@ Incremental fetch: another trivial-under-filter merge upstream must also be kept
 
   $ cd ${TESTTMP}/libs
   $ josh fetch
-  From file://${TESTTMP}/remote/libs
-   * [new branch]      branch2    -> refs/josh/remotes/origin/branch2
-   * [new branch]      expected   -> refs/josh/remotes/origin/expected
-     0823744..5c2a751  master     -> refs/josh/remotes/origin/master
-  
-  From file://${TESTTMP}/libs
-     2fa5077..c2a3e28  master     -> origin/master
-   * [new branch]      branch2    -> origin/branch2
-  
+  updated master (2fa5077..c2a3e28)
+  new branch branch2
   Fetched from remote: origin
 
   $ git log --graph --pretty=%s origin/master
@@ -179,12 +153,7 @@ A fetch after the push is a fast-forward onto the pushed commit
 
   $ cd ${TESTTMP}/libs
   $ josh fetch
-  From file://${TESTTMP}/remote/libs
-     5c2a751..eb7746f  master     -> refs/josh/remotes/origin/master
-  
-  From file://${TESTTMP}/libs
-     c2a3e28..7c8cc20  master     -> origin/master
-  
+  updated master (c2a3e28..7c8cc20)
   Fetched from remote: origin
   $ git log --pretty=%s -1 origin/master
   add pushed_file
@@ -195,18 +164,6 @@ composed application josh-filter performs
   $ cd ${TESTTMP}
   $ josh clone ${TESTTMP}/remote/libs ':~(history="keep-trivial-merges")[:/sub1:prefix=libs]' libs-chain
   Added remote 'origin' with filter ':~(history="keep-trivial-merges")[:/sub1:prefix=libs]'
-  From file://${TESTTMP}/remote/libs
-   * [new branch]      branch1    -> refs/josh/remotes/origin/branch1
-   * [new branch]      branch2    -> refs/josh/remotes/origin/branch2
-   * [new branch]      expected   -> refs/josh/remotes/origin/expected
-   * [new branch]      master     -> refs/josh/remotes/origin/master
-  
-  From file://${TESTTMP}/libs-chain
-   * [new branch]      branch1    -> origin/branch1
-   * [new branch]      branch2    -> origin/branch2
-   * [new branch]      master     -> origin/master
-  
-  Fetched from remote: origin
   Already on 'master'
   
   Cloned repository to: ${TESTTMP}/libs-chain/

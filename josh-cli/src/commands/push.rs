@@ -1,10 +1,11 @@
 use anyhow::{Context, anyhow};
 
-use josh_changes::{PushMode, PushRef, build_to_push};
+use josh_changes::{PushMode, PushRef, StackedChangeRef, StackedRef, build_to_push};
 use josh_core::git::normalize_repo_path;
 
 use crate::config::{RemoteConfig, read_remote_config};
-use crate::forge::Forge;
+use crate::forge::{Forge, GerritMode};
+use crate::porcelain::PushRefUpdate;
 
 #[derive(Debug, clap::Parser)]
 pub struct PushArgs {
@@ -106,6 +107,7 @@ fn prepare_push(
     filter: josh_core::filter::Filter,
     push_mode: &PushMode,
     forge: &Option<Forge>,
+    gerrit_mode: GerritMode,
     dry_run: bool,
 ) -> anyhow::Result<PreparedPush> {
     let repo = transaction.repo();
@@ -131,7 +133,7 @@ fn prepare_push(
     let dest_remote_ref = format!("refs/josh/remotes/{}/{}", remote_name, remote_ref);
     let (dest_oid, old_filtered_oid) =
         if let Ok(remote_reference) = repo.find_reference(&dest_remote_ref) {
-            let dest_oid = remote_reference.target().unwrap_or(git2::Oid::zero());
+            let dest_oid = remote_reference.target().unwrap_or(git2::Oid::ZERO_SHA1);
 
             let (filtered_oids, errors) =
                 josh_core::filter_refs(transaction, filter, &[(dest_remote_ref.clone(), dest_oid)]);
@@ -143,12 +145,12 @@ fn prepare_push(
             let old_filtered = if let Some((_, filtered_oid)) = filtered_oids.first() {
                 *filtered_oid
             } else {
-                git2::Oid::zero()
+                git2::Oid::ZERO_SHA1
             };
 
             (dest_oid, old_filtered)
         } else {
-            (git2::Oid::zero(), git2::Oid::zero())
+            (git2::Oid::ZERO_SHA1, git2::Oid::ZERO_SHA1)
         };
 
     let original_target = if let Some(base) = base {
@@ -181,7 +183,7 @@ fn prepare_push(
     .context("Failed to unapply filter")?;
 
     let unfiltered_oid = if merge {
-        if original_target == git2::Oid::zero() {
+        if original_target == git2::Oid::ZERO_SHA1 {
             return Err(anyhow!(
                 "--merge requires --base=<ref> or an existing destination ref"
             ));
@@ -206,16 +208,37 @@ fn prepare_push(
 
     log::debug!("unfiltered_oid: {:?}", unfiltered_oid);
 
-    let to_push = build_to_push(
-        repo,
-        transaction,
-        &push_mode,
-        remote_ref,
-        remote_ref,
-        unfiltered_oid,
-        original_target,
-    )
-    .context("Failed to build to push")?;
+    // Gerrit publishing pushes to the magic ref `refs/for/<branch>` instead of
+    // josh's `@changes`/`@base` ref pairs, and needs no PR API call. The mode
+    // decides the mapping: `independent` (default) pushes only dependency-free
+    // changes as separate reviews; `stack` pushes the whole history as one
+    // relation chain.
+    let to_push = match (forge, push_mode) {
+        (Some(Forge::Gerrit), PushMode::Publish(_)) => match gerrit_mode {
+            GerritMode::Independent => josh_changes::build_gerrit_independent_push(
+                repo,
+                transaction,
+                remote_ref,
+                unfiltered_oid,
+                original_target,
+            )
+            .context("Failed to build Gerrit push")?,
+            GerritMode::Stack => {
+                josh_changes::build_gerrit_push(repo, remote_ref, unfiltered_oid, original_target)
+                    .context("Failed to build Gerrit push")?
+            }
+        },
+        _ => build_to_push(
+            repo,
+            transaction,
+            push_mode,
+            remote_ref,
+            remote_ref,
+            unfiltered_oid,
+            original_target,
+        )
+        .context("Failed to build to push")?,
+    };
 
     log::debug!("to_push: {:?}", to_push);
 
@@ -229,12 +252,141 @@ fn prepare_push(
     Ok(PreparedPush { to_push, pr_infos })
 }
 
-/// Push all refs to the remote in a single bundled `git push` invocation.
+/// Render a curated summary of a push, reframing the stacked-changes refs
+/// (`@changes/`) as a change count and hiding the internal `@base/`/`@heads/`
+/// refs entirely. Rejected updates are an error (git's stderr, carrying the
+/// rejection details, has already been forwarded to the user).
+pub fn render_push_summary(
+    updates: &[PushRefUpdate],
+    dry_run: bool,
+) -> anyhow::Result<Vec<String>> {
+    let mut lines = Vec::new();
+    let mut new_changes = 0usize;
+    let mut updated_changes = 0usize;
+
+    for update in updates {
+        if let PushRefUpdate::Rejected { reference, reason } = update {
+            anyhow::bail!(
+                "git push rejected update to {}{}",
+                reference,
+                reason
+                    .as_deref()
+                    .map(|r| format!(" ({})", r))
+                    .unwrap_or_default()
+            );
+        }
+
+        let Some(name) = update.reference().strip_prefix("refs/heads/") else {
+            continue;
+        };
+
+        match StackedRef::parse(name) {
+            Some(StackedRef::ChangeRef(StackedChangeRef::Change { .. })) => {
+                match update {
+                    PushRefUpdate::New { .. } => new_changes += 1,
+                    PushRefUpdate::FastForward { .. } | PushRefUpdate::Forced { .. } => {
+                        updated_changes += 1
+                    }
+                    _ => {}
+                }
+                continue;
+            }
+            // @base and @heads refs are internal plumbing; hide them entirely.
+            Some(_) => continue,
+            None => {}
+        }
+
+        let line = match update {
+            PushRefUpdate::New { .. } => format!("new branch {}", name),
+            PushRefUpdate::Deleted { .. } => format!("deleted branch {}", name),
+            PushRefUpdate::Forced { old, new, .. } => {
+                format!("force-updated {} ({}..{})", name, old, new)
+            }
+            PushRefUpdate::FastForward { old, new, .. } => {
+                format!("updated {} ({}..{})", name, old, new)
+            }
+            PushRefUpdate::UpToDate { .. } => continue,
+            PushRefUpdate::Rejected { .. } => unreachable!("rejected updates bail out above"),
+        };
+        lines.push(line);
+    }
+
+    let total_changes = new_changes + updated_changes;
+    if total_changes > 0 {
+        lines.push(format!(
+            "{} {} change{}{}",
+            if dry_run {
+                "Would publish"
+            } else {
+                "published"
+            },
+            total_changes,
+            if total_changes == 1 { "" } else { "s" },
+            if new_changes > 0 {
+                format!(" ({} new)", new_changes)
+            } else {
+                String::new()
+            },
+        ));
+    } else if lines.is_empty() {
+        lines.push("Everything up-to-date".to_string());
+    }
+
+    Ok(lines)
+}
+
+/// Push each change to a change-based forge (Gerrit), one `git push` per ref.
+///
+/// Every change targets the same magic ref `refs/for/<branch>`, so a single
+/// bundled push (multiple source commits, one destination ref) is not
+/// possible -- each ref goes in its own invocation. `refs/for` refs are never
+/// force-pushed; the forge keys patchsets by Change-Id instead.
+fn push_change_based(
+    transaction: &josh_core::cache::Transaction,
+    remote_name: &str,
+    to_push: &[PushRef],
+    url: &str,
+    atomic: bool,
+    dry_run: bool,
+) -> anyhow::Result<()> {
+    if to_push.is_empty() {
+        return Ok(());
+    }
+
+    for push_ref in to_push {
+        eprintln!(
+            "Pushing {} to {}/{}",
+            push_ref.oid, remote_name, push_ref.ref_name
+        );
+        let mut git_push_args = vec!["push"];
+        if atomic {
+            git_push_args.push("--atomic");
+        }
+        if dry_run {
+            git_push_args.push("--dry-run");
+        }
+        git_push_args.push(url);
+        let refspec = format!("{}:{}", push_ref.oid, push_ref.ref_name);
+        git_push_args.push(&refspec);
+        transaction
+            .spawn_git(&git_push_args, &[])
+            .with_context(|| format!("Failed to push to {}", remote_name))?;
+    }
+    eprintln!("Pushed {} ref(s) to {}", to_push.len(), remote_name);
+    Ok(())
+}
+
+/// Push all refs to a branch-based forge in a single bundled `git push` invocation.
 ///
 /// Every ref shares one remote URL and a uniform set of flags, so they are pushed together
 /// rather than one process per ref. This also makes `--atomic` meaningful across the whole
 /// set instead of applying to a single ref at a time.
-fn push_refs(
+///
+/// In curated mode (stacked-changes publish) the push runs with `--porcelain`:
+/// stdout is captured and rendered as a summary via `render_push_summary`,
+/// while stderr keeps the default handling (inherited on a TTY, forwarded
+/// otherwise) so progress/errors reach the user.
+fn push_branch_based(
     transaction: &josh_core::cache::Transaction,
     remote_name: &str,
     to_push: &[PushRef],
@@ -242,6 +394,7 @@ fn push_refs(
     force: bool,
     atomic: bool,
     dry_run: bool,
+    curated: bool,
 ) -> anyhow::Result<()> {
     if to_push.is_empty() {
         return Ok(());
@@ -261,13 +414,19 @@ fn push_refs(
         git_push_args.push("--dry-run");
     }
 
+    if curated {
+        git_push_args.push("--porcelain");
+    }
+
     git_push_args.push(url);
 
-    for push_ref in to_push {
-        eprintln!(
-            "Pushing {} to {}/{}",
-            push_ref.oid, remote_name, push_ref.ref_name
-        );
+    if !curated {
+        for push_ref in to_push {
+            eprintln!(
+                "Pushing {} to {}/{}",
+                push_ref.oid, remote_name, push_ref.ref_name
+            );
+        }
     }
 
     let refspecs: Vec<String> = to_push
@@ -276,19 +435,37 @@ fn push_refs(
         .collect();
     git_push_args.extend(refspecs.iter().map(String::as_str));
 
-    transaction
-        .spawn_git(&git_push_args, &[])
-        .with_context(|| format!("Failed to push to {}", remote_name))?;
+    if curated {
+        let output = transaction
+            .git_command(&git_push_args, &[])?
+            .with_stdout(std::process::Stdio::piped())
+            .spawn()
+            .with_context(|| format!("Failed to push to {}", remote_name))?;
 
-    eprintln!("Pushed {} ref(s) to {}", to_push.len(), remote_name);
+        let updates =
+            crate::porcelain::parse_push_porcelain(&String::from_utf8_lossy(&output.stdout))?;
+        for line in render_push_summary(&updates, dry_run)? {
+            eprintln!("{}", line);
+        }
+    } else {
+        transaction
+            .spawn_git(&git_push_args, &[])
+            .with_context(|| format!("Failed to push to {}", remote_name))?;
+
+        eprintln!("Pushed {} ref(s) to {}", to_push.len(), remote_name);
+    }
 
     Ok(())
 }
 
 /// Create or update GitHub PRs for the collected push refs.
+///
+/// `url` is the PR target (upstream). `fork_url`, when set, is the repo the
+/// change branches were pushed to; PRs are then opened with a cross-fork head.
 fn create_prs(
     pr_infos: &[josh_github_changes::PrInfo],
     url: &str,
+    fork_url: Option<&str>,
     dry_run: bool,
 ) -> anyhow::Result<()> {
     if pr_infos.is_empty() {
@@ -303,7 +480,8 @@ fn create_prs(
         let api_connection = github::make_api_connection().await;
         let api_connection = api_connection.with_context(|| github::api_connection_hint())?;
 
-        josh_github_changes::create_or_update_prs(&api_connection, url, pr_infos, dry_run).await
+        josh_github_changes::create_or_update_prs(&api_connection, url, fork_url, pr_infos, dry_run)
+            .await
     }) {
         eprintln!("Warning: failed to create/update GitHub PRs: {}", e);
     }
@@ -330,7 +508,17 @@ fn orchestrate_push(
     let config = read_remote_config(&repo_path, remote_name)
         .with_context(|| format!("Failed to read remote config for '{}'", remote_name))?;
     let filter = config.semantic_filter();
-    let RemoteConfig { url, forge, .. } = config;
+    let RemoteConfig {
+        url,
+        forge,
+        push_url,
+        gerrit_mode,
+        ..
+    } = config;
+
+    // Branches go to the fork (push_url) when configured; otherwise to `url`.
+    // PRs are always opened against `url`.
+    let push_target = push_url.as_deref().unwrap_or(&url);
 
     let refspecs = if refspecs_arg.is_empty() {
         let head = repo.head().context("Failed to get HEAD")?;
@@ -355,21 +543,24 @@ fn orchestrate_push(
                 filter,
                 &push_mode,
                 &forge,
+                gerrit_mode,
                 dry_run,
             )
         })
         .collect::<anyhow::Result<Vec<_>>>()?;
 
-    // Phase 2: Flatten the prepared pushes into one bundled set. Dedup by destination ref
-    // name (keep first) to tolerate duplicate or colliding refspec arguments, which an
-    // atomic push would otherwise reject.
+    // Phase 2: Flatten the prepared pushes into one bundled set. Dedup by
+    // (destination ref, oid) (keep first) to tolerate duplicate or colliding
+    // refspec arguments, which an atomic push would otherwise reject. The oid is
+    // part of the key because Gerrit publishing intentionally routes several
+    // distinct change commits to the same `refs/for/<branch>` ref.
     let mut seen = std::collections::HashSet::new();
     let mut to_push: Vec<PushRef> = Vec::new();
     let mut pr_infos: Vec<josh_github_changes::PrInfo> = Vec::new();
 
     for prepared in prepared_pushes {
         for push_ref in prepared.to_push {
-            if seen.insert(push_ref.ref_name.clone()) {
+            if seen.insert((push_ref.ref_name.clone(), push_ref.oid)) {
                 to_push.push(push_ref);
             }
         }
@@ -379,18 +570,36 @@ fn orchestrate_push(
     // Publish mode always force-updates its per-change refs.
     let force = force || matches!(push_mode, PushMode::Publish(_));
 
-    // Phase 3: Execute the side effects.
-    push_refs(
-        transaction,
-        remote_name,
-        &to_push,
-        &url,
-        force,
-        atomic,
-        dry_run,
-    )?;
+    // Publish output is curated (porcelain + summary); plain push keeps raw
+    // git output.
+    let curated = matches!(push_mode, PushMode::Publish(_));
 
-    create_prs(&pr_infos, &url, dry_run)?;
+    // Phase 3: Execute the side effects. Publishing to a change-based forge
+    // (Gerrit) pushes magic `refs/for/<branch>` refs; everything else is a
+    // branch push. This mirrors the dispatch in `prepare_push`.
+    if forge == Some(Forge::Gerrit) && matches!(push_mode, PushMode::Publish(_)) {
+        push_change_based(
+            transaction,
+            remote_name,
+            &to_push,
+            push_target,
+            atomic,
+            dry_run,
+        )?;
+    } else {
+        push_branch_based(
+            transaction,
+            remote_name,
+            &to_push,
+            push_target,
+            force,
+            atomic,
+            dry_run,
+            curated,
+        )?;
+    }
+
+    create_prs(&pr_infos, &url, push_url.as_deref(), dry_run)?;
 
     Ok(())
 }
@@ -431,4 +640,91 @@ pub fn handle_publish(
         push_mode,
         transaction,
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn new_ref(reference: &str) -> PushRefUpdate {
+        PushRefUpdate::New {
+            reference: reference.to_string(),
+        }
+    }
+
+    fn forced(reference: &str) -> PushRefUpdate {
+        PushRefUpdate::Forced {
+            old: "1234567".to_string(),
+            new: "abcdef1".to_string(),
+            reference: reference.to_string(),
+        }
+    }
+
+    #[test]
+    fn summary_counts_changes_and_hides_internal_refs() {
+        let updates = vec![
+            new_ref("refs/heads/@changes/master/a@b.c/1234"),
+            forced("refs/heads/@changes/master/a@b.c/5678"),
+            new_ref("refs/heads/@base/master/a@b.c/1234"),
+            forced("refs/heads/@heads/master/a@b.c"),
+        ];
+
+        let lines = render_push_summary(&updates, false).unwrap();
+
+        assert_eq!(lines, vec!["published 2 changes (1 new)"]);
+    }
+
+    #[test]
+    fn summary_renders_branch_updates() {
+        let updates = vec![
+            new_ref("refs/heads/feature"),
+            PushRefUpdate::FastForward {
+                old: "1234567".to_string(),
+                new: "abcdef1".to_string(),
+                reference: "refs/heads/master".to_string(),
+            },
+        ];
+
+        let lines = render_push_summary(&updates, false).unwrap();
+
+        assert_eq!(
+            lines,
+            vec!["new branch feature", "updated master (1234567..abcdef1)"]
+        );
+    }
+
+    #[test]
+    fn summary_up_to_date_republish_is_silent() {
+        let updates = vec![
+            PushRefUpdate::UpToDate {
+                reference: "refs/heads/@changes/master/a@b.c/1234".to_string(),
+            },
+            PushRefUpdate::UpToDate {
+                reference: "refs/heads/@heads/master/a@b.c".to_string(),
+            },
+        ];
+
+        let lines = render_push_summary(&updates, false).unwrap();
+
+        assert_eq!(lines, vec!["Everything up-to-date"]);
+    }
+
+    #[test]
+    fn summary_dry_run_prefixes_would() {
+        let updates = vec![new_ref("refs/heads/@changes/master/a@b.c/1234")];
+
+        let lines = render_push_summary(&updates, true).unwrap();
+
+        assert_eq!(lines, vec!["Would publish 1 change (1 new)"]);
+    }
+
+    #[test]
+    fn summary_rejected_update_errors() {
+        let updates = vec![PushRefUpdate::Rejected {
+            reference: "refs/heads/@changes/master/a@b.c/1234".to_string(),
+            reason: Some("non-fast-forward".to_string()),
+        }];
+
+        assert!(render_push_summary(&updates, false).is_err());
+    }
 }

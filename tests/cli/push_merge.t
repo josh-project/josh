@@ -45,9 +45,6 @@ Clone the vendor with vanilla `git clone`, wire up central, fetch the base.
   $ josh remote add central ${TESTTMP}/central :/libs/vendored
   Added remote 'central' with filter ':/libs/vendored'
   $ josh fetch --remote central
-  From file://${TESTTMP}/central
-   * [new branch]      master     -> refs/josh/remotes/central/master
-  
   Fetched from remote: central
 
 Push with --merge --base=master. The reverse-filtered vendor commits are

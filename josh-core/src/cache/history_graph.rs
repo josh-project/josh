@@ -11,8 +11,10 @@
 //! its parent's blob OID — no read or write — so the hot path is cheap.
 //!
 //! The `sequence_number` slot stores a synthetic OID that also carries the
-//! commit's parent count in a spare byte (see `oid_from_hint`), so cache
-//! backends can classify commits as merges/orphans without reading them.
+//! commit's parent count and the sequence distance to its farther first-two
+//! parent in spare bytes (see `oid_from_hint`), so cache backends can classify
+//! commits as merges/orphans and detect sequence-number jumps without reading
+//! them.
 
 use anyhow::anyhow;
 
@@ -37,21 +39,17 @@ pub struct HistoryGraphInfo {
 /// only compare sequence numbers avoid a per-commit `find_blob` + parse that
 /// would otherwise be discarded.
 pub fn compute_sequence_number(transaction: &Transaction, input: git2::Oid) -> anyhow::Result<u64> {
-    Ok(ensure_hint_cached(transaction, input)?.0)
+    Ok(ensure_hint_cached(transaction, input)?.0.sequence_number)
 }
 
-/// Returns the cached `(sequence number, parent count)` for `input` without
-/// reading the roots blob. Both values are decoded from the same cached hint,
-/// so cache backends can make eligibility decisions without any commit read.
+/// Returns the cached hint for `input` without reading the roots blob. All
+/// fields are decoded from the same cached hint, so cache backends can make
+/// eligibility decisions without any commit read.
 pub fn compute_history_hint(
     transaction: &Transaction,
     input: git2::Oid,
 ) -> anyhow::Result<HistoryGraphHint> {
-    let (sequence_number, parent_count, _) = ensure_hint_cached(transaction, input)?;
-    Ok(HistoryGraphHint {
-        sequence_number,
-        parent_count,
-    })
+    Ok(ensure_hint_cached(transaction, input)?.0)
 }
 
 /// Computes sequence number and reachable roots for `input` in a single walk,
@@ -64,10 +62,10 @@ pub fn collect_history_graph_info(
     transaction: &Transaction,
     input: git2::Oid,
 ) -> anyhow::Result<HistoryGraphInfo> {
-    let (seq, _, blob) = ensure_hint_cached(transaction, input)?;
+    let (hint, blob) = ensure_hint_cached(transaction, input)?;
 
     Ok(HistoryGraphInfo {
-        sequence_number: seq,
+        sequence_number: hint.sequence_number,
         reachable_roots: read_roots_blob(transaction.repo(), blob)?,
     })
 }
@@ -82,7 +80,7 @@ pub fn parents_share_root(
     transaction: &Transaction,
     parent_ids: &[git2::Oid],
 ) -> anyhow::Result<bool> {
-    if parent_ids.is_empty() || parent_ids.iter().any(|x| *x == git2::Oid::zero()) {
+    if parent_ids.is_empty() || parent_ids.iter().any(|x| *x == git2::Oid::ZERO_SHA1) {
         return Ok(false);
     }
 
@@ -91,7 +89,7 @@ pub fn parents_share_root(
     // identical — they trivially share every root without reading any blob.
     let parent_blobs: Vec<git2::Oid> = parent_ids
         .iter()
-        .map(|p| Ok(ensure_hint_cached(transaction, *p)?.2))
+        .map(|p| Ok(ensure_hint_cached(transaction, *p)?.1))
         .collect::<anyhow::Result<Vec<_>>>()?;
 
     let first_blob = parent_blobs[0];
@@ -117,7 +115,7 @@ pub fn parents_share_root(
 }
 
 /// Ensures `(sequence_number, reachable_roots)` are cached for `input` and
-/// returns the cached `(seq, parent_count, roots_blob_oid)`. Performs a
+/// returns the cached `(hint, roots_blob_oid)`. Performs a
 /// topological walk only if neither piece is cached for `input`. Inside the
 /// walk, each commit's roots blob is reused from its parent when parents
 /// agree, so the common case (linear or shared-root merges) avoids ODB reads
@@ -125,7 +123,7 @@ pub fn parents_share_root(
 fn ensure_hint_cached(
     transaction: &Transaction,
     input: git2::Oid,
-) -> anyhow::Result<(u64, u8, git2::Oid)> {
+) -> anyhow::Result<(HistoryGraphHint, git2::Oid)> {
     if let Some(hint) = try_read_cached_hint(transaction, input)? {
         return Ok(hint);
     }
@@ -134,12 +132,15 @@ fn ensure_hint_cached(
         return Err(anyhow!("ensure_hint_cached: input does not exist"));
     }
 
-    let parent_ids = read_parent_ids(transaction.repo(), input)?;
+    let parent_ids = crate::git::read_parent_ids(transaction.repo(), input)?;
 
     // Fast path: every parent already has both pieces cached.
     let parents_hint: Option<Vec<(u64, git2::Oid)>> = parent_ids
         .iter()
-        .map(|p| Ok(try_read_cached_hint(transaction, *p)?.map(|(seq, _, blob)| (seq, blob))))
+        .map(|p| {
+            Ok(try_read_cached_hint(transaction, *p)?
+                .map(|(hint, blob)| (hint.sequence_number, blob)))
+        })
         .collect::<anyhow::Result<_>>()?;
 
     if let Some(parents_hint) = parents_hint {
@@ -149,36 +150,35 @@ fn ensure_hint_cached(
     }
 
     log::info!("ensure_hint_cached: new_walk for {:?}", input);
-    let mut walk = transaction.repo().revwalk()?;
-    walk.set_sorting(git2::Sort::REVERSE | git2::Sort::TOPOLOGICAL)?;
+    let odb = transaction.repo().odb()?;
+    let mut walk = crate::objects::RevWalk::new(&odb);
     walk.push(input)?;
 
-    // Hide ancestors that already have *both* pieces cached. Hiding on seq#
+    // Prune ancestors that already have *both* pieces cached. Pruning on seq#
     // alone would skip commits with cached seq# but missing roots, leaving
     // their roots unpopulated.
     // The callback cannot propagate errors, so treat a failed lookup as "not
     // cached": the walk then visits the commit and the fallible body reports
     // the same error properly.
-    let mut hide = |id| {
+    let sorted = walk.into_topo_vec(|id| {
         transaction
             .known(crate::filter::sequence_number(), id)
             .unwrap_or(false)
             && transaction
                 .known(crate::filter::reachable_roots(), id)
                 .unwrap_or(false)
-    };
-    let walk = walk.with_hide_callback(&mut hide)?;
+    })?;
 
-    for c in walk {
-        let oid = c?;
-        let parents_hint: Vec<(u64, git2::Oid)> = read_parent_ids(transaction.repo(), oid)?
-            .into_iter()
-            .map(|p| {
-                try_read_cached_hint(transaction, p)?
-                    .map(|(seq, _, blob)| (seq, blob))
-                    .ok_or_else(|| anyhow!("parent {} hint missing during walk for {}", p, oid))
-            })
-            .collect::<anyhow::Result<Vec<_>>>()?;
+    for &oid in sorted.iter().rev() {
+        let parents_hint: Vec<(u64, git2::Oid)> =
+            crate::git::read_parent_ids(transaction.repo(), oid)?
+                .into_iter()
+                .map(|p| {
+                    try_read_cached_hint(transaction, p)?
+                        .map(|(hint, blob)| (hint.sequence_number, blob))
+                        .ok_or_else(|| anyhow!("parent {} hint missing during walk for {}", p, oid))
+                })
+                .collect::<anyhow::Result<Vec<_>>>()?;
         let hint = derive_from_parents(transaction.repo(), oid, &parents_hint)?;
         store_hint(transaction, oid, hint)?;
     }
@@ -188,17 +188,25 @@ fn ensure_hint_cached(
 }
 
 /// Given that all parents have cached `(seq, roots_blob_oid)`, derive the
-/// `(seq, parent_count, roots_blob_oid)` for `self_oid`. Performs blob I/O
+/// `(hint, roots_blob_oid)` for `self_oid`. Performs blob I/O
 /// only when parents disagree on the blob; otherwise reuses the parent blob
 /// OID (or, for the root case, writes a single-element blob).
 fn derive_from_parents(
     repo: &git2::Repository,
     self_oid: git2::Oid,
     parents_hint: &[(u64, git2::Oid)],
-) -> anyhow::Result<(u64, u8, git2::Oid)> {
+) -> anyhow::Result<(HistoryGraphHint, git2::Oid)> {
     if parents_hint.is_empty() {
         // Parentless: this commit *is* its own only reachable root.
-        return Ok((0, 0, write_roots_blob(repo, &[self_oid])?));
+        return Ok((
+            HistoryGraphHint {
+                sequence_number: 0,
+                parent_count: 0,
+                jump_delta: 0,
+                jump_is_second: false,
+            },
+            write_roots_blob(repo, &[self_oid])?,
+        ));
     }
 
     let parent_count = parents_hint.len().min(255) as u8;
@@ -209,6 +217,15 @@ fn derive_from_parents(
         .max()
         .expect("non-empty")
         + 1;
+
+    // Distance to the farther of the first two parents. The max parent is at
+    // distance exactly 1, so for two-parent merges this captures the only
+    // non-trivial distance; parents beyond the first two are not covered.
+    let d0 = seq - parents_hint[0].0;
+    let (jump_delta, jump_is_second) = match parents_hint.get(1) {
+        Some((s1, _)) if seq - s1 > d0 => ((seq - s1).min(127) as u8, true),
+        _ => (d0.min(127) as u8, false),
+    };
 
     let first_blob = parents_hint[0].1;
     let roots_blob = if parents_hint.iter().all(|(_, b)| *b == first_blob) {
@@ -222,53 +239,44 @@ fn derive_from_parents(
         write_roots_blob(repo, &roots)?
     };
 
-    Ok((seq, parent_count, roots_blob))
+    Ok((
+        HistoryGraphHint {
+            sequence_number: seq,
+            parent_count,
+            jump_delta,
+            jump_is_second,
+        },
+        roots_blob,
+    ))
 }
 
 fn try_read_cached_hint(
     transaction: &Transaction,
     input: git2::Oid,
-) -> anyhow::Result<Option<(u64, u8, git2::Oid)>> {
+) -> anyhow::Result<Option<(HistoryGraphHint, git2::Oid)>> {
     let Some(seq) = transaction.get(crate::filter::sequence_number(), input)? else {
         return Ok(None);
     };
     let Some(roots_blob) = transaction.get(crate::filter::reachable_roots(), input)? else {
         return Ok(None);
     };
-    Ok(Some((
-        u64_from_oid(seq),
-        parent_count_from_oid(seq),
-        roots_blob,
-    )))
+    Ok(Some((hint_from_oid(seq), roots_blob)))
 }
 
 fn store_hint(
     transaction: &Transaction,
     input: git2::Oid,
-    hint: (u64, u8, git2::Oid),
+    hint: (HistoryGraphHint, git2::Oid),
 ) -> anyhow::Result<()> {
-    let (seq, parent_count, roots_blob) = hint;
+    let (hint, roots_blob) = hint;
     transaction.insert(
         crate::filter::sequence_number(),
         input,
-        oid_from_hint(seq, parent_count),
+        oid_from_hint(hint),
         true,
     )?;
     transaction.insert(crate::filter::reachable_roots(), input, roots_blob, true)?;
     Ok(())
-}
-
-/// Reads a commit's parent OIDs directly from the raw ODB bytes, parsing only
-/// the parent lines via `gix_object::CommitRefIter`. This avoids the libgit2
-/// commit parse cache entirely, since the walk only ever needs the parent ids.
-fn read_parent_ids(repo: &git2::Repository, oid: git2::Oid) -> anyhow::Result<Vec<git2::Oid>> {
-    let odb = repo.odb()?;
-    let odb_commit = odb.read(oid)?;
-    debug_assert_eq!(odb_commit.kind(), git2::ObjectType::Commit);
-    gix_object::CommitRefIter::from_bytes(odb_commit.data())
-        .parent_ids()
-        .map(|p| Ok(git2::Oid::from_bytes(p.as_bytes())?))
-        .collect()
 }
 
 fn write_roots_blob(repo: &git2::Repository, roots: &[git2::Oid]) -> anyhow::Result<git2::Oid> {
@@ -296,46 +304,53 @@ fn read_roots_blob(repo: &git2::Repository, oid: git2::Oid) -> anyhow::Result<Ve
     Ok(out)
 }
 
-/// Encode a `(sequence number, parent count)` hint into a 20-byte git OID
-/// (SHA-1 sized). Bytes 0-10 of the OID are zero, byte 11 holds the parent
-/// count (capped at 255), and bytes 12-19 contain the big-endian sequence
-/// number.
-pub(crate) fn oid_from_hint(seq: u64, parent_count: u8) -> git2::Oid {
+/// Encode a [`HistoryGraphHint`] into a 20-byte git OID (SHA-1 sized). Bytes
+/// 0-9 of the OID are zero, byte 10 packs the jump: bit 7 set when the jump
+/// parent is the second parent, bits 0-6 the jump delta (saturated at 127).
+/// Byte 11 holds the parent count (capped at 255) and bytes 12-19 the
+/// big-endian sequence number.
+pub(crate) fn oid_from_hint(hint: HistoryGraphHint) -> git2::Oid {
     let mut bytes = [0u8; 20];
-    bytes[11] = parent_count;
+    bytes[10] = ((hint.jump_is_second as u8) << 7) | hint.jump_delta;
+    bytes[11] = hint.parent_count;
     // place the 8 integer bytes at the end (big-endian)
-    bytes[20 - 8..].copy_from_slice(&seq.to_be_bytes());
+    bytes[20 - 8..].copy_from_slice(&hint.sequence_number.to_be_bytes());
     // Safe: length is exactly 20
     git2::Oid::from_bytes(&bytes).expect("20-byte OID construction cannot fail")
 }
 
-/// Decode the sequence number from an OID encoded by `oid_from_hint`.
-pub(crate) fn u64_from_oid(oid: git2::Oid) -> u64 {
+/// Decode a hint from an OID encoded by `oid_from_hint`.
+pub(crate) fn hint_from_oid(oid: git2::Oid) -> HistoryGraphHint {
     let b = oid.as_bytes();
     let mut n = [0u8; 8];
     n.copy_from_slice(&b[20 - 8..]); // take the last 8 bytes
-    u64::from_be_bytes(n)
-}
-
-/// Decode the parent count from an OID encoded by `oid_from_hint`.
-pub(crate) fn parent_count_from_oid(oid: git2::Oid) -> u8 {
-    oid.as_bytes()[11]
+    HistoryGraphHint {
+        sequence_number: u64::from_be_bytes(n),
+        parent_count: b[11],
+        jump_delta: b[10] & 0x7f,
+        jump_is_second: b[10] & 0x80 != 0,
+    }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{oid_from_hint, parent_count_from_oid, u64_from_oid};
+    use super::{HistoryGraphHint, hint_from_oid, oid_from_hint};
 
     #[test]
-    fn oid_hint_roundtrip_uses_last_9_bytes() {
-        let value = 0x0123_4567_89ab_cdef_u64;
-        let oid = oid_from_hint(value, 7);
+    fn oid_hint_roundtrip_uses_last_10_bytes() {
+        let hint = HistoryGraphHint {
+            sequence_number: 0x0123_4567_89ab_cdef_u64,
+            parent_count: 7,
+            jump_delta: 42,
+            jump_is_second: true,
+        };
+        let oid = oid_from_hint(hint);
         let bytes = oid.as_bytes();
 
-        assert!(bytes[..11].iter().all(|byte| *byte == 0));
+        assert!(bytes[..10].iter().all(|byte| *byte == 0));
+        assert_eq!(bytes[10], 0x80 | 42);
         assert_eq!(bytes[11], 7);
-        assert_eq!(&bytes[12..], &value.to_be_bytes());
-        assert_eq!(u64_from_oid(oid), value);
-        assert_eq!(parent_count_from_oid(oid), 7);
+        assert_eq!(&bytes[12..], &hint.sequence_number.to_be_bytes());
+        assert_eq!(hint_from_oid(oid), hint);
     }
 }

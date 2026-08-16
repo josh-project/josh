@@ -39,4 +39,22 @@ export GIT_CONFIG_GLOBAL=${CONFIG_FILE}
 git config --global init.defaultBranch master
 
 export RUST_BACKTRACE=1
-python3 -m prysk "$@"
+
+# Run each test file with scrut, keeping the cram test syntax. On failure,
+# re-run the file with "scrut update" so the .t file is rewritten with the
+# actual output (like prysk's -i -y). "scrut update" always exits 0, so the
+# "scrut test" run decides the overall result.
+TESTS=$(find "$@" -name '*.t' | sort)
+if [ -z "${TESTS}" ]; then
+    echo "no test files found in: $*" >&2
+    exit 1
+fi
+
+FAILED=0
+for t in ${TESTS}; do
+    if ! scrut test --cram-compat "$t"; then
+        FAILED=1
+        scrut update --cram-compat --assume-yes --replace "$t" || true
+    fi
+done
+exit ${FAILED}

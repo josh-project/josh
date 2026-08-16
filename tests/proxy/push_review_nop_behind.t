@@ -56,7 +56,7 @@ This is a regression test for that problem.
   .
   |-- josh
   |   `-- cache
-  |       `-- 32
+  |       `-- 33
   |           `-- sled
   |               |-- blobs
   |               |-- conf
@@ -104,9 +104,11 @@ This is a regression test for that problem.
       |   |   `-- 01f09caa6b247b64793a9d8cf1db76a9e92442
       |   |-- info
       |   `-- pack
+      |       |-- pack-e8ae6eb17251286fc38f6b55dea83f85265ac92b.idx
+      |       `-- pack-e8ae6eb17251286fc38f6b55dea83f85265ac92b.pack
       `-- refs
           |-- heads
           |-- namespaces
           `-- tags
   
-  35 directories, 20 files
+  35 directories, 22 files

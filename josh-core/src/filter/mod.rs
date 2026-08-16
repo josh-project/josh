@@ -1,6 +1,8 @@
 use super::*;
 use anyhow::anyhow;
+use gix_object::bstr::BString;
 use josh_filter::check_experimental_features_enabled;
+pub use josh_filter::experimental_features_enabled;
 
 use std::path::Path;
 use std::sync::LazyLock;
@@ -14,7 +16,7 @@ pub use josh_filter::flang::parse::{get_comments, parse};
 pub use josh_filter::opt;
 pub use josh_filter::opt::invert;
 pub use josh_filter::persist::{as_tree, from_tree};
-pub use josh_filter::persist::{peel_op, to_filter, to_op, to_ops};
+pub use josh_filter::persist::{peel_filter, peel_op, to_filter, to_op, to_ops};
 pub use josh_filter::{Filter, InsertContent, LazyRef, Op, RevMatch};
 pub use josh_filter::{as_file, pretty, spec};
 
@@ -41,13 +43,24 @@ pub fn clear_caches() {
 // and we cannot implement external traits for external types.
 // These conversions should be done via parse() and spec() functions directly.
 
+/// A signature override for `rewrite_commit`.
+#[derive(Debug, Clone)]
+pub enum SigRewrite {
+    /// Re-serialize the signature from this name/email pair, keeping the base
+    /// commit's timestamp (`:author`/`:committer`, whose specs carry no time).
+    NameEmail(BString, BString),
+    /// Raw signature field bytes, transplanted verbatim -- timestamp included,
+    /// nothing parsed (the squash path copying the squash-result's signature).
+    Raw(BString),
+}
+
 #[derive(Debug)]
 pub struct Rewrite<'a> {
     tree: git2::Tree<'a>,
     commit: git2::Oid,
-    pub author: Option<(String, String)>,
-    pub committer: Option<(String, String)>,
-    pub message: Option<String>,
+    pub author: Option<SigRewrite>,
+    pub committer: Option<SigRewrite>,
+    pub message: Option<BString>,
 }
 
 impl<'a> Clone for Rewrite<'a> {
@@ -67,7 +80,7 @@ impl<'a> Rewrite<'a> {
         Rewrite {
             tree,
             author: None,
-            commit: git2::Oid::zero(),
+            commit: git2::Oid::ZERO_SHA1,
             committer: None,
             message: None,
         }
@@ -75,79 +88,62 @@ impl<'a> Rewrite<'a> {
 
     pub fn from_tree_with_metadata(
         tree: git2::Tree<'a>,
-        author: Option<(String, String)>,
-        committer: Option<(String, String)>,
-        message: Option<String>,
+        author: Option<SigRewrite>,
+        committer: Option<SigRewrite>,
+        message: Option<BString>,
     ) -> Self {
         Rewrite {
             tree,
             author,
-            commit: git2::Oid::zero(),
+            commit: git2::Oid::ZERO_SHA1,
             committer,
             message,
         }
     }
 
-    pub fn from_commit(commit: &git2::Commit<'a>) -> anyhow::Result<Self> {
-        let tree = commit.tree()?;
-        let author = commit
-            .author()
-            .name()
-            .map(|name| name.to_owned())
-            .zip(commit.author().email().map(|email| email.to_owned()));
-        let committer = commit
-            .committer()
-            .name()
-            .map(|name| name.to_owned())
-            .zip(commit.committer().email().map(|email| email.to_owned()));
-        let message = commit.message_raw().map(|msg| msg.to_owned());
-
+    /// The metadata slots stay `None`: rewrite_commit keeps the base commit's raw
+    /// signature and message bytes verbatim unless a filter overrides them, so the
+    /// commit's author/committer/message are never parsed on the passthrough path.
+    pub fn from_commit_data(
+        repo: &'a git2::Repository,
+        commit: &objects::CommitData,
+    ) -> anyhow::Result<Self> {
         Ok(Rewrite {
-            tree,
+            tree: repo.find_tree(commit.tree_id()?)?,
             commit: commit.id(),
-            author,
-            committer,
-            message,
+            author: None,
+            committer: None,
+            message: None,
         })
     }
 
-    pub fn with_author(self, author: (String, String)) -> Self {
+    pub fn with_author(self, author: (BString, BString)) -> Self {
         Rewrite {
             tree: self.tree,
-            author: Some(author),
+            author: Some(SigRewrite::NameEmail(author.0, author.1)),
             commit: self.commit,
             committer: self.committer,
             message: self.message,
         }
     }
 
-    pub fn with_committer(self, committer: (String, String)) -> Self {
+    pub fn with_committer(self, committer: (BString, BString)) -> Self {
         Rewrite {
             tree: self.tree,
             author: self.author,
             commit: self.commit,
-            committer: Some(committer),
+            committer: Some(SigRewrite::NameEmail(committer.0, committer.1)),
             message: self.message,
         }
     }
 
-    pub fn with_message(self, message: String) -> Self {
+    pub fn with_message(self, message: BString) -> Self {
         Rewrite {
             tree: self.tree,
             author: self.author,
             commit: self.commit,
             committer: self.committer,
             message: Some(message),
-        }
-    }
-
-    pub fn with_commit(self, commit: git2::Oid) -> Self {
-        Rewrite {
-            tree: self.tree,
-            author: self.author,
-            commit,
-            committer: self.committer,
-            message: self.message,
         }
     }
 
@@ -380,7 +376,7 @@ fn propagate_meta(filter: Filter, meta: &std::collections::BTreeMap<String, Stri
 /// for the first time and thus should generally be done asynchronously.
 pub fn apply_to_commit(
     filter: Filter,
-    commit: &git2::Commit,
+    commit: git2::Oid,
     transaction: &cache::Transaction,
 ) -> anyhow::Result<git2::Oid> {
     let filter = opt::optimize(filter);
@@ -537,11 +533,9 @@ fn read_josh_link<'a>(
 
 fn get_rev_filter(
     transaction: &cache::Transaction,
-    commit: &git2::Commit,
+    commit_id: git2::Oid,
     filters: &[(RevMatch, LazyRef, Filter)],
 ) -> anyhow::Result<Filter> {
-    let commit_id = commit.id();
-
     // First match wins - iterate in order
     for (match_op, filter_tip_ref, startfilter) in filters.iter() {
         let filter_tip = if let LazyRef::Resolved(filter_tip) = filter_tip_ref {
@@ -585,27 +579,28 @@ fn get_rev_filter(
 
 pub fn apply_to_commit2(
     filter: Filter,
-    commit: &git2::Commit,
+    commit_id: git2::Oid,
     transaction: &cache::Transaction,
 ) -> anyhow::Result<Option<git2::Oid>> {
     let repo = transaction.repo();
     let op = peel_op(filter);
 
     if filter == Filter::new() {
-        return Ok(Some(commit.id()));
+        return Ok(Some(commit_id));
     }
 
+    // First match: oid-only fast paths, no object loads. The commit bytes are only read
+    // after the memo gate below, so memo hits stay zero-I/O.
     match &op {
-        Op::Empty => return Ok(Some(git2::Oid::zero())),
+        Op::Empty => return Ok(Some(git2::Oid::ZERO_SHA1)),
 
         Op::Chain(_) => {
-            let mut current_oid = commit.id();
+            let mut current_oid = commit_id;
             for f in flatten_chain(filter) {
-                if current_oid == git2::Oid::zero() {
+                if current_oid == git2::Oid::ZERO_SHA1 {
                     break;
                 }
-                let current_commit = repo.find_commit(current_oid)?;
-                let r = some_or!(apply_to_commit2(f, &current_commit, transaction)?, {
+                let r = some_or!(apply_to_commit2(f, current_oid, transaction)?, {
                     return Ok(None);
                 });
                 current_oid = r;
@@ -613,40 +608,45 @@ pub fn apply_to_commit2(
             return Ok(Some(current_oid));
         }
         Op::Squash(None) => {
+            let odb = repo.odb()?;
+            let commit = objects::CommitData::read(&odb, commit_id)?;
             return Some(history::rewrite_commit(
                 repo,
-                commit,
+                &commit,
                 &[],
-                Rewrite::from_commit(commit)?,
+                Rewrite::from_commit_data(repo, &commit)?,
                 history::GpgsigMode::Remove,
             ))
             .transpose();
         }
         Op::Downstack(LazyRef::Resolved(base)) => {
-            if let Some(oid) = transaction.get(filter, commit.id())? {
+            if let Some(oid) = transaction.get(filter, commit_id)? {
                 return Ok(Some(oid));
             }
-            let new_oid = downstack(repo, transaction, commit.id(), *base)?;
-            transaction.insert(filter, commit.id(), new_oid, false)?;
+            let new_oid = downstack(repo, transaction, commit_id, *base)?;
+            transaction.insert(filter, commit_id, new_oid, false)?;
             return Ok(Some(new_oid));
         }
         Op::Downstack(LazyRef::Lazy(_)) => {
             return Err(anyhow!("`:_=...` with unresolved base ref"));
         }
         _ => {
-            if let Some(oid) = transaction.get(filter, commit.id())? {
+            if let Some(oid) = transaction.get(filter, commit_id)? {
                 return Ok(Some(oid));
             }
             // Continue to process the filter if not cached
         }
     };
 
+    let odb = repo.odb()?;
+    let commit = objects::CommitData::read(&odb, commit_id)?;
+
     let rewrite_data = match &op {
         Op::Squash(Some(ids)) => {
             if let Some(sq) = ids.get(&LazyRef::Resolved(commit.id())) {
                 let oid = if let Some(oid) = apply_to_commit2(
                     filter::Filter::new().squash(None).chain(*sq),
-                    commit,
+                    commit_id,
                     transaction,
                 )? {
                     oid
@@ -654,41 +654,33 @@ pub fn apply_to_commit2(
                     return Ok(None);
                 };
 
-                let rc = transaction.repo().find_commit(oid)?;
-                let author = rc
-                    .author()
-                    .name()
-                    .map(|x| x.to_owned())
-                    .zip(rc.author().email().map(|x| x.to_owned()));
-                let committer = rc
-                    .committer()
-                    .name()
-                    .map(|x| x.to_owned())
-                    .zip(rc.committer().email().map(|x| x.to_owned()));
+                // Transplant the squash result's metadata verbatim onto the rewrite of the
+                // original commit (which must stay the base: memoization keys on its id).
+                // Timestamps are the base's own anyway -- no filter alters them.
+                let rc = objects::CommitData::read(&odb, oid)?;
+                let rcr = rc.parsed()?;
                 Rewrite::from_tree_with_metadata(
-                    rc.tree()?,
-                    author,
-                    committer,
-                    rc.message_raw().map(|x| x.to_owned()),
+                    repo.find_tree(rc.tree_id()?)?,
+                    Some(SigRewrite::Raw(rcr.author.to_owned())),
+                    Some(SigRewrite::Raw(rcr.committer.to_owned())),
+                    Some(rcr.message.to_owned()),
                 )
                 //commit.tree()?
             } else {
-                if let Some(parent) = commit.parents().next() {
-                    return Ok(
-                        if let Some(fparent) = transaction.get(filter, parent.id())? {
-                            Some(history::drop_commit(
-                                commit,
-                                vec![fparent],
-                                transaction,
-                                filter,
-                            )?)
-                        } else {
-                            None
-                        },
-                    );
+                if let Some(parent) = commit.first_parent_id() {
+                    return Ok(if let Some(fparent) = transaction.get(filter, parent)? {
+                        Some(history::drop_commit(
+                            commit.id(),
+                            vec![fparent],
+                            transaction,
+                            filter,
+                        )?)
+                    } else {
+                        None
+                    });
                 }
                 return Ok(Some(history::drop_commit(
-                    commit,
+                    commit.id(),
                     vec![],
                     transaction,
                     filter,
@@ -703,11 +695,11 @@ pub fn apply_to_commit2(
                     return Ok(None);
                 });
 
-                let parent_tree = transaction.repo().find_commit(parent)?.tree_id();
+                let parent_tree = history::filtered_parent_tree_id(transaction, parent)?;
 
-                if parent_tree == commit.tree_id() {
+                if parent_tree == commit.tree_id()? {
                     return Ok(Some(history::drop_commit(
-                        commit,
+                        commit.id(),
                         vec![parent],
                         transaction,
                         filter,
@@ -715,7 +707,7 @@ pub fn apply_to_commit2(
                 }
             }
 
-            Rewrite::from_commit(commit)?
+            Rewrite::from_commit_data(repo, &commit)?
         }
         Op::Export => {
             check_experimental_features_enabled("export filter")?;
@@ -745,12 +737,10 @@ pub fn apply_to_commit2(
             //         return Err(anyhow!("missing commit"));
             //     }
 
-            if let Some(link_file) = read_josh_link(
-                repo,
-                &commit.tree()?,
-                &std::path::PathBuf::new(),
-                ".link.josh",
-            ) {
+            let tree = repo.find_tree(commit.tree_id()?)?;
+            if let Some(link_file) =
+                read_josh_link(repo, &tree, &std::path::PathBuf::new(), ".link.josh")
+            {
                 if let Some(commit_str) = link_file.get_meta("commit") {
                     if let Ok(commit_oid) = git2::Oid::from_str(&commit_str) {
                         if filtered_parent_ids.contains(&commit_oid) {
@@ -763,9 +753,13 @@ pub fn apply_to_commit2(
             }
 
             return Some(history::create_filtered_commit(
-                commit,
+                &commit,
                 filtered_parent_ids,
-                apply(transaction, filter, Rewrite::from_commit(commit)?)?,
+                apply(
+                    transaction,
+                    filter,
+                    Rewrite::from_commit_data(repo, &commit)?,
+                )?,
                 transaction,
                 filter,
             ))
@@ -785,8 +779,9 @@ pub fn apply_to_commit2(
             let mut filtered_parent_ids: Vec<git2::Oid> =
                 some_or!(filtered_parent_ids, { return Ok(None) });
 
+            let tree = repo.find_tree(commit.tree_id()?)?;
             let mut link_parents = vec![];
-            for (link_path, link_file) in find_link_files(&repo, &commit.tree()?)?.into_iter() {
+            for (link_path, link_file) in find_link_files(&repo, &tree)?.into_iter() {
                 if let Some(commit_str) = link_file.get_meta("commit") {
                     if let Ok(commit_oid) = git2::Oid::from_str(&commit_str) {
                         if let Some(cmt) =
@@ -804,12 +799,16 @@ pub fn apply_to_commit2(
                 }
             }
 
-            let new_tree = apply(transaction, filter, Rewrite::from_commit(commit)?)?;
+            let new_tree = apply(
+                transaction,
+                filter,
+                Rewrite::from_commit_data(repo, &commit)?,
+            )?;
 
             filtered_parent_ids.retain(|c| !link_parents.contains(c));
 
             return Some(history::create_filtered_commit(
-                commit,
+                &commit,
                 filtered_parent_ids,
                 new_tree,
                 transaction,
@@ -819,14 +818,19 @@ pub fn apply_to_commit2(
         }
         Op::Link(mode) => {
             check_experimental_features_enabled("link filter")?;
-            let mut roots = get_link_roots(repo, transaction, &commit.tree()?)?;
+            let tree = repo.find_tree(commit.tree_id()?)?;
+            let mut roots = get_link_roots(repo, transaction, &tree)?;
 
-            if let Some(parent) = commit.parents().next() {
+            // A root commit (no first parent) keeps every root; when a first
+            // parent is present its tree must be readable.
+            let parent_tree = match commit.first_parent_id() {
+                Some(parent) => Some(repo.find_tree(git::read_tree_id(repo, parent)?)?),
+                None => None,
+            };
+            if let Some(parent_tree) = parent_tree {
                 roots.retain(|root| {
-                    if let (Ok(a), Ok(b)) = (
-                        commit.tree().and_then(|x| x.get_path(&root)),
-                        parent.tree().and_then(|x| x.get_path(&root)),
-                    ) && a.id() == b.id()
+                    if let (Ok(a), Ok(b)) = (tree.get_path(&root), parent_tree.get_path(&root))
+                        && a.id() == b.id()
                     {
                         false
                     } else {
@@ -835,7 +839,7 @@ pub fn apply_to_commit2(
                 });
             };
 
-            let all_links = links_from_roots(repo, &commit.tree()?, roots)?;
+            let all_links = links_from_roots(repo, &tree, roots)?;
 
             // Only embedded-mode links get extra parent commits spliced in
             let embedded_links: Vec<_> = all_links
@@ -852,7 +856,11 @@ pub fn apply_to_commit2(
                 .collect();
 
             if embedded_links.is_empty() {
-                apply(transaction, filter, Rewrite::from_commit(commit)?)?
+                apply(
+                    transaction,
+                    filter,
+                    Rewrite::from_commit_data(repo, &commit)?,
+                )?
             } else {
                 let normal_parents = commit
                     .parent_ids()
@@ -867,7 +875,7 @@ pub fn apply_to_commit2(
                         let embeding = some_or!(
                             apply_to_commit2(
                                 Filter::new().message("{@}").file(root.join(".link.josh")),
-                                &commit,
+                                commit_id,
                                 transaction
                             )?,
                             {
@@ -877,8 +885,7 @@ pub fn apply_to_commit2(
 
                         let f = to_filter(Op::Embed(root));
 
-                        let embeding = repo.find_commit(embeding)?;
-                        let r = some_or!(apply_to_commit2(f, &embeding, transaction)?, {
+                        let r = some_or!(apply_to_commit2(f, embeding, transaction)?, {
                             return Ok(None);
                         });
 
@@ -888,14 +895,18 @@ pub fn apply_to_commit2(
                     extra_parents
                 };
 
-                let filtered_tree = apply(transaction, filter, Rewrite::from_commit(commit)?)?;
+                let filtered_tree = apply(
+                    transaction,
+                    filter,
+                    Rewrite::from_commit_data(repo, &commit)?,
+                )?;
                 let filtered_parent_ids = normal_parents
                     .into_iter()
                     .chain(extra_parents)
                     .collect::<Vec<_>>();
 
                 return Some(history::create_filtered_commit(
-                    commit,
+                    &commit,
                     filtered_parent_ids,
                     filtered_tree,
                     transaction,
@@ -905,9 +916,9 @@ pub fn apply_to_commit2(
             }
         }
         Op::Workspace(ws_path) => {
-            if let Some((redirect, _)) = resolve_workspace_redirect(repo, &commit.tree()?, ws_path)
-            {
-                if let Some(r) = apply_to_commit2(redirect, commit, transaction)? {
+            let tree = repo.find_tree(commit.tree_id()?)?;
+            if let Some((redirect, _)) = resolve_workspace_redirect(repo, &tree, ws_path) {
+                if let Some(r) = apply_to_commit2(redirect, commit_id, transaction)? {
                     transaction.insert(filter, commit.id(), r, true)?;
                     return Ok(Some(r));
                 } else {
@@ -915,70 +926,67 @@ pub fn apply_to_commit2(
                 }
             }
 
-            let commit_filter = get_workspace(transaction, &commit.tree()?, ws_path);
+            let commit_filter = get_workspace(transaction, &tree, ws_path);
 
             let parent_filters = commit
-                .parents()
+                .parent_ids()
                 .map(|parent| {
-                    let pcw = get_workspace(
-                        transaction,
-                        &parent.tree().unwrap_or_else(|_| tree::empty(repo)),
-                        ws_path,
-                    );
+                    let tree_id = git::read_tree_id(repo, parent)?;
+                    let pcw = get_workspace(transaction, &repo.find_tree(tree_id)?, ws_path);
                     Ok((parent, pcw))
                 })
                 .collect::<anyhow::Result<Vec<_>>>()?;
 
-            return per_rev_filter(transaction, commit, filter, commit_filter, parent_filters);
+            return per_rev_filter(transaction, &commit, filter, commit_filter, parent_filters);
         }
         Op::Stored(s_path) => {
-            let commit_filter = get_stored(transaction, &commit.tree()?, s_path);
+            let commit_filter =
+                get_stored(transaction, &repo.find_tree(commit.tree_id()?)?, s_path);
 
             let parent_filters = commit
-                .parents()
+                .parent_ids()
                 .map(|parent| {
-                    let pcs = get_stored(
-                        transaction,
-                        &parent.tree().unwrap_or_else(|_| tree::empty(repo)),
-                        s_path,
-                    );
+                    let tree_id = git::read_tree_id(repo, parent)?;
+                    let pcs = get_stored(transaction, &repo.find_tree(tree_id)?, s_path);
                     Ok((parent, pcs))
                 })
                 .collect::<anyhow::Result<Vec<_>>>()?;
 
-            return per_rev_filter(transaction, commit, filter, commit_filter, parent_filters);
+            return per_rev_filter(transaction, &commit, filter, commit_filter, parent_filters);
         }
         Op::Starlark(s_path, s_subfilter) => {
             check_experimental_features_enabled("Starlark filter")?;
-            let commit_filter = get_starlark(transaction, &commit.tree()?, s_path, *s_subfilter);
+            let commit_filter = get_starlark(
+                transaction,
+                &repo.find_tree(commit.tree_id()?)?,
+                s_path,
+                *s_subfilter,
+            );
 
             let parent_filters = commit
-                .parents()
+                .parent_ids()
                 .map(|parent| {
-                    let pcs = get_starlark(
-                        transaction,
-                        &parent.tree().unwrap_or_else(|_| tree::empty(repo)),
-                        s_path,
-                        *s_subfilter,
-                    );
+                    let tree_id = git::read_tree_id(repo, parent)?;
+                    let pcs =
+                        get_starlark(transaction, &repo.find_tree(tree_id)?, s_path, *s_subfilter);
                     Ok((parent, pcs))
                 })
                 .collect::<anyhow::Result<Vec<_>>>()?;
 
-            return per_rev_filter(transaction, commit, filter, commit_filter, parent_filters);
+            return per_rev_filter(transaction, &commit, filter, commit_filter, parent_filters);
         }
         Op::Rev(filters) => {
-            let commit_filter = get_rev_filter(transaction, commit, filters)?;
+            let commit_filter = get_rev_filter(transaction, commit.id(), filters)?;
 
             let parent_filters = commit
-                .parents()
+                .parent_ids()
                 .map(|parent| {
-                    let pcw = get_rev_filter(transaction, &parent, filters)?;
+                    let pcw = get_rev_filter(transaction, parent, filters)?;
                     Ok((parent, pcw))
                 })
                 .collect::<anyhow::Result<Vec<_>>>()?;
 
-            return per_rev_filter(transaction, commit, filter, commit_filter, parent_filters);
+            return per_rev_filter(transaction, &commit, filter, commit_filter, parent_filters);
         }
         Op::Fold => {
             let filtered_parent_ids = commit
@@ -990,38 +998,41 @@ pub fn apply_to_commit2(
 
             let trees: Vec<git2::Oid> = filtered_parent_ids
                 .iter()
-                .map(|x| Ok(repo.find_commit(*x)?.tree_id()))
+                .map(|x| history::filtered_parent_tree_id(transaction, *x))
                 .collect::<anyhow::Result<_>>()?;
 
-            let mut filtered_tree = commit.tree_id();
+            let mut filtered_tree = commit.tree_id()?;
 
             for t in trees {
                 filtered_tree = tree::overlay(transaction, filtered_tree, t)?;
             }
 
             let filtered_tree = repo.find_tree(filtered_tree)?;
-            Rewrite::from_commit(commit)?.with_tree(filtered_tree)
+            Rewrite::from_commit_data(repo, &commit)?.with_tree(filtered_tree)
         }
         Op::Hook(hook) => {
             let commit_filter = transaction.lookup_filter_hook(hook, commit.id())?;
 
             let parent_filters = commit
-                .parents()
+                .parent_ids()
                 .map(|parent| {
-                    let pcw = transaction.lookup_filter_hook(hook, parent.id())?;
+                    let pcw = transaction.lookup_filter_hook(hook, parent)?;
                     Ok((parent, pcw))
                 })
                 .collect::<anyhow::Result<Vec<_>>>()?;
 
-            return per_rev_filter(transaction, commit, filter, commit_filter, parent_filters);
+            return per_rev_filter(transaction, &commit, filter, commit_filter, parent_filters);
         }
         Op::Unapply(target, uf) => {
             check_experimental_features_enabled("unapply filter")?;
             if let LazyRef::Resolved(target) = target {
                 /* dbg!(target); */
-                let target = repo.find_commit(*target)?;
-                if let Some(parent) = target.parents().next() {
-                    let ptree = apply(transaction, *uf, Rewrite::from_commit(&parent)?)?;
+                let target = objects::CommitData::read(&odb, *target)?;
+                // Only a root commit (no first parent) skips link detection; a
+                // first parent that is present must be readable.
+                if let Some(parent_id) = target.first_parent_id() {
+                    let parent = objects::CommitData::read(&odb, parent_id)?;
+                    let ptree = apply(transaction, *uf, Rewrite::from_commit_data(repo, &parent)?)?;
                     if let Some(link) = read_josh_link(
                         repo,
                         &ptree.tree(),
@@ -1050,13 +1061,14 @@ pub fn apply_to_commit2(
             apply(
                 transaction,
                 filter,
-                Rewrite::from_commit(commit)?, /* Rewrite::from_commit(commit)?.with_parents(filtered_parent_ids), */
+                Rewrite::from_commit_data(repo, &commit)?, /* Rewrite::from_commit_data(repo, &commit)?.with_parents(filtered_parent_ids), */
             )?
         }
         Op::Embed(path) => {
             check_experimental_features_enabled("embed filter")?;
 
-            if let Some(link) = read_josh_link(repo, &commit.tree()?, &path, ".link.josh") {
+            let tree = repo.find_tree(commit.tree_id()?)?;
+            if let Some(link) = read_josh_link(repo, &tree, &path, ".link.josh") {
                 let subdir = filter::invert(link.peel())?;
                 let unapply = to_filter(Op::Unapply(LazyRef::Resolved(commit.id()), subdir));
                 if let Some(commit_str) = link.get_meta("commit") {
@@ -1069,10 +1081,14 @@ pub fn apply_to_commit2(
                     }
                 }
             }
-            return Ok(Some(git2::Oid::zero()));
+            return Ok(Some(git2::Oid::ZERO_SHA1));
         }
 
-        _ => apply(transaction, filter, Rewrite::from_commit(commit)?)?,
+        _ => apply(
+            transaction,
+            filter,
+            Rewrite::from_commit_data(repo, &commit)?,
+        )?,
     };
 
     let tree_data = rewrite_data;
@@ -1087,7 +1103,7 @@ pub fn apply_to_commit2(
     let filtered_parent_ids = some_or!(filtered_parent_ids, { return Ok(None) });
 
     Some(history::create_filtered_commit(
-        commit,
+        &commit,
         filtered_parent_ids,
         tree_data,
         transaction,
@@ -1150,7 +1166,7 @@ fn get_link_roots<'a>(
     transaction: &'a cache::Transaction,
     tree: &'a git2::Tree<'a>,
 ) -> anyhow::Result<Vec<std::path::PathBuf>> {
-    let link_filter = to_filter(Op::Pattern("**/.link.josh".to_string()));
+    let link_filter = to_filter(Op::pattern("**/.link.josh")?);
     let link_tree = apply(transaction, link_filter, Rewrite::from_tree(tree.clone()))?;
 
     let mut roots = vec![];
@@ -1159,7 +1175,7 @@ fn get_link_roots<'a>(
         .walk(git2::TreeWalkMode::PreOrder, |root, entry| {
             let root = root.trim_matches('/');
             let root = std::path::PathBuf::from(root);
-            if entry.name() == Some(".link.josh") {
+            if entry.name().ok() == Some(".link.josh") {
                 roots.push(root);
             }
             0
@@ -1195,28 +1211,31 @@ pub fn apply<'a>(
         Op::Empty => Ok(x.with_tree(tree::empty(repo))),
         Op::Fold => Ok(x),
         Op::Squash(None) => Ok(x),
-        Op::Author(author, email) => Ok(x.with_author((author.clone(), email.clone()))),
-        Op::Committer(author, email) => Ok(x.with_committer((author.clone(), email.clone()))),
+        Op::Author(author, email) => {
+            Ok(x.with_author((author.clone().into(), email.clone().into())))
+        }
+        Op::Committer(author, email) => {
+            Ok(x.with_committer((author.clone().into(), email.clone().into())))
+        }
         Op::Squash(Some(_)) => Err(anyhow!("not applicable to tree: squash")),
         Op::Message(m, r) => {
             let tree_id = x.tree().id().to_string();
             let commit = x.commit;
             let commit_id = commit.to_string();
 
+            // The template transform is the one consumer that needs the message as text, so
+            // the UTF-8 decode happens here (and only here), erroring loudly.
             let message = if let Some(ref m) = x.message {
-                m.to_string()
+                std::str::from_utf8(m.as_ref())?.to_string()
             } else if let Ok(c) = transaction.repo().find_commit(commit) {
-                c.message_raw().unwrap_or_default().to_string()
+                std::str::from_utf8(c.message_raw_bytes())?.to_string()
             } else {
                 "".to_string()
             };
 
             let tree = x.tree().clone();
-            Ok(x.with_message(text::transform_with_template(
-                r,
-                m,
-                &message,
-                |key: &str| -> Option<String> {
+            Ok(x.with_message(
+                text::transform_with_template(r, m, &message, |key: &str| -> Option<String> {
                     match key {
                         "#" => Some(tree_id.clone()),
                         "@" => Some(commit_id.clone()),
@@ -1227,13 +1246,14 @@ pub fn apply<'a>(
                         key if key.starts_with("#") => Some(
                             tree.get_path(std::path::Path::new(&key[1..]))
                                 .map(|e| e.id())
-                                .unwrap_or(git2::Oid::zero())
+                                .unwrap_or(git2::Oid::ZERO_SHA1)
                                 .to_string(),
                         ),
                         _ => None,
                     }
-                },
-            )?))
+                })?
+                .into(),
+            ))
         }
         Op::Prune => Ok(x),
         Op::Adapt(adapter) => {
@@ -1269,7 +1289,7 @@ pub fn apply<'a>(
                         repo,
                         &result_tree,
                         std::path::Path::new(".gitmodules"),
-                        git2::Oid::zero(),
+                        git2::Oid::ZERO_SHA1,
                         0o0100644,
                     )?;
                 }
@@ -1284,7 +1304,7 @@ pub fn apply<'a>(
                 repo,
                 &tree,
                 &std::path::Path::new(".link.josh"),
-                git2::Oid::zero(),
+                git2::Oid::ZERO_SHA1,
                 0o0100644,
             )?))
         }
@@ -1293,8 +1313,13 @@ pub fn apply<'a>(
             use crate::link::find_link_files;
             let mut result_tree = x.tree.clone();
             for (link_path, link_file) in find_link_files(&repo, &result_tree)?.iter() {
-                result_tree =
-                    tree::insert(repo, &result_tree, &link_path, git2::Oid::zero(), 0o0100644)?;
+                result_tree = tree::insert(
+                    repo,
+                    &result_tree,
+                    &link_path,
+                    git2::Oid::ZERO_SHA1,
+                    0o0100644,
+                )?;
 
                 // The link_file is already a filter with metadata, just serialize it
                 let link_content = as_file(*link_file, 0);
@@ -1362,20 +1387,34 @@ pub fn apply<'a>(
             Ok(x.with_tree(t))
         }
 
-        Op::Pattern(pattern) => {
-            let pattern = glob::Pattern::new(pattern)?;
-            let options = glob::MatchOptions {
-                case_sensitive: true,
-                require_literal_separator: true,
-                require_literal_leading_dot: true,
+        Op::Pattern(cp) => {
+            let input = x.tree().id();
+            let key = peel_filter(filter).id();
+            let t = if cp.fallback {
+                // More components than the NFA state mask can hold: match full paths.
+                tree::remove_pred(
+                    transaction,
+                    &mut String::new(),
+                    input,
+                    &|path, isblob| {
+                        isblob && cp.full.matches_with(path, tree::PATTERN_MATCH_OPTIONS)
+                    },
+                    key,
+                )?
+            } else {
+                tree::remove_pattern(
+                    transaction,
+                    input,
+                    cp,
+                    key,
+                    tree::CompiledPattern::initial_state(),
+                )?
             };
-            Ok(x.clone().with_tree(tree::remove_pred(
-                transaction,
-                "",
-                x.tree().id(),
-                &|path, isblob| isblob && (pattern.matches_path_with(path, options)),
-                to_filter(op.clone()).id(),
-            )?))
+            Ok(if t == input {
+                x
+            } else {
+                x.with_tree(repo.find_tree(t)?)
+            })
         }
         Op::Insert(dest_path, content) => {
             let (oid, mode, is_tree) = match content {
@@ -1417,7 +1456,7 @@ pub fn apply<'a>(
                 .tree()
                 .get_path(source_path)
                 .map(|x| (x.id(), x.filemode()))
-                .unwrap_or((git2::Oid::zero(), git2::FileMode::Blob.into()));
+                .unwrap_or((git2::Oid::ZERO_SHA1, git2::FileMode::Blob.into()));
             Ok(x.with_tree(tree::insert(
                 repo,
                 &tree::empty(repo),
@@ -1427,12 +1466,17 @@ pub fn apply<'a>(
             )?))
         }
 
-        Op::Subdir(path) => Ok(x.clone().with_tree(
-            x.tree()
-                .get_path(path)
-                .and_then(|x| repo.find_tree(x.id()))
-                .unwrap_or_else(|_| tree::empty(repo)),
-        )),
+        Op::Subdir(path) => {
+            // A missing path or a non-tree entry (e.g. a blob) has no subtree;
+            // a present tree entry must load.
+            let subtree = match x.tree().get_path(path) {
+                Ok(entry) if entry.kind() == Some(git2::ObjectType::Tree) => {
+                    repo.find_tree(entry.id())?
+                }
+                _ => tree::empty(repo),
+            };
+            Ok(x.clone().with_tree(subtree))
+        }
         Op::Prefix(path) => Ok(x.clone().with_tree(tree::insert(
             repo,
             &tree::empty(repo),
@@ -1735,7 +1779,7 @@ fn resolve_commit_filter(
     commit: &git2::Commit,
 ) -> anyhow::Result<Filter> {
     match op {
-        Op::Rev(revs) => get_rev_filter(transaction, commit, revs),
+        Op::Rev(revs) => get_rev_filter(transaction, commit.id(), revs),
         Op::Hook(hook) => transaction.lookup_filter_hook(hook, commit.id()),
         _ => Err(anyhow!("not a per-commit (rev/hook) filter")),
     }
@@ -1776,7 +1820,7 @@ fn unapply_per_rev_filter<'a, 'b>(
 
     match op {
         Op::Workspace(path) => {
-            let tree = pre_process_tree(transaction.repo(), tree)?;
+            let tree = pre_process_tree(transaction, tree)?;
             let workspace = get_filter(transaction, &tree, Path::new("workspace.josh"));
             let original_workspace =
                 get_filter(transaction, &parent_tree, &path.join("workspace.josh"));
@@ -1829,9 +1873,10 @@ fn unapply_per_rev_filter<'a, 'b>(
 }
 
 fn pre_process_tree<'a>(
-    repo: &'a git2::Repository,
+    transaction: &'a cache::Transaction,
     tree: git2::Tree<'a>,
 ) -> anyhow::Result<git2::Tree<'a>> {
+    let repo = transaction.repo();
     let path = Path::new("workspace.josh");
     let ws_file = tree::get_blob(repo, &tree, path);
     let parsed = filter::parse(&ws_file)?;
@@ -1947,7 +1992,7 @@ pub fn is_ancestor_of(
             let mut todo = vec![tip];
             let mut ancestors = std::collections::HashSet::from_iter(todo.iter().copied());
             while let Some(commit) = todo.pop() {
-                for parent in transaction.repo().find_commit(commit)?.parent_ids() {
+                for parent in crate::git::read_parent_ids(transaction.repo(), commit)? {
                     if ancestors.insert(parent) {
                         // Newly inserted! Also handle its parents.
                         todo.push(parent);
@@ -2059,7 +2104,7 @@ fn legalize_stored(t: &cache::Transaction, f: Filter, tree: &git2::Tree) -> anyh
 fn compute_splice_parents(
     transaction: &cache::Transaction,
     commit_filter: Filter,
-    parent_filters: Vec<(git2::Commit, Filter)>,
+    parent_filters: Vec<(git2::Oid, Filter)>,
     meta: &std::collections::BTreeMap<String, String>,
 ) -> anyhow::Result<Option<Vec<git2::Oid>>> {
     // This is only reached when history splicing is enabled, and `per_rev_filter` rejects `:pin`
@@ -2076,7 +2121,7 @@ fn compute_splice_parents(
             // `step`'s set-difference the flat form it needs to cancel.
             let f = opt::minimize(to_filter(Op::Subtract(commit_filter.peel(), pcw.peel())));
             let f = propagate_meta(f, meta);
-            apply_to_commit2(f, &parent, transaction)
+            apply_to_commit2(f, parent, transaction)
         })
         .collect::<anyhow::Result<Option<Vec<_>>>>()?;
 
@@ -2085,17 +2130,17 @@ fn compute_splice_parents(
     Ok(Some(
         splice_parents
             .into_iter()
-            .filter(|&oid| oid != git2::Oid::zero())
+            .filter(|&oid| oid != git2::Oid::ZERO_SHA1)
             .collect(),
     ))
 }
 
 fn per_rev_filter(
     transaction: &cache::Transaction,
-    commit: &git2::Commit,
+    commit: &objects::CommitData,
     filter: Filter,
     commit_filter: Filter,
-    parent_filters: Vec<(git2::Commit, Filter)>,
+    parent_filters: Vec<(git2::Oid, Filter)>,
 ) -> anyhow::Result<Option<git2::Oid>> {
     // Propagate any meta-options from the outer filter (e.g. :~(gpgsig="norm-lf")[:rev(...)])
     // into the per-commit filter so they are applied during commit rewriting.
@@ -2140,17 +2185,16 @@ fn per_rev_filter(
             let pin_subtract = apply(
                 transaction,
                 opt::optimize(to_filter(Op::Subtract(legalized_a, legalized_b))),
-                Rewrite::from_commit(commit)?,
+                Rewrite::from_commit_data(transaction.repo(), commit)?,
             )?;
 
-            let parent = transaction.repo().find_commit(parent)?;
+            let parent_tree_id = history::filtered_parent_tree_id(transaction, parent)?;
 
             // Re-content the pinned path set from the parent's filtered tree: keep exactly the
             // parent's entries whose path is pinned. Equivalent to the older
             // `populate(pathstree(pin_subtract), parent)` spelling of "select the pinned paths out
             // of the previous tree", but in a single path-intersection pass.
-            let pin_overlay =
-                tree::intersect(transaction, parent.tree_id(), pin_subtract.tree.id())?;
+            let pin_overlay = tree::intersect(transaction, parent_tree_id, pin_subtract.tree.id())?;
 
             Some((pin_subtract.tree.id(), pin_overlay))
         } else {
@@ -2173,7 +2217,7 @@ fn per_rev_filter(
         let mut target = None;
         for id in filtered_parent_ids
             .iter()
-            .filter(|x| **x != git2::Oid::zero())
+            .filter(|x| **x != git2::Oid::ZERO_SHA1)
         {
             let seq = cache::compute_sequence_number(transaction, *id)?;
             if target.map(|(top, _)| seq > top).unwrap_or(true) {
@@ -2187,7 +2231,7 @@ fn per_rev_filter(
         if let Some((_, target_id)) = target {
             for id in filtered_parent_ids
                 .iter()
-                .filter(|x| **x != git2::Oid::zero() && **x != target_id)
+                .filter(|x| **x != git2::Oid::ZERO_SHA1 && **x != target_id)
             {
                 if !transaction.repo().graph_descendant_of(target_id, *id)? {
                     return Err(anyhow!(
@@ -2201,14 +2245,18 @@ fn per_rev_filter(
             }
         }
         return Ok(Some(history::drop_commit(
-            commit,
+            commit.id(),
             target.map(|(_, id)| id).into_iter().collect(),
             transaction,
             filter,
         )?));
     }
 
-    let mut tree_data = apply(transaction, commit_filter, Rewrite::from_commit(commit)?)?;
+    let mut tree_data = apply(
+        transaction,
+        commit_filter,
+        Rewrite::from_commit_data(transaction.repo(), commit)?,
+    )?;
 
     if let Some((pin_subtract, pin_overlay)) = pin_details {
         let with_exclude = tree::subtract(transaction, tree_data.tree().id(), pin_subtract)?;
@@ -2245,14 +2293,32 @@ pub fn downstack(
         ));
     }
 
-    // Collect commits from base to change (exclusive of base, inclusive of change)
-    let mut walk = repo.revwalk()?;
-    walk.simplify_first_parent()?;
-    walk.set_sorting(git2::Sort::REVERSE | git2::Sort::TOPOLOGICAL)?;
+    // Collect commits from base to change (exclusive of base, inclusive of
+    // change). On the first-parent spine there is exactly one path, so
+    // pruning at the base is the same as excluding its history -- no
+    // RangeWalk needed. A base that passes the descendant check but is NOT on
+    // the spine would make "the stack from base" ill-defined; error instead
+    // of answering.
+    let odb = repo.odb()?;
+    let mut walk = objects::RevWalk::new(&odb);
+    walk.simplify_first_parent();
     walk.push(change_oid)?;
-    walk.hide(base_oid)?;
-
-    let oids: Vec<git2::Oid> = walk.collect::<Result<Vec<_>, _>>()?;
+    let mut seen_base = false;
+    // Reverse-topo order: oldest first, `change` last.
+    let mut oids = walk.into_topo_vec(|oid| {
+        if oid == base_oid {
+            seen_base = true;
+        }
+        oid == base_oid
+    })?;
+    if !seen_base {
+        return Err(anyhow!(
+            "base {} is not on the first-parent chain of {}",
+            base_oid,
+            change_oid
+        ));
+    }
+    oids.reverse();
 
     if oids.is_empty() {
         return Ok(change_oid);
@@ -2295,7 +2361,7 @@ pub fn downstack(
         let new_tree = repo.find_tree(new_tree_oid)?;
         let new_oid = history::rewrite_commit(
             repo,
-            intermediate,
+            &objects::CommitData::read(&odb, intermediate.id())?,
             &[current_base.id()],
             Rewrite::from_tree(new_tree),
             history::GpgsigMode::Preserve,
@@ -2314,10 +2380,17 @@ pub fn downstack(
     )?;
     let new_tree = repo.find_tree(new_tree_oid)?;
 
+    // First-parent is remapped onto the minimal base; any further parents are
+    // carried through untouched. A merge commit in the stack is treated as an
+    // ordinary linear change (diffed against its first parent), but the rebuilt
+    // change keeps its second-parent link so the merge survives the rewrite.
+    let mut new_parents = vec![current_base.id()];
+    new_parents.extend(change_commit.parent_ids().skip(1));
+
     let new_oid = history::rewrite_commit(
         repo,
-        &change_commit,
-        &[current_base.id()],
+        &objects::CommitData::read(&odb, change_commit.id())?,
+        &new_parents,
         Rewrite::from_tree(new_tree),
         history::GpgsigMode::Preserve,
     )?;
@@ -2325,7 +2398,7 @@ pub fn downstack(
     Ok(new_oid)
 }
 
-/// Memo libgit2's 3-way `merge_trees` + `write_tree_to` pair within the
+/// Memo git2's 3-way `merge_trees` + `write_tree_to` pair within the
 /// active transaction. The merged tree oid is a pure function of the three
 /// input tree oids (with `MergeOptions::None`), and `split_changes` issues
 /// many identical triples across per-tip `downstack` calls; turning each
@@ -2389,14 +2462,14 @@ fn downstack_commit_deps(
         return Ok(hit);
     }
 
-    // Use the in-crate `tree::diff_paths` rather than libgit2's full diff
+    // Use the in-crate `tree::diff_paths` rather than git2's full diff
     // pipeline: it short-circuits subtrees by oid equality, which collapses
     // the typical "stack of single-file commits" deps walk down to a few
     // tree lookups per call.
     let parent_tree_id = if commit.parent_count() > 0 {
         commit.parent(0)?.tree()?.id()
     } else {
-        git2::Oid::zero()
+        git2::Oid::ZERO_SHA1
     };
     let commit_tree_id = commit.tree()?.id();
 
@@ -2714,5 +2787,77 @@ mod tests {
                 }
             }
         }
+    }
+
+    // `downstack` minimizes a change against a base by reparenting it onto a
+    // rebuilt minimal base. A merge commit in the stack is treated as an
+    // ordinary linear change (diffed against its first parent), but the rewrite
+    // must carry its remaining parents through so the merge survives. Non-merge
+    // changes stay single-parent.
+    #[test]
+    fn downstack_keeps_merge_second_parent() {
+        let td = tempfile::tempdir().unwrap();
+        let repo = git2::Repository::init_bare(td.path()).unwrap();
+
+        let mk_tree = |files: &[(&str, &str)]| -> git2::Oid {
+            let mut b = git2::build::TreeUpdateBuilder::new();
+            for (p, c) in files {
+                let oid = repo.blob(c.as_bytes()).unwrap();
+                b.upsert(*p, oid, git2::FileMode::Blob);
+            }
+            let empty = repo.treebuilder(None).unwrap().write().unwrap();
+            b.create_updated(&repo, &repo.find_tree(empty).unwrap())
+                .unwrap()
+        };
+
+        let sig = git2::Signature::new("t", "t@e", &git2::Time::new(0, 0)).unwrap();
+        let mk_commit = |tree: git2::Oid, parents: &[git2::Oid], msg: &str| -> git2::Oid {
+            let tree = repo.find_tree(tree).unwrap();
+            let parent_commits: Vec<git2::Commit> = parents
+                .iter()
+                .map(|p| repo.find_commit(*p).unwrap())
+                .collect();
+            let parent_refs: Vec<&git2::Commit> = parent_commits.iter().collect();
+            repo.commit(None, &sig, &sig, msg, &tree, &parent_refs)
+                .unwrap()
+        };
+
+        // base <- side, and a merge of the two is the change being published.
+        let base = mk_commit(mk_tree(&[("a", "1")]), &[], "base");
+        let side = mk_commit(mk_tree(&[("a", "1"), ("s", "s")]), &[base], "side work");
+        let merge = mk_commit(
+            mk_tree(&[("a", "1"), ("m", "m")]),
+            &[base, side],
+            "merge change",
+        );
+
+        cache::sled_load(td.path()).unwrap();
+        let cachestack = std::sync::Arc::new(
+            cache::CacheStack::new().with_backend(cache::SledCacheBackend::default()),
+        );
+        let ctx = cache::TransactionContext::new(td.path(), cachestack);
+        let t = ctx.open().unwrap();
+
+        let out = repo
+            .find_commit(downstack(t.repo(), &t, merge, base).unwrap())
+            .unwrap();
+        assert_eq!(out.parent_count(), 2, "merge change lost its second parent");
+        assert_eq!(
+            out.parent_id(0).unwrap(),
+            base,
+            "first parent should be the minimal base"
+        );
+        assert_eq!(
+            out.parent_id(1).unwrap(),
+            side,
+            "second parent should be carried through"
+        );
+
+        // A single-parent change is unaffected by the parent-preserving rewrite.
+        let linear = mk_commit(mk_tree(&[("a", "1"), ("n", "n")]), &[base], "linear change");
+        let out_linear = repo
+            .find_commit(downstack(t.repo(), &t, linear, base).unwrap())
+            .unwrap();
+        assert_eq!(out_linear.parent_count(), 1);
     }
 }

@@ -2,6 +2,8 @@ use anyhow::Context;
 
 use josh_core::filter::{self, Filter, flatten_chain};
 
+use crate::porcelain::RefUpdate;
+
 /// Parse the symref output from `git ls-remote --symref` to extract the default branch.
 /// Returns `(branch_name, full_ref)` e.g. `("master", "refs/remotes/origin/master")`.
 pub fn try_parse_symref(remote: &str, output: &str) -> Option<(String, String)> {
@@ -49,7 +51,7 @@ pub fn resolve_default_branch(
     let head_symref = format!("refs/remotes/{}/HEAD", remote_name);
     repo.find_reference(&head_symref)
         .ok()
-        .and_then(|r| r.symbolic_target().map(|s| s.to_string()))
+        .and_then(|r| r.symbolic_target().ok().flatten().map(|s| s.to_string()))
         .and_then(|target| {
             target
                 .strip_prefix(&format!("refs/remotes/{}/", remote_name))
@@ -112,13 +114,14 @@ pub fn step_ref_prefix(step_idx: usize, steps: &[Filter]) -> String {
 /// Apply a josh filter to all refs under `refs/josh/remotes/{remote_name}/*` and write
 /// the filtered commits to `refs/namespaces/josh-{remote_name}/refs/heads/*`.
 /// Also writes `refs/josh/filtered/` refs for the default branch and persists filter tree objects.
-/// Then runs `git fetch {remote_name}` to expose them through the configured remote.
+/// Then runs `git fetch --porcelain {remote_name}` to expose them through the configured
+/// remote, returning the ref updates reported by the fetch.
 pub fn apply_josh_filtering(
     transaction: &josh_core::cache::Transaction,
     filter: josh_core::filter::Filter,
     remote_name: &str,
     default_branch: &str,
-) -> anyhow::Result<()> {
+) -> anyhow::Result<Vec<RefUpdate>> {
     let repo = transaction.repo();
     let prefix = format!("refs/josh/remotes/{}/", remote_name);
 
@@ -152,7 +155,7 @@ pub fn apply_josh_filtering(
         let mut next_commits = Vec::new();
 
         for (branch_name, filtered_oid) in &filtered {
-            if *filtered_oid == git2::Oid::zero() {
+            if *filtered_oid == git2::Oid::ZERO_SHA1 {
                 continue;
             }
 
@@ -180,9 +183,13 @@ pub fn apply_josh_filtering(
             .context("failed to create filtered reference")?;
     }
 
-    transaction
-        .spawn_git(&["fetch", remote_name], &[])
+    // Stdout is piped for parsing; stderr keeps the default handling
+    // (inherited on a TTY, forwarded otherwise) so progress/errors reach the user.
+    let output = transaction
+        .git_command(&["fetch", "--porcelain", remote_name], &[])?
+        .with_stdout(std::process::Stdio::piped())
+        .spawn()
         .context("failed to fetch filtered refs")?;
 
-    Ok(())
+    crate::porcelain::parse_fetch_porcelain(&String::from_utf8_lossy(&output.stdout))
 }

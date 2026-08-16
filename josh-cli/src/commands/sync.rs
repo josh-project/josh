@@ -5,6 +5,7 @@ use josh_core::git::normalize_repo_path;
 use crate::config::read_remote_config;
 use crate::forge::Forge;
 use crate::forge::github;
+use josh_github_graphql::operations::pull_request::PrSummary;
 use serde_json;
 
 /// Arguments for `josh changes sync`.
@@ -34,7 +35,7 @@ pub fn handle_sync(
     let repo = transaction.repo();
 
     let head = repo.head()?.peel_to_commit()?;
-    let branch = repo.head()?.shorthand().map(|s| s.to_string());
+    let branch = repo.head()?.shorthand().ok().map(|s| s.to_string());
 
     let base_oid = branch
         .as_ref()
@@ -44,28 +45,12 @@ pub fn handle_sync(
                 .and_then(|r| r.peel_to_commit().ok())
                 .map(|c| c.id())
         })
-        .unwrap_or(git2::Oid::zero());
+        .unwrap_or(git2::Oid::ZERO_SHA1);
 
     let remote_name = args.remote.as_deref().unwrap_or("origin").to_string();
 
     if args.clean {
-        // Delete every changes ref under the targeted scope, across all branches.
-        let mut to_delete: Vec<josh_changes::ChangesRef> = Vec::new();
-        for scope in josh_changes::all_changes_refs(repo)? {
-            let keep = match (&scope, args.local) {
-                (josh_changes::ChangesRef::Local { .. }, true) => true,
-                (josh_changes::ChangesRef::Remote { remote, .. }, false) => remote == &remote_name,
-                _ => false,
-            };
-            if keep {
-                to_delete.push(scope);
-            }
-        }
-        for scope in to_delete {
-            if let Ok(mut r) = repo.find_reference(&scope.ref_name()) {
-                r.delete()?;
-            }
-        }
+        clean_changes_refs(repo, &remote_name, args.local)?;
     }
 
     if !args.local {
@@ -134,11 +119,11 @@ pub fn handle_sync(
             let mut target_branch_shas: std::collections::HashMap<String, git2::Oid> =
                 std::collections::HashMap::new();
             {
-                let mut seen_targets: std::collections::HashSet<&str> =
+                let mut seen_targets: std::collections::HashSet<String> =
                     std::collections::HashSet::new();
                 for pr in &prs {
                     if let Some(target) = parse_changes_target(&pr.head_ref_name) {
-                        if seen_targets.insert(target) {
+                        if seen_targets.insert(target.clone()) {
                             let refspec = format!("refs/heads/{}", target);
                             let fetch_args: Vec<&str> =
                                 vec!["fetch", &github_url, "--no-tags", &refspec];
@@ -154,7 +139,7 @@ pub fn handle_sync(
                                 )?;
                             let sha_str = String::from_utf8(output.stdout)?.trim().to_string();
                             let oid = git2::Oid::from_str(&sha_str)?;
-                            target_branch_shas.insert(target.to_string(), oid);
+                            target_branch_shas.insert(target, oid);
                         }
                     }
                 }
@@ -227,22 +212,14 @@ pub fn handle_sync(
                     );
                 }
 
-                // Target branch for scoping: stacked changes encode the ultimate target
-                // in the head ref (@changes/<target>/...); otherwise fall back to the
-                // PR's immediate base.
-                let target_branch = parse_changes_target(&pr.head_ref_name)
-                    .unwrap_or_else(|| pr.base_ref_name.trim_start_matches("refs/heads/"))
-                    .to_string();
-                let remote_scope = josh_changes::ChangesRef::Remote {
-                    remote: remote_name.clone(),
-                    branch: target_branch.clone(),
-                };
+                let target_branch = target_branch_for_pr(pr);
+                let remote_scope = remote_scope_for(&remote_name, &target_branch);
 
                 let result = (|| -> anyhow::Result<(josh_changes::Change, i64)> {
                     let change = if existing_change_id.is_some() {
                         let mut change = josh_changes::Change::new(repo, &pr_head);
                         let base = match parse_changes_target(&pr.head_ref_name)
-                            .and_then(|t| target_branch_shas.get(t))
+                            .and_then(|t| target_branch_shas.get(&t))
                         {
                             Some(tip) => repo.merge_base(*tip, pr_head.id())?,
                             None => repo.merge_base(target.id(), pr_head.id())?,
@@ -308,16 +285,7 @@ pub fn handle_sync(
                 total_comments, synced, skipped
             );
 
-            // Build the set of open change IDs from the PRs we just synced.
-            let open_change_ids: std::collections::HashSet<String> = prs
-                .iter()
-                .map(|pr| {
-                    let (existing_id, _) =
-                        josh_core::trailers::parse_change_meta(&pr.head_commit_message);
-                    existing_id
-                        .unwrap_or_else(|| format!("{}/{}/pull/{}", owner, repo_name, pr.number))
-                })
-                .collect();
+            let open_change_ids = collect_open_change_ids(&prs, &owner, &repo_name);
 
             // Iterate every (change, scope) pair under this remote -- changes may live
             // under multiple target-branch refs.
@@ -448,22 +416,12 @@ pub fn handle_sync(
                 let mut total_posted = 0usize;
                 let mut total_votes_posted = 0usize;
                 for pr in &prs {
-                    let (existing_id, _) =
-                        josh_core::trailers::parse_change_meta(&pr.head_commit_message);
-                    let change_id = existing_id
-                        .unwrap_or_else(|| format!("{}/{}/pull/{}", owner, repo_name, pr.number));
-
-                    // Same target-branch derivation as the per-PR sync above.
-                    let target_branch = parse_changes_target(&pr.head_ref_name)
-                        .unwrap_or_else(|| pr.base_ref_name.trim_start_matches("refs/heads/"))
-                        .to_string();
-                    let remote_scope = josh_changes::ChangesRef::Remote {
-                        remote: remote_name.clone(),
-                        branch: target_branch.clone(),
-                    };
+                    let change_id = change_id_for_pr(pr, &owner, &repo_name);
+                    let target_branch = target_branch_for_pr(pr);
+                    let remote_scope = remote_scope_for(&remote_name, &target_branch);
 
                     match api
-                        .find_pull_request_by_head(&owner, &repo_name, &pr.head_ref_name)
+                        .find_pull_request_by_head(&owner, &repo_name, &pr.head_ref_name, None)
                         .await
                     {
                         Ok(Some((pr_node_id, _, _))) => {
@@ -534,36 +492,101 @@ pub fn handle_sync(
             Ok::<_, anyhow::Error>(())
         })?;
     } else {
-        let branch = branch.as_deref().ok_or_else(|| {
-            anyhow!("HEAD is detached -- check out a branch to sync local changes")
-        })?;
-        let changes = josh_changes::sync_changes(repo, transaction, head.id(), base_oid, branch)?;
-        if changes.is_empty() {
-            println!("No local changes found.");
-            return Ok(());
-        }
+        sync_local(repo, transaction, branch.as_deref(), head.id(), base_oid)?;
     }
 
     Ok(())
 }
 
-/// Extract the target branch name from a `@changes/<target>/<author>/<change-id>` ref name.
-fn parse_changes_target(head_ref_name: &str) -> Option<&str> {
-    let name = head_ref_name
-        .strip_prefix("refs/heads/@changes/")
-        .or_else(|| head_ref_name.strip_prefix("@changes/"))?;
-    let mut end = 0;
-    for part in name.split('/') {
-        if part.contains('@') {
-            return Some(&name[..end].trim_end_matches('/'));
-        }
-        end += part.len() + 1;
+/// Sync local changes for the checked-out branch only (no GitHub interaction).
+fn sync_local(
+    repo: &git2::Repository,
+    transaction: &josh_core::cache::Transaction,
+    branch: Option<&str>,
+    head: git2::Oid,
+    base_oid: git2::Oid,
+) -> anyhow::Result<()> {
+    let branch = branch
+        .ok_or_else(|| anyhow!("HEAD is detached -- check out a branch to sync local changes"))?;
+    let changes = josh_changes::sync_changes(repo, transaction, head, base_oid, branch)?;
+    if changes.is_empty() {
+        println!("No local changes found.");
     }
-    None
+    Ok(())
+}
+
+/// Delete every changes ref under the targeted scope, across all branches.
+fn clean_changes_refs(
+    repo: &git2::Repository,
+    remote_name: &str,
+    local_only: bool,
+) -> anyhow::Result<()> {
+    let mut to_delete: Vec<josh_changes::ChangesRef> = Vec::new();
+    for scope in josh_changes::all_changes_refs(repo)? {
+        let keep = match (&scope, local_only) {
+            (josh_changes::ChangesRef::Local { .. }, true) => true,
+            (josh_changes::ChangesRef::Remote { remote, .. }, false) => remote == remote_name,
+            _ => false,
+        };
+        if keep {
+            to_delete.push(scope);
+        }
+    }
+    for scope in to_delete {
+        if let Ok(mut r) = repo.find_reference(&scope.ref_name()) {
+            r.delete()?;
+        }
+    }
+    Ok(())
+}
+
+/// Extract the target branch name from a stacked-changes ref name.
+fn parse_changes_target(head_ref_name: &str) -> Option<String> {
+    match josh_changes::StackedRef::parse(head_ref_name)? {
+        josh_changes::StackedRef::ChangeRef(change) => Some(change.target().to_string()),
+        josh_changes::StackedRef::StackHead { target, .. } => Some(target),
+    }
 }
 
 /// Extract the PR number from a synthetic change ID of the form `{owner}/{repo}/pull/{N}`.
 fn parse_pr_number_from_change_id(change_id: &str, owner: &str, repo: &str) -> Option<i64> {
     let prefix = format!("{}/{}/pull/", owner, repo);
     change_id.strip_prefix(&prefix)?.parse().ok()
+}
+
+/// Derive the change ID for a PR: the change-id from the head commit's trailers
+/// if present, otherwise a synthetic `{owner}/{repo}/pull/{N}` ID.
+fn change_id_for_pr(pr: &PrSummary, owner: &str, repo: &str) -> String {
+    let (existing_id, _) = josh_core::trailers::parse_change_meta(&pr.head_commit_message);
+    existing_id.unwrap_or_else(|| format!("{}/{}/pull/{}", owner, repo, pr.number))
+}
+
+/// Determine the target branch for scoping a PR's changes: stacked changes encode
+/// the ultimate target in the head ref (@changes/<target>/...); otherwise fall
+/// back to the PR's immediate base.
+fn target_branch_for_pr(pr: &PrSummary) -> String {
+    parse_changes_target(&pr.head_ref_name).unwrap_or_else(|| {
+        pr.base_ref_name
+            .trim_start_matches("refs/heads/")
+            .to_string()
+    })
+}
+
+/// Build the remote changes-ref scope for a target branch.
+fn remote_scope_for(remote_name: &str, target_branch: &str) -> josh_changes::ChangesRef {
+    josh_changes::ChangesRef::Remote {
+        remote: remote_name.to_string(),
+        branch: target_branch.to_string(),
+    }
+}
+
+/// Build the set of change IDs for the given open PRs.
+fn collect_open_change_ids(
+    prs: &[PrSummary],
+    owner: &str,
+    repo: &str,
+) -> std::collections::HashSet<String> {
+    prs.iter()
+        .map(|pr| change_id_for_pr(pr, owner, repo))
+        .collect()
 }

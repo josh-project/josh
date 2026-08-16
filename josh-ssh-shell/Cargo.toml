@@ -9,7 +9,7 @@ repository = "https://github.com/josh-project/josh"
 
 [dependencies]
 shell-words = "1.1.1"
-thiserror = "2.0.18"
+thiserror = "2.0.19"
 
 clap.workspace = true
 libc.workspace = true

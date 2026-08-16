@@ -143,7 +143,9 @@ impl GlobBench {
             for case in &cases {
                 // Recursive pattern: keeps exactly the `.rs` blobs everywhere (string predicate is
                 // exact -- see the no-dot-component invariant above).
-                let filter = Filter::new().pattern(PATTERN_RECURSIVE);
+                let filter = Filter::new()
+                    .pattern(PATTERN_RECURSIVE)
+                    .expect("valid glob");
                 let filtered = josh_core::filter_commit(&transaction, filter, case.head)?;
                 let got = repo.find_commit(filtered)?.tree_id();
                 let (want, kept) = expected_tree(repo, case.head, &|p| p.ends_with(".rs"))?;
@@ -158,7 +160,7 @@ impl GlobBench {
                 // entry, `PREFIX_DIR`, whose oid equals the raw head's subtree oid. This pins down
                 // "original path preserved, subtree taken wholesale -- NOT lifted to the root"
                 // (valid only absent dot-components).
-                let filter = Filter::new().pattern(PATTERN_PREFIX);
+                let filter = Filter::new().pattern(PATTERN_PREFIX).expect("valid glob");
                 let filtered = josh_core::filter_commit(&transaction, filter, case.head)?;
                 let got_tree = repo.find_commit(filtered)?.tree()?;
                 anyhow::ensure!(
@@ -176,7 +178,7 @@ impl GlobBench {
                 );
 
                 // Sparse pattern: keeps exactly the N_SPARSE planted `.toml` blobs.
-                let filter = Filter::new().pattern(PATTERN_SPARSE);
+                let filter = Filter::new().pattern(PATTERN_SPARSE).expect("valid glob");
                 let filtered = josh_core::filter_commit(&transaction, filter, case.head)?;
                 let got = repo.find_commit(filtered)?.tree_id();
                 let (want, kept) = expected_tree(repo, case.head, &|p| p.ends_with(".toml"))?;
@@ -292,7 +294,7 @@ fn widetree_glob(c: &mut Criterion) {
     ];
 
     for &(group_name, pattern) in groups {
-        let filter = Filter::new().pattern(pattern);
+        let filter = Filter::new().pattern(pattern).expect("valid glob");
         let mut group = c.benchmark_group(group_name);
         // The widest tree costs seconds per iteration, so keep Criterion at its minimum sample
         // count to bound the total wall-clock of a run.

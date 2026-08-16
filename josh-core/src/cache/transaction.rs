@@ -1,7 +1,7 @@
 use super::backend::HistoryGraphHint;
 use super::history_graph::compute_history_hint;
-use super::sled::sled_open_josh_trees;
 use super::stack::CacheStack;
+use super::tree_cache::{TreeBytes, TreeCache};
 use anyhow::anyhow;
 
 use std::collections::HashMap;
@@ -21,7 +21,28 @@ static REF_CACHE: LazyLock<RwLock<HashMap<git2::Oid, HashMap<git2::Oid, git2::Oi
 static POPULATE_MAP: LazyLock<RwLock<HashMap<(git2::Oid, git2::Oid), git2::Oid>>> =
     LazyLock::new(Default::default);
 
-static GLOB_MAP: LazyLock<RwLock<HashMap<(git2::Oid, git2::Oid), git2::Oid>>> =
+// Keyed by (input tree, pattern key, NFA state mask). The state mask makes entries independent
+// of the path a subtree was reached through; the legacy full-path fallback folds its root path
+// into a synthetic pattern key and uses mask 0.
+static GLOB_MAP: LazyLock<RwLock<HashMap<(git2::Oid, git2::Oid, u64), git2::Oid>>> =
+    LazyLock::new(Default::default);
+
+// Trigram index memoization, keyed by source tree oid -> index tree oid. The index is a pure
+// function of the source tree, and `:INDEX` walks commits parent-first, so when a child commit is
+// indexed the subtrees it shares with its parent are already memoized here from the parent's run --
+// which is where reuse almost always comes from. An in-process map captures that without the
+// persistence (and file lock) of an on-disk cache.
+static TRIGRAM_INDEX_MAP: LazyLock<RwLock<HashMap<git2::Oid, git2::Oid>>> =
+    LazyLock::new(Default::default);
+
+// Path-projection memoization for `:PATHS` and its inverse, keyed by (input tree oid, root path).
+// Both are pure functions of the input tree, and workspace filters walk commits parent-first, so a
+// child commit reuses the projections its parent just computed for the subtrees they share -- the
+// same parent-reuse the trigram index relies on, so an in-process map suffices here too.
+static PATHS_MAP: LazyLock<RwLock<HashMap<(git2::Oid, String), git2::Oid>>> =
+    LazyLock::new(Default::default);
+
+static INVERT_MAP: LazyLock<RwLock<HashMap<(git2::Oid, String), git2::Oid>>> =
     LazyLock::new(Default::default);
 
 /// Clear the process-global in-memory caches shared across all transactions.
@@ -29,6 +50,9 @@ pub fn clear_global_caches() {
     REF_CACHE.write().unwrap().clear();
     POPULATE_MAP.write().unwrap().clear();
     GLOB_MAP.write().unwrap().clear();
+    TRIGRAM_INDEX_MAP.write().unwrap().clear();
+    PATHS_MAP.write().unwrap().clear();
+    INVERT_MAP.write().unwrap().clear();
 }
 
 pub struct TransactionContext {
@@ -110,11 +134,9 @@ struct Transaction2 {
     downstack_deps_map: HashMap<git2::Oid, std::collections::HashSet<crate::filter::DownstackDep>>,
     merge_trees_map: HashMap<(git2::Oid, git2::Oid, git2::Oid), git2::Oid>,
     last_written_commit: Option<(git2::Oid, git2::Oid)>,
+    tree_cache: TreeCache,
 
     cache: std::sync::Arc<CacheStack>,
-    path_tree: sled::Tree,
-    invert_tree: sled::Tree,
-    trigram_index_tree: sled::Tree,
     missing: Vec<(usize, crate::filter::Filter, git2::Oid)>,
     misses: usize,
     nesting_level: usize,
@@ -174,9 +196,6 @@ impl Transaction {
 
         log::debug!("new transaction");
 
-        let (path_tree, invert_tree, trigram_index_tree) =
-            sled_open_josh_trees().expect("failed to open transaction");
-
         Transaction {
             t2: std::cell::RefCell::new(Transaction2 {
                 commit_map: HashMap::new(),
@@ -189,10 +208,8 @@ impl Transaction {
                 downstack_deps_map: HashMap::new(),
                 merge_trees_map: HashMap::new(),
                 last_written_commit: None,
+                tree_cache: Default::default(),
                 cache,
-                path_tree,
-                invert_tree,
-                trigram_index_tree,
                 missing: vec![],
                 misses: 0,
                 nesting_level: 0,
@@ -222,24 +239,130 @@ impl Transaction {
         &self.repo
     }
 
+    /// Close the on-disk cache, releasing sled's exclusive lock on the cache directory so other
+    /// josh processes can open it. This flushes pending writes, then drops the remaining sled
+    /// handles: the shared backend's per-filter trees and the process-global database.
+    ///
+    /// Call once no further cache reads or writes will happen. The repo and in-memory object store
+    /// stay usable, so a filtering phase can hand its result to a long, cache-free tail (for
+    /// example running containers) without pinning the lock. A later cache read or write reopens
+    /// what it needs.
+    pub fn release_cache(&self) -> anyhow::Result<()> {
+        crate::cache::sled::sled_flush()?;
+        self.t2.borrow().cache.release();
+        crate::cache::sled::sled_unload();
+        Ok(())
+    }
+
+    /// Read the raw bytes of the tree `oid` through the per-transaction [`TreeCache`]
+    /// (see there for the promotion and eviction policy). `Ok(None)` means the object exists
+    /// but is not a tree; a missing object is an error, like a plain odb read.
+    pub fn read_tree_bytes<'a>(
+        &self,
+        odb: &'a git2::Odb,
+        oid: git2::Oid,
+    ) -> anyhow::Result<Option<TreeBytes<'a>>> {
+        if let Some(bytes) = self.t2.borrow().tree_cache.get(oid) {
+            return Ok(Some(TreeBytes::Cached(bytes)));
+        }
+        let obj = odb.read(oid)?;
+        if obj.kind() != git2::ObjectType::Tree {
+            return Ok(None);
+        }
+        let mut t2 = self.t2.borrow_mut();
+        if t2.tree_cache.should_promote(oid) {
+            let bytes: std::sync::Arc<[u8]> = obj.data().into();
+            t2.tree_cache.insert(oid, bytes.clone());
+            return Ok(Some(TreeBytes::Cached(bytes)));
+        }
+        Ok(Some(TreeBytes::Odb(obj)))
+    }
+
     // TODO: remove and rework proxy git launch path to use spawn_git
     pub fn flush_mem_odb(&self) -> anyhow::Result<()> {
         self.mem_odb.flush()?;
         Ok(())
     }
 
-    /// Flush this transaction's in-memory objects, then run a `git` subprocess against its repo. Use
-    /// this in place of [`crate::git::spawn_git_command`] whenever a transaction is in scope: the
+    /// Flush this transaction's in-memory objects, then build a `git` subprocess against its repo.
+    /// Use this in place of [`crate::git::GitCommand::new`] whenever a transaction is in scope: the
     /// spawned `git` reads objects from disk and cannot see the in-memory backend, so the store must
     /// be flushed first.
-    pub fn spawn_git(&self, args: &[&str], env: &[(&str, &str)]) -> anyhow::Result<()> {
+    pub fn git_command(
+        &self,
+        args: &[&str],
+        env: &[(&str, &str)],
+    ) -> anyhow::Result<crate::git::GitCommand> {
         self.flush_mem_odb()?;
-        crate::git::spawn_git_command(self.repo.path(), args, env)
+        Ok(crate::git::GitCommand::new(
+            self.repo.path(),
+            args,
+            env.iter().copied(),
+        ))
+    }
+
+    /// Run a `git` subprocess with default stdio handling. See [`Transaction::git_command`].
+    pub fn spawn_git(&self, args: &[&str], env: &[(&str, &str)]) -> anyhow::Result<()> {
+        self.git_command(args, env)?.spawn().map(|_| ())
     }
 
     pub fn refname(&self, r: &str) -> String {
         let ref_prefix = self.ref_prefix.as_deref().unwrap_or_default();
         format!("{}{}", ref_prefix, r)
+    }
+
+    /// Resolve a fully qualified refname to its target oid, following symbolic refs. No
+    /// partial-name DWIM. `Ok(None)` if the ref (or the end of a symbolic chain) does not
+    /// exist. The target is not peeled: for an annotated tag ref this is the tag oid,
+    /// peeling is an object-store concern.
+    pub fn resolve_ref(&self, refname: &str) -> anyhow::Result<Option<git2::Oid>> {
+        match self.repo.refname_to_id(refname) {
+            Ok(oid) => Ok(Some(oid)),
+            Err(e) if e.code() == git2::ErrorCode::NotFound => Ok(None),
+            Err(e) => Err(e.into()),
+        }
+    }
+
+    /// Force-create or update a direct ref to point at `target`. An existing ref is
+    /// overwritten unconditionally; updating to the value a ref already has is a no-op.
+    pub fn update_ref(
+        &self,
+        refname: &str,
+        target: git2::Oid,
+        log_message: &str,
+    ) -> anyhow::Result<()> {
+        self.repo.reference(refname, target, true, log_message)?;
+        Ok(())
+    }
+
+    /// Run `cb` for every direct ref whose full name starts with `prefix`, byte-sorted by
+    /// name. `prefix` must consist of refname-valid characters. Symbolic refs and refs
+    /// with non-UTF-8 names are skipped. Errors from `cb` abort the iteration.
+    pub fn for_each_ref_prefixed(
+        &self,
+        prefix: &str,
+        mut cb: impl FnMut(&str, git2::Oid) -> anyhow::Result<()>,
+    ) -> anyhow::Result<()> {
+        // Glob metacharacters (*?[\) are all invalid in refnames, so appending `*` — which
+        // matches across `/` — turns the glob walk into plain prefix iteration.
+        debug_assert!(
+            !prefix.contains(['*', '?', '[', '\\']),
+            "prefix must consist of refname-valid characters"
+        );
+        let mut refs = vec![];
+        for reference in self.repo.references_glob(&format!("{}*", prefix))? {
+            let reference = reference?;
+            if let (Ok(name), Some(target)) = (reference.name(), reference.target()) {
+                refs.push((name.to_owned(), target));
+            }
+        }
+        // git2 yields loose refs in filesystem order followed by packed ones; sorting makes
+        // the order part of the API contract instead of an artifact of the backend.
+        refs.sort();
+        for (name, target) in refs {
+            cb(&name, target)?;
+        }
+        Ok(())
     }
 
     pub fn misses(&self) -> usize {
@@ -370,59 +493,31 @@ impl Transaction {
     }
 
     pub fn insert_paths(&self, tree: (git2::Oid, String), result: git2::Oid) {
-        let t2 = self.t2.borrow();
-        let s = format!("{:?}", tree);
-        let x = git2::Oid::hash_object(git2::ObjectType::Blob, s.as_bytes()).expect("hash_object");
-        t2.path_tree
-            .insert(x.as_bytes(), result.as_bytes())
-            .unwrap();
+        PATHS_MAP.write().unwrap().entry(tree).or_insert(result);
     }
 
     pub fn get_paths(&self, tree: (git2::Oid, String)) -> Option<git2::Oid> {
-        let t2 = self.t2.borrow();
-        let s = format!("{:?}", tree);
-        let x = git2::Oid::hash_object(git2::ObjectType::Blob, s.as_bytes()).expect("hash_object");
-
-        if let Some(oid) = t2.path_tree.get(x.as_bytes()).unwrap() {
-            return Some(git2::Oid::from_bytes(&oid).unwrap());
-        }
-        None
+        PATHS_MAP.read().unwrap().get(&tree).cloned()
     }
 
     pub fn insert_invert(&self, tree: (git2::Oid, String), result: git2::Oid) {
-        let t2 = self.t2.borrow();
-        let s = format!("{:?}", tree);
-        let x = git2::Oid::hash_object(git2::ObjectType::Blob, s.as_bytes()).expect("hash_object");
-        t2.invert_tree
-            .insert(x.as_bytes(), result.as_bytes())
-            .unwrap();
+        INVERT_MAP.write().unwrap().entry(tree).or_insert(result);
     }
 
     pub fn get_invert(&self, tree: (git2::Oid, String)) -> Option<git2::Oid> {
-        let t2 = self.t2.borrow();
-        let s = format!("{:?}", tree);
-        let x = git2::Oid::hash_object(git2::ObjectType::Blob, s.as_bytes()).expect("hash_object");
-
-        if let Some(oid) = t2.invert_tree.get(x.as_bytes()).unwrap() {
-            return Some(git2::Oid::from_bytes(&oid).unwrap());
-        }
-        None
+        INVERT_MAP.read().unwrap().get(&tree).cloned()
     }
 
     pub fn insert_trigram_index(&self, tree: git2::Oid, result: git2::Oid) {
-        let t2 = self.t2.borrow();
-        t2.trigram_index_tree
-            .insert(tree.as_bytes(), result.as_bytes())
-            .unwrap();
+        TRIGRAM_INDEX_MAP
+            .write()
+            .unwrap()
+            .entry(tree)
+            .or_insert(result);
     }
 
     pub fn get_trigram_index(&self, tree: git2::Oid) -> Option<git2::Oid> {
-        let t2 = self.t2.borrow();
-
-        if let Some(oid) = t2.trigram_index_tree.get(tree.as_bytes()).unwrap() {
-            return Some(git2::Oid::from_bytes(&oid).unwrap());
-        }
-        None
+        TRIGRAM_INDEX_MAP.read().unwrap().get(&tree).cloned()
     }
 
     pub fn insert_populate(&self, tree: (git2::Oid, git2::Oid), result: git2::Oid) {
@@ -433,11 +528,11 @@ impl Transaction {
         POPULATE_MAP.read().unwrap().get(&tree).cloned()
     }
 
-    pub fn insert_glob(&self, tree: (git2::Oid, git2::Oid), result: git2::Oid) {
+    pub fn insert_glob(&self, tree: (git2::Oid, git2::Oid, u64), result: git2::Oid) {
         GLOB_MAP.write().unwrap().entry(tree).or_insert(result);
     }
 
-    pub fn get_glob(&self, tree: (git2::Oid, git2::Oid)) -> Option<git2::Oid> {
+    pub fn get_glob(&self, tree: (git2::Oid, git2::Oid, u64)) -> Option<git2::Oid> {
         GLOB_MAP.read().unwrap().get(&tree).cloned()
     }
 
@@ -499,6 +594,8 @@ impl Transaction {
             HistoryGraphHint {
                 sequence_number: 0,
                 parent_count: 1,
+                jump_delta: 1,
+                jump_is_second: false,
             }
         };
         let mut t2 = self.t2.borrow_mut();
@@ -567,6 +664,8 @@ impl Transaction {
             HistoryGraphHint {
                 sequence_number: 0,
                 parent_count: 1,
+                jump_delta: 1,
+                jump_is_second: false,
             }
         };
         let t2 = self.t2.borrow_mut();
@@ -579,7 +678,7 @@ impl Transaction {
         let oid = t2.cache.read_propagate(filter, from, hint)?;
 
         if let Some(oid) = oid {
-            if oid == git2::Oid::zero() {
+            if oid == git2::Oid::ZERO_SHA1 {
                 return Ok(Some(oid));
             }
             if filter == crate::filter::sequence_number() {
@@ -597,8 +696,9 @@ impl Transaction {
     }
 }
 
-/// Back josh-search's index memoization with the persistent trigram sled tree, so `:INDEX` (and
-/// any other in-transaction indexing) stays incremental across transactions and processes.
+/// Back josh-search's index memoization with the process-global trigram map, so `:INDEX` (and any
+/// other in-transaction indexing) stays incremental across transactions within a process -- keyed
+/// by source tree oid, so a child commit reuses the subtrees its parent just indexed.
 impl josh_search::IndexCache for Transaction {
     fn get_index(&self, tree: git2::Oid) -> Option<git2::Oid> {
         self.get_trigram_index(tree)
@@ -606,5 +706,149 @@ impl josh_search::IndexCache for Transaction {
 
     fn set_index(&self, tree: git2::Oid, index: git2::Oid) {
         self.insert_trigram_index(tree, index)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn test_transaction() -> (tempfile::TempDir, Transaction) {
+        // The sled cache is a process-global, so it gets one directory for the whole test
+        // binary rather than one per transaction.
+        static SLED_DIR: std::sync::LazyLock<tempfile::TempDir> = std::sync::LazyLock::new(|| {
+            let dir = tempfile::tempdir().unwrap();
+            crate::cache::sled_load(dir.path()).unwrap();
+            dir
+        });
+        let _ = &*SLED_DIR;
+
+        let dir = tempfile::tempdir().unwrap();
+        git2::Repository::init_bare(dir.path()).unwrap();
+        let context = TransactionContext::new(
+            dir.path(),
+            std::sync::Arc::new(crate::cache::CacheStack::new()),
+        );
+        let transaction = context.open().unwrap();
+        (dir, transaction)
+    }
+
+    fn commit(transaction: &Transaction, msg: &str) -> git2::Oid {
+        let repo = transaction.repo();
+        let tree = repo
+            .find_tree(repo.treebuilder(None).unwrap().write().unwrap())
+            .unwrap();
+        let sig = git2::Signature::new("t", "t@example.com", &git2::Time::new(0, 0)).unwrap();
+        repo.commit(None, &sig, &sig, msg, &tree, &[]).unwrap()
+    }
+
+    #[test]
+    fn resolve_ref_missing_is_none() {
+        let (_dir, transaction) = test_transaction();
+        assert_eq!(transaction.resolve_ref("refs/heads/missing").unwrap(), None);
+    }
+
+    #[test]
+    fn resolve_ref_follows_symbolic_chain() {
+        let (_dir, transaction) = test_transaction();
+        let oid = commit(&transaction, "a");
+        transaction
+            .update_ref("refs/heads/main", oid, "test")
+            .unwrap();
+        transaction
+            .repo()
+            .reference_symbolic("refs/josh/sym", "refs/heads/main", true, "test")
+            .unwrap();
+
+        assert_eq!(
+            transaction.resolve_ref("refs/heads/main").unwrap(),
+            Some(oid)
+        );
+        assert_eq!(transaction.resolve_ref("refs/josh/sym").unwrap(), Some(oid));
+    }
+
+    #[test]
+    fn resolve_ref_dangling_symref_is_none() {
+        let (_dir, transaction) = test_transaction();
+        transaction
+            .repo()
+            .reference_symbolic("refs/josh/dangling", "refs/heads/missing", true, "test")
+            .unwrap();
+        assert_eq!(transaction.resolve_ref("refs/josh/dangling").unwrap(), None);
+    }
+
+    #[test]
+    fn update_ref_overwrites_unconditionally() {
+        let (_dir, transaction) = test_transaction();
+        let a = commit(&transaction, "a");
+        let b = commit(&transaction, "b");
+        transaction
+            .update_ref("refs/heads/main", a, "test")
+            .unwrap();
+        transaction
+            .update_ref("refs/heads/main", b, "test")
+            .unwrap();
+        assert_eq!(transaction.resolve_ref("refs/heads/main").unwrap(), Some(b));
+        // Re-writing the current value succeeds as a no-op.
+        transaction
+            .update_ref("refs/heads/main", b, "test")
+            .unwrap();
+        assert_eq!(transaction.resolve_ref("refs/heads/main").unwrap(), Some(b));
+    }
+
+    #[test]
+    fn for_each_ref_prefixed_is_sorted_and_skips_symbolic() {
+        let (dir, transaction) = test_transaction();
+        let oid = commit(&transaction, "a");
+        // Insertion order deliberately unsorted; refs/josh-x/ must not match the
+        // refs/josh/ prefix; the symbolic ref sorts inside the range but is skipped.
+        transaction.update_ref("refs/josh/b", oid, "test").unwrap();
+        transaction.update_ref("refs/josh/a", oid, "test").unwrap();
+        transaction
+            .update_ref("refs/josh-x/c", oid, "test")
+            .unwrap();
+        transaction
+            .repo()
+            .reference_symbolic("refs/josh/aa", "refs/josh/a", true, "test")
+            .unwrap();
+
+        // Pack `refs/josh/a` by hand (git2 exposes no pack-refs API). Loose refs alone come
+        // pre-sorted out of the filesystem walk; only a packed ref sorting before a loose
+        // one catches removal of the explicit sort.
+        std::fs::write(
+            dir.path().join("packed-refs"),
+            format!(
+                "# pack-refs with: peeled fully-peeled sorted\n{} refs/josh/a\n",
+                oid
+            ),
+        )
+        .unwrap();
+        std::fs::remove_file(dir.path().join("refs/josh/a")).unwrap();
+
+        let mut seen = vec![];
+        transaction
+            .for_each_ref_prefixed("refs/josh/", |name, target| {
+                assert_eq!(target, oid);
+                seen.push(name.to_owned());
+                Ok(())
+            })
+            .unwrap();
+        assert_eq!(seen, ["refs/josh/a", "refs/josh/b"]);
+    }
+
+    #[test]
+    fn for_each_ref_prefixed_propagates_callback_errors() {
+        let (_dir, transaction) = test_transaction();
+        let oid = commit(&transaction, "a");
+        transaction.update_ref("refs/josh/a", oid, "test").unwrap();
+        transaction.update_ref("refs/josh/b", oid, "test").unwrap();
+
+        let mut calls = 0;
+        let result = transaction.for_each_ref_prefixed("refs/josh/", |_, _| {
+            calls += 1;
+            Err(anyhow::anyhow!("stop"))
+        });
+        assert!(result.is_err());
+        assert_eq!(calls, 1);
     }
 }

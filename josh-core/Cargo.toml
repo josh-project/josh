@@ -41,20 +41,27 @@ harness = false
 name = "widetree_glob"
 harness = false
 
+[[bench]]
+name = "deephistory_prefix_flush"
+harness = false
+
+[[bench]]
+name = "refs_filter_update"
+harness = false
+
 [dependencies]
 backtrace = "0.3.76"
-bitvec = "1.0.1"
+bitvec = "1.1.1"
 git-version = "0.3.9"
-glob = "0.3.1"
+glob = "0.3.4"
 indoc = "2.0.7"
-itertools = "0.14.0"
-percent-encoding = "2.3.1"
-pest = "2.8.6"
-pest_derive = "2.8.6"
-strfmt = "0.2.4"
+itertools = "0.15.0"
+percent-encoding = "2.3.2"
+pest = "2.8.8"
+pest_derive = "2.8.8"
+strfmt = "0.2.5"
 sled = "0.34.7"
-rustc-hash = "2.1.2"
-smallvec = "1.15.1"
+smallvec = "1.15.2"
 
 anyhow.workspace = true
 chrono.workspace = true
@@ -74,12 +81,18 @@ tracing.workspace = true
 toml.workspace = true
 
 josh-filter.workspace = true
+josh-gix-ext.workspace = true
 josh-memodb.workspace = true
 josh-search.workspace = true
 josh-starlark.workspace = true
 
 [dev-dependencies]
-rand = "0.10.1"
-criterion = { version = "5.0.1", package = "codspeed-criterion-compat" }
+rand = "0.10.2"
+criterion = "0.5"
 tempfile.workspace = true
+git2.workspace = true
 josh-test-support = { path = "../devtools/josh-test-support" }
+
+[[bench]]
+name = "unapply"
+harness = false

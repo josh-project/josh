@@ -82,8 +82,17 @@ pub fn ListView(
         });
     }
 
+    let mut scroll_el: Signal<Option<std::rc::Rc<MountedData>>> = use_signal(|| None);
+
+    // Only react to selection changes made after mount; on mount the scroll
+    // position is restored from scroll_offset in onmounted instead.
+    let mut last_sel = use_signal(|| selected_change.peek().clone());
     use_effect(move || {
         let sel = selected_change.read();
+        if *last_sel.peek() == *sel {
+            return;
+        }
+        last_sel.set(sel.clone());
         let Some(cid) = sel.as_deref() else {
             return;
         };
@@ -105,11 +114,16 @@ pub fn ListView(
             None
         };
         if let Some(t) = target {
-            let js = format!(
-                "var el=document.getElementById('changes-scroll');if(el)el.scrollTop={};",
-                t
-            );
-            let _ = dioxus::document::eval(&js);
+            if let Some(el) = scroll_el.peek().clone() {
+                spawn(async move {
+                    let _ = el
+                        .scroll(
+                            dioxus::html::geometry::PixelsVector2D::new(0.0, t as f64),
+                            ScrollBehavior::Instant,
+                        )
+                        .await;
+                });
+            }
         }
     });
 
@@ -154,6 +168,21 @@ pub fn ListView(
                 div {
                     class: "scroll-table",
                     id: "changes-scroll",
+                    onmounted: move |evt| {
+                        let el = evt.data();
+                        scroll_el.set(Some(el.clone()));
+                        let offset = *scroll_offset.peek();
+                        if offset > 0 {
+                            spawn(async move {
+                                let _ = el
+                                    .scroll(
+                                        dioxus::html::geometry::PixelsVector2D::new(0.0, offset as f64),
+                                        ScrollBehavior::Instant,
+                                    )
+                                    .await;
+                            });
+                        }
+                    },
                     onscroll: move |e| {
                         scroll_offset.set(e.data.scroll_top() as usize);
                     },
@@ -207,15 +236,15 @@ pub fn ListView(
                                             id: "change-{row.sha}",
                                             class: "{class}",
                                             onclick: {
-                                                let s = sha.clone();
-                                                move |_| page.set(Page::Detail { sha: s.clone() })
+                                                let c = cid.clone();
+                                                move |_| selected_change.set(Some(c.clone()))
                                             },
                                             td {
                                                 onclick: {
-                                                    let c = cid.clone();
+                                                    let s = sha.clone();
                                                     move |evt| {
                                                         evt.stop_propagation();
-                                                        selected_change.set(Some(c.clone()));
+                                                        page.set(Page::Detail { sha: s.clone() });
                                                     }
                                                 },
                                                 "{row.subject}"

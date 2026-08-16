@@ -8,8 +8,8 @@ description = "CGI server utilities for axum"
 
 [dependencies]
 axum-extra = { version = "^0.12", features = ["typed-header"] }
-http = "1.4.0"
-rand = { version = "0.10.1", features = ["std"] }
+http = "1.5.0"
+rand = { version = "0.10.2", features = ["std"] }
 
 axum.workspace = true
 axum-cgi.workspace = true

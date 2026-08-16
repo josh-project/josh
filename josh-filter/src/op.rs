@@ -147,7 +147,7 @@ pub enum Op {
     ObjectDeref(std::path::PathBuf),
     ObjectRef(std::path::PathBuf),
 
-    Pattern(String),
+    Pattern(crate::pattern::CompiledPattern),
     Message(String, Regex),
 
     Unapply(LazyRef, Filter),
@@ -160,4 +160,14 @@ pub enum Op {
     Pin(Filter),
 
     Downstack(LazyRef),
+}
+
+impl Op {
+    /// Construct a `Pattern` op, compiling its glob. A bad glob therefore errors where the
+    /// pattern enters the system (parse, deserialization) instead of on first apply.
+    pub fn pattern(pattern: &str) -> anyhow::Result<Op> {
+        Ok(Op::Pattern(crate::pattern::CompiledPattern::compile(
+            pattern,
+        )?))
+    }
 }

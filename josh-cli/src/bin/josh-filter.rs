@@ -113,11 +113,6 @@ fn make_app() -> clap::Command {
                 .short('g'),
         )
         .arg(
-            clap::Arg::new("max_comp")
-                .long("max_comp")
-                .short('m'),
-        )
-        .arg(
             clap::Arg::new("reverse").action(clap::ArgAction::SetTrue).long("reverse").help(
                 "reverse-apply the filter to the output reference to update the input reference",
             ),
@@ -350,7 +345,7 @@ fn run_filter(args: Vec<String>) -> anyhow::Result<i32> {
     let old_oid = if let Ok(id) = transaction.repo().refname_to_id(target) {
         id
     } else {
-        git2::Oid::zero()
+        git2::Oid::ZERO_SHA1
     };
 
     let (mut updated_refs, errors) = josh_core::filter_refs(&transaction, filterobj, &refs);
@@ -373,16 +368,8 @@ fn run_filter(args: Vec<String>) -> anyhow::Result<i32> {
     josh_core::update_refs(&transaction, updated_refs.clone());
 
     if let Some(searchstring) = args.get_one::<String>("search") {
-        let ifilterobj = filterobj.chain(josh_core::filter::parse(":SQUASH:INDEX")?);
-
-        let max_complexity: usize = args
-            .get_one::<String>("max_comp")
-            .unwrap_or(&"6".to_string())
-            .parse()?;
-
         let commit = repo.revparse_single(&input_ref)?.peel_to_commit()?;
 
-        let index_commit = josh_core::filter_commit(&transaction, ifilterobj, commit.id())?;
         let tree = repo
             .find_commit(josh_core::filter_commit(
                 &transaction,
@@ -390,11 +377,27 @@ fn run_filter(args: Vec<String>) -> anyhow::Result<i32> {
                 commit.id(),
             )?)?
             .tree()?;
-        let index_tree = repo.find_commit(index_commit)?.tree()?;
 
         /* let start = std::time::Instant::now(); */
-        let candidates =
-            josh_search::search_candidates(&repo, &index_tree, searchstring, max_complexity)?;
+        // The trigram index is experimental; without it every file is a candidate and
+        // search_matches does all the filtering, so results are identical, just slower.
+        let candidates = if josh_core::filter::experimental_features_enabled() {
+            let ifilterobj = filterobj.chain(josh_core::filter::parse(":SQUASH:INDEX")?);
+            let index_commit = josh_core::filter_commit(&transaction, ifilterobj, commit.id())?;
+            let index_tree = repo.find_commit(index_commit)?.tree()?;
+            josh_search::search_candidates(&repo, &index_tree, &tree, searchstring)?
+        } else {
+            let mut scan = vec![];
+            tree.walk(git2::TreeWalkMode::PreOrder, |root, entry| {
+                if entry.kind() == Some(git2::ObjectType::Blob)
+                    && let Ok(name) = entry.name()
+                {
+                    scan.push(format!("{}{}", root, name));
+                }
+                0
+            })?;
+            scan
+        };
         let matches = josh_search::search_matches(&repo, &tree, searchstring, &candidates)?;
         /* let duration = start.elapsed(); */
 

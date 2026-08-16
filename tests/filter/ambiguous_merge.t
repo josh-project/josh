@@ -93,8 +93,8 @@
   8cbae19889134bd4ec430c0b79c61ee8547e0d1c
   [3] :prefix=sub1
   [4] :/sub1
-  [7] reachable_roots
-  [7] sequence_number
+  [13] reachable_roots
+  [13] sequence_number
 
   $ git checkout master
   Switched to branch 'master'

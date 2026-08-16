@@ -91,7 +91,10 @@ fn make_filter(args: &[&str]) -> anyhow::Result<Filter> {
         }
 
         ["PATHS"] => Ok(to_filter(Op::Paths)),
-        ["INDEX"] => Ok(to_filter(Op::Index)),
+        ["INDEX"] => {
+            check_experimental_features_enabled(":INDEX filter")?;
+            Ok(to_filter(Op::Index))
+        }
         ["INVERT"] => Ok(to_filter(Op::Invert)),
         ["FOLD"] => Ok(to_filter(Op::Fold)),
         ["hook", arg] => Ok(f.hook(arg)),
@@ -201,7 +204,7 @@ fn parse_item(pair: pest::iterators::Pair<Rule>) -> anyhow::Result<Filter> {
                         arg
                     ));
                 }
-                Ok(f.pattern(arg))
+                f.pattern(arg)
             } else {
                 // File case - error if source contains * (patterns not supported in source)
                 if let Some(ref source_arg) = second_arg
@@ -275,7 +278,7 @@ fn parse_item(pair: pest::iterators::Pair<Rule>) -> anyhow::Result<Filter> {
                                 let filter = parse(filter_pair.as_str())?;
                                 entries.push((
                                     RevMatch::Default,
-                                    LazyRef::Resolved(git2::Oid::zero()),
+                                    LazyRef::Resolved(git2::Oid::ZERO_SHA1),
                                     filter,
                                 ));
                             }
