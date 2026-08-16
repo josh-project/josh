@@ -102,8 +102,8 @@ impl Revision {
 
     fn hash(&self, context: &Context) -> FieldResult<String> {
         let transaction = context.transaction.lock().unwrap();
-        // Existence/type probe: a bogus id (e.g. the zero oid from a target-less symbolic
-        // ref) must error here, not filter to a bogus hash under a nop filter.
+        // Existence/type probe: a bogus id (e.g. the zero oid `parents` substitutes when
+        // find_original fails) must error here, not filter to a bogus hash under a nop filter.
         transaction.repo().find_commit(self.commit_id)?;
         let filter_commit = filter::apply_to_commit(self.filter, self.commit_id, &transaction)?;
         Ok(format!("{}", filter_commit))
@@ -559,9 +559,10 @@ impl Markers {
 
         let refname = transaction_mirror.refname("refs/josh/meta");
 
-        let r = transaction_mirror.repo().revparse_single(&refname);
-        let tree = if let Ok(r) = r {
-            let commit = transaction.repo().find_commit(r.id())?;
+        // Resolve on the mirror, read objects on the overlay: the overlay repo sees the
+        // mirror's objects through a disk alternate.
+        let tree = if let Some(id) = transaction_mirror.resolve_ref(&refname)? {
+            let commit = transaction.repo().find_commit(id)?;
             commit.tree()?
         } else {
             filter::tree::empty(transaction.repo())
@@ -611,9 +612,8 @@ impl Markers {
 
         let refname = transaction_mirror.refname("refs/josh/meta");
 
-        let r = transaction_mirror.repo().revparse_single(&refname);
-        let mtree = if let Ok(r) = r {
-            let commit = transaction.repo().find_commit(r.id())?;
+        let mtree = if let Some(id) = transaction_mirror.resolve_ref(&refname)? {
+            let commit = transaction.repo().find_commit(id)?;
             commit.tree()?
         } else {
             filter::tree::empty(transaction.repo())
@@ -835,10 +835,8 @@ impl Reference {
     fn rev(&self, context: &Context, filter: Option<String>) -> FieldResult<Revision> {
         let transaction_mirror = context.transaction_mirror.lock().unwrap();
         let commit_id = transaction_mirror
-            .repo()
-            .find_reference(&self.refname)?
-            .target()
-            .unwrap_or(git2::Oid::ZERO_SHA1);
+            .resolve_ref(&self.refname)?
+            .ok_or_else(|| anyhow!("missing ref: {}", self.refname))?;
 
         Ok(Revision {
             filter: filter::parse(&filter.unwrap_or_else(|| ":/".to_string()))?,
@@ -917,7 +915,7 @@ struct MarkersInput {
 fn format_marker(input: &str) -> anyhow::Result<String> {
     let value = serde_json::from_str::<serde_json::Value>(input)?;
     let line = serde_json::to_string(&value)?;
-    let hash = git2::Oid::hash_object(git2::ObjectType::Blob, line.as_bytes())?;
+    let hash = josh_core::objects::hash_blob(line.as_bytes());
     Ok(format!("{}:{}", &hash, &line))
 }
 
@@ -1009,24 +1007,28 @@ impl Repository {
         }
 
         let transaction_mirror = context.transaction_mirror.lock().unwrap();
-        let refname = format!(
-            "{}{}",
-            self.ns,
-            pattern.unwrap_or_else(|| "refs/heads/*".to_string())
-        );
+        let pattern = pattern.unwrap_or_else(|| "refs/heads/*".to_string());
 
-        tracing::debug!(refname = refname, "refs");
+        tracing::debug!(pattern = pattern, "refs");
+
+        // The namespace stays out of glob matching: it extends the iteration prefix --
+        // together with the pattern's literal part before its first metacharacter -- and
+        // is stripped off the names matched against the pattern. `glob`'s default
+        // `MatchOptions` let `*` and `?` match across `/`.
+        let matcher = glob::Pattern::new(&pattern)?;
+        let literal_len = pattern.find(['*', '?', '[', '\\']).unwrap_or(pattern.len());
+        let prefix = format!("{}{}", self.ns, &pattern[..literal_len]);
 
         let mut refs = vec![];
 
-        for reference in transaction_mirror.repo().references_glob(&refname)? {
-            let r = reference?;
-            let name = r.name()?;
-
-            refs.push(Reference {
-                refname: name.to_string(),
-            });
-        }
+        transaction_mirror.for_each_ref_prefixed(&prefix, |name, _| {
+            if matcher.matches(&name[self.ns.len()..]) {
+                refs.push(Reference {
+                    refname: name.to_string(),
+                });
+            }
+            Ok(())
+        })?;
 
         Ok(refs)
     }
@@ -1056,6 +1058,7 @@ impl Repository {
             if let Some((oid, _)) = oid {
                 oid
             } else {
+                // PORT: rev-parse stays on the git2 handle until flag day (gix rev_parse then).
                 transaction_mirror.repo().revparse_single(&rev)?.id()
             }
         };

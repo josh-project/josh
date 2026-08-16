@@ -9,6 +9,7 @@ repository = "https://github.com/josh-project/josh"
 keywords = ["git", "monorepo", "workflow", "scm"]
 
 [dependencies]
+glob = "0.3.4"
 strfmt = "0.2.5"
 
 anyhow.workspace = true

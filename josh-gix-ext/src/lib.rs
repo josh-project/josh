@@ -59,6 +59,14 @@ pub fn git2_oid(oid: &gix_hash::oid) -> git2::Oid {
     git2::Oid::from_bytes(oid.as_bytes()).expect("oid sizes match")
 }
 
+/// Hash `data` as a blob without writing it anywhere.
+pub fn hash_blob(data: &[u8]) -> git2::Oid {
+    git2_oid(
+        &gix_object::compute_hash(gix_hash::Kind::Sha1, gix_object::Kind::Blob, data)
+            .expect("failed to compute hash"),
+    )
+}
+
 /// Serialize `entries` as a git tree in exactly the order given and write it straight to `odb`.
 /// Used on hot paths while git2 still owns all I/O: the write is immediately visible to every
 /// reader of the repository (and lands in the in-memory memodb store when one is registered),
@@ -325,5 +333,22 @@ impl gix_object::Exists for StagingOdb<'_> {
                 .odb
                 .as_ref()
                 .is_some_and(|odb| odb.exists(git2_oid(id)))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn hash_blob_matches_git2() {
+        for data in [&b""[..], b"x", b"1:{\"a\":1}\n"] {
+            assert_eq!(
+                super::hash_blob(data),
+                git2::Oid::hash_object(git2::ObjectType::Blob, data).unwrap()
+            );
+        }
+        assert_eq!(
+            super::hash_blob(b"").to_string(),
+            "e69de29bb2d1d6434b8b29ae775ad8c2e48c5391"
+        );
     }
 }
