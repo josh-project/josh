@@ -176,10 +176,11 @@ impl PinBench {
             .hook(HOOK_ARG_ONE_TREE)
             .with_meta("history", "no-splice");
 
-        let cache = std::sync::Arc::new(
-            josh_core::cache::CacheStack::new()
-                .with_backend(josh_core::cache::SledCacheBackend::new(provisioned.path())),
-        );
+        // Pin the sled db open across iterations: per-iteration transaction drops would
+        // otherwise close and reopen it, and the cycle's flush/reopen I/O dominates short cases.
+        let sled = josh_core::cache::SledCacheBackend::new(provisioned.path());
+        sled.pin()?;
+        let cache = std::sync::Arc::new(josh_core::cache::CacheStack::new().with_backend(sled));
         let context = josh_core::cache::TransactionContext::new(provisioned.path(), cache);
 
         // Sanity + correctness gate (untimed): confirm the `per_path` filter actually holds paths
