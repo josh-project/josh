@@ -106,13 +106,7 @@ async fn fetch_needed(
                 &josh_core::to_ns(&upstream_repo)
             )))?;
 
-            match transaction
-                .repo()
-                .refname_to_id(&transaction.refname(&cache_ref))
-            {
-                Ok(oid) => Ok(Some(oid)),
-                Err(_) => Ok(None),
-            }
+            transaction.resolve_ref(&transaction.refname(&cache_ref))
         })
     };
 
@@ -357,11 +351,7 @@ pub fn process_repo_update(repo_update: RepoUpdate) -> anyhow::Result<String> {
 
         let old = if old == git2::Oid::ZERO_SHA1 {
             let rev = format!("refs/namespaces/{}/{}", repo_update.git_ns, &baseref);
-            let oid = if let Ok(resolved) = transaction.repo().revparse_single(&rev) {
-                resolved.id()
-            } else {
-                old
-            };
+            let oid = transaction.resolve_ref(&rev)?.unwrap_or(old);
 
             tracing::debug!(
                 old_oid = ?oid,
@@ -385,9 +375,8 @@ pub fn process_repo_update(repo_update: RepoUpdate) -> anyhow::Result<String> {
             let full_path_base_refname =
                 transaction_mirror.refname(&format!("refs/heads/{}", base));
             if transaction_mirror
-                .repo()
-                .refname_to_id(&full_path_base_refname)
-                .is_ok()
+                .resolve_ref(&full_path_base_refname)?
+                .is_some()
             {
                 full_path_base_refname
             } else {
@@ -397,32 +386,30 @@ pub fn process_repo_update(repo_update: RepoUpdate) -> anyhow::Result<String> {
             transaction_mirror.refname(&baseref)
         };
 
-        let original_target = if let Ok(oid) = transaction_mirror
-            .repo()
-            .refname_to_id(&original_target_ref)
-        {
-            tracing::debug!(
-                original_target_oid = ?oid,
-                original_target_ref = %original_target_ref,
-                "resolve_original_target"
-            );
+        let original_target =
+            if let Some(oid) = transaction_mirror.resolve_ref(&original_target_ref)? {
+                tracing::debug!(
+                    original_target_oid = ?oid,
+                    original_target_ref = %original_target_ref,
+                    "resolve_original_target"
+                );
 
-            oid
-        } else {
-            tracing::debug!(
-                original_target_ref = %original_target_ref,
-                "resolve_original_target"
-            );
+                oid
+            } else {
+                tracing::debug!(
+                    original_target_ref = %original_target_ref,
+                    "resolve_original_target"
+                );
 
-            return Err(anyhow!(indoc::formatdoc!(
-                r###"
+                return Err(anyhow!(indoc::formatdoc!(
+                    r###"
                     Reference {:?} does not exist on remote.
                     If you want to create it, pass "-o base=<basebranch>" or "-o base=path/to/ref"
                     to specify a base branch/reference.
                     "###,
-                baseref
-            )));
-        };
+                    baseref
+                )));
+            };
 
         let reparent_orphans = if push_options.create {
             Some(original_target)
@@ -460,11 +447,7 @@ pub fn process_repo_update(repo_update: RepoUpdate) -> anyhow::Result<String> {
 
         let oid_to_push = if push_options.merge {
             let backward_commit = transaction.repo().find_commit(backward_new_oid)?;
-            if let Ok(base_commit_id) = transaction_mirror
-                .repo()
-                .revparse_single(&original_target_ref)
-                .map(|x| x.id())
-            {
+            if let Some(base_commit_id) = transaction_mirror.resolve_ref(&original_target_ref)? {
                 let signature = josh_core::git::josh_commit_signature()?;
                 let base_commit = transaction.repo().find_commit(base_commit_id)?;
                 let merged_tree = transaction
@@ -539,15 +522,15 @@ pub fn process_repo_update(repo_update: RepoUpdate) -> anyhow::Result<String> {
 
         if new_oid != reapply {
             if std::env::var("JOSH_REWRITE_REFS").is_ok() {
-                transaction.repo().reference(
+                transaction.update_ref(
                     &format!(
                         "refs/josh/rewrites/{}/{:?}/r_{}",
                         repo_update.base_ns,
                         filter.id(),
                         reapply
                     ),
+                    josh_core::cache::Expected::Any,
                     reapply,
-                    true,
                     "reapply",
                 )?;
             }
@@ -591,12 +574,17 @@ pub fn push_head_url(
     cmd.push(url);
     cmd.push(&push_refspec);
 
-    let mut fake_head = repo.reference(&push_temp_ref, oid, true, "push_head_url")?;
+    transaction.update_ref(
+        &push_temp_ref,
+        josh_core::cache::Expected::Any,
+        oid,
+        "push_head_url",
+    )?;
     // Flush before the external `git push` below reads these objects from disk.
     transaction.flush_mem_odb()?;
     let (stdout, stderr, status) =
         run_git_with_auth(repo.path(), &cmd, remote_auth, Some(alternate.to_owned()))?;
-    fake_head.delete()?;
+    transaction.delete_ref(&push_temp_ref, josh_core::cache::Expected::Any)?;
 
     tracing::debug!(
         stdout = %stdout,

@@ -16,13 +16,20 @@ pub use josh_filter::filter::sequence_number;
 pub use josh_filter::flang::parse::{get_comments, parse};
 pub use josh_filter::opt;
 pub use josh_filter::opt::invert;
-pub use josh_filter::persist::{as_tree, from_tree};
 pub use josh_filter::persist::{peel_filter, peel_op, to_filter, to_op, to_ops};
 pub use josh_filter::{Filter, InsertContent, LazyRef, Op, RevMatch};
 pub use josh_filter::{as_file, pretty, spec};
 
 pub mod text;
 pub mod tree;
+
+pub fn as_tree(transaction: &cache::Transaction, filter: Filter) -> anyhow::Result<git2::Oid> {
+    josh_filter::persist::as_tree(transaction.repo(), filter)
+}
+
+pub fn from_tree(transaction: &cache::Transaction, tree_oid: git2::Oid) -> anyhow::Result<Filter> {
+    josh_filter::persist::from_tree(transaction.repo(), tree_oid)
+}
 
 static WORKSPACES: LazyLock<std::sync::Mutex<std::collections::HashMap<git2::Oid, Filter>>> =
     LazyLock::new(Default::default);
@@ -2614,8 +2621,8 @@ mod tests {
 
     #[test]
     fn meta_filter_tree_roundtrip_test() {
-        use crate::filter::{as_tree, from_tree};
         use git2::Repository;
+        use josh_filter::persist::{as_tree, from_tree};
         use std::fs;
 
         // Create a temporary directory for the test repository

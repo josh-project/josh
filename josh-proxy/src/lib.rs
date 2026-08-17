@@ -299,9 +299,8 @@ pub fn merge_meta(
     }
     let rev = transaction_mirror.refname("refs/josh/meta");
 
-    let r = transaction_mirror.repo().revparse_single(&rev);
-    let (tree, parent) = if let Ok(r) = r {
-        let meta_commit = transaction.repo().find_commit(r.id())?;
+    let (tree, parent) = if let Some(meta_oid) = transaction_mirror.resolve_ref(&rev)? {
+        let meta_commit = transaction.repo().find_commit(meta_oid)?;
         let tree = meta_commit.tree()?;
         (tree, Some(meta_commit))
     } else {
