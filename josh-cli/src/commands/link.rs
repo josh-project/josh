@@ -105,7 +105,6 @@ fn handle_link_add(
     let head_commit = head_ref
         .peel_to_commit()
         .context("Failed to get HEAD commit")?;
-    let head_tree = head_commit.tree().context("Failed to get HEAD tree")?;
 
     let mode = josh_core::filter::LinkMode::parse(&args.mode)
         .with_context(|| format!("Invalid link mode: '{}'", args.mode))?;
@@ -154,7 +153,7 @@ fn handle_link_add(
     };
 
     // Create a new commit with the updated tree
-    let signature = make_signature(&repo)?;
+    let signature = make_signature(transaction)?;
 
     let commit_oid = josh_link::prepare_link_add(
         transaction,
@@ -163,10 +162,10 @@ fn handle_link_add(
         args.filter.as_deref(),
         target,
         initial_oid,
-        &head_tree,
+        head_commit.tree_id(),
         mode,
     )?
-    .into_commit(transaction, &head_commit, &signature)?;
+    .into_commit(transaction, head_commit.id(), &signature)?;
 
     // Create the fixed branch name
     let branch_name = "refs/heads/josh-link";
@@ -347,14 +346,9 @@ fn handle_link_update(
         links_to_update.push((path.clone(), new_oid));
     }
 
-    let signature = make_signature(&repo)?;
-    let Some(result) = josh_link::update_links(
-        &repo,
-        transaction,
-        &head_commit,
-        links_to_update,
-        &signature,
-    )?
+    let signature = make_signature(transaction)?;
+    let Some(result) =
+        josh_link::update_links(transaction, head_commit.id(), links_to_update, &signature)?
     else {
         eprintln!("All {} link file(s) already up to date", link_files.len());
         return Ok(());

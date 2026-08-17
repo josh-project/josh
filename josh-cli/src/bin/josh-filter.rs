@@ -188,17 +188,6 @@ fn run_filter(args: Vec<String>) -> anyhow::Result<i32> {
     let repo = git2::Repository::open_from_env()?;
     let repo_path = repo.path().to_path_buf();
 
-    // If the filter spec doesn't contain a colon and it's not from a file,
-    // treat it as a SHA and read from tree
-    let mut filterobj = if specstr.contains(':') || is_from_file {
-        josh_core::filter::parse(&specstr)?
-    } else {
-        // Try to parse as SHA and read filter from tree
-        let tree_oid = git2::Oid::from_str(specstr.trim())
-            .with_context(|| format!("Invalid filter spec or SHA: {}", specstr))?;
-        josh_core::filter::from_tree(&repo, tree_oid)?
-    };
-
     let cache = std::sync::Arc::new({
         let mut cache = josh_core::cache::CacheStack::new();
 
@@ -228,6 +217,18 @@ fn run_filter(args: Vec<String>) -> anyhow::Result<i32> {
     transaction = transaction.with_filter_hook(std::sync::Arc::new(hook));
 
     let repo = transaction.repo();
+
+    // If the filter spec doesn't contain a colon and it's not from a file,
+    // treat it as a SHA and read from tree
+    let mut filterobj = if specstr.contains(':') || is_from_file {
+        josh_core::filter::parse(&specstr)?
+    } else {
+        // Try to parse as SHA and read filter from tree
+        let tree_oid = git2::Oid::from_str(specstr.trim())
+            .with_context(|| format!("Invalid filter spec or SHA: {}", specstr))?;
+        josh_core::filter::from_tree(&transaction, tree_oid)?
+    };
+
     let input_ref = args.get_one::<String>("input").unwrap();
 
     let mut refs = vec![];
@@ -299,7 +300,7 @@ fn run_filter(args: Vec<String>) -> anyhow::Result<i32> {
         } else {
             filterobj
         };
-        println!("{}", josh_core::filter::as_tree(repo, filterobj)?);
+        println!("{}", josh_core::filter::as_tree(&transaction, filterobj)?);
         return Ok(0);
     }
 

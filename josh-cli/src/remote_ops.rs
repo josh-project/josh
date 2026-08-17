@@ -124,7 +124,6 @@ pub fn apply_josh_filtering(
     remote_name: &str,
     default_branch: &str,
 ) -> anyhow::Result<Vec<RefUpdate>> {
-    let repo = transaction.repo();
     let prefix = format!("refs/josh/remotes/{}/", remote_name);
 
     let steps = flatten_chain(filter);
@@ -151,7 +150,7 @@ pub fn apply_josh_filtering(
         }
 
         // Persist the filter tree object to ODB so cache build can reconstruct it
-        filter::as_tree(repo, *step_filter)?;
+        filter::as_tree(transaction, *step_filter)?;
 
         let prefix_path = step_ref_prefix(step_idx, &steps);
         let mut next_commits = Vec::new();

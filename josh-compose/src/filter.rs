@@ -32,7 +32,7 @@ pub fn compute_ws_tree(
         .context("filtered result is not a commit")?
         .tree_id();
 
-    let safe_name = josh_core::filter::as_tree(repo, filterobj)
+    let safe_name = josh_core::filter::as_tree(transaction, filterobj)
         .context("failed to compute filter id")?
         .to_string();
 
