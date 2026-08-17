@@ -15,13 +15,16 @@ impl PreparedLinkAdd {
     pub fn into_commit(
         self,
         transaction: &josh_core::cache::Transaction,
-        head_commit: &git2::Commit,
+        head_commit: git2::Oid,
         signature: &git2::Signature,
     ) -> anyhow::Result<git2::Oid> {
         let repo = transaction.repo();
         let tree = repo
             .find_tree(self.tree_oid)
             .context("Failed to find tree")?;
+        let head_commit = repo
+            .find_commit(head_commit)
+            .context("Failed to find commit")?;
 
         repo.commit(
             None,
@@ -29,7 +32,7 @@ impl PreparedLinkAdd {
             signature,
             &format!("Add link: {}", self.path.display()),
             &tree,
-            &[head_commit],
+            &[&head_commit],
         )
         .context("Failed to create commit")
     }
@@ -104,7 +107,9 @@ pub fn collect_all_link_refs(
     Ok(refs)
 }
 
-pub fn make_signature(repo: &git2::Repository) -> anyhow::Result<git2::Signature<'static>> {
+pub fn make_signature(
+    transaction: &josh_core::cache::Transaction,
+) -> anyhow::Result<git2::Signature<'static>> {
     if let Ok(time) = std::env::var("JOSH_COMMIT_TIME") {
         git2::Signature::new(
             "JOSH",
@@ -113,7 +118,10 @@ pub fn make_signature(repo: &git2::Repository) -> anyhow::Result<git2::Signature
         )
         .context("Failed to create signature")
     } else {
-        let sig = repo.signature().context("Failed to get signature")?;
+        let sig = transaction
+            .repo()
+            .signature()
+            .context("Failed to get signature")?;
         Ok(sig.to_owned())
     }
 }
@@ -126,10 +134,13 @@ pub fn prepare_link_add(
     filter: Option<&str>,
     target: &str,
     fetched_commit: git2::Oid,
-    head_tree: &git2::Tree,
+    head_tree: git2::Oid,
     mode: josh_core::filter::LinkMode,
 ) -> anyhow::Result<PreparedLinkAdd> {
     let repo = transaction.repo();
+    let head_tree = repo
+        .find_tree(head_tree)
+        .context("Failed to find head tree")?;
 
     // Strip leading slash if present (git tree paths are always relative)
     let path = path.strip_prefix("/").unwrap_or(path);
@@ -160,7 +171,7 @@ pub fn prepare_link_add(
     // Insert the .link.josh file into the tree
     let new_tree = tree::insert(
         repo,
-        head_tree,
+        &head_tree,
         &link_path,
         link_blob,
         git2::FileMode::Blob.into(),
@@ -174,12 +185,15 @@ pub fn prepare_link_add(
 }
 
 pub fn update_links(
-    repo: &git2::Repository,
     transaction: &josh_core::cache::Transaction,
-    head_commit: &git2::Commit,
+    head_commit: git2::Oid,
     links_to_update: Vec<(PathBuf, git2::Oid)>,
     signature: &git2::Signature,
 ) -> anyhow::Result<Option<UpdateLinksResult>> {
+    let repo = transaction.repo();
+    let head_commit = repo
+        .find_commit(head_commit)
+        .context("Failed to find commit")?;
     let head_tree = head_commit.tree().context("Failed to get HEAD tree")?;
     let head_tree_id = head_tree.id();
 
@@ -244,7 +258,7 @@ pub fn update_links(
                     .join(", ")
             ),
             &new_tree,
-            &[head_commit],
+            &[&head_commit],
         )
         .context("Failed to create commit")?;
 

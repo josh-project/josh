@@ -499,22 +499,15 @@ fn resolve_upstream_ref(
     repo: &str,
     ref_value: &str,
 ) -> anyhow::Result<git2::Oid> {
-    let josh_name = [
-        "refs",
-        "josh",
-        "upstream",
-        &josh_core::to_ns(repo),
-        ref_value,
-    ]
-    .iter()
-    .collect::<PathBuf>();
+    let josh_name = format!(
+        "refs/josh/upstream/{}/{}",
+        josh_core::to_ns(repo),
+        ref_value
+    );
 
     transaction
-        .repo()
-        .find_reference(josh_name.to_str().unwrap())
-        .context("Could not find ref")?
-        .target()
-        .ok_or(anyhow!("Could not resolve ref"))
+        .resolve_ref(&josh_name)?
+        .ok_or_else(|| anyhow!("Could not find ref {:?}", josh_name))
 }
 
 pub struct NamespacedRefs {
@@ -539,8 +532,7 @@ impl NamespacedRefs {
         let (source, target) = (self.ns.reference(&source), self.ns.reference(&target));
 
         self.transaction
-            .repo()
-            .reference_symbolic(&source, &target, true, "write_to_repo")?;
+            .create_symref(&source, &target, "write_to_repo")?;
 
         // Flush before the `git http-backend` subprocess serves these objects from disk.
         self.transaction.flush_mem_odb()?;
@@ -1354,8 +1346,8 @@ async fn serve_render_template(
             oid
         } else {
             transaction_mirror
-                .repo()
-                .refname_to_id(&transaction_mirror.refname(&head_ref))?
+                .resolve_ref(&transaction_mirror.refname(&head_ref))?
+                .ok_or_else(|| anyhow!("ref not found: {}", head_ref))?
         };
         let commit_id = josh_core::filter_commit(&transaction, filter, commit_id)?;
 

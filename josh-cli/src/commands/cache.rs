@@ -99,7 +99,7 @@ fn handle_cache_build(args: &CacheBuildArgs, transaction: &Transaction) -> anyho
         for id_str in ids.iter().rev() {
             match git2::Oid::from_str(id_str)
                 .map_err(anyhow::Error::from)
-                .and_then(|oid| from_tree(repo, oid))
+                .and_then(|oid| from_tree(transaction, oid))
             {
                 Ok(f) => steps.push(f),
                 Err(e) => {

@@ -71,7 +71,7 @@ impl DistributedCacheBackend {
         if let Some(oid) = self.tree_ids.lock().unwrap().get(&filter) {
             return Ok(*oid);
         }
-        let oid = filter::as_tree(repo, filter)?;
+        let oid = josh_filter::persist::as_tree(repo, filter)?;
         self.tree_ids.lock().unwrap().insert(filter, oid);
         Ok(oid)
     }

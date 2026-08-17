@@ -56,9 +56,8 @@ pub fn handle_track(
     let head_commit = head_ref
         .peel_to_commit()
         .context("Failed to peel HEAD to commit")?;
-    let head_tree = head_commit.tree().context("Failed to get HEAD tree")?;
 
-    let signature = make_signature(repo)?;
+    let signature = make_signature(transaction)?;
 
     let link_mode = josh_core::filter::LinkMode::parse(mode)
         .with_context(|| format!("Invalid link mode: '{}'", mode))?;
@@ -71,7 +70,7 @@ pub fn handle_track(
         None,
         "HEAD",
         fetched_commit,
-        &head_tree,
+        head_commit.tree_id(),
         link_mode,
     )?
     .into_tree_oid();
