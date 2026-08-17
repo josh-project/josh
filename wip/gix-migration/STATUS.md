@@ -1,6 +1,6 @@
 # git2 -> gix port: status
 
-Last updated: 2026-08-17 (post-2.5). See `PLAN.md` in this directory for the full phased plan.
+Last updated: 2026-08-17 (post-2.6, phase 2 complete). See `PLAN.md` in this directory for the full phased plan.
 
 ## Landed on master (one commit per step, each suite-green and bench-validated)
 
@@ -22,6 +22,8 @@ Last updated: 2026-08-17 (post-2.5). See `PLAN.md` in this directory for the ful
 | 2.4 | 33b12c96 | josh-cli onto the Transaction ref API: reads via `resolve_ref`, enumeration via `for_each_ref_prefixed` (backing refs, cache chain discovery, `--squash-pattern` filtered inline with the vendored `glob` crate — josh-cli gains the glob dep), writes via `update_ref` (`Expected::Any` everywhere except the unapply write and the pull branch move, which guard with `At` of the ref's stored target — the pull guard deliberately uses `head.target()`, not the peeled commit, so a branch-at-annotated-tag state still CASes correctly); cache-build writes go through the `build_transaction` owning the mem-odb overlay. The API gains `delete_ref` (Expected-guarded; `Any` = missing-ok, `Absent` = contract error, symref deleted-not-followed) and `create_symref` (always-force, dangling targets allowed; fetch's remote-HEAD symrefs, later josh-proxy's `reference_symbolic`), contracts pinned by doc comments + 12 unit tests (incl. packed-ref delete). `resolve_default_branch`/`resolve_input_ref`/`resolve_upstream_ref` now take `&Transaction`. Symbolic-HEAD/symbolic-target reads, DWIM, FETCH_HEAD, `branch_upstream_name`, rev-parse stay on `transaction.repo()` (19 PORT markers). Deliberate divergences (suite-invisible; zero prysk churn — push.t's `--base` context+cause chain kept byte-identical): byte-sorted enumeration (squash-pattern duplicate-oid collision winner now deterministic byte-greatest refname, pinned by new `squash_same_oid.t` together with the vendored-glob mid-string `**` error), corrupt refs and syntactically invalid user-supplied refnames error instead of reading as absent/zero (incl. cache chain-discovery iteration errors, previously swallowed), `resolve_ref` follows symrefs where targets were read directly, guarded writes error on concurrent ref moves instead of clobbering, sync `--clean` deletion is missing-ok (find/delete race removed) | flat-to-better (`refs_filter_update` **-2 to -5%**, `deephistory_{subdir,rev}` control at post-1.5 levels, pinned-sled setups) |
 
 | 2.5 | 740ccbe3 | josh-proxy and the leaf crates onto the Transaction ref API: all 11 josh-proxy ref-store sites — reads via `resolve_ref` (`merge_meta`'s refs/josh/meta, fetch cache ref, push base-ref probe + original target incl. the `-o merge` re-resolve, `resolve_upstream_ref` — now a plain string refname, not PathBuf —, template render), writes via `update_ref(Expected::Any)` (JOSH_REWRITE_REFS, push temp ref), the temp-ref delete via `delete_ref(Any)`, namespaced HEAD via `create_symref` (the two 2.4 API consumers arrive); write→flush→subprocess orderings in `push_head_url`/`write_to_repo` preserved exactly. `josh_core::filter::{as_tree,from_tree}` become `&Transaction`-taking wrappers (bare re-export dropped; `cache/distributed.rs` calls `josh_filter::persist::as_tree` directly on its own repo below the cache stack); josh-link takes oids instead of borrowed `git2::Commit`/`Tree` and drops its redundant repo param, `make_signature` takes `&Transaction` (callers: josh-cli link/cq). josh-starlark/josh-templates verified zero ref-store calls — untouched. Deliberate divergences (suite-invisible, zero prysk churn): resolve errors propagate instead of selecting fallback arms (meta empty-tree restart, cache-ref probe, zero-old recovery, base probe, merge re-resolve); `resolve_upstream_ref` follows symrefs, two error texts collapse into one; temp-ref delete missing-ok instead of CASing the creation-time value; render missing-ref error text; corrupt HEAD tree in link add errors inside `prepare_link_add` after the export filter run instead of up front (found by the verify pass); josh-filter CLI parses tree-oid filter specs after the cache open (error ordering only) | flat-to-better (`refs_filter_update` -1.5 to -3%, `deephistory_{subdir,rev}` control at/above post-1.5 levels) |
+
+| 2.6 | 5f715a39 | Phase-2 exit audit: multi-agent sweep of every `.repo()` call site (~280 sites, 54 files) plus a workspace-wide grep of the full git2 ref-store API surface (incl. `set_target`, `Reference::delete`, `rename`, notes, `push_ref`/`push_glob`), every suspected escape adversarially verified. 113 ref-store-relevant sites classified; the only escape was `cq/josh-cq/src/cq.rs` (2.5's research inventoried it solely as a josh-link caller, never surveying its own ref sites): `handle_track`'s `repo.head()?.set_target(..)` write ported to `update_ref` with `Expected::At` of the stored target captured at the HEAD read (2.4 pull-guard pattern; concurrent HEAD moves now error instead of clobbering, detached HEAD updates via a direct `"HEAD"` write), the symbolic-HEAD read stays with the standard PORT marker (refname/target captured for the guard; non-UTF-8 refname/oid-less HEAD now error), the FETCH_HEAD read was a verified deliberate stay only missing its PORT marker (added, call unchanged). All 22 PORT markers across 11 files verified present and in sanctioned categories; transaction.rs/git.rs/distributed.rs allowlist confirmed; all other sites object I/O (phase-3 flag day) or bench/test setup (4.2). Noted for phase 3: josh-proxy `TmpGitNamespace::cleanup` deletes namespace refs via `fs::remove_dir_all` behind both git2 and the ref API. Full report: `.agents/work/gix-port/2.6-audit.md` | n/a (josh-core untouched; josh-cq is a leaf binary) |
 
 Phase 1.2 is complete: no `treebuilder` use remains in `josh-core/src/filter/tree.rs`.
 
@@ -47,16 +49,16 @@ write); blob writes are plain odb writes that memodb intercepts.
 
 ## Next steps
 
-1. **2.6** audit: remaining ref-shaped `transaction.repo()` callers should be only
-   transaction.rs, git.rs, housekeeping.rs object reads, memodb registration, plus the
-   PORT-marked stays (symbolic-HEAD reads, DWIM, FETCH_HEAD, rev-parse). Sweep for any
-   ref-store call that slipped through phase 2 before starting phase 3.
-2. **Phase 3** Flusher packs via gix-pack; memory store into the adapter; flag day: Transaction
-   opens `gix::ThreadSafeRepository` (isolated), refs via gix-ref (parity contract pinned in
-   the 2.1 method comments + unit tests). Plan gap found in 2.1: `cache/distributed.rs` holds
-   its own `git2::Repository` (one ref write, two resolves) below the cache stack -- needs its
-   own port sub-step here.
-3. **Phase 4** Port bench setup, flip `josh_core::Oid` inner type, delete josh-memodb FFI,
+Phase 2 is complete (2.6 audit clean).
+
+1. **Phase 3** Flusher packs via gix-pack (3.1); memory store into the adapter (3.2); flag
+   day (3.3): Transaction opens `gix::ThreadSafeRepository` (isolated), refs via gix-ref
+   (parity contract pinned in the 2.1 method comments + unit tests). Plan gap found in 2.1:
+   `cache/distributed.rs` holds its own `git2::Repository` (one ref write, two resolves)
+   below the cache stack -- needs its own port sub-step here. Also from 2.6: josh-proxy
+   `TmpGitNamespace::cleanup` removes namespace refs via `fs::remove_dir_all` behind both
+   git2 and the ref API -- verify gix's loose-ref/packed-refs view tolerates it at flag day.
+2. **Phase 4** Port bench setup, flip `josh_core::Oid` inner type, delete josh-memodb FFI,
    remove git2/libgit2-sys workspace-wide (`cargo tree -i git2` empty).
 
 Deferred from 1.5 (evaluate separately): lazy early-exit walks for
