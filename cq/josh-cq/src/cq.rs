@@ -44,6 +44,8 @@ pub fn handle_track(
 
     transaction.spawn_git(&["fetch", url, "HEAD"], &[])?;
 
+    // PORT: FETCH_HEAD pseudo-ref read stays on the git2 handle until flag day
+    // (gix multi-entry FETCH_HEAD semantics still unresolved).
     let fetch_head_ref = repo
         .find_reference("FETCH_HEAD")
         .context("Failed to find FETCH_HEAD")?;
@@ -52,7 +54,14 @@ pub fn handle_track(
         .context("Failed to peel FETCH_HEAD to commit")?
         .id();
 
+    // PORT: symbolic-HEAD read is not expressible via resolve_ref; move to a
+    // Transaction helper at flag day (gix head_name()).
     let head_ref = repo.head().context("Failed to get HEAD")?;
+    let head_refname = head_ref
+        .name()
+        .context("HEAD ref name is not valid UTF-8")?
+        .to_string();
+    let head_target = head_ref.target().context("HEAD does not point at an oid")?;
     let head_commit = head_ref
         .peel_to_commit()
         .context("Failed to peel HEAD to commit")?;
@@ -114,8 +123,13 @@ pub fn handle_track(
         )
         .context("Failed to create final commit")?;
 
-    repo.head()?
-        .set_target(final_commit, "josh-cq track")
+    transaction
+        .update_ref(
+            &head_refname,
+            josh_core::cache::Expected::At(head_target),
+            final_commit,
+            "josh-cq track",
+        )
         .context("Failed to update HEAD")?;
 
     Ok(format!(
