@@ -448,16 +448,16 @@ Note that ws/d/ is now present in the ws
       |   |   `-- 3dd93419493d22aeaf6bcb5c0bec4c2701b049
       |   |-- info
       |   `-- pack
-      |       |-- pack-003dec79becceac35fcf4dc6da69067da9076b43.idx
-      |       |-- pack-003dec79becceac35fcf4dc6da69067da9076b43.pack
-      |       |-- pack-1ea36f2d466e060c9ea31389ae1b3cd2ef9ee1a0.idx
-      |       |-- pack-1ea36f2d466e060c9ea31389ae1b3cd2ef9ee1a0.pack
-      |       |-- pack-3bb8600225cc4139a131c5413ee7275d07ccd58a.idx
-      |       |-- pack-3bb8600225cc4139a131c5413ee7275d07ccd58a.pack
-      |       |-- pack-5f43de7285cc69f6f7f779f1c22bbcc404fea509.idx
-      |       |-- pack-5f43de7285cc69f6f7f779f1c22bbcc404fea509.pack
-      |       |-- pack-78ce499d43b7df7a0b507140d5134ff90a058eeb.idx
-      |       `-- pack-78ce499d43b7df7a0b507140d5134ff90a058eeb.pack
+      |       |-- pack-293c54220e20d5b4c343777de6ec1fcf469a246a.idx
+      |       |-- pack-293c54220e20d5b4c343777de6ec1fcf469a246a.pack
+      |       |-- pack-5db946bd0dcde544bac50ab27795a4775dfc0f00.idx
+      |       |-- pack-5db946bd0dcde544bac50ab27795a4775dfc0f00.pack
+      |       |-- pack-94f23201f51cbf11abc7fce7cfe7359da6844dc7.idx
+      |       |-- pack-94f23201f51cbf11abc7fce7cfe7359da6844dc7.pack
+      |       |-- pack-bd5becad2b550884155f2442b49b91a062e8eeeb.idx
+      |       |-- pack-bd5becad2b550884155f2442b49b91a062e8eeeb.pack
+      |       |-- pack-cbe98a48db32c69560001f112d79637fc2019ccd.idx
+      |       `-- pack-cbe98a48db32c69560001f112d79637fc2019ccd.pack
       `-- refs
           |-- heads
           |-- namespaces

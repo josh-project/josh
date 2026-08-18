@@ -112,8 +112,8 @@
       |-- objects
       |   |-- info
       |   `-- pack
-      |       |-- pack-dfd9843a38e8a4c7ec7231382409474c2cbd5981.idx
-      |       `-- pack-dfd9843a38e8a4c7ec7231382409474c2cbd5981.pack
+      |       |-- pack-22a5f4914ed052ea4eea2873846d2591ddf38cfa.idx
+      |       `-- pack-22a5f4914ed052ea4eea2873846d2591ddf38cfa.pack
       `-- refs
           |-- heads
           |-- namespaces

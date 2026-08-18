@@ -15,3 +15,4 @@ pub mod pack;
 pub use hash::PassthroughHasher;
 pub use mem_odb::MemOdb;
 pub use odb_backend::{OdbBackend, register};
+pub use pack::objects_dir;

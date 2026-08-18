@@ -2154,14 +2154,18 @@ checksum = "6d5446127b269706e85998065267ddd2ccc3550179da6780b22fe496175ccb20"
 dependencies = [
  "clru",
  "gix-chunk",
+ "gix-diff",
  "gix-error",
  "gix-features",
  "gix-hash",
  "gix-hashtable",
  "gix-object",
  "gix-path",
+ "gix-tempfile",
+ "gix-traverse",
  "gix-zlib",
  "memmap2",
+ "parking_lot 0.12.5",
  "smallvec",
  "thiserror 2.0.19",
 ]
@@ -3515,6 +3519,13 @@ name = "josh-memodb"
 version = "26.7.28"
 dependencies = [
  "git2",
+ "gix-features",
+ "gix-hash",
+ "gix-object",
+ "gix-odb",
+ "gix-pack",
+ "gix-zlib",
+ "josh-gix-ext",
  "libgit2-sys",
  "log",
  "tempfile",

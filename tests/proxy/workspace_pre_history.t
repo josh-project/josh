@@ -149,8 +149,8 @@ file was created
       |-- objects
       |   |-- info
       |   `-- pack
-      |       |-- pack-8917b273641be5244854c2fbf57281b0086ccc85.idx
-      |       `-- pack-8917b273641be5244854c2fbf57281b0086ccc85.pack
+      |       |-- pack-faaf01d2dc0909611cdf7c3d1bdbbfe3ce2a9449.idx
+      |       `-- pack-faaf01d2dc0909611cdf7c3d1bdbbfe3ce2a9449.pack
       `-- refs
           |-- heads
           |-- namespaces

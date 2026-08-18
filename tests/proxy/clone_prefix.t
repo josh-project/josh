@@ -123,8 +123,8 @@
       |-- objects
       |   |-- info
       |   `-- pack
-      |       |-- pack-99ecd3f961c673728c44c77b13523f71980ac569.idx
-      |       `-- pack-99ecd3f961c673728c44c77b13523f71980ac569.pack
+      |       |-- pack-5a34d6972372a5df1225da7b3458665b96be8d30.idx
+      |       `-- pack-5a34d6972372a5df1225da7b3458665b96be8d30.pack
       `-- refs
           |-- heads
           |-- namespaces

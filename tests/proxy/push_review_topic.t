@@ -91,10 +91,10 @@ Make sure all temporary namespace got removed
       |   |   `-- 388f5880393d255b371f1ed9b801d35620017e
       |   |-- info
       |   `-- pack
-      |       |-- pack-2f3daab2c2bc0fa3c2cb94022cd73dbeb79fba8b.idx
-      |       |-- pack-2f3daab2c2bc0fa3c2cb94022cd73dbeb79fba8b.pack
-      |       |-- pack-9bd28ba2926c418d23678c7b9960f5577e09896b.idx
-      |       `-- pack-9bd28ba2926c418d23678c7b9960f5577e09896b.pack
+      |       |-- pack-0fbca5effb29d44fa34e315b8a34934a3d96e6a3.idx
+      |       |-- pack-0fbca5effb29d44fa34e315b8a34934a3d96e6a3.pack
+      |       |-- pack-62708cde9dd54e2a4d2ba90b263314de9b886870.idx
+      |       `-- pack-62708cde9dd54e2a4d2ba90b263314de9b886870.pack
       `-- refs
           |-- heads
           |-- namespaces
