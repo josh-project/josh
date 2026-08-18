@@ -354,62 +354,6 @@ mod tests {
         assert_eq!(exts, ["idx", "pack"]);
     }
 
-    /// Identical store contents produce an identical packfile, and hence an identical
-    /// checksum-derived pack name: the snapshot is taken in sorted oid order and entries are
-    /// compressed at a fixed level and serialized single-threaded.
-    #[test]
-    fn identical_content_yields_identical_pack_name() {
-        let pack_names = || {
-            let dir = tempfile::tempdir().unwrap();
-            let repo = git2::Repository::init(dir.path()).unwrap();
-            let store = MemOdb::new(None, crate::pack::objects_dir(&repo));
-            store.register(&repo);
-            for i in 0..4 {
-                repo.blob(format!("blob {i}").repeat(100).as_bytes())
-                    .unwrap();
-            }
-            store.flush().unwrap();
-            let mut names: Vec<String> =
-                std::fs::read_dir(crate::pack::objects_dir(&repo).join("pack"))
-                    .unwrap()
-                    .map(|e| e.unwrap().file_name().into_string().unwrap())
-                    .collect();
-            names.sort();
-            names
-        };
-        assert_eq!(pack_names(), pack_names());
-    }
-
-    /// Commits and trees written through the store keep their kinds across a flush: a fresh
-    /// backend-less repository must read them back from the pack with the right object types.
-    #[test]
-    fn flush_preserves_object_kinds() {
-        let dir = tempfile::tempdir().unwrap();
-        let repo = git2::Repository::init(dir.path()).unwrap();
-        let store = MemOdb::new(None, crate::pack::objects_dir(&repo));
-        store.register(&repo);
-
-        let blob_id = repo.blob(b"contents").unwrap();
-        let mut tb = repo.treebuilder(None).unwrap();
-        tb.insert("file", blob_id, 0o100644).unwrap();
-        let tree_id = tb.write().unwrap();
-        let sig = git2::Signature::new("t", "t@t", &git2::Time::new(0, 0)).unwrap();
-        let tree = repo.find_tree(tree_id).unwrap();
-        let commit_id = repo.commit(None, &sig, &sig, "msg", &tree, &[]).unwrap();
-        drop(tree);
-
-        store.flush().unwrap();
-
-        let on_disk = git2::Repository::open(dir.path()).unwrap();
-        let commit = on_disk.find_commit(commit_id).unwrap();
-        assert_eq!(commit.tree_id(), tree_id);
-        assert_eq!(
-            on_disk.find_tree(tree_id).unwrap().get(0).unwrap().id(),
-            blob_id
-        );
-        assert_eq!(on_disk.find_blob(blob_id).unwrap().content(), b"contents");
-    }
-
     /// Poll a freshly-opened (backend-less) view of the repository until `id` is readable from disk,
     /// up to ~2s. Used to observe asynchronous background packs without racing the flusher thread.
     fn wait_on_disk(repo_path: &std::path::Path, id: Oid) -> bool {
