@@ -215,7 +215,7 @@ impl Transaction {
             git2::opts::strict_hash_verification(false);
         });
 
-        let mem_odb = josh_memodb::MemOdb::new(mem_odb_limit, repo.path().to_owned());
+        let mem_odb = josh_memodb::MemOdb::new(mem_odb_limit, josh_memodb::objects_dir(&repo));
         mem_odb.register(&repo);
 
         // Balanced in `Drop`; lets a locking backend (sled) hold its lock only while a

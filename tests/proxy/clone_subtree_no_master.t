@@ -126,8 +126,8 @@
       |-- objects
       |   |-- info
       |   `-- pack
-      |       |-- pack-2f3daab2c2bc0fa3c2cb94022cd73dbeb79fba8b.idx
-      |       `-- pack-2f3daab2c2bc0fa3c2cb94022cd73dbeb79fba8b.pack
+      |       |-- pack-62708cde9dd54e2a4d2ba90b263314de9b886870.idx
+      |       `-- pack-62708cde9dd54e2a4d2ba90b263314de9b886870.pack
       `-- refs
           |-- heads
           `-- tags

@@ -7,8 +7,8 @@
 //! Packing itself runs on a background thread (see [`crate::flusher`]): the write path enqueues the
 //! work and keeps filtering, and a boundary flush blocks only until the pack is durable. The store's
 //! `Mutex` therefore guards concurrent access from the filter thread (writes/reads through the
-//! backend) and the flusher thread (which reads objects to pack them, then evicts them); it is
-//! `Send + Sync` so its `Arc` can cross to the flusher.
+//! backend) and the flusher thread (which snapshots the buffered objects to pack them, then evicts
+//! them); it is `Send + Sync` so its `Arc` can cross to the flusher.
 
 use std::collections::BTreeMap;
 use std::path::PathBuf;
@@ -20,7 +20,14 @@ use libgit2_sys as raw;
 
 use crate::odb_backend::{self, OdbBackend};
 
-type ObjectMap = BTreeMap<Oid, (raw::git_object_t, Box<[u8]>)>;
+/// Object bytes are held behind an `Arc` so a flush can snapshot them without copying: the store
+/// must keep serving reads while the flusher packs (eviction only happens once the pack is
+/// durable), so the snapshot shares the buffers instead of draining or cloning them.
+type ObjectMap = BTreeMap<Oid, (raw::git_object_t, Arc<[u8]>)>;
+
+/// A `Send` snapshot of buffered objects in sorted-oid order (the `ObjectMap` iteration order),
+/// which keeps the resulting packfile — and hence its checksum-derived name — deterministic.
+pub(crate) type Snapshot = Vec<(Oid, raw::git_object_t, Arc<[u8]>)>;
 
 /// The buffered objects plus a running total of their data size, guarded by one lock so that an
 /// insert and the overflow check following it are observed atomically.
@@ -36,9 +43,10 @@ struct Inner {
 pub struct MemOdb {
     inner: Mutex<Inner>,
     limit: Option<usize>,
-    /// Repository the store is registered on, re-opened by the background flusher to run the
-    /// packbuilder (a `git2::Repository` is not `Send`).
-    repo_path: PathBuf,
+    /// The registered repository's resolved object directory (`<commondir>/objects`, see
+    /// [`crate::pack::objects_dir`]), captured at construction while the caller holds a repository
+    /// handle; the background flusher packs straight into it without opening one.
+    objects_dir: PathBuf,
     /// Set while an overflow chunk is queued on or running in the background flusher, so the write
     /// path does not pile up redundant chunk requests every time the store crosses its limit.
     /// Cleared by the flusher once the chunk has packed and evicted.
@@ -49,14 +57,16 @@ impl MemOdb {
     /// Create an empty store. Returned as an [`Arc`] because the store is shared between the owning
     /// transaction and the libgit2 backend registered on its repository. `limit` bounds the total
     /// buffered object data: once exceeded the store flushes itself to a packfile (`None` = unbounded).
-    pub fn new(limit: Option<usize>, repo_path: PathBuf) -> Arc<MemOdb> {
+    /// `objects_dir` is where flushes land; pass [`crate::pack::objects_dir`] of the repository the
+    /// store is about to be registered on.
+    pub fn new(limit: Option<usize>, objects_dir: PathBuf) -> Arc<MemOdb> {
         Arc::new(MemOdb {
             inner: Mutex::new(Inner {
                 map: Default::default(),
                 size: 0,
             }),
             limit,
-            repo_path,
+            objects_dir,
             chunk_in_flight: AtomicBool::new(false),
         })
     }
@@ -75,7 +85,7 @@ impl MemOdb {
 
     /// Buffer `oid` (a no-op for a content-addressed duplicate) and return whether the store has now
     /// exceeded its size limit, so the caller can flush.
-    fn insert(&self, oid: Oid, kind: raw::git_object_t, data: Box<[u8]>) -> bool {
+    fn insert(&self, oid: Oid, kind: raw::git_object_t, data: Arc<[u8]>) -> bool {
         let len = data.len();
         let mut inner = self.inner.lock().unwrap();
         if inner.map.insert(oid, (kind, data)).is_none() {
@@ -117,47 +127,38 @@ impl MemOdb {
         self.chunk_in_flight.store(false, Ordering::Release);
     }
 
-    /// Pack this store's currently-buffered objects into a packfile and evict them. Runs only on the
-    /// background flusher, which owns no repository handle (`git2::Repository` is not `Send`), so it
-    /// re-opens the repository and registers a backend sharing this store — the packbuilder reads
-    /// each object back through that backend.
+    /// Pack this store's currently-buffered objects into a packfile and evict them. Runs only on
+    /// the background flusher, which packs a snapshot of the buffers straight into the object
+    /// directory captured at construction (see [`crate::pack::write_snapshot`]) — no repository
+    /// handle involved. The snapshot shares the object buffers (`Arc`), and the objects stay in the
+    /// map while the pack is written, so concurrent reads through the backend keep resolving until
+    /// eviction — which happens only once the pack is on disk.
     pub(crate) fn pack_to_disk(self: &Arc<Self>) -> Result<(), git2::Error> {
-        // Snapshot the oids under the lock, then release it. The objects must stay in the store
-        // across the packbuilder below: `pb.write` reads each one back through the odb -> this
-        // backend -> `self.inner.lock()`, so we can neither hold the lock here (self-deadlock) nor
-        // drain the map before the pack is on disk. A BTreeMap iterates in sorted oid order, so the
-        // packbuilder produces a deterministic packfile (hence a deterministic pack name).
-        let oids: Vec<Oid> = {
+        // Snapshot under the lock, then release it: `write_snapshot` filters against the on-disk
+        // store and compresses every object, which must not stall the filter thread's reads and
+        // writes. Objects already on disk may have been re-buffered (the memory-only freshen does
+        // not deduplicate against disk, see `odb_backend`); `write_snapshot` packs only the
+        // genuinely-new ones, in the map's sorted oid order, keeping the packfile — and its
+        // checksum-derived name — deterministic.
+        let snapshot: Snapshot = {
             let inner = self.inner.lock().unwrap();
             if inner.map.is_empty() {
                 return Ok(());
             }
-            inner.map.keys().copied().collect()
+            inner
+                .map
+                .iter()
+                .map(|(oid, (kind, data))| (*oid, *kind, data.clone()))
+                .collect()
         };
 
-        let repo = git2::Repository::open(&self.repo_path)?;
-        self.register(&repo);
-
-        // The memory-only freshen (see `odb_backend`) no longer deduplicates writes against disk,
-        // so objects already present on disk may have been re-buffered into the store. Pack only the
-        // genuinely-new ones — `filter_absent_on_disk` preserves the sorted oid order, so the
-        // packfile (and its name) stays deterministic.
-        let to_pack = odb_backend::filter_absent_on_disk(&repo, &oids);
-        if !to_pack.is_empty() {
-            let mut pb = repo.packbuilder()?;
-            for oid in &to_pack {
-                pb.insert_object(*oid, None)?;
-            }
-            // `packfile_path` resolves the common object directory, so this is correct for linked
-            // worktrees (whose gitdir has no `objects/` of its own) as well as normal repos.
-            pb.write(&crate::pack::packfile_path(&repo), 0)?;
-        }
+        crate::pack::write_snapshot(&self.objects_dir, &snapshot)?;
 
         // Evict exactly the snapshotted oids (now durable: packed just above, or already on disk).
         // Writes that landed after the snapshot stay buffered for the next chunk or the drain, so a
         // background chunk running concurrently with the write path never drops a live object.
         let mut inner = self.inner.lock().unwrap();
-        for oid in &oids {
+        for (oid, _, _) in &snapshot {
             if let Some((_, data)) = inner.map.remove(oid) {
                 inner.size = inner.size.saturating_sub(data.len());
             }
@@ -206,7 +207,7 @@ impl OdbBackend for MemBackend {
     }
 
     fn write(&mut self, oid: Oid, data: Vec<u8>, kind: ObjectType) -> Result<(), git2::Error> {
-        let overflow = self.store.insert(oid, kind.raw(), data.into_boxed_slice());
+        let overflow = self.store.insert(oid, kind.raw(), data.into());
         if overflow {
             self.store.enqueue_chunk();
         }
@@ -239,7 +240,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let repo = git2::Repository::init(dir.path()).unwrap();
 
-        let store = MemOdb::new(None, repo.path().to_owned());
+        let store = MemOdb::new(None, crate::pack::objects_dir(&repo));
         store.register(&repo);
 
         let ids: Vec<Oid> = (0..4)
@@ -264,9 +265,9 @@ mod tests {
         store.flush().unwrap();
     }
 
-    /// A linked worktree's gitdir has no `objects/` of its own, so the flush must write into the
-    /// common object directory rather than `repo.path()/objects/pack` (which does not exist and
-    /// previously failed with "No such file or directory").
+    /// A linked worktree's gitdir has no `objects/` of its own, so [`crate::pack::objects_dir`]
+    /// must resolve the common object directory rather than `repo.path()/objects` (which does not
+    /// exist and previously failed with "No such file or directory").
     #[test]
     fn flush_writes_to_common_dir_for_worktree() {
         let tmp = tempfile::tempdir().unwrap();
@@ -288,7 +289,7 @@ mod tests {
         // The worktree's gitdir differs from its common dir (the main gitdir).
         assert_ne!(wt_repo.path(), wt_repo.commondir());
 
-        let store = MemOdb::new(None, wt_repo.path().to_owned());
+        let store = MemOdb::new(None, crate::pack::objects_dir(&wt_repo));
         store.register(&wt_repo);
         let id = wt_repo.blob(b"worktree blob").unwrap();
 
@@ -309,7 +310,7 @@ mod tests {
         let repo = git2::Repository::init(dir.path()).unwrap();
 
         // A 16-byte limit: each 100-byte blob overflows it, so every write enqueues a pack.
-        let store = MemOdb::new(Some(16), repo.path().to_owned());
+        let store = MemOdb::new(Some(16), crate::pack::objects_dir(&repo));
         store.register(&repo);
 
         // The write overflowed and enqueued a background pack; it lands on the flusher thread, so
@@ -326,6 +327,87 @@ mod tests {
             wait_on_disk(dir.path(), id2),
             "second overflow pack never reached disk"
         );
+    }
+
+    /// A flush leaves exactly a `pack-<hash>.pack`/`.idx` pair behind — in particular no `.keep`
+    /// file, which gix-pack creates for its caller to remove and which would otherwise exempt the
+    /// pack from `git repack -d` (and churn test dir listings).
+    #[test]
+    fn flush_leaves_only_pack_and_idx() {
+        let dir = tempfile::tempdir().unwrap();
+        let repo = git2::Repository::init(dir.path()).unwrap();
+        let store = MemOdb::new(None, crate::pack::objects_dir(&repo));
+        store.register(&repo);
+
+        repo.blob(b"some blob").unwrap();
+        store.flush().unwrap();
+
+        let mut exts: Vec<String> = std::fs::read_dir(crate::pack::objects_dir(&repo).join("pack"))
+            .unwrap()
+            .map(|e| {
+                let name = e.unwrap().file_name().into_string().unwrap();
+                assert!(name.starts_with("pack-"), "unexpected file {name}");
+                name.rsplit('.').next().unwrap().to_string()
+            })
+            .collect();
+        exts.sort();
+        assert_eq!(exts, ["idx", "pack"]);
+    }
+
+    /// Identical store contents produce an identical packfile, and hence an identical
+    /// checksum-derived pack name: the snapshot is taken in sorted oid order and entries are
+    /// compressed at a fixed level and serialized single-threaded.
+    #[test]
+    fn identical_content_yields_identical_pack_name() {
+        let pack_names = || {
+            let dir = tempfile::tempdir().unwrap();
+            let repo = git2::Repository::init(dir.path()).unwrap();
+            let store = MemOdb::new(None, crate::pack::objects_dir(&repo));
+            store.register(&repo);
+            for i in 0..4 {
+                repo.blob(format!("blob {i}").repeat(100).as_bytes())
+                    .unwrap();
+            }
+            store.flush().unwrap();
+            let mut names: Vec<String> =
+                std::fs::read_dir(crate::pack::objects_dir(&repo).join("pack"))
+                    .unwrap()
+                    .map(|e| e.unwrap().file_name().into_string().unwrap())
+                    .collect();
+            names.sort();
+            names
+        };
+        assert_eq!(pack_names(), pack_names());
+    }
+
+    /// Commits and trees written through the store keep their kinds across a flush: a fresh
+    /// backend-less repository must read them back from the pack with the right object types.
+    #[test]
+    fn flush_preserves_object_kinds() {
+        let dir = tempfile::tempdir().unwrap();
+        let repo = git2::Repository::init(dir.path()).unwrap();
+        let store = MemOdb::new(None, crate::pack::objects_dir(&repo));
+        store.register(&repo);
+
+        let blob_id = repo.blob(b"contents").unwrap();
+        let mut tb = repo.treebuilder(None).unwrap();
+        tb.insert("file", blob_id, 0o100644).unwrap();
+        let tree_id = tb.write().unwrap();
+        let sig = git2::Signature::new("t", "t@t", &git2::Time::new(0, 0)).unwrap();
+        let tree = repo.find_tree(tree_id).unwrap();
+        let commit_id = repo.commit(None, &sig, &sig, "msg", &tree, &[]).unwrap();
+        drop(tree);
+
+        store.flush().unwrap();
+
+        let on_disk = git2::Repository::open(dir.path()).unwrap();
+        let commit = on_disk.find_commit(commit_id).unwrap();
+        assert_eq!(commit.tree_id(), tree_id);
+        assert_eq!(
+            on_disk.find_tree(tree_id).unwrap().get(0).unwrap().id(),
+            blob_id
+        );
+        assert_eq!(on_disk.find_blob(blob_id).unwrap().content(), b"contents");
     }
 
     /// Poll a freshly-opened (backend-less) view of the repository until `id` is readable from disk,

@@ -187,8 +187,8 @@
       |-- objects
       |   |-- info
       |   `-- pack
-      |       |-- pack-bc2bd46c4c017717f7584aad0c1f3b80cdb1fee6.idx
-      |       `-- pack-bc2bd46c4c017717f7584aad0c1f3b80cdb1fee6.pack
+      |       |-- pack-344f101b5d72f5ef8bb927db14289ba3c44692aa.idx
+      |       `-- pack-344f101b5d72f5ef8bb927db14289ba3c44692aa.pack
       `-- refs
           |-- heads
           |-- namespaces

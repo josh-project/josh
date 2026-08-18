@@ -1,6 +1,6 @@
 //! Background packfile writer for [`MemOdb`](crate::mem_odb::MemOdb).
 //!
-//! Writing a packfile (zlib-compressing every buffered object and fsyncing the result) is the
+//! Writing a packfile (zlib-compressing every buffered object and indexing the result) is the
 //! expensive tail of a flush. Running it inline would block the filter hot path — the mid-run
 //! overflow flush most of all, which fires repeatedly during a large rewrite. So all packing is
 //! funnelled to one process-global worker thread:
@@ -12,9 +12,10 @@
 //!   caller proceeds.
 //!
 //! A single worker processes jobs FIFO, so a store's queued overflow chunks always complete before
-//! its drain — and no two packbuilders ever run against the same store concurrently. Stores are
-//! per-operation, so a job carries the store's `Arc` and its repo path (a `git2::Repository` is not
-//! `Send`); the worker opens its own repository handle to run the packbuilder.
+//! its drain — and no two packs are ever written from the same store concurrently. A job carries
+//! the store's `Arc`; the worker snapshots the buffered objects and packs them with gix-pack
+//! straight into the store's object directory (see [`crate::pack`]) — no repository handle
+//! involved.
 
 use std::sync::Arc;
 use std::sync::LazyLock;
@@ -22,8 +23,8 @@ use std::sync::mpsc::{Sender, SyncSender, channel, sync_channel};
 
 use crate::mem_odb::MemOdb;
 
-/// A unit of packing work for the background worker. Each carries the store's `Arc` (the packbuilder
-/// reads objects back out of it) rather than a repository handle, which is not `Send`.
+/// A unit of packing work for the background worker. Each carries the store's `Arc`; the worker
+/// snapshots and packs its buffered objects.
 enum Job {
     /// Pack the store's currently-buffered objects and evict them. Best-effort; no acknowledgement.
     Chunk { store: Arc<MemOdb> },

@@ -142,12 +142,12 @@ Flushed credential cache
       |   |   `-- 6a812a71a431e71d30949f25013ca63f8493c3
       |   |-- info
       |   `-- pack
-      |       |-- pack-2f3daab2c2bc0fa3c2cb94022cd73dbeb79fba8b.idx
-      |       |-- pack-2f3daab2c2bc0fa3c2cb94022cd73dbeb79fba8b.pack
-      |       |-- pack-a724713a58e1918b9032aed364764a0a4cece84b.idx
-      |       |-- pack-a724713a58e1918b9032aed364764a0a4cece84b.pack
-      |       |-- pack-d30dedde21210b124782caf6ef83f7cf4c11a181.idx
-      |       `-- pack-d30dedde21210b124782caf6ef83f7cf4c11a181.pack
+      |       |-- pack-4bd58ee63975a927d6f412d722859a6d5aebbbe2.idx
+      |       |-- pack-4bd58ee63975a927d6f412d722859a6d5aebbbe2.pack
+      |       |-- pack-62708cde9dd54e2a4d2ba90b263314de9b886870.idx
+      |       |-- pack-62708cde9dd54e2a4d2ba90b263314de9b886870.pack
+      |       |-- pack-84bf2195a0e00629f813ae535a24bb7fca071fa2.idx
+      |       `-- pack-84bf2195a0e00629f813ae535a24bb7fca071fa2.pack
       `-- refs
           |-- heads
           |-- namespaces

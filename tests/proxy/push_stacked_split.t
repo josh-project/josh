@@ -185,8 +185,8 @@ Make sure all temporary namespace got removed
       |   |   `-- b2a5b9c65fae1d20c1b1fb777d1ea025456faa
       |   |-- info
       |   `-- pack
-      |       |-- pack-d787933d12fa80e0118646c0aa4a83139c02e4cb.idx
-      |       `-- pack-d787933d12fa80e0118646c0aa4a83139c02e4cb.pack
+      |       |-- pack-7a3bcd23cf0d9c3f433e71e7885b8ff12c31d912.idx
+      |       `-- pack-7a3bcd23cf0d9c3f433e71e7885b8ff12c31d912.pack
       `-- refs
           |-- heads
           |-- namespaces

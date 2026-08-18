@@ -258,14 +258,14 @@ Make sure all temporary namespace got removed
       |   |   `-- b2a5b9c65fae1d20c1b1fb777d1ea025456faa
       |   |-- info
       |   `-- pack
-      |       |-- pack-78ffbd7e7c8abf2dbcfc09867596c326c91d05c3.idx
-      |       |-- pack-78ffbd7e7c8abf2dbcfc09867596c326c91d05c3.pack
-      |       |-- pack-8b21babdbe4d8b1392439429880860d8cf698332.idx
-      |       |-- pack-8b21babdbe4d8b1392439429880860d8cf698332.pack
-      |       |-- pack-9afe2a05aace90b45bcd9486b9fc09e71480633c.idx
-      |       |-- pack-9afe2a05aace90b45bcd9486b9fc09e71480633c.pack
-      |       |-- pack-f084b3cbab8aecd03fa3cd68e6aa79382657e69b.idx
-      |       `-- pack-f084b3cbab8aecd03fa3cd68e6aa79382657e69b.pack
+      |       |-- pack-3a57e9cdc95400944f3e385ef9f2dd3e34214850.idx
+      |       |-- pack-3a57e9cdc95400944f3e385ef9f2dd3e34214850.pack
+      |       |-- pack-63a0eba9c29d8be4a080b31f7ae988c86dcf4f40.idx
+      |       |-- pack-63a0eba9c29d8be4a080b31f7ae988c86dcf4f40.pack
+      |       |-- pack-73ff0b391af4bb8dff50f6070f8e6bd258d3d562.idx
+      |       |-- pack-73ff0b391af4bb8dff50f6070f8e6bd258d3d562.pack
+      |       |-- pack-e56807bf90b581321239e94899e9a2bad8ea715c.idx
+      |       `-- pack-e56807bf90b581321239e94899e9a2bad8ea715c.pack
       `-- refs
           |-- heads
           |-- namespaces

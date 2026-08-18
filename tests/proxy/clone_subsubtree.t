@@ -138,10 +138,10 @@
       |-- objects
       |   |-- info
       |   `-- pack
-      |       |-- pack-442b8fb8b28a9e4db96c2918ac2b58a1f786beb1.idx
-      |       |-- pack-442b8fb8b28a9e4db96c2918ac2b58a1f786beb1.pack
-      |       |-- pack-dc6413149cc84a39b1f6795b6f032a4d391a2e9e.idx
-      |       `-- pack-dc6413149cc84a39b1f6795b6f032a4d391a2e9e.pack
+      |       |-- pack-5c8a6b6168fe8012756c4278585b1852f9a0cbcb.idx
+      |       |-- pack-5c8a6b6168fe8012756c4278585b1852f9a0cbcb.pack
+      |       |-- pack-f2883c7d8701eb14a51b3a87f0f25c77ac3669db.idx
+      |       `-- pack-f2883c7d8701eb14a51b3a87f0f25c77ac3669db.pack
       `-- refs
           |-- heads
           |-- namespaces

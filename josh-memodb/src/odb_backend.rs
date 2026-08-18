@@ -182,7 +182,8 @@ impl RawOdbBackend {
     }
 
     /// Object enumeration is delegated to the on-disk ODB only; in-memory objects are not enumerated
-    /// (the filter path inserts objects into the packbuilder by OID, not via `foreach`).
+    /// (nothing enumerates the store: flushes pack a snapshot of it, see
+    /// [`crate::pack::write_snapshot`]).
     extern "C" fn backend_foreach(
         backend: *mut raw::git_odb_backend,
         cb: raw::git_odb_foreach_cb,
@@ -200,7 +201,7 @@ impl RawOdbBackend {
     /// `GIT_ENOTFOUND` otherwise (so the write proceeds to `backend_write`). It deliberately never
     /// consults the on-disk delegate: avoiding that per-object filesystem stat/touch is the whole
     /// point of the ODB swap. Objects already on disk are deduplicated at the flush boundary instead
-    /// (see [`filter_absent_on_disk`]).
+    /// (see [`crate::pack::write_snapshot`]).
     extern "C" fn backend_freshen(
         backend: *mut raw::git_odb_backend,
         oid: *const raw::git_oid,
@@ -319,50 +320,6 @@ where
         // the backend's `delegate` field until the repo (and thus `new`) is freed.
         raw::git_odb_free(new);
         Ok(())
-    }
-}
-
-/// The on-disk ODB that `repo`'s swapped in-memory backend delegates reads to, or null if the
-/// backend is not installed. Reaches the backend at index 0 of the (swapped) repo ODB, which is
-/// always the single backend added by [`register`].
-unsafe fn delegate_of(repo: &git2::Repository) -> *mut raw::git_odb {
-    unsafe {
-        let repo_raw = *(repo as *const git2::Repository as *const *mut raw::git_repository);
-        let mut odb: *mut raw::git_odb = ptr::null_mut();
-        if raw::git_repository_odb(&mut odb, repo_raw) != raw::GIT_OK {
-            return ptr::null_mut();
-        }
-        let mut backend: *mut raw::git_odb_backend = ptr::null_mut();
-        let rc = raw::git_odb_get_backend(&mut backend, odb, 0);
-        raw::git_odb_free(odb);
-        if rc != raw::GIT_OK || backend.is_null() {
-            return ptr::null_mut();
-        }
-        (*(backend as *const RawOdbBackend)).delegate
-    }
-}
-
-/// Return the subset of `oids` that are NOT already present in the on-disk ODB that `repo`'s swapped
-/// backend delegates to, using `NO_REFRESH` (matching the non-refreshing semantics of the write-time
-/// freshen that the memory-only [`RawOdbBackend::backend_freshen`] replaced). The memory-only
-/// freshen no longer deduplicates writes against disk, so a flush uses this to pack only
-/// genuinely-new objects and keep the on-disk layout deterministic. If the backend is not installed
-/// (no delegate), every oid is returned.
-pub fn filter_absent_on_disk(repo: &git2::Repository, oids: &[Oid]) -> Vec<Oid> {
-    unsafe {
-        let disk = delegate_of(repo);
-        if disk.is_null() {
-            return oids.to_vec();
-        }
-        oids.iter()
-            .copied()
-            .filter(|oid| {
-                let mut goid: raw::git_oid = std::mem::zeroed();
-                goid.id.copy_from_slice(oid.as_bytes());
-                let flags = raw::GIT_ODB_LOOKUP_NO_REFRESH as std::os::raw::c_uint;
-                raw::git_odb_exists_ext(disk, &goid, flags) == 0
-            })
-            .collect()
     }
 }
 
