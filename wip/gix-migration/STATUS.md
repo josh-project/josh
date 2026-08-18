@@ -1,6 +1,6 @@
 # git2 -> gix port: status
 
-Last updated: 2026-08-17 (post-2.6, phase 2 complete). See `PLAN.md` in this directory for the full phased plan.
+Last updated: 2026-08-18 (post-3.1). See `PLAN.md` in this directory for the full phased plan.
 
 ## Landed on master (one commit per step, each suite-green and bench-validated)
 
@@ -24,6 +24,8 @@ Last updated: 2026-08-17 (post-2.6, phase 2 complete). See `PLAN.md` in this dir
 | 2.5 | 740ccbe3 | josh-proxy and the leaf crates onto the Transaction ref API: all 11 josh-proxy ref-store sites — reads via `resolve_ref` (`merge_meta`'s refs/josh/meta, fetch cache ref, push base-ref probe + original target incl. the `-o merge` re-resolve, `resolve_upstream_ref` — now a plain string refname, not PathBuf —, template render), writes via `update_ref(Expected::Any)` (JOSH_REWRITE_REFS, push temp ref), the temp-ref delete via `delete_ref(Any)`, namespaced HEAD via `create_symref` (the two 2.4 API consumers arrive); write→flush→subprocess orderings in `push_head_url`/`write_to_repo` preserved exactly. `josh_core::filter::{as_tree,from_tree}` become `&Transaction`-taking wrappers (bare re-export dropped; `cache/distributed.rs` calls `josh_filter::persist::as_tree` directly on its own repo below the cache stack); josh-link takes oids instead of borrowed `git2::Commit`/`Tree` and drops its redundant repo param, `make_signature` takes `&Transaction` (callers: josh-cli link/cq). josh-starlark/josh-templates verified zero ref-store calls — untouched. Deliberate divergences (suite-invisible, zero prysk churn): resolve errors propagate instead of selecting fallback arms (meta empty-tree restart, cache-ref probe, zero-old recovery, base probe, merge re-resolve); `resolve_upstream_ref` follows symrefs, two error texts collapse into one; temp-ref delete missing-ok instead of CASing the creation-time value; render missing-ref error text; corrupt HEAD tree in link add errors inside `prepare_link_add` after the export filter run instead of up front (found by the verify pass); josh-filter CLI parses tree-oid filter specs after the cache open (error ordering only) | flat-to-better (`refs_filter_update` -1.5 to -3%, `deephistory_{subdir,rev}` control at/above post-1.5 levels) |
 
 | 2.6 | 5f715a39 | Phase-2 exit audit: multi-agent sweep of every `.repo()` call site (~280 sites, 54 files) plus a workspace-wide grep of the full git2 ref-store API surface (incl. `set_target`, `Reference::delete`, `rename`, notes, `push_ref`/`push_glob`), every suspected escape adversarially verified. 113 ref-store-relevant sites classified; the only escape was `cq/josh-cq/src/cq.rs` (2.5's research inventoried it solely as a josh-link caller, never surveying its own ref sites): `handle_track`'s `repo.head()?.set_target(..)` write ported to `update_ref` with `Expected::At` of the stored target captured at the HEAD read (2.4 pull-guard pattern; concurrent HEAD moves now error instead of clobbering, detached HEAD updates via a direct `"HEAD"` write), the symbolic-HEAD read stays with the standard PORT marker (refname/target captured for the guard; non-UTF-8 refname/oid-less HEAD now error), the FETCH_HEAD read was a verified deliberate stay only missing its PORT marker (added, call unchanged). All 22 PORT markers across 11 files verified present and in sanctioned categories; transaction.rs/git.rs/distributed.rs allowlist confirmed; all other sites object I/O (phase-3 flag day) or bench/test setup (4.2). Noted for phase 3: josh-proxy `TmpGitNamespace::cleanup` deletes namespace refs via `fs::remove_dir_all` behind both git2 and the ref API. Full report: `.agents/work/gix-port/2.6-audit.md` | n/a (josh-core untouched; josh-cq is a leaf binary) |
+
+| 3.1 | ba09c86c | Flusher packs via gix-pack, no repository handle on the worker: `pack_to_disk` snapshots `(oid, kind, Arc<[u8]>)` tuples under the lock (map values now `Arc`-shared — the snapshot copies nothing; objects stay readable through the backend until evicted after the pack is durable) and the new `pack::write_snapshot` does the rest: dedup filter via a per-flush `gix_odb::at` handle with `RefreshMode::Never` (the default re-lists the pack dir on every miss, and misses are the common case), `output::Entry::from_data` per object (fixed zlib level 6 = the libgit2/git default), `FromEntriesIter` (V2/Sha1) spooled through an anonymous tempfile in the pack dir (objects compressed lazily as the serializer pulls — at most one compressed object in RAM, preserving the old packbuilder's streaming memory profile; found by the review pass), `Bundle::write_to_directory` (tempfile+rename, `pack-<trailer-hash>` naming — the same rule as libgit2 —, idx persisted last), then gix's `.keep` marker removed via `data_path.with_extension("keep")` missing-ok (not `outcome.keep_path`, which is `None` when a retry finds the pack already persisted by a partially-completed earlier attempt — deriving the name heals the leftover marker; found by the review pass; residual known gap: a transient unlink failure alone can still orphan one `.keep`). `MemOdb::new` now takes the resolved `<commondir>/objects` (new `josh_memodb::objects_dir(repo)` helper, worktree-correct, captured at construction where both call sites hold a repo handle); `filter_absent_on_disk`/`delegate_of`/`packfile_path` deleted. josh-memodb gains gix-pack/gix-odb/gix-zlib/gix-features/gix-hash/gix-object/josh-gix-ext/tempfile deps; `gix-features/parallel` deliberately NOT enabled anywhere (feature unification would flip `OwnShared` Rc→Arc workspace-wide). Deliberate divergences (suite-visible one regenerated): all 93 pinned pack names across 36 proxy `.t` files change (zlib-rs bytes ≠ C zlib; scrut's whole-file rewrite discarded — names replaced surgically, formatting/comments preserved), packs are base-only (libgit2 deltified at window 11/depth 50; bigger on disk, size-pin-free, housekeeping cruft repack re-deltifies), pack files 0600 not 0444, no tag-foreach ref read inside the pack path. New unit tests: flush leaves exactly pack+idx (no `.keep`), identical content ⇒ identical pack name, commit/tree kinds preserved across flush | `deephistory_prefix_flush` **-20 to -24%** vs pre-gix, `unapply_extend` -9 to -13% vs pre-3.1 (`unapply_new_branch` flat), rest at post-2.x levels (`refs_filter_update` -1 to -3%), no regressions (`ultrawide_parse` +12% flagged once, no-change on settled rerun) |
 
 Phase 1.2 is complete: no `treebuilder` use remains in `josh-core/src/filter/tree.rs`.
 
@@ -49,15 +51,16 @@ write); blob writes are plain odb writes that memodb intercepts.
 
 ## Next steps
 
-Phase 2 is complete (2.6 audit clean).
+Phase 2 is complete (2.6 audit clean). Phase 3 step 3.1 (flusher packs) is landed.
 
-1. **Phase 3** Flusher packs via gix-pack (3.1); memory store into the adapter (3.2); flag
-   day (3.3): Transaction opens `gix::ThreadSafeRepository` (isolated), refs via gix-ref
-   (parity contract pinned in the 2.1 method comments + unit tests). Plan gap found in 2.1:
-   `cache/distributed.rs` holds its own `git2::Repository` (one ref write, two resolves)
-   below the cache stack -- needs its own port sub-step here. Also from 2.6: josh-proxy
-   `TmpGitNamespace::cleanup` removes namespace refs via `fs::remove_dir_all` behind both
-   git2 and the ref API -- verify gix's loose-ref/packed-refs view tolerates it at flag day.
+1. **Phase 3 remaining** Memory store into the adapter (3.2): staging map becomes
+   authoritative, unregister the libgit2 ODB backend; flag day (3.3): Transaction opens
+   `gix::ThreadSafeRepository` (isolated), refs via gix-ref (parity contract pinned in the
+   2.1 method comments + unit tests). Plan gap found in 2.1: `cache/distributed.rs` holds
+   its own `git2::Repository` (one ref write, two resolves) below the cache stack -- needs
+   its own port sub-step here. Also from 2.6: josh-proxy `TmpGitNamespace::cleanup` removes
+   namespace refs via `fs::remove_dir_all` behind both git2 and the ref API -- verify gix's
+   loose-ref/packed-refs view tolerates it at flag day.
 2. **Phase 4** Port bench setup, flip `josh_core::Oid` inner type, delete josh-memodb FFI,
    remove git2/libgit2-sys workspace-wide (`cargo tree -i git2` empty).
 
@@ -73,9 +76,12 @@ discover_filter_candidates' filtered-refs loop has matched nothing since introdu
 
 - Criterion `pre-gix` baselines live in `target/criterion` (recorded at the 0.1 benches
   commit, pristine master). Compare with a loop of
-  `cargo bench -p josh-core --bench <b> -- --baseline pre-gix` over the 11 bench targets
-  (incl. `unapply`, whose two groups pin the push-path walkers: `unapply_extend` must stay
-  O(push length), `unapply_new_branch` scales with the discover walk).
+  `cargo bench -p josh-core --bench <b> -- --baseline pre-gix` over the 11 bench targets.
+  Exception: `unapply` (whose two groups pin the push-path walkers: `unapply_extend` must
+  stay O(push length), `unapply_new_branch` scales with the discover walk) was added in
+  1.5 and has NO `pre-gix` baseline -- compare it per step by saving a baseline at the
+  parent commit (checkout HEAD~1, `--save-baseline pre-<step>`, checkout back, `--baseline
+  pre-<step>`).
   Do NOT use `--benches` (the lib target rejects criterion flags).
 - Per-commit deltas across the local stack: `.agents/work/gix-port/stack-bench-run.sh`
   saves a baseline per step; `.agents/work/gix-port/stack-bench-report.py` prints the
