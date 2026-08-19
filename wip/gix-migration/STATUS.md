@@ -1,6 +1,6 @@
 # git2 -> gix port: status
 
-Last updated: 2026-08-18 (post-3.1). See `PLAN.md` in this directory for the full phased plan.
+Last updated: 2026-08-18 (post-3.2a). See `PLAN.md` in this directory for the full phased plan.
 
 ## Landed on master (one commit per step, each suite-green and bench-validated)
 
@@ -27,6 +27,8 @@ Last updated: 2026-08-18 (post-3.1). See `PLAN.md` in this directory for the ful
 
 | 3.1 | ba09c86c | Flusher packs via gix-pack, no repository handle on the worker: `pack_to_disk` snapshots `(oid, kind, Arc<[u8]>)` tuples under the lock (map values now `Arc`-shared — the snapshot copies nothing; objects stay readable through the backend until evicted after the pack is durable) and the new `pack::write_snapshot` does the rest: dedup filter via a per-flush `gix_odb::at` handle with `RefreshMode::Never` (the default re-lists the pack dir on every miss, and misses are the common case), `output::Entry::from_data` per object (fixed zlib level 6 = the libgit2/git default), `FromEntriesIter` (V2/Sha1) spooled through an anonymous tempfile in the pack dir (objects compressed lazily as the serializer pulls — at most one compressed object in RAM, preserving the old packbuilder's streaming memory profile; found by the review pass), `Bundle::write_to_directory` (tempfile+rename, `pack-<trailer-hash>` naming — the same rule as libgit2 —, idx persisted last), then gix's `.keep` marker removed via `data_path.with_extension("keep")` missing-ok (not `outcome.keep_path`, which is `None` when a retry finds the pack already persisted by a partially-completed earlier attempt — deriving the name heals the leftover marker; found by the review pass; residual known gap: a transient unlink failure alone can still orphan one `.keep`). `MemOdb::new` now takes the resolved `<commondir>/objects` (new `josh_memodb::objects_dir(repo)` helper, worktree-correct, captured at construction where both call sites hold a repo handle); `filter_absent_on_disk`/`delegate_of`/`packfile_path` deleted. josh-memodb gains gix-pack/gix-odb/gix-zlib/gix-features/gix-hash/gix-object/josh-gix-ext/tempfile deps; `gix-features/parallel` deliberately NOT enabled anywhere (feature unification would flip `OwnShared` Rc→Arc workspace-wide). Deliberate divergences (suite-visible one regenerated): all 93 pinned pack names across 36 proxy `.t` files change (zlib-rs bytes ≠ C zlib; scrut's whole-file rewrite discarded — names replaced surgically, formatting/comments preserved), packs are base-only (libgit2 deltified at window 11/depth 50; bigger on disk, size-pin-free, housekeeping cruft repack re-deltifies), pack files 0600 not 0444, no tag-foreach ref read inside the pack path. New unit test: flush leaves exactly pack+idx (no `.keep`) — pack-name determinism and kind preservation are gix properties already pinned hard by the prysk pack-name expectations, so they get no unit tests of their own | `deephistory_prefix_flush` **-20 to -24%** vs pre-gix, `unapply_extend` -9 to -13% vs pre-3.1 (`unapply_new_branch` flat), rest at post-2.x levels (`refs_filter_update` -1 to -3%), no regressions (`ultrawide_parse` +12% flagged once, no-change on settled rerun) |
 
+| 3.2a | b71c2fc7 | Memory store authoritative behind a gix-typed facade: `MemOdb` re-keyed to `BTreeMap<ObjectId, (Kind, Arc<[u8]>)>` (memcmp order identical to `git2::Oid`, so snapshot order and pack names are unchanged; pack.rs's kind-conversion block deletes) with direct `write`/`write_with_id`/`get`/`header`/`contains`; new `josh_memodb::Odb` facade (`Transaction::odb()`) implementing gix `Find`/`FindHeader`/`Exists`/`Write` — memory-first zero-copy `Arc` reads, git2 disk fallback — routed through every josh-core/josh-filter hot path: `write_tree_now`/`rewrite_commit`/roots-blobs/pathstree+regex blobs (writes), `CommitData::read`, `read_parent_ids`/`read_tree_id` (now facade-taking; 2 josh-graphql callers updated), `RevWalk`/`RangeWalk` (generic over the gix traits, per-walk scratch buffer), `read_tree_bytes` (mem hits bypass TreeCache — no double-buffering), cache exists-probes, persist `as_tree` (grows an object-sink param; staging flush via `write_buf_with_known_id`). The libgit2 backend STAYS REGISTERED as a view over the same store, so unported git2 reads/writes are byte-identical; unregistering deferred (see next steps). Facade writes gated exactly like `git_odb__freshen`: skip on memory or runtime-alternate hit (the store mirrors alternates via the new `Transaction::add_disk_alternate`, all six proxy/templates sites switched — two of them, `filter_to_namespace`'s clone-path transaction and housekeeping's overlay, were initially missed and churned 3 pack pins: caught by the suite, root-caused by local pack-content diff, mirror-resident input trees), never probing the repo's own disk (fresh writes stay zero-I/O). `StagingOdb` loses its dormant read-through (pure staging map); new `Git2Odb` adapter bridges bare git2 odbs (walker tests, distributed.rs's `as_tree` — distributed.rs otherwise untouched). Deliberate divergences (suite-invisible): duplicate writes no longer utime-freshen alternate loose objects; unchanged-tree debug asserts and re-buffered disk objects behave as before. New unit tests: facade visible-before-flush/durable-after, freshen-parity write gate (alternate skip + main-disk re-buffer), git2↔facade one-store interop | vs pre-gix: `ultrawide_pin_hook` **-18 to -67%**, `widetree_glob` **-11 to -69%**, `deephistory_subdir` **-28 to -29%**, `deephistory_rev` **-24 to -25%**, `deephistory_glob_literal` **-25%**, glob_incremental **-24 to -47%** (`incremental/prefix/10000` +39-53% is a pre-existing elevation: 3.1's validation shows the same ~7.1ms/+51%, 3.2a measures at-or-below it), sparse/distributed **-17 to -23%**, `deephistory_prefix_flush` **-19 to -20%**, `ultrawide_pin` **-9.5%**, `refs_filter_update` **-2 to -6%**; vs pre-3.2a: `unapply_extend` flat (the O(push-length) gate), `unapply_new_branch` **+3 to +6%** (settled rerun confirms; scales with the discover walk — candidate cause the one extra memcpy per disk-resident commit read imposed by the generic `Find` buffer contract; accepted against the walk-wide wins, revisit with 1.5's deferred lazy early-exit walks) |
+
 Phase 1.2 is complete: no `treebuilder` use remains in `josh-core/src/filter/tree.rs`.
 
 Phase 1.3 (commit/blob creation) required no work: every commit write already goes through
@@ -51,18 +53,33 @@ write); blob writes are plain odb writes that memodb intercepts.
 
 ## Next steps
 
-Phase 2 is complete (2.6 audit clean). Phase 3 step 3.1 (flusher packs) is landed.
+Phase 2 is complete (2.6 audit clean). Phase 3: 3.1 (flusher packs) and 3.2a (authoritative
+store + facade) are landed. Plan amendment from the 3.2 research (five-agent sweep, docs in
+`.agents/work/gix-port/3.2-research-*.md` + `3.2-design.md`): PLAN's one-commit 3.2
+("unregister the backend") is not landable — ~50+ git2 typed-object reads across six crates
+still observe unflushed memory objects through the registered backend (filter/mod.rs's
+`find_tree(fresh_oid)` tails feeding `Rewrite`, libgit2-internal merge/graph compute,
+graphql's `find_commit(apply_to_commit(..))`, proxy/cli `-o merge`, josh-changes
+read-modify-write chains, persist `from_tree2`, josh-compose's ephemeral reads — the prysk
+orchestrator itself). So 3.2 continues as:
 
-1. **Phase 3 remaining** Memory store into the adapter (3.2): staging map becomes
-   authoritative, unregister the libgit2 ODB backend; flag day (3.3): Transaction opens
-   `gix::ThreadSafeRepository` (isolated), refs via gix-ref (parity contract pinned in the
-   2.1 method comments + unit tests). Plan gap found in 2.1: `cache/distributed.rs` holds
-   its own `git2::Repository` (one ref write, two resolves) below the cache stack -- needs
-   its own port sub-step here. Also from 2.6: josh-proxy `TmpGitNamespace::cleanup` removes
-   namespace refs via `fs::remove_dir_all` behind both git2 and the ref API -- verify gix's
-   loose-ref/packed-refs view tolerates it at flag day.
-2. **Phase 4** Port bench setup, flip `josh_core::Oid` inner type, delete josh-memodb FFI,
-   remove git2/libgit2-sys workspace-wide (`cargo tree -i git2` empty).
+1. **3.2b..e** Port the typed-read/write consumers crate by crate onto the facade
+   (pulled-forward flag-day work; blocker inventory in `3.2-research-memodb.md` §7):
+   filter/mod.rs + history.rs `git2::Tree` tail; josh-graphql; josh-proxy + josh-changes +
+   josh-link (their writes move to the facade here); persist `from_tree` + josh-search;
+   josh-compose; `cache/distributed.rs` onto a facade over its own store (also the 2.1 plan
+   gap: its own repo below the cache stack).
+2. **3.2z** Unregister both backends, delete `odb_backend.rs`, drop git2/libgit2-sys from
+   josh-memodb (error type + `objects_dir(&Path)`). Gated on all of 3.2b..e; any missed site
+   fails loudly (NotFound on a josh-written oid).
+3. **3.3 flag day**: Transaction opens `gix::ThreadSafeRepository` (isolated), refs via
+   gix-ref (parity contract pinned in the 2.1 method comments + unit tests). Facade disk
+   side flips to `repo.objects` — pre-seed the empty tree then (gix does not virtualize it;
+   keep the seed out of flush snapshots). From 2.6: josh-proxy `TmpGitNamespace::cleanup`
+   removes namespace refs via `fs::remove_dir_all` behind both git2 and the ref API --
+   verify gix's loose-ref/packed-refs view tolerates it at flag day.
+4. **Phase 4** Port bench setup, flip `josh_core::Oid` inner type, delete josh-memodb FFI
+   remnants, remove git2/libgit2-sys workspace-wide (`cargo tree -i git2` empty).
 
 Deferred from 1.5 (evaluate separately): lazy early-exit walks for
 find_original/find_oldest_similar/find_new_branch_base (change tie-breaks -> test churn);
@@ -70,7 +87,14 @@ commit-graph write in housekeeping (no consumer yet). Pre-existing bugs found du
 research, file/fix separately: Op::Unlink missing-queue spin (filter/mod.rs ~790 returns
 Ok(None) without recording a missing entry -> driver-loop spin on malformed .link.josh);
 discover_filter_candidates' filtered-refs loop has matched nothing since introduction
-(prefix misses the leading "refs/", kept verbatim in 2.1).
+(prefix misses the leading "refs/", kept verbatim in 2.1). From 3.2 research: josh-filter's
+`--pack` flag and `JOSH_BENCH_MEMPACK` (ultrawide_pin*.rs) are dead already — the registered
+mem backend receives all writes, the mempack captures nothing (and `packwriter()` would
+panic if it did); `tests/experimental/starlark_mempack.t` passes only via that emptiness.
+Remove flag + env var + .t together in their own cleanup commit. Also: josh-templates'
+GraphQLHelper and proxy `serve_render_template` open sibling transactions to read the
+caller's possibly-unflushed objects with no flush ordering (works by luck today) — fix when
+porting those crates (3.2b..e).
 
 ## Validation protocol (per step)
 
