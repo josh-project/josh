@@ -2,15 +2,13 @@ use super::*;
 use crate::objects;
 use anyhow::anyhow;
 
-pub fn pathstree<'a>(
+pub fn pathstree(
     root: &str,
     input: git2::Oid,
-    transaction: &'a cache::Transaction,
-) -> anyhow::Result<git2::Tree<'a>> {
-    let repo = transaction.repo();
+    transaction: &cache::Transaction,
+) -> anyhow::Result<git2::Oid> {
     let odb = transaction.odb()?;
-    let result = pathstree_inner(root, input, transaction, &odb)?;
-    Ok(repo.find_tree(result)?)
+    pathstree_inner(root, input, transaction, &odb)
 }
 
 /// Oid-level body of [`pathstree`]; the odb is hoisted like in [`remove_pred_inner`].
@@ -24,7 +22,6 @@ fn pathstree_inner(
         return Ok(cached);
     }
 
-    let repo = transaction.repo();
     let bytes = transaction
         .read_tree_bytes(odb, input)?
         .ok_or_else(|| anyhow!("pathstree: {} is not a tree", input))?;
@@ -56,7 +53,7 @@ fn pathstree_inner(
                 format!(
                     "#{}\n{}",
                     path_string,
-                    blob_text(repo, objects::git2_oid(entry.oid))
+                    blob_text(odb, objects::git2_oid(entry.oid))
                 )
             } else {
                 path_string.to_string()
@@ -73,16 +70,14 @@ fn pathstree_inner(
     Ok(result)
 }
 
-pub fn regex_replace<'a>(
+pub fn regex_replace(
     input: git2::Oid,
     regex: &regex::Regex,
     replacement: &str,
-    transaction: &'a cache::Transaction,
-) -> anyhow::Result<git2::Tree<'a>> {
-    let repo = transaction.repo();
+    transaction: &cache::Transaction,
+) -> anyhow::Result<git2::Oid> {
     let odb = transaction.odb()?;
-    let result = regex_replace_inner(input, regex, replacement, transaction, &odb)?;
-    Ok(repo.find_tree(result)?)
+    regex_replace_inner(input, regex, replacement, transaction, &odb)
 }
 
 /// Oid-level body of [`regex_replace`]; the odb is hoisted like in [`remove_pred_inner`].
@@ -93,7 +88,6 @@ fn regex_replace_inner(
     transaction: &cache::Transaction,
     odb: &josh_memodb::Odb,
 ) -> anyhow::Result<git2::Oid> {
-    let repo = transaction.repo();
     let bytes = transaction
         .read_tree_bytes(odb, input)?
         .ok_or_else(|| anyhow!("regex_replace: {} is not a tree", input))?;
@@ -120,7 +114,7 @@ fn regex_replace_inner(
                 });
             }
         } else if !entry.mode.is_commit() {
-            let file_contents = blob_text(repo, objects::git2_oid(entry.oid));
+            let file_contents = blob_text(odb, objects::git2_oid(entry.oid));
             let replaced = regex.replacen(&file_contents, 0, replacement);
 
             rebuild.keep(gix_object::tree::Entry {
@@ -133,16 +127,30 @@ fn regex_replace_inner(
     objects::write_tree_now(odb, rebuild.out)
 }
 
-/// The text content of the blob `oid`, or the empty string when the blob is missing, binary, or
-/// not valid UTF-8 -- the same tolerant semantics as [`get_blob`], minus the path lookup.
-fn blob_text(repo: &git2::Repository, oid: git2::Oid) -> String {
-    let blob = ok_or!(repo.find_blob(oid), {
+/// The raw bytes of the blob `oid`, or `None` when the object is missing or not a blob --
+/// `find_blob`'s tolerance, in facade currency.
+pub(crate) fn blob_bytes<'a>(
+    odb: &'a josh_memodb::Odb,
+    oid: git2::Oid,
+) -> Option<josh_memodb::Bytes<'a>> {
+    match odb.read(oid) {
+        Ok((gix_object::Kind::Blob, bytes)) => Some(bytes),
+        _ => None,
+    }
+}
+
+/// The text content of the blob `oid`, or the empty string when the blob is missing, contains
+/// a NUL byte, or is not valid UTF-8 -- the same tolerant semantics as [`get_blob`], minus the
+/// path lookup. The NUL check keeps binary blobs from reading as content in workspace/link
+/// parsing and text transforms.
+pub(crate) fn blob_text(odb: &josh_memodb::Odb, oid: git2::Oid) -> String {
+    let bytes = some_or!(blob_bytes(odb, oid), {
         return "".to_owned();
     });
-    if blob.is_binary() {
+    if bytes.contains(&0) {
         return "".to_owned();
     }
-    let content = ok_or!(std::str::from_utf8(blob.content()), {
+    let content = ok_or!(std::str::from_utf8(&bytes), {
         return "".to_owned();
     });
     content.to_owned()
@@ -253,6 +261,126 @@ fn lookup_entry<'a>(
     } else {
         tree.entries.iter().find(|e| e.filename == name).copied()
     }
+}
+
+/// A tree held by its raw bytes, so it can be returned from [`read_tree`] and kept across a
+/// whole filter arm. Lookups walk the entries lazily and allocate nothing, which suits the
+/// sites that probe a handful of paths in one tree (a path descent, the workspace files of a
+/// commit); [`ParsedTree`] is the counterpart for iterating every entry.
+pub(crate) struct TreeReader<'a> {
+    bytes: cache::TreeBytes<'a>,
+}
+
+impl TreeReader<'_> {
+    /// Entry by name irrespective of kind, first occurrence winning -- tree entry order is
+    /// not necessarily canonical, and a name is unique in a valid tree.
+    pub(crate) fn entry(&self, name: &[u8]) -> Option<gix_object::tree::EntryRef<'_>> {
+        gix_object::TreeRefIter::from_bytes(&self.bytes, gix_hash::Kind::Sha1)
+            .filter_map(Result::ok)
+            .find(|entry| entry.filename == name)
+    }
+}
+
+/// Read the tree `oid`, erroring when the object is missing or not a tree.
+pub(crate) fn read_tree<'a>(
+    transaction: &cache::Transaction,
+    odb: &'a josh_memodb::Odb,
+    oid: git2::Oid,
+) -> anyhow::Result<TreeReader<'a>> {
+    let bytes = transaction
+        .read_tree_bytes(odb, oid)?
+        .ok_or_else(|| anyhow!("{} is not a tree", oid))?;
+    Ok(TreeReader { bytes })
+}
+
+/// A parsed tree with its canonical-order flag computed once, so sites that iterate every
+/// entry can also bisect for names. Borrows a caller-held buffer.
+pub(crate) struct ParsedTree<'b> {
+    tree: gix_object::TreeRef<'b>,
+    sorted: bool,
+}
+
+impl<'b> ParsedTree<'b> {
+    pub(crate) fn from_bytes(bytes: &'b [u8]) -> anyhow::Result<Self> {
+        let tree = gix_object::TreeRef::from_bytes(bytes, gix_hash::Kind::Sha1)?;
+        let sorted = entries_canonically_sorted(&tree);
+        Ok(ParsedTree { tree, sorted })
+    }
+
+    /// Entry by name irrespective of kind (see [`lookup_entry`]).
+    pub(crate) fn entry(&self, name: &[u8]) -> Option<gix_object::tree::EntryRef<'b>> {
+        lookup_entry(&self.tree, name.into(), self.sorted)
+    }
+
+    pub(crate) fn entries(&self) -> &[gix_object::tree::EntryRef<'b>] {
+        &self.tree.entries
+    }
+}
+
+/// The normal components of `path`, or `None` for path shapes that can never name a tree
+/// entry (empty, absolute, or containing `..`) -- rejected paths read as lookup misses.
+/// `.` components and redundant separators normalize away.
+fn path_components(path: &Path) -> Option<Vec<&[u8]>> {
+    let mut components = vec![];
+    for c in path.components() {
+        match c {
+            std::path::Component::Normal(name) => components.push(component_bytes(name)),
+            std::path::Component::CurDir => {}
+            _ => return None,
+        }
+    }
+    if components.is_empty() {
+        return None;
+    }
+    Some(components)
+}
+
+/// Descend `path` from the tree `root`. `Ok(None)` covers a missing component and a non-tree
+/// intermediate entry; the final entry may be any kind (gitlinks included). Per level the
+/// bytes come from `read_tree_bytes` (memory zero-copy / TreeCache), so unflushed trees
+/// resolve.
+pub(crate) fn get_path_entry(
+    transaction: &cache::Transaction,
+    odb: &josh_memodb::Odb,
+    root: git2::Oid,
+    path: &Path,
+) -> anyhow::Result<Option<gix_object::tree::Entry>> {
+    let bytes = match transaction.read_tree_bytes(odb, root)? {
+        Some(bytes) => bytes,
+        None => return Ok(None),
+    };
+    get_path_entry_at(transaction, odb, &(TreeReader { bytes }), path)
+}
+
+/// [`get_path_entry`] resolving the first component against a caller-held parse -- the hoist
+/// for multi-probe sites, which pay one root parse for N descents.
+pub(crate) fn get_path_entry_at(
+    transaction: &cache::Transaction,
+    odb: &josh_memodb::Odb,
+    root: &TreeReader,
+    path: &Path,
+) -> anyhow::Result<Option<gix_object::tree::Entry>> {
+    let Some(components) = path_components(path) else {
+        return Ok(None);
+    };
+    let mut entry: gix_object::tree::Entry = match root.entry(components[0]) {
+        Some(entry) => entry.into(),
+        None => return Ok(None),
+    };
+    for name in &components[1..] {
+        if !entry.mode.is_tree() {
+            return Ok(None);
+        }
+        let bytes = match transaction.read_tree_bytes(odb, objects::git2_oid(&entry.oid))? {
+            Some(bytes) => bytes,
+            None => return Ok(None),
+        };
+        entry = match (TreeReader { bytes }).entry(name) {
+            Some(entry) => entry.into(),
+            None => return Ok(None),
+        };
+    }
+    Ok(Some(entry))
 }
 
 /// Insert `entry` at its canonical position in `out`, scanning back from the end (O(1) for
@@ -717,7 +845,7 @@ fn replace_child_inner(
 /// Oid-level body of [`insert`]: replace whatever is at `path` inside the tree `full_tree` with
 /// (`oid`, `mode`), creating intermediate trees as needed and treating blobs on the way as
 /// overwritable.
-fn insert_inner(
+pub(crate) fn insert_oid(
     odb: &(impl gix_object::Find + gix_object::Write),
     full_tree: git2::Oid,
     path: &Path,
@@ -760,9 +888,13 @@ fn insert_inner(
 
     let subtree = replace_child_inner(odb, component_bytes(name), oid, mode, st)?;
 
-    insert_inner(odb, full_tree, parent, subtree, 0o0040000)
+    insert_oid(odb, full_tree, parent, subtree, 0o0040000)
 }
 
+// PORT: retained pub API for the leaf crates (josh-proxy, josh-changes, josh-link,
+// josh-cq); its `Git2Odb` reads and writes resolve through the registered backend, so it
+// must be facade-backed or gone before the backend can be unregistered (the writes would
+// otherwise land loose on disk).
 pub fn insert<'a>(
     repo: &'a git2::Repository,
     full_tree: &git2::Tree,
@@ -770,15 +902,31 @@ pub fn insert<'a>(
     oid: git2::Oid,
     mode: i32,
 ) -> anyhow::Result<git2::Tree<'a>> {
-    // No transaction in scope here; the repo odb still serves the memory store through the
-    // registered backend.
     let odb = repo.odb()?;
-    let result = insert_inner(&objects::Git2Odb(&odb), full_tree.id(), path, oid, mode)?;
+    let result = insert_oid(&objects::Git2Odb(&odb), full_tree.id(), path, oid, mode)?;
     Ok(repo.find_tree(result)?)
 }
 
+/// Kind of `oid`, or `None` when the object is missing (the zero oid included) or the
+/// header unreadable -- both read as an ordinary miss.
+fn kind_of(src: &impl gix_object::FindHeader, oid: git2::Oid) -> Option<gix_object::Kind> {
+    src.try_header(&objects::gix_oid(oid))
+        .ok()
+        .flatten()
+        .map(|h| h.kind)
+}
+
+/// Fill `buf` with the raw bytes of `oid` if it is a readable tree object. Parse failures
+/// fold to `None` at the caller, keeping the probe arms tolerant of corrupt trees.
+fn read_tree_into(src: &impl gix_object::Find, oid: git2::Oid, buf: &mut Vec<u8>) -> bool {
+    matches!(
+        src.try_find(&objects::gix_oid(oid), buf),
+        Ok(Some(data)) if data.kind == gix_object::Kind::Tree
+    )
+}
+
 pub fn diff_paths(
-    repo: &git2::Repository,
+    src: &(impl gix_object::Find + gix_object::FindHeader),
     input1: git2::Oid,
     input2: git2::Oid,
     root: &str,
@@ -787,46 +935,59 @@ pub fn diff_paths(
         return Ok(vec![]);
     }
 
-    if let (Ok(_), Ok(_)) = (repo.find_blob(input1), repo.find_blob(input2)) {
+    use gix_object::Kind;
+    let kind1 = kind_of(src, input1);
+    let kind2 = kind_of(src, input2);
+
+    if let (Some(Kind::Blob), Some(Kind::Blob)) = (kind1, kind2) {
         return Ok(vec![(root.to_string(), 0)]);
     }
 
-    if let (Ok(_), Err(_)) = (repo.find_blob(input1), repo.find_blob(input2)) {
+    if let (Some(Kind::Blob), _) = (kind1, kind2) {
         return Ok(vec![(root.to_string(), -1)]);
     }
 
-    if let (Err(_), Ok(_)) = (repo.find_blob(input1), repo.find_blob(input2)) {
+    if let (_, Some(Kind::Blob)) = (kind1, kind2) {
         return Ok(vec![(root.to_string(), 1)]);
     }
 
     let mut r = vec![];
 
-    if let (Ok(tree1), Ok(tree2)) = (repo.find_tree(input1), repo.find_tree(input2)) {
-        for entry in tree2.iter() {
-            let name = entry.name()?;
-            if let Some(e) = tree1.get_name(entry.name()?) {
+    let mut buf1 = Vec::new();
+    let mut buf2 = Vec::new();
+    let tree1 = read_tree_into(src, input1, &mut buf1)
+        .then(|| ParsedTree::from_bytes(&buf1).ok())
+        .flatten();
+    let tree2 = read_tree_into(src, input2, &mut buf2)
+        .then(|| ParsedTree::from_bytes(&buf2).ok())
+        .flatten();
+
+    if let (Some(tree1), Some(tree2)) = (&tree1, &tree2) {
+        for entry in tree2.entries() {
+            let name = std::str::from_utf8(entry.filename).map_err(|_| anyhow!("no name"))?;
+            if let Some(e) = tree1.entry(entry.filename) {
                 r.append(&mut diff_paths(
-                    repo,
-                    e.id(),
-                    entry.id(),
+                    src,
+                    objects::git2_oid(e.oid),
+                    objects::git2_oid(entry.oid),
                     &format!("{}{}{}", root, if root.is_empty() { "" } else { "/" }, name),
                 )?);
             } else {
                 r.append(&mut diff_paths(
-                    repo,
+                    src,
                     git2::Oid::ZERO_SHA1,
-                    entry.id(),
+                    objects::git2_oid(entry.oid),
                     &format!("{}{}{}", root, if root.is_empty() { "" } else { "/" }, name),
                 )?);
             }
         }
 
-        for entry in tree1.iter() {
-            let name = entry.name()?;
-            if tree2.get_name(entry.name()?).is_none() {
+        for entry in tree1.entries() {
+            let name = std::str::from_utf8(entry.filename).map_err(|_| anyhow!("no name"))?;
+            if tree2.entry(entry.filename).is_none() {
                 r.append(&mut diff_paths(
-                    repo,
-                    entry.id(),
+                    src,
+                    objects::git2_oid(entry.oid),
                     git2::Oid::ZERO_SHA1,
                     &format!("{}{}{}", root, if root.is_empty() { "" } else { "/" }, name),
                 )?);
@@ -836,25 +997,25 @@ pub fn diff_paths(
         return Ok(r);
     }
 
-    if let Ok(tree2) = repo.find_tree(input2) {
-        for entry in tree2.iter() {
-            let name = entry.name()?;
+    if let Some(tree2) = &tree2 {
+        for entry in tree2.entries() {
+            let name = std::str::from_utf8(entry.filename).map_err(|_| anyhow!("no name"))?;
             r.append(&mut diff_paths(
-                repo,
+                src,
                 git2::Oid::ZERO_SHA1,
-                entry.id(),
+                objects::git2_oid(entry.oid),
                 &format!("{}{}{}", root, if root.is_empty() { "" } else { "/" }, name),
             )?);
         }
         return Ok(r);
     }
 
-    if let Ok(tree1) = repo.find_tree(input1) {
-        for entry in tree1.iter() {
-            let name = entry.name()?;
+    if let Some(tree1) = &tree1 {
+        for entry in tree1.entries() {
+            let name = std::str::from_utf8(entry.filename).map_err(|_| anyhow!("no name"))?;
             r.append(&mut diff_paths(
-                repo,
-                entry.id(),
+                src,
+                objects::git2_oid(entry.oid),
                 git2::Oid::ZERO_SHA1,
                 &format!("{}{}{}", root, if root.is_empty() { "" } else { "/" }, name),
             )?);
@@ -951,49 +1112,60 @@ pub fn pathline(b: &str) -> anyhow::Result<String> {
     }
 }
 
-pub fn invert_paths<'a>(
-    transaction: &'a cache::Transaction,
+pub fn invert_paths(
+    transaction: &cache::Transaction,
+    odb: &josh_memodb::Odb,
     root: &str,
-    tree: git2::Tree<'a>,
-) -> anyhow::Result<git2::Tree<'a>> {
-    let repo = transaction.repo();
-    if let Some(cached) = transaction.get_invert((tree.id(), root.to_string())) {
-        return Ok(repo.find_tree(cached)?);
+    tree: git2::Oid,
+) -> anyhow::Result<git2::Oid> {
+    if let Some(cached) = transaction.get_invert((tree, root.to_string())) {
+        return Ok(cached);
     }
 
-    let mut result = empty(repo);
+    let mut result = empty_id();
 
-    for entry in tree.iter() {
-        let name = entry.name()?;
+    let bytes = transaction
+        .read_tree_bytes(odb, tree)?
+        .ok_or_else(|| anyhow!("invert_paths: {} is not a tree", tree))?;
+    let parsed = ParsedTree::from_bytes(&bytes)?;
 
-        if entry.kind() == Some(git2::ObjectType::Blob) {
+    for entry in parsed.entries() {
+        let name = std::str::from_utf8(entry.filename).map_err(|_| anyhow!("no name"))?;
+
+        if !entry.mode.is_tree() && !entry.mode.is_commit() {
             let mpath = normalize_path(&Path::new(root).join(name))
                 .to_string_lossy()
                 .to_string();
-            let b = get_blob(repo, &tree, Path::new(name));
+            // Same one-level lookup get_blob did (first-match by name, not this iteration's
+            // entry) -- resolved on the hoisted parse.
+            let b = parsed
+                .entry(entry.filename)
+                .map(|e| blob_text(odb, objects::git2_oid(e.oid)))
+                .unwrap_or_default();
             let opath = pathline(&b)?;
 
-            result = insert(
-                repo,
-                &result,
+            result = insert_oid(
+                odb,
+                result,
                 Path::new(&opath),
-                repo.blob(mpath.as_bytes())?,
+                odb.write(gix_object::Kind::Blob, mpath.as_bytes()),
                 0o0100644,
             )
             .unwrap();
         }
 
-        if entry.kind() == Some(git2::ObjectType::Tree) {
+        if entry.mode.is_tree() {
             let s = invert_paths(
                 transaction,
+                odb,
                 &format!("{}{}{}", root, if root.is_empty() { "" } else { "/" }, name),
-                repo.find_tree(entry.id())?,
+                objects::git2_oid(entry.oid),
             )?;
-            result = repo.find_tree(overlay(transaction, result.id(), s.id())?)?;
+            result = overlay(transaction, result, s)?;
         }
     }
 
-    transaction.insert_invert((tree.id(), root.to_string()), result.id());
+    transaction.insert_invert((tree, root.to_string()), result);
 
     Ok(result)
 }
@@ -1001,7 +1173,7 @@ pub fn invert_paths<'a>(
 pub fn original_path(
     transaction: &cache::Transaction,
     filter: Filter,
-    tree: git2::Tree,
+    tree: git2::Oid,
     path: &Path,
 ) -> anyhow::Result<String> {
     let paths_tree = apply(
@@ -1009,15 +1181,15 @@ pub fn original_path(
         to_filter(Op::Paths).chain(filter),
         Rewrite::from_tree(tree),
     )?;
-    let b = get_blob(transaction.repo(), paths_tree.tree(), path);
+    let b = get_blob(transaction, &transaction.odb()?, paths_tree.tree_id(), path);
     pathline(&b)
 }
 
 pub fn repopulated_tree(
     transaction: &cache::Transaction,
     filter: Filter,
-    full_tree: git2::Tree,
-    partial_tree: git2::Tree,
+    full_tree: git2::Oid,
+    partial_tree: git2::Oid,
 ) -> anyhow::Result<git2::Oid> {
     let paths_tree = apply(
         transaction,
@@ -1025,12 +1197,14 @@ pub fn repopulated_tree(
         Rewrite::from_tree(full_tree),
     )?;
 
-    let ipaths = invert_paths(transaction, "", paths_tree.into_tree())?;
-    populate(transaction, ipaths.id(), partial_tree.id())
+    let odb = transaction.odb()?;
+    let ipaths = invert_paths(transaction, &odb, "", paths_tree.tree_id())?;
+    populate(transaction, &odb, ipaths, partial_tree)
 }
 
 pub fn populate(
     transaction: &cache::Transaction,
+    odb: &josh_memodb::Odb,
     paths: git2::Oid,
     content: git2::Oid,
 ) -> anyhow::Result<git2::Oid> {
@@ -1038,26 +1212,36 @@ pub fn populate(
         return Ok(cached);
     }
 
-    let repo = transaction.repo();
+    use gix_object::Kind;
+    let paths_kind = odb.read_header(paths).map(|(kind, _)| kind).ok();
+    let content_kind = odb.read_header(content).map(|(kind, _)| kind).ok();
 
     let mut result_tree = empty_id();
-    if let (Ok(paths), Ok(content)) = (repo.find_blob(paths), repo.find_blob(content)) {
-        let ipath = pathline(std::str::from_utf8(paths.content())?)?;
-        result_tree = insert(
-            repo,
-            &repo.find_tree(result_tree)?,
-            Path::new(&ipath),
-            content.id(),
-            0o0100644,
-        )?
-        .id();
-    } else if let (Ok(paths), Ok(content)) = (repo.find_tree(paths), repo.find_tree(content)) {
-        for entry in content.iter() {
-            if let Some(e) = paths.get_name(entry.name()?) {
+    if let (Some(Kind::Blob), Some(Kind::Blob)) = (paths_kind, content_kind) {
+        let paths_bytes = blob_bytes(odb, paths).ok_or_else(|| anyhow!("populate: blob read"))?;
+        let ipath = pathline(std::str::from_utf8(&paths_bytes)?)?;
+        result_tree = insert_oid(odb, result_tree, Path::new(&ipath), content, 0o0100644)?;
+    } else if let (Some(Kind::Tree), Some(Kind::Tree)) = (paths_kind, content_kind) {
+        let paths_bytes = transaction
+            .read_tree_bytes(odb, paths)?
+            .ok_or_else(|| anyhow!("populate: {} is not a tree", paths))?;
+        let content_bytes = transaction
+            .read_tree_bytes(odb, content)?
+            .ok_or_else(|| anyhow!("populate: {} is not a tree", content))?;
+        let paths_tree = ParsedTree::from_bytes(&paths_bytes)?;
+        let content_tree = ParsedTree::from_bytes(&content_bytes)?;
+        for entry in content_tree.entries() {
+            std::str::from_utf8(entry.filename).map_err(|_| anyhow!("no name"))?;
+            if let Some(e) = paths_tree.entry(entry.filename) {
                 result_tree = overlay(
                     transaction,
                     result_tree,
-                    populate(transaction, e.id(), entry.id())?,
+                    populate(
+                        transaction,
+                        odb,
+                        objects::git2_oid(e.oid),
+                        objects::git2_oid(entry.oid),
+                    )?,
                 )?;
             }
         }
@@ -1068,6 +1252,7 @@ pub fn populate(
     Ok(result_tree)
 }
 
+// PORT: dead code, zero callers workspace-wide.
 pub fn compose_fast(
     transaction: &cache::Transaction,
     trees: Vec<git2::Oid>,
@@ -1081,15 +1266,14 @@ pub fn compose_fast(
     Ok(repo.find_tree(result)?)
 }
 
-pub fn compose<'a>(
-    transaction: &'a cache::Transaction,
-    trees: Vec<(&Filter, git2::Tree<'a>)>,
-) -> anyhow::Result<git2::Tree<'a>> {
-    let repo = transaction.repo();
-    let mut result = empty(repo);
-    let mut taken = empty(repo);
+pub fn compose(
+    transaction: &cache::Transaction,
+    trees: Vec<(&Filter, git2::Oid)>,
+) -> anyhow::Result<git2::Oid> {
+    let mut result = empty_id();
+    let mut taken = empty_id();
     for (f, applied) in trees {
-        let tid = taken.id();
+        let tid = taken;
         // If a filter creates a tree entry that does not exist in the input (Like TreeId and Blob),
         // the "output uniqueness handling" will cause it's output entry to be removed from the
         // tree during compose.
@@ -1101,54 +1285,60 @@ pub fn compose<'a>(
         let taken_applied = if let Some(cached) = transaction.get_apply(f, tid) {
             cached
         } else {
-            apply(transaction, f, Rewrite::from_tree(taken.clone()))?
-                .tree()
-                .id()
+            apply(transaction, f, Rewrite::from_tree(taken))?.tree_id()
         };
         transaction.insert_apply(f, tid, taken_applied);
 
-        let subtracted = repo.find_tree(subtract(transaction, applied.id(), taken_applied)?)?;
+        let subtracted = subtract(transaction, applied, taken_applied)?;
 
-        let aid = applied.id();
+        let aid = applied;
         let unapplied = if let Some(cached) = transaction.get_unapply(f, aid) {
             cached
         } else {
-            apply(transaction, invert(f)?, Rewrite::from_tree(applied))?
-                .tree()
-                .id()
+            apply(transaction, invert(f)?, Rewrite::from_tree(applied))?.tree_id()
         };
         transaction.insert_unapply(f, aid, unapplied);
-        taken = repo.find_tree(overlay(transaction, taken.id(), unapplied)?)?;
-        result = repo.find_tree(overlay(transaction, subtracted.id(), result.id())?)?;
+        taken = overlay(transaction, taken, unapplied)?;
+        result = overlay(transaction, subtracted, result)?;
     }
 
     Ok(result)
 }
 
-pub fn get_blob(repo: &git2::Repository, tree: &git2::Tree, path: &Path) -> String {
-    let entry_oid = ok_or!(tree.get_path(path).map(|x| x.id()), {
-        return "".to_owned();
-    });
+pub fn get_blob(
+    transaction: &cache::Transaction,
+    odb: &josh_memodb::Odb,
+    tree: git2::Oid,
+    path: &Path,
+) -> String {
+    let entry = match get_path_entry(transaction, odb, tree, path) {
+        Ok(Some(entry)) => entry,
+        _ => return "".to_owned(),
+    };
+    blob_text(odb, objects::git2_oid(&entry.oid))
+}
 
-    let blob = ok_or!(repo.find_blob(entry_oid), {
-        return "".to_owned();
-    });
-
-    if blob.is_binary() {
-        return "".to_owned();
-    }
-
-    let content = ok_or!(std::str::from_utf8(blob.content()), {
-        return "".to_owned();
-    });
-
-    content.to_owned()
+/// [`get_blob`] over a caller-held parse of the root tree (see [`get_path_entry_at`]).
+pub(crate) fn get_blob_at(
+    transaction: &cache::Transaction,
+    odb: &josh_memodb::Odb,
+    root: &TreeReader,
+    path: &Path,
+) -> String {
+    let entry = match get_path_entry_at(transaction, odb, root, path) {
+        Ok(Some(entry)) => entry,
+        _ => return "".to_owned(),
+    };
+    blob_text(odb, objects::git2_oid(&entry.oid))
 }
 
 pub fn empty_id() -> git2::Oid {
     git2::Oid::from_str("4b825dc642cb6eb9a060e54bf8d69288fbee4904").unwrap()
 }
 
+// PORT: retained pub API for the leaf crates (in-core callers compare against
+// `empty_id()` instead); the lookup resolves through the registered backend's disk
+// fallback, which virtualizes the empty tree.
 pub fn empty(repo: &git2::Repository) -> git2::Tree<'_> {
     repo.find_tree(empty_id()).unwrap()
 }
@@ -1645,6 +1835,75 @@ mod tests {
         assert_eq!(out, want, "b/f.txt must not be kept via the a/ cache entry");
     }
 
+    // get_path_entry misses on missing components and non-tree intermediates, resolves final
+    // entries of any kind (gitlinks included), normalizes redundant path syntax, tolerates
+    // non-canonical trees via the linear-lookup fallback, and reads the virtualized empty
+    // tree.
+    #[test]
+    fn get_path_entry_contract() {
+        let td = tempfile::tempdir().unwrap();
+        let repo = git2::Repository::init_bare(td.path()).unwrap();
+        let blob = repo.blob(b"content").unwrap();
+        let t = open_transaction(&td);
+        let odb = t.odb().unwrap();
+
+        let gitlink = git2::Oid::from_str("0123456789012345678901234567890123456789").unwrap();
+        let mut b = git2::build::TreeUpdateBuilder::new();
+        b.upsert("a/b/deep.txt", blob, git2::FileMode::Blob);
+        b.upsert("top.txt", blob, git2::FileMode::Blob);
+        b.upsert("a/sub", gitlink, git2::FileMode::Commit);
+        let base = repo.treebuilder(None).unwrap().write().unwrap();
+        let root = b
+            .create_updated(&repo, &repo.find_tree(base).unwrap())
+            .unwrap();
+
+        let entry = get_path_entry(&t, &odb, root, Path::new("a/b/deep.txt"))
+            .unwrap()
+            .expect("hit at depth 2");
+        assert_eq!(objects::git2_oid(&entry.oid), blob);
+        assert!(!entry.mode.is_tree());
+
+        let entry = get_path_entry(&t, &odb, root, Path::new("a/sub"))
+            .unwrap()
+            .expect("gitlink entry resolves");
+        assert!(entry.mode.is_commit());
+
+        for miss in ["a/b/missing.txt", "a/missing/deep.txt", "top.txt/below"] {
+            assert!(
+                get_path_entry(&t, &odb, root, Path::new(miss))
+                    .unwrap()
+                    .is_none(),
+                "{miss} must be a miss"
+            );
+        }
+
+        // Path normalization: `.` components and redundant separators are ignored, while
+        // absolute paths and `..` can never name a tree entry and read as misses.
+        for hit in ["a/./b/deep.txt", "a//b/deep.txt", "./top.txt", "a/b/"] {
+            assert!(
+                get_path_entry(&t, &odb, root, Path::new(hit))
+                    .unwrap()
+                    .is_some(),
+                "{hit} must resolve"
+            );
+        }
+        for miss in ["../top.txt", "/top.txt", "."] {
+            assert!(
+                get_path_entry(&t, &odb, root, Path::new(miss))
+                    .unwrap()
+                    .is_none(),
+                "{miss} must be a miss"
+            );
+        }
+
+        // The empty tree reads through the virtualized disk fallback: no entries, plain miss.
+        assert!(
+            get_path_entry(&t, &odb, empty_id(), Path::new("anything"))
+                .unwrap()
+                .is_none()
+        );
+    }
+
     // Removing a whole subdirectory must report every file under it as removed. This exercises
     // the "input1 is a tree, input2 is gone" branch of diff_paths, which is only reachable via
     // the recursion for entries present in tree1 but absent from tree2.
@@ -1656,13 +1915,14 @@ mod tests {
         let tree1 = make_tree(&repo, &["dir/file1", "dir/file2", "kept"]);
         let tree2 = make_tree(&repo, &["kept"]);
 
-        let removed = diff_paths(&repo, tree1, tree2, "").unwrap();
+        let odb = repo.odb().unwrap();
+        let removed = diff_paths(&objects::Git2Odb(&odb), tree1, tree2, "").unwrap();
         assert_eq!(
             removed,
             vec![("dir/file1".to_string(), -1), ("dir/file2".to_string(), -1)]
         );
 
-        let added = diff_paths(&repo, tree2, tree1, "").unwrap();
+        let added = diff_paths(&objects::Git2Odb(&odb), tree2, tree1, "").unwrap();
         assert_eq!(
             added,
             vec![("dir/file1".to_string(), 1), ("dir/file2".to_string(), 1)]

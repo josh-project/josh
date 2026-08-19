@@ -27,6 +27,8 @@ pub fn as_tree(transaction: &cache::Transaction, filter: Filter) -> anyhow::Resu
     josh_filter::persist::as_tree(transaction.repo(), &transaction.odb()?, filter)
 }
 
+// PORT: persist::from_tree reads possibly-unflushed filter trees through the registered
+// libgit2 backend; it must move to the facade before the backend can be unregistered.
 pub fn from_tree(transaction: &cache::Transaction, tree_oid: git2::Oid) -> anyhow::Result<Filter> {
     josh_filter::persist::from_tree(transaction.repo(), tree_oid)
 }
@@ -62,29 +64,21 @@ pub enum SigRewrite {
     Raw(BString),
 }
 
-#[derive(Debug)]
-pub struct Rewrite<'a> {
-    tree: git2::Tree<'a>,
+/// A pending commit rewrite in plain oid currency: the tree the rewritten commit will
+/// point at, the base commit it derives from, and the metadata overrides. Tree objects are
+/// never loaded on its behalf -- consumers read the tree through the transaction facade
+/// when (and only when) they need its contents.
+#[derive(Debug, Clone)]
+pub struct Rewrite {
+    tree: git2::Oid,
     commit: git2::Oid,
     pub author: Option<SigRewrite>,
     pub committer: Option<SigRewrite>,
     pub message: Option<BString>,
 }
 
-impl<'a> Clone for Rewrite<'a> {
-    fn clone(&self) -> Self {
-        Rewrite {
-            tree: self.tree.clone(),
-            commit: self.commit,
-            author: self.author.clone(),
-            committer: self.committer.clone(),
-            message: self.message.clone(),
-        }
-    }
-}
-
-impl<'a> Rewrite<'a> {
-    pub fn from_tree(tree: git2::Tree<'a>) -> Self {
+impl Rewrite {
+    pub fn from_tree(tree: git2::Oid) -> Self {
         Rewrite {
             tree,
             author: None,
@@ -95,7 +89,7 @@ impl<'a> Rewrite<'a> {
     }
 
     pub fn from_tree_with_metadata(
-        tree: git2::Tree<'a>,
+        tree: git2::Oid,
         author: Option<SigRewrite>,
         committer: Option<SigRewrite>,
         message: Option<BString>,
@@ -112,12 +106,11 @@ impl<'a> Rewrite<'a> {
     /// The metadata slots stay `None`: rewrite_commit keeps the base commit's raw
     /// signature and message bytes verbatim unless a filter overrides them, so the
     /// commit's author/committer/message are never parsed on the passthrough path.
-    pub fn from_commit_data(
-        repo: &'a git2::Repository,
-        commit: &objects::CommitData,
-    ) -> anyhow::Result<Self> {
+    /// Only the tree id is taken from the header -- nothing validates the tree object
+    /// here; a missing tree surfaces at the first actual tree read.
+    pub fn from_commit_data(commit: &objects::CommitData) -> anyhow::Result<Self> {
         Ok(Rewrite {
-            tree: repo.find_tree(commit.tree_id()?)?,
+            tree: commit.tree_id()?,
             commit: commit.id(),
             author: None,
             committer: None,
@@ -127,49 +120,30 @@ impl<'a> Rewrite<'a> {
 
     pub fn with_author(self, author: (BString, BString)) -> Self {
         Rewrite {
-            tree: self.tree,
             author: Some(SigRewrite::NameEmail(author.0, author.1)),
-            commit: self.commit,
-            committer: self.committer,
-            message: self.message,
+            ..self
         }
     }
 
     pub fn with_committer(self, committer: (BString, BString)) -> Self {
         Rewrite {
-            tree: self.tree,
-            author: self.author,
-            commit: self.commit,
             committer: Some(SigRewrite::NameEmail(committer.0, committer.1)),
-            message: self.message,
+            ..self
         }
     }
 
     pub fn with_message(self, message: BString) -> Self {
         Rewrite {
-            tree: self.tree,
-            author: self.author,
-            commit: self.commit,
-            committer: self.committer,
             message: Some(message),
+            ..self
         }
     }
 
-    pub fn with_tree(self, tree: git2::Tree<'a>) -> Self {
-        Rewrite {
-            tree,
-            author: self.author,
-            commit: self.commit,
-            committer: self.committer,
-            message: self.message,
-        }
+    pub fn with_tree(self, tree: git2::Oid) -> Self {
+        Rewrite { tree, ..self }
     }
 
-    pub fn tree(&self) -> &git2::Tree<'a> {
-        &self.tree
-    }
-
-    pub fn into_tree(self) -> git2::Tree<'a> {
+    pub fn tree_id(&self) -> git2::Oid {
         self.tree
     }
 }
@@ -416,13 +390,19 @@ pub fn apply_to_commit(
 // Handle workspace.josh files that contain ":workspace=..." as their only filter as
 // a "redirect" to that other workspace. We chain an exclude of the redirecting workspace
 // in front to prevent infinite recursion.
-fn resolve_workspace_redirect<'a>(
-    repo: &'a git2::Repository,
-    tree: &'a git2::Tree<'a>,
+fn resolve_workspace_redirect(
+    transaction: &cache::Transaction,
+    odb: &josh_memodb::Odb,
+    reader: &tree::TreeReader,
     path: &Path,
 ) -> Option<(Filter, std::path::PathBuf)> {
-    let f = parse(&tree::get_blob(repo, tree, &path.join("workspace.josh")))
-        .unwrap_or_else(|_| to_filter(Op::Empty));
+    let f = parse(&tree::get_blob_at(
+        transaction,
+        odb,
+        reader,
+        &path.join("workspace.josh"),
+    ))
+    .unwrap_or_else(|_| to_filter(Op::Empty));
 
     if let Op::Workspace(p) = peel_op(f) {
         let inner = to_filter(Op::Exclude(Filter::new().file(path))).chain(f.peel());
@@ -432,9 +412,11 @@ fn resolve_workspace_redirect<'a>(
     }
 }
 
-fn get_workspace<'a>(
+fn get_workspace(
     transaction: &cache::Transaction,
-    tree: &'a git2::Tree<'a>,
+    odb: &josh_memodb::Odb,
+    tree: git2::Oid,
+    reader: &tree::TreeReader,
     path: &Path,
 ) -> Filter {
     let wsj_file = Filter::new().file("workspace.josh");
@@ -443,35 +425,43 @@ fn get_workspace<'a>(
     compose(&[
         wsj_file,
         compose(&[
-            get_filter(transaction, tree, &path.join("workspace.josh")),
+            get_filter(transaction, odb, tree, reader, &path.join("workspace.josh")),
             base,
         ]),
     ])
 }
 
-fn get_stored<'a>(
+fn get_stored(
     transaction: &cache::Transaction,
-    tree: &'a git2::Tree<'a>,
+    odb: &josh_memodb::Odb,
+    tree: git2::Oid,
+    reader: &tree::TreeReader,
     path: &Path,
 ) -> Filter {
     let stored_path = path.with_added_extension("josh");
     let sj_file = Filter::new().file(stored_path.clone());
-    compose(&[sj_file, get_filter(transaction, tree, &stored_path)])
+    compose(&[
+        sj_file,
+        get_filter(transaction, odb, tree, reader, &stored_path),
+    ])
 }
 
-fn get_starlark<'a>(
+fn get_starlark(
     transaction: &cache::Transaction,
-    tree: &'a git2::Tree<'a>,
+    odb: &josh_memodb::Odb,
+    tree: git2::Oid,
+    reader: &tree::TreeReader,
     path: &Path,
     subfilter: Filter,
 ) -> Filter {
     let star_path = path.with_added_extension("star");
-    let script = tree::get_blob(transaction.repo(), tree, &star_path);
-    let filtered_tree = match apply(transaction, subfilter, Rewrite::from_tree(tree.clone())) {
-        Ok(rw) => rw.into_tree(),
+    let script = tree::get_blob_at(transaction, odb, reader, &star_path);
+    let filtered_tree = match apply(transaction, subfilter, Rewrite::from_tree(tree)) {
+        Ok(rw) => rw.tree_id(),
         Err(_) => return to_filter(Op::Empty),
     };
-    match josh_starlark::evaluate(&script, filtered_tree.id(), transaction.repo()) {
+    // PORT: josh-starlark reads the filtered tree through the repo handle.
+    match josh_starlark::evaluate(&script, filtered_tree, transaction.repo()) {
         Ok(f) => {
             let star_file = Filter::new().file(star_path);
             compose(&[star_file, subfilter, f])
@@ -483,23 +473,30 @@ fn get_starlark<'a>(
     }
 }
 
-fn get_filter<'a>(
+fn get_filter(
     transaction: &cache::Transaction,
-    tree: &'a git2::Tree<'a>,
+    odb: &josh_memodb::Odb,
+    tree: git2::Oid,
+    reader: &tree::TreeReader,
     path: &Path,
 ) -> Filter {
     let ws_path = normalize_path(path);
-    let ws_id = ok_or!(tree.get_path(&ws_path), {
-        return to_filter(Op::Empty);
-    })
-    .id();
-    let ws_blob = tree::get_blob(transaction.repo(), tree, &ws_path);
+    // One descent resolves both the WORKSPACES cache key (the workspace.josh entry oid)
+    // and the blob to parse.
+    let ws_id = match tree::get_path_entry_at(transaction, odb, reader, &ws_path) {
+        Ok(Some(entry)) => objects::git2_oid(&entry.oid),
+        _ => {
+            return to_filter(Op::Empty);
+        }
+    };
+    let ws_blob = tree::blob_text(odb, ws_id);
 
     if let Some(f) = WORKSPACES.lock().unwrap().get(&ws_id) {
         *f
     } else {
         let f = parse(&ws_blob).unwrap_or_else(|_| to_filter(Op::Empty));
-        let f = legalize_stored(transaction, f, tree).unwrap_or_else(|_| to_filter(Op::Empty));
+        let f = legalize_stored(transaction, odb, f, tree, reader)
+            .unwrap_or_else(|_| to_filter(Op::Empty));
 
         let f = if invert(f).is_ok() {
             f
@@ -511,18 +508,21 @@ fn get_filter<'a>(
     }
 }
 
-fn read_josh_link<'a>(
-    repo: &'a git2::Repository,
-    tree: &git2::Tree<'a>,
+fn read_josh_link(
+    transaction: &cache::Transaction,
+    odb: &josh_memodb::Odb,
+    reader: &tree::TreeReader,
     root: &std::path::Path,
     filename: &str,
 ) -> Option<Filter> {
     use anyhow::Context;
 
     let link_path = root.join(filename);
-    let link_entry = tree.get_path(&link_path).ok()?;
-    let link_blob = repo.find_blob(link_entry.id()).ok()?;
-    let b = std::str::from_utf8(link_blob.content())
+    let link_entry = tree::get_path_entry_at(transaction, odb, reader, &link_path)
+        .ok()
+        .flatten()?;
+    let link_blob = tree::blob_bytes(odb, objects::git2_oid(&link_entry.oid))?;
+    let b = std::str::from_utf8(&link_blob)
         .with_context(|| format!("invalid utf8 in {}", filename))
         .ok()?;
 
@@ -590,7 +590,6 @@ pub fn apply_to_commit2(
     commit_id: git2::Oid,
     transaction: &cache::Transaction,
 ) -> anyhow::Result<Option<git2::Oid>> {
-    let repo = transaction.repo();
     let op = peel_op(filter);
 
     if filter == Filter::new() {
@@ -618,11 +617,12 @@ pub fn apply_to_commit2(
         Op::Squash(None) => {
             let odb = transaction.odb()?;
             let commit = objects::CommitData::read(&odb, commit_id)?;
+            odb.read_header(commit.tree_id()?)?;
             return Some(history::rewrite_commit(
                 &odb,
                 &commit,
                 &[],
-                Rewrite::from_commit_data(repo, &commit)?,
+                Rewrite::from_commit_data(&commit)?,
                 history::GpgsigMode::Remove,
             ))
             .transpose();
@@ -631,7 +631,7 @@ pub fn apply_to_commit2(
             if let Some(oid) = transaction.get(filter, commit_id)? {
                 return Ok(Some(oid));
             }
-            let new_oid = downstack(repo, transaction, commit_id, *base)?;
+            let new_oid = downstack(transaction, commit_id, *base)?;
             transaction.insert(filter, commit_id, new_oid, false)?;
             return Ok(Some(new_oid));
         }
@@ -648,6 +648,11 @@ pub fn apply_to_commit2(
 
     let odb = transaction.odb()?;
     let commit = objects::CommitData::read(&odb, commit_id)?;
+    // Validate the commit's tree before any filter work (a header probe: no decompression,
+    // no parse). Without this gate, an apply over a partially unreadable input can buffer
+    // fresh objects into the store before a later read aborts the walk, and the partial
+    // write would change the next flush's pack.
+    odb.read_header(commit.tree_id()?)?;
 
     let rewrite_data = match &op {
         Op::Squash(Some(ids)) => {
@@ -668,12 +673,11 @@ pub fn apply_to_commit2(
                 let rc = objects::CommitData::read(&odb, oid)?;
                 let rcr = rc.parsed()?;
                 Rewrite::from_tree_with_metadata(
-                    repo.find_tree(rc.tree_id()?)?,
+                    rc.tree_id()?,
                     Some(SigRewrite::Raw(rcr.author.to_owned())),
                     Some(SigRewrite::Raw(rcr.committer.to_owned())),
                     Some(rcr.message.to_owned()),
                 )
-                //commit.tree()?
             } else {
                 if let Some(parent) = commit.first_parent_id() {
                     return Ok(if let Some(fparent) = transaction.get(filter, parent)? {
@@ -715,7 +719,7 @@ pub fn apply_to_commit2(
                 }
             }
 
-            Rewrite::from_commit_data(repo, &commit)?
+            Rewrite::from_commit_data(&commit)?
         }
         Op::Export => {
             check_experimental_features_enabled("export filter")?;
@@ -745,10 +749,17 @@ pub fn apply_to_commit2(
             //         return Err(anyhow!("missing commit"));
             //     }
 
-            let tree = repo.find_tree(commit.tree_id()?)?;
-            if let Some(link_file) =
-                read_josh_link(repo, &tree, &std::path::PathBuf::new(), ".link.josh")
-            {
+            let tree = commit.tree_id()?;
+            // The link probe below folds every failure into "no link", so an unreadable
+            // or unparseable commit tree must error here.
+            let tree_reader = tree::read_tree(transaction, &odb, tree)?;
+            if let Some(link_file) = read_josh_link(
+                transaction,
+                &odb,
+                &tree_reader,
+                &std::path::PathBuf::new(),
+                ".link.josh",
+            ) {
                 if let Some(commit_str) = link_file.get_meta("commit") {
                     if let Ok(commit_oid) = git2::Oid::from_str(&commit_str) {
                         if filtered_parent_ids.contains(&commit_oid) {
@@ -763,11 +774,7 @@ pub fn apply_to_commit2(
             return Some(history::create_filtered_commit(
                 &commit,
                 filtered_parent_ids,
-                apply(
-                    transaction,
-                    filter,
-                    Rewrite::from_commit_data(repo, &commit)?,
-                )?,
+                apply(transaction, filter, Rewrite::from_commit_data(&commit)?)?,
                 transaction,
                 filter,
             ))
@@ -787,9 +794,8 @@ pub fn apply_to_commit2(
             let mut filtered_parent_ids: Vec<git2::Oid> =
                 some_or!(filtered_parent_ids, { return Ok(None) });
 
-            let tree = repo.find_tree(commit.tree_id()?)?;
             let mut link_parents = vec![];
-            for (link_path, link_file) in find_link_files(&repo, &tree)?.into_iter() {
+            for (link_path, link_file) in find_link_files(&odb, commit.tree_id()?)?.into_iter() {
                 if let Some(commit_str) = link_file.get_meta("commit") {
                     if let Ok(commit_oid) = git2::Oid::from_str(&commit_str) {
                         if let Some(cmt) =
@@ -807,11 +813,7 @@ pub fn apply_to_commit2(
                 }
             }
 
-            let new_tree = apply(
-                transaction,
-                filter,
-                Rewrite::from_commit_data(repo, &commit)?,
-            )?;
+            let new_tree = apply(transaction, filter, Rewrite::from_commit_data(&commit)?)?;
 
             filtered_parent_ids.retain(|c| !link_parents.contains(c));
 
@@ -826,28 +828,30 @@ pub fn apply_to_commit2(
         }
         Op::Link(mode) => {
             check_experimental_features_enabled("link filter")?;
-            let tree = repo.find_tree(commit.tree_id()?)?;
-            let mut roots = get_link_roots(repo, transaction, &tree)?;
+            let tree = commit.tree_id()?;
+            // An unreadable commit tree is a hard error -- the retain probes and link
+            // reads below fold their failures -- and they all share this one parse.
+            let tree_reader = tree::read_tree(transaction, &odb, tree)?;
+            let mut roots = get_link_roots(transaction, &odb, tree)?;
 
             // A root commit (no first parent) keeps every root; when a first
-            // parent is present its tree must be readable.
-            let parent_tree = match commit.first_parent_id() {
-                Some(parent) => Some(repo.find_tree(git::read_tree_id(&odb, parent)?)?),
-                None => None,
-            };
-            if let Some(parent_tree) = parent_tree {
+            // parent is present its tree must be readable (the retain closure below cannot
+            // error).
+            if let Some(parent) = commit.first_parent_id() {
+                let parent_tree = git::read_tree_id(&odb, parent)?;
+                let parent_reader = tree::read_tree(transaction, &odb, parent_tree)?;
                 roots.retain(|root| {
-                    if let (Ok(a), Ok(b)) = (tree.get_path(&root), parent_tree.get_path(&root))
-                        && a.id() == b.id()
-                    {
-                        false
-                    } else {
-                        true
+                    match (
+                        tree::get_path_entry_at(transaction, &odb, &tree_reader, root),
+                        tree::get_path_entry_at(transaction, &odb, &parent_reader, root),
+                    ) {
+                        (Ok(Some(a)), Ok(Some(b))) if a.oid == b.oid => false,
+                        _ => true,
                     }
                 });
-            };
+            }
 
-            let all_links = links_from_roots(repo, &tree, roots)?;
+            let all_links = links_from_roots(transaction, &odb, &tree_reader, roots)?;
 
             // Only embedded-mode links get extra parent commits spliced in
             let embedded_links: Vec<_> = all_links
@@ -864,11 +868,7 @@ pub fn apply_to_commit2(
                 .collect();
 
             if embedded_links.is_empty() {
-                apply(
-                    transaction,
-                    filter,
-                    Rewrite::from_commit_data(repo, &commit)?,
-                )?
+                apply(transaction, filter, Rewrite::from_commit_data(&commit)?)?
             } else {
                 let normal_parents = commit
                     .parent_ids()
@@ -903,11 +903,8 @@ pub fn apply_to_commit2(
                     extra_parents
                 };
 
-                let filtered_tree = apply(
-                    transaction,
-                    filter,
-                    Rewrite::from_commit_data(repo, &commit)?,
-                )?;
+                let filtered_tree =
+                    apply(transaction, filter, Rewrite::from_commit_data(&commit)?)?;
                 let filtered_parent_ids = normal_parents
                     .into_iter()
                     .chain(extra_parents)
@@ -924,8 +921,13 @@ pub fn apply_to_commit2(
             }
         }
         Op::Workspace(ws_path) => {
-            let tree = repo.find_tree(commit.tree_id()?)?;
-            if let Some((redirect, _)) = resolve_workspace_redirect(repo, &tree, ws_path) {
+            // The get_* helpers return a bare Filter and would fold an unreadable tree to
+            // Op::Empty, so bad input must error here; every probe below shares the read.
+            let tree = commit.tree_id()?;
+            let tree_reader = tree::read_tree(transaction, &odb, tree)?;
+            if let Some((redirect, _)) =
+                resolve_workspace_redirect(transaction, &odb, &tree_reader, ws_path)
+            {
                 if let Some(r) = apply_to_commit2(redirect, commit_id, transaction)? {
                     transaction.insert(filter, commit.id(), r, true)?;
                     return Ok(Some(r));
@@ -934,13 +936,14 @@ pub fn apply_to_commit2(
                 }
             }
 
-            let commit_filter = get_workspace(transaction, &tree, ws_path);
+            let commit_filter = get_workspace(transaction, &odb, tree, &tree_reader, ws_path);
 
             let parent_filters = commit
                 .parent_ids()
                 .map(|parent| {
                     let tree_id = git::read_tree_id(&odb, parent)?;
-                    let pcw = get_workspace(transaction, &repo.find_tree(tree_id)?, ws_path);
+                    let reader = tree::read_tree(transaction, &odb, tree_id)?;
+                    let pcw = get_workspace(transaction, &odb, tree_id, &reader, ws_path);
                     Ok((parent, pcw))
                 })
                 .collect::<anyhow::Result<Vec<_>>>()?;
@@ -948,14 +951,16 @@ pub fn apply_to_commit2(
             return per_rev_filter(transaction, &commit, filter, commit_filter, parent_filters);
         }
         Op::Stored(s_path) => {
-            let commit_filter =
-                get_stored(transaction, &repo.find_tree(commit.tree_id()?)?, s_path);
+            let tree = commit.tree_id()?;
+            let tree_reader = tree::read_tree(transaction, &odb, tree)?;
+            let commit_filter = get_stored(transaction, &odb, tree, &tree_reader, s_path);
 
             let parent_filters = commit
                 .parent_ids()
                 .map(|parent| {
                     let tree_id = git::read_tree_id(&odb, parent)?;
-                    let pcs = get_stored(transaction, &repo.find_tree(tree_id)?, s_path);
+                    let reader = tree::read_tree(transaction, &odb, tree_id)?;
+                    let pcs = get_stored(transaction, &odb, tree_id, &reader, s_path);
                     Ok((parent, pcs))
                 })
                 .collect::<anyhow::Result<Vec<_>>>()?;
@@ -964,19 +969,18 @@ pub fn apply_to_commit2(
         }
         Op::Starlark(s_path, s_subfilter) => {
             check_experimental_features_enabled("Starlark filter")?;
-            let commit_filter = get_starlark(
-                transaction,
-                &repo.find_tree(commit.tree_id()?)?,
-                s_path,
-                *s_subfilter,
-            );
+            let tree = commit.tree_id()?;
+            let tree_reader = tree::read_tree(transaction, &odb, tree)?;
+            let commit_filter =
+                get_starlark(transaction, &odb, tree, &tree_reader, s_path, *s_subfilter);
 
             let parent_filters = commit
                 .parent_ids()
                 .map(|parent| {
                     let tree_id = git::read_tree_id(&odb, parent)?;
+                    let reader = tree::read_tree(transaction, &odb, tree_id)?;
                     let pcs =
-                        get_starlark(transaction, &repo.find_tree(tree_id)?, s_path, *s_subfilter);
+                        get_starlark(transaction, &odb, tree_id, &reader, s_path, *s_subfilter);
                     Ok((parent, pcs))
                 })
                 .collect::<anyhow::Result<Vec<_>>>()?;
@@ -1015,8 +1019,7 @@ pub fn apply_to_commit2(
                 filtered_tree = tree::overlay(transaction, filtered_tree, t)?;
             }
 
-            let filtered_tree = repo.find_tree(filtered_tree)?;
-            Rewrite::from_commit_data(repo, &commit)?.with_tree(filtered_tree)
+            Rewrite::from_commit_data(&commit)?.with_tree(filtered_tree)
         }
         Op::Hook(hook) => {
             let commit_filter = transaction.lookup_filter_hook(hook, commit.id())?;
@@ -1040,10 +1043,15 @@ pub fn apply_to_commit2(
                 // first parent that is present must be readable.
                 if let Some(parent_id) = target.first_parent_id() {
                     let parent = objects::CommitData::read(&odb, parent_id)?;
-                    let ptree = apply(transaction, *uf, Rewrite::from_commit_data(repo, &parent)?)?;
+                    let ptree = apply(transaction, *uf, Rewrite::from_commit_data(&parent)?)?;
+                    // The link probe folds every failure into "no link", so an unreadable
+                    // filtered tree must error here.
+                    let ptree_id = ptree.tree_id();
+                    let ptree_reader = tree::read_tree(transaction, &odb, ptree_id)?;
                     if let Some(link) = read_josh_link(
-                        repo,
-                        &ptree.tree(),
+                        transaction,
+                        &odb,
+                        &ptree_reader,
                         &std::path::PathBuf::new(),
                         ".link.josh",
                     ) {
@@ -1069,14 +1077,18 @@ pub fn apply_to_commit2(
             apply(
                 transaction,
                 filter,
-                Rewrite::from_commit_data(repo, &commit)?, /* Rewrite::from_commit_data(repo, &commit)?.with_parents(filtered_parent_ids), */
+                Rewrite::from_commit_data(&commit)?, /* Rewrite::from_commit_data(&commit)?.with_parents(filtered_parent_ids), */
             )?
         }
         Op::Embed(path) => {
             check_experimental_features_enabled("embed filter")?;
 
-            let tree = repo.find_tree(commit.tree_id()?)?;
-            if let Some(link) = read_josh_link(repo, &tree, &path, ".link.josh") {
+            let tree = commit.tree_id()?;
+            // The link probe below folds every failure into "no link", so an unreadable
+            // or unparseable commit tree must error here.
+            let tree_reader = tree::read_tree(transaction, &odb, tree)?;
+            if let Some(link) = read_josh_link(transaction, &odb, &tree_reader, path, ".link.josh")
+            {
                 let subdir = filter::invert(link.peel())?;
                 let unapply = to_filter(Op::Unapply(LazyRef::Resolved(commit.id()), subdir));
                 if let Some(commit_str) = link.get_meta("commit") {
@@ -1092,11 +1104,7 @@ pub fn apply_to_commit2(
             return Ok(Some(git2::Oid::ZERO_SHA1));
         }
 
-        _ => apply(
-            transaction,
-            filter,
-            Rewrite::from_commit_data(repo, &commit)?,
-        )?,
+        _ => apply(transaction, filter, Rewrite::from_commit_data(&commit)?)?,
     };
 
     let tree_data = rewrite_data;
@@ -1120,9 +1128,10 @@ pub fn apply_to_commit2(
     .transpose()
 }
 
-fn extract_submodule_commits<'a>(
-    repo: &'a git2::Repository,
-    tree: &git2::Tree<'a>,
+fn extract_submodule_commits(
+    transaction: &cache::Transaction,
+    odb: &josh_memodb::Odb,
+    tree: git2::Oid,
 ) -> anyhow::Result<
     std::collections::BTreeMap<
         std::path::PathBuf,
@@ -1130,8 +1139,16 @@ fn extract_submodule_commits<'a>(
     >,
 > {
     use crate::submodules::{ParsedSubmoduleEntry, parse_gitmodules};
-    // Get .gitmodules blob from the tree
-    let gitmodules_content = tree::get_blob(repo, tree, std::path::Path::new(".gitmodules"));
+    // One hoisted parse for the .gitmodules probe and every per-submodule probe; an
+    // unreadable tree is a hard error (the probes below fold their failures).
+    let tree_reader = tree::read_tree(transaction, odb, tree)?;
+
+    let gitmodules_content = tree::get_blob_at(
+        transaction,
+        odb,
+        &tree_reader,
+        std::path::Path::new(".gitmodules"),
+    );
 
     if gitmodules_content.is_empty() {
         // No .gitmodules file, return empty map
@@ -1154,13 +1171,11 @@ fn extract_submodule_commits<'a>(
 
     for parsed in submodule_entries {
         let submodule_path = parsed.path.clone();
-        // Get the submodule entry from the tree
-        if let Ok(entry) = tree.get_path(&submodule_path) {
-            // Check if this is a commit (submodule) entry
-            if entry.kind() == Some(git2::ObjectType::Commit) {
-                // Get the commit OID stored in the tree entry
-                let commit_oid = entry.id();
-                // Store OID and parsed entry metadata
+        if let Ok(Some(entry)) =
+            tree::get_path_entry_at(transaction, odb, &tree_reader, &submodule_path)
+        {
+            if entry.mode.is_commit() {
+                let commit_oid = objects::git2_oid(&entry.oid);
                 submodule_commits.insert(submodule_path, (commit_oid, parsed));
             }
         }
@@ -1169,37 +1184,37 @@ fn extract_submodule_commits<'a>(
     Ok(submodule_commits)
 }
 
-fn get_link_roots<'a>(
-    _repo: &'a git2::Repository,
-    transaction: &'a cache::Transaction,
-    tree: &'a git2::Tree<'a>,
+fn get_link_roots(
+    transaction: &cache::Transaction,
+    odb: &josh_memodb::Odb,
+    tree: git2::Oid,
 ) -> anyhow::Result<Vec<std::path::PathBuf>> {
     let link_filter = to_filter(Op::pattern("**/.link.josh")?);
-    let link_tree = apply(transaction, link_filter, Rewrite::from_tree(tree.clone()))?;
+    let link_tree = apply_impl(transaction, odb, link_filter, Rewrite::from_tree(tree))?;
 
+    // Stored-order preorder is load-bearing: the roots order feeds the extra-parents
+    // order of created merge commits.
     let mut roots = vec![];
-    link_tree
-        .tree()
-        .walk(git2::TreeWalkMode::PreOrder, |root, entry| {
-            let root = root.trim_matches('/');
-            let root = std::path::PathBuf::from(root);
-            if entry.name().ok() == Some(".link.josh") {
-                roots.push(root);
-            }
-            0
-        })?;
+    objects::walk_tree_preorder(odb, link_tree.tree_id(), &mut |root, entry| {
+        let root = std::path::PathBuf::from(root);
+        if &entry.filename[..] == b".link.josh" {
+            roots.push(root);
+        }
+        Ok(())
+    })?;
 
     Ok(roots)
 }
 
-fn links_from_roots<'a>(
-    repo: &'a git2::Repository,
-    tree: &git2::Tree<'a>,
+fn links_from_roots(
+    transaction: &cache::Transaction,
+    odb: &josh_memodb::Odb,
+    reader: &tree::TreeReader,
     roots: Vec<std::path::PathBuf>,
 ) -> anyhow::Result<Vec<(std::path::PathBuf, Filter)>> {
     let mut v = vec![];
     for root in roots {
-        if let Some(link_filter) = read_josh_link(repo, tree, &root, ".link.josh") {
+        if let Some(link_filter) = read_josh_link(transaction, odb, reader, &root, ".link.josh") {
             v.push((root, link_filter));
         }
     }
@@ -1207,16 +1222,27 @@ fn links_from_roots<'a>(
 }
 
 /// Filter a single tree. This does not involve walking history and is thus fast in most cases.
-pub fn apply<'a>(
-    transaction: &'a cache::Transaction,
+pub fn apply(
+    transaction: &cache::Transaction,
     filter: Filter,
-    x: Rewrite<'a>,
-) -> anyhow::Result<Rewrite<'a>> {
-    let repo = transaction.repo();
+    x: Rewrite,
+) -> anyhow::Result<Rewrite> {
+    // One facade handle for the whole (possibly deeply recursive) application -- building it
+    // per recursion level would cost an FFI round-trip each.
+    let odb = transaction.odb()?;
+    apply_impl(transaction, &odb, filter, x)
+}
+
+fn apply_impl(
+    transaction: &cache::Transaction,
+    odb: &josh_memodb::Odb,
+    filter: Filter,
+    x: Rewrite,
+) -> anyhow::Result<Rewrite> {
     let op = peel_op(filter);
     match &op {
         Op::Nop => Ok(x),
-        Op::Empty => Ok(x.with_tree(tree::empty(repo))),
+        Op::Empty => Ok(x.with_tree(tree::empty_id())),
         Op::Fold => Ok(x),
         Op::Squash(None) => Ok(x),
         Op::Author(author, email) => {
@@ -1227,33 +1253,67 @@ pub fn apply<'a>(
         }
         Op::Squash(Some(_)) => Err(anyhow!("not applicable to tree: squash")),
         Op::Message(m, r) => {
-            let tree_id = x.tree().id().to_string();
+            // Rewriting a message leaves the tree alone, so with neither a commit nor a
+            // message to transform this is identity, like the other history-only filters.
+            if x.commit == git2::Oid::ZERO_SHA1 && x.message.is_none() {
+                return Ok(x);
+            }
+
+            let tree = x.tree_id();
+            let tree_id = tree.to_string();
             let commit = x.commit;
             let commit_id = commit.to_string();
 
-            // The template transform is the one consumer that needs the message as text, so
-            // the UTF-8 decode happens here (and only here), erroring loudly.
+            // The template is the one consumer that needs the message as text, so the UTF-8
+            // decode happens here, and only here. A commit that cannot be read or parsed is
+            // an error rather than an empty message.
             let message = if let Some(ref m) = x.message {
                 std::str::from_utf8(m.as_ref())?.to_string()
-            } else if let Ok(c) = transaction.repo().find_commit(commit) {
-                std::str::from_utf8(c.message_raw_bytes())?.to_string()
             } else {
-                "".to_string()
+                let base = objects::CommitData::read(odb, commit)?;
+                std::str::from_utf8(base.message_raw()?)?.to_string()
             };
 
-            let tree = x.tree().clone();
+            // One lazily-read tree shared by all template keys: a key-less template reads
+            // nothing, and an unreadable tree keeps the keys' tolerance ("" / zero oid).
+            let tree_reader = std::cell::OnceCell::new();
+            let reader = || {
+                tree_reader
+                    .get_or_init(|| tree::read_tree(transaction, odb, tree).ok())
+                    .as_ref()
+            };
+
             Ok(x.with_message(
                 text::transform_with_template(r, m, &message, |key: &str| -> Option<String> {
                     match key {
                         "#" => Some(tree_id.clone()),
                         "@" => Some(commit_id.clone()),
-                        key if key.starts_with("/") => {
-                            Some(tree::get_blob(repo, &tree, std::path::Path::new(&key[1..])))
-                        }
+                        key if key.starts_with("/") => Some(
+                            reader()
+                                .map(|p| {
+                                    tree::get_blob_at(
+                                        transaction,
+                                        odb,
+                                        p,
+                                        std::path::Path::new(&key[1..]),
+                                    )
+                                })
+                                .unwrap_or_default(),
+                        ),
 
                         key if key.starts_with("#") => Some(
-                            tree.get_path(std::path::Path::new(&key[1..]))
-                                .map(|e| e.id())
+                            reader()
+                                .and_then(|p| {
+                                    tree::get_path_entry_at(
+                                        transaction,
+                                        odb,
+                                        p,
+                                        std::path::Path::new(&key[1..]),
+                                    )
+                                    .ok()
+                                    .flatten()
+                                })
+                                .map(|e| objects::git2_oid(&e.oid))
                                 .unwrap_or(git2::Oid::ZERO_SHA1)
                                 .to_string(),
                         ),
@@ -1265,11 +1325,12 @@ pub fn apply<'a>(
         }
         Op::Prune => Ok(x),
         Op::Adapt(adapter) => {
-            let mut result_tree = x.tree().clone();
+            let mut result_tree = x.tree_id();
             match adapter.as_ref() {
                 "submodules" => {
                     // Extract submodule commits
-                    let submodule_commits = extract_submodule_commits(repo, &result_tree)?;
+                    let submodule_commits =
+                        extract_submodule_commits(transaction, odb, result_tree)?;
 
                     // Process each submodule commit
                     for (submodule_path, (commit_oid, meta)) in submodule_commits {
@@ -1283,19 +1344,19 @@ pub fn apply<'a>(
                             .with_meta("mode", josh_filter::LinkMode::Pointer.to_string());
                         let link_content = as_file(link_filter, 0);
 
-                        result_tree = tree::insert(
-                            repo,
-                            &result_tree,
+                        result_tree = tree::insert_oid(
+                            odb,
+                            result_tree,
                             &submodule_path.join(".link.josh"),
-                            repo.blob(link_content.as_bytes())?,
+                            odb.write(gix_object::Kind::Blob, link_content.as_bytes()),
                             0o0100644,
                         )?;
                     }
 
                     // Remove .gitmodules file by setting it to zero OID
-                    result_tree = tree::insert(
-                        repo,
-                        &result_tree,
+                    result_tree = tree::insert_oid(
+                        odb,
+                        result_tree,
                         std::path::Path::new(".gitmodules"),
                         git2::Oid::ZERO_SHA1,
                         0o0100644,
@@ -1307,11 +1368,11 @@ pub fn apply<'a>(
             Ok(x.with_tree(result_tree))
         }
         Op::Export => {
-            let tree = x.tree().clone();
-            Ok(x.with_tree(tree::insert(
-                repo,
-                &tree,
-                &std::path::Path::new(".link.josh"),
+            let tree = x.tree_id();
+            Ok(x.with_tree(tree::insert_oid(
+                odb,
+                tree,
+                std::path::Path::new(".link.josh"),
                 git2::Oid::ZERO_SHA1,
                 0o0100644,
             )?))
@@ -1319,33 +1380,32 @@ pub fn apply<'a>(
         Op::Unlink => {
             check_experimental_features_enabled("unlink filter")?;
             use crate::link::find_link_files;
-            let mut result_tree = x.tree.clone();
-            for (link_path, link_file) in find_link_files(&repo, &result_tree)?.iter() {
-                result_tree = tree::insert(
-                    repo,
-                    &result_tree,
-                    &link_path,
-                    git2::Oid::ZERO_SHA1,
-                    0o0100644,
-                )?;
+            let mut result_tree = x.tree;
+            for (link_path, link_file) in find_link_files(odb, result_tree)?.iter() {
+                result_tree =
+                    tree::insert_oid(odb, result_tree, link_path, git2::Oid::ZERO_SHA1, 0o0100644)?;
 
                 // The link_file is already a filter with metadata, just serialize it
                 let link_content = as_file(*link_file, 0);
 
-                result_tree = tree::insert(
-                    repo,
-                    &result_tree,
+                result_tree = tree::insert_oid(
+                    odb,
+                    result_tree,
                     &link_path.join(".link.josh"),
-                    repo.blob(link_content.as_bytes())?,
+                    odb.write(gix_object::Kind::Blob, link_content.as_bytes()),
                     0o0100644,
                 )?;
             }
             Ok(x.with_tree(result_tree))
         }
         Op::Link(mode) => {
-            let roots = get_link_roots(repo, transaction, &x.tree())?;
-            let v = links_from_roots(repo, &x.tree(), roots)?;
-            let mut result_tree = x.tree().clone();
+            let tree = x.tree_id();
+            // An unreadable input tree is a hard error; the hoisted parse serves the
+            // link reads below.
+            let tree_reader = tree::read_tree(transaction, odb, tree)?;
+            let roots = get_link_roots(transaction, odb, tree)?;
+            let v = links_from_roots(transaction, odb, &tree_reader, roots)?;
+            let mut result_tree = tree;
 
             for (root, link_file) in v {
                 // Get commit from metadata
@@ -1354,18 +1414,17 @@ pub fn apply<'a>(
                     .and_then(|s| git2::Oid::from_str(&s).ok())
                     .ok_or_else(|| anyhow!("Link file missing commit metadata"))?;
 
-                let submodule_tree = repo.find_commit(commit_oid)?.tree()?;
+                let submodule_tree = git::read_tree_id(odb, commit_oid)?;
                 let inner_filter = link_file.peel();
-                let submodule_tree = apply(
+                let submodule_tree = apply_impl(
                     transaction,
+                    odb,
                     inner_filter,
                     Rewrite::from_tree(submodule_tree),
                 )
                 .unwrap();
 
-                let result_tree_id =
-                    tree::overlay(transaction, result_tree.id(), submodule_tree.tree().id())?;
-                result_tree = repo.find_tree(result_tree_id)?;
+                result_tree = tree::overlay(transaction, result_tree, submodule_tree.tree_id())?;
                 let effective_mode = mode.clone().unwrap_or_else(|| {
                     link_file
                         .get_meta("mode")
@@ -1375,11 +1434,11 @@ pub fn apply<'a>(
                 let link_content =
                     as_file(link_file.with_meta("mode", effective_mode.to_string()), 0);
 
-                result_tree = tree::insert(
-                    repo,
-                    &result_tree,
+                result_tree = tree::insert_oid(
+                    odb,
+                    result_tree,
                     &root.join(".link.josh"),
-                    repo.blob(link_content.as_bytes())?,
+                    odb.write(gix_object::Kind::Blob, link_content.as_bytes()),
                     0o0100644,
                 )?;
             }
@@ -1388,15 +1447,15 @@ pub fn apply<'a>(
         }
         Op::Rev(_) => Err(anyhow!("not applicable to tree: rev")),
         Op::RegexReplace(replacements) => {
-            let mut t = x.tree().clone();
+            let mut t = x.tree_id();
             for (regex, replacement) in replacements {
-                t = tree::regex_replace(t.id(), regex, replacement, transaction)?;
+                t = tree::regex_replace(t, regex, replacement, transaction)?;
             }
             Ok(x.with_tree(t))
         }
 
         Op::Pattern(cp) => {
-            let input = x.tree().id();
+            let input = x.tree_id();
             let key = peel_filter(filter).id();
             let t = if cp.fallback {
                 // More components than the NFA state mask can hold: match full paths.
@@ -1418,20 +1477,20 @@ pub fn apply<'a>(
                     tree::CompiledPattern::initial_state(),
                 )?
             };
-            Ok(if t == input {
-                x
-            } else {
-                x.with_tree(repo.find_tree(t)?)
-            })
+            Ok(if t == input { x } else { x.with_tree(t) })
         }
         Op::Insert(dest_path, content) => {
             let (oid, mode, is_tree) = match content {
-                InsertContent::Inline(s) => {
-                    (repo.blob(s.as_bytes())?, git2::FileMode::Blob.into(), false)
-                }
-                InsertContent::Oid(oid) => match repo.find_object(*oid, None)?.kind() {
-                    Some(git2::ObjectType::Blob) => (*oid, git2::FileMode::Blob.into(), false),
-                    Some(git2::ObjectType::Tree) => (*oid, git2::FileMode::Tree.into(), true),
+                InsertContent::Inline(s) => (
+                    odb.write(gix_object::Kind::Blob, s.as_bytes()),
+                    git2::FileMode::Blob.into(),
+                    false,
+                ),
+                // The kind comes from the header alone; a missing oid folds into the
+                // "neither" arm below.
+                InsertContent::Oid(oid) => match odb.try_kind(*oid) {
+                    Ok(Some(gix_object::Kind::Blob)) => (*oid, git2::FileMode::Blob.into(), false),
+                    Ok(Some(gix_object::Kind::Tree)) => (*oid, git2::FileMode::Tree.into(), true),
                     _ => {
                         return Err(anyhow::anyhow!(
                             "insert: {} is neither a blob nor a tree",
@@ -1445,29 +1504,31 @@ pub fn apply<'a>(
             // silently dropped, since git trees cannot have a blob at their root).
             if dest_path.as_path() == std::path::Path::new(".") {
                 if is_tree {
-                    return Ok(x.clone().with_tree(repo.find_tree(oid)?));
+                    return Ok(x.with_tree(oid));
                 }
                 return Err(anyhow::anyhow!(
                     "insert: `:$.=<oid>` requires a tree; a blob cannot be placed at the tree root"
                 ));
             }
-            Ok(x.clone().with_tree(tree::insert(
-                repo,
-                &tree::empty(repo),
-                &dest_path,
+            Ok(x.with_tree(tree::insert_oid(
+                odb,
+                tree::empty_id(),
+                dest_path,
                 oid,
                 mode,
             )?))
         }
         Op::File(dest_path, source_path) => {
-            let (file, mode) = x
-                .tree()
-                .get_path(source_path)
-                .map(|x| (x.id(), x.filemode()))
-                .unwrap_or((git2::Oid::ZERO_SHA1, git2::FileMode::Blob.into()));
-            Ok(x.with_tree(tree::insert(
-                repo,
-                &tree::empty(repo),
+            // The source entry's raw mode is carried into the copy, like every other kept
+            // entry; lookup failures fold into the fallback.
+            let (file, mode) =
+                match tree::get_path_entry(transaction, odb, x.tree_id(), source_path) {
+                    Ok(Some(e)) => (objects::git2_oid(&e.oid), e.mode.value() as i32),
+                    _ => (git2::Oid::ZERO_SHA1, git2::FileMode::Blob.into()),
+                };
+            Ok(x.with_tree(tree::insert_oid(
+                odb,
+                tree::empty_id(),
                 dest_path,
                 file,
                 mode,
@@ -1475,87 +1536,105 @@ pub fn apply<'a>(
         }
 
         Op::Subdir(path) => {
-            // A missing path or a non-tree entry (e.g. a blob) has no subtree;
-            // a present tree entry must load.
-            let subtree = match x.tree().get_path(path) {
-                Ok(entry) if entry.kind() == Some(git2::ObjectType::Tree) => {
-                    repo.find_tree(entry.id())?
-                }
-                _ => tree::empty(repo),
+            // A missing path, a non-tree entry (e.g. a blob), or a failed lookup has no
+            // subtree.
+            let subtree = match tree::get_path_entry(transaction, odb, x.tree_id(), path) {
+                Ok(Some(entry)) if entry.mode.is_tree() => objects::git2_oid(&entry.oid),
+                _ => tree::empty_id(),
             };
-            Ok(x.clone().with_tree(subtree))
+            Ok(x.with_tree(subtree))
         }
-        Op::Prefix(path) => Ok(x.clone().with_tree(tree::insert(
-            repo,
-            &tree::empty(repo),
-            path,
-            x.tree().id(),
-            git2::FileMode::Tree.into(),
-        )?)),
-
-        Op::Subtract(a, b) => {
-            let af = apply(transaction, *a, x.clone())?;
-            let bf = apply(transaction, *b, x.clone())?;
-            let bu = apply(transaction, invert(*b)?, bf.clone())?;
-            let ba = apply(transaction, *a, bu.clone())?.tree().id();
-            Ok(x.with_tree(repo.find_tree(tree::subtract(transaction, af.tree().id(), ba)?)?))
-        }
-        Op::Exclude(b) => {
-            let bf = apply(transaction, *b, x.clone())?.tree().id();
-            Ok(x.clone().with_tree(repo.find_tree(tree::subtract(
-                transaction,
-                x.tree().id(),
-                bf,
-            )?)?))
-        }
-        Op::Select(b) => {
-            let bf = apply(transaction, *b, x.clone())?.tree().id();
-            let inside = tree::intersect(transaction, x.tree().id(), bf)?;
-            Ok(x.clone().with_tree(repo.find_tree(inside)?))
-        }
-
-        Op::Paths => Ok(x
-            .clone()
-            .with_tree(tree::pathstree("", x.tree().id(), transaction)?)),
-        Op::Index => {
-            let index_cache = transaction.trigram_index_cache(x.commit);
-            Ok(x.clone().with_tree(josh_search::trigram_index(
-                transaction.repo(),
-                &index_cache,
-                &mut transaction.trigram_indexer(),
-                x.tree().clone(),
+        Op::Prefix(path) => {
+            let tree = x.tree_id();
+            Ok(x.with_tree(tree::insert_oid(
+                odb,
+                tree::empty_id(),
+                path,
+                tree,
+                git2::FileMode::Tree.into(),
             )?))
         }
 
-        Op::Invert => {
-            Ok(x.clone()
-                .with_tree(tree::invert_paths(transaction, "", x.tree().clone())?))
+        Op::Subtract(a, b) => {
+            let af = apply_impl(transaction, odb, *a, x.clone())?;
+            let bf = apply_impl(transaction, odb, *b, x.clone())?;
+            let bu = apply_impl(transaction, odb, invert(*b)?, bf)?;
+            let ba = apply_impl(transaction, odb, *a, bu)?.tree_id();
+            Ok(x.with_tree(tree::subtract(transaction, af.tree_id(), ba)?))
+        }
+        Op::Exclude(b) => {
+            let bf = apply_impl(transaction, odb, *b, x.clone())?.tree_id();
+            let tree = x.tree_id();
+            Ok(x.with_tree(tree::subtract(transaction, tree, bf)?))
+        }
+        Op::Select(b) => {
+            let bf = apply_impl(transaction, odb, *b, x.clone())?.tree_id();
+            let inside = tree::intersect(transaction, x.tree_id(), bf)?;
+            Ok(x.with_tree(inside))
         }
 
-        Op::Workspace(path) => apply(transaction, get_workspace(transaction, x.tree(), path), x),
-        Op::Stored(path) => apply(transaction, get_stored(transaction, x.tree(), path), x),
-        Op::Starlark(path, subfilter) => apply(
-            transaction,
-            get_starlark(transaction, x.tree(), path, *subfilter),
-            x,
-        ),
+        Op::Paths => {
+            let tree = x.tree_id();
+            Ok(x.with_tree(tree::pathstree("", tree, transaction)?))
+        }
+        Op::Index => {
+            let index_cache = transaction.trigram_index_cache(x.commit);
+            // PORT: josh_search::trigram_index takes a git2::Tree; the bridge read
+            // resolves fresh filtered trees through the registered backend.
+            let input_tree = transaction.repo().find_tree(x.tree_id())?;
+            Ok(x.with_tree(
+                josh_search::trigram_index(
+                    transaction.repo(),
+                    &index_cache,
+                    &mut transaction.trigram_indexer(),
+                    input_tree,
+                )?
+                .id(),
+            ))
+        }
+
+        Op::Invert => {
+            let tree = x.tree_id();
+            Ok(x.with_tree(tree::invert_paths(transaction, odb, "", tree)?))
+        }
+
+        Op::Workspace(path) => {
+            // An unreadable or unparseable input tree is a hard error (the get_* helpers
+            // below would fold it to Op::Empty), and every probe shares the one parse.
+            let tree = x.tree_id();
+            let tree_reader = tree::read_tree(transaction, odb, tree)?;
+            let f = get_workspace(transaction, odb, tree, &tree_reader, path);
+            apply_impl(transaction, odb, f, x)
+        }
+        Op::Stored(path) => {
+            let tree = x.tree_id();
+            let tree_reader = tree::read_tree(transaction, odb, tree)?;
+            let f = get_stored(transaction, odb, tree, &tree_reader, path);
+            apply_impl(transaction, odb, f, x)
+        }
+        Op::Starlark(path, subfilter) => {
+            let tree = x.tree_id();
+            let tree_reader = tree::read_tree(transaction, odb, tree)?;
+            let f = get_starlark(transaction, odb, tree, &tree_reader, path, *subfilter);
+            apply_impl(transaction, odb, f, x)
+        }
         Op::TreeId(path, subfilter) => {
-            let applied = apply(transaction, *subfilter, x.clone())?;
-            let oid_str = applied.tree().id().to_string();
-            apply(
+            let applied = apply_impl(transaction, odb, *subfilter, x.clone())?;
+            let oid_str = applied.tree_id().to_string();
+            apply_impl(
                 transaction,
+                odb,
                 to_filter(Op::Insert(path.clone(), InsertContent::Inline(oid_str))),
                 x,
             )
         }
         Op::ObjectRef(path) => {
-            let repo = transaction.repo();
-            if let Ok(entry) = x.tree().get_path(path) {
-                let oid_str = entry.id().to_string();
-                let blob_oid = repo.blob(oid_str.as_bytes())?;
-                Ok(x.clone().with_tree(tree::insert(
-                    repo,
-                    &tree::empty(repo),
+            if let Ok(Some(entry)) = tree::get_path_entry(transaction, odb, x.tree_id(), path) {
+                let oid_str = objects::git2_oid(&entry.oid).to_string();
+                let blob_oid = odb.write(gix_object::Kind::Blob, oid_str.as_bytes());
+                Ok(x.with_tree(tree::insert_oid(
+                    odb,
+                    tree::empty_id(),
                     path,
                     blob_oid,
                     git2::FileMode::Blob.into(),
@@ -1565,15 +1644,14 @@ pub fn apply<'a>(
             }
         }
         Op::ObjectDeref(path) => {
-            let repo = transaction.repo();
             // If path doesn't exist in input, do nothing (nop).
-            let entry = match x.tree().get_path(path) {
-                Ok(e) => e,
-                Err(_) => return Ok(x),
+            let entry = match tree::get_path_entry(transaction, odb, x.tree_id(), path) {
+                Ok(Some(e)) => e,
+                _ => return Ok(x),
             };
             // Path exists: read OID string from blob content.
-            let oid_str = if let Ok(blob) = repo.find_blob(entry.id()) {
-                std::str::from_utf8(blob.content())?
+            let oid_str = if let Some(blob) = tree::blob_bytes(odb, objects::git2_oid(&entry.oid)) {
+                std::str::from_utf8(&blob)?
                     .lines()
                     .next()
                     .unwrap_or("")
@@ -1583,20 +1661,22 @@ pub fn apply<'a>(
                 String::new()
             };
             if let Ok(oid) = git2::Oid::from_str(&oid_str) {
-                let (oid, mode) = if repo.find_tree(oid).is_ok() {
-                    (oid, git2::FileMode::Tree.into())
-                } else if repo.find_blob(oid).is_ok() {
-                    (oid, git2::FileMode::Blob.into())
-                } else {
-                    return Err(anyhow::anyhow!(":#: object not found in repo: {}", oid));
+                // Kind by header, never by `contains`: `read_header`'s disk fallback
+                // virtualizes the empty tree, `exists` does not.
+                let (oid, mode) = match odb.try_kind(oid) {
+                    Ok(Some(gix_object::Kind::Tree)) => (oid, git2::FileMode::Tree.into()),
+                    Ok(Some(gix_object::Kind::Blob)) => (oid, git2::FileMode::Blob.into()),
+                    _ => {
+                        return Err(anyhow::anyhow!(":#: object not found in repo: {}", oid));
+                    }
                 };
-                Ok(x.with_tree(tree::insert(repo, &tree::empty(repo), path, oid, mode)?))
+                Ok(x.with_tree(tree::insert_oid(odb, tree::empty_id(), path, oid, mode)?))
             } else {
                 // Content is not a valid OID: insert empty blob at path.
-                let empty_blob = repo.blob(b"")?;
-                Ok(x.with_tree(tree::insert(
-                    repo,
-                    &tree::empty(repo),
+                let empty_blob = odb.write(gix_object::Kind::Blob, b"");
+                Ok(x.with_tree(tree::insert_oid(
+                    odb,
+                    tree::empty_id(),
                     path,
                     empty_blob,
                     git2::FileMode::Blob.into(),
@@ -1607,11 +1687,11 @@ pub fn apply<'a>(
         Op::Compose(filters) => {
             let filtered: Vec<_> = filters
                 .iter()
-                .map(|f| apply(transaction, *f, x.clone()))
+                .map(|f| apply_impl(transaction, odb, *f, x.clone()))
                 .collect::<anyhow::Result<_>>()?;
             let filtered: Vec<_> = filters
                 .iter()
-                .zip(filtered.iter().map(|t| t.tree().clone()))
+                .zip(filtered.iter().map(|t| t.tree_id()))
                 .collect();
             Ok(x.with_tree(tree::compose(transaction, filtered)?))
         }
@@ -1619,7 +1699,7 @@ pub fn apply<'a>(
         Op::Chain(filters) => {
             let mut result = x;
             for filter in filters {
-                result = apply(transaction, *filter, result)?;
+                result = apply_impl(transaction, odb, *filter, result)?;
             }
             Ok(result)
         }
@@ -1629,15 +1709,17 @@ pub fn apply<'a>(
         Op::Unapply(target, uf) => {
             check_experimental_features_enabled("unapply filter")?;
             if let LazyRef::Resolved(target) = target {
-                let target = repo.find_commit(*target)?;
-                let target = git2::Oid::from_str(target.message().unwrap())?;
-                let target = repo.find_commit(target)?;
+                let target = objects::CommitData::read(odb, *target)?;
+                // The message must parse as an oid, so non-UTF-8 is an error.
+                let target_msg = target.message()?;
+                let target = git2::Oid::from_str(std::str::from_utf8(target_msg)?)?;
+                let target_tree = git::read_tree_id(odb, target)?;
                 /* dbg!(&uf); */
                 Ok(Rewrite::from_tree(filter::unapply(
                     transaction,
                     *uf,
-                    x.tree().clone(),
-                    target.tree()?,
+                    x.tree_id(),
+                    target_tree,
                     None,
                 )?))
             } else {
@@ -1657,13 +1739,13 @@ pub fn apply<'a>(
 /// `parent_tree`. It is required to reverse commit-resolved per-commit filters (`:rev` / `:hook`),
 /// whose sub-filter is chosen from commit identity rather than the tree; callers that only ever pass
 /// tree-reversible filters pass `None`.
-pub fn unapply<'a, 'b>(
-    transaction: &'a cache::Transaction,
+pub fn unapply(
+    transaction: &cache::Transaction,
     filter: Filter,
-    tree: git2::Tree<'a>,
-    parent_tree: git2::Tree<'a>,
-    commits: Option<(&'b git2::Commit<'b>, &'b git2::Commit<'b>)>,
-) -> anyhow::Result<git2::Tree<'a>> {
+    tree: git2::Oid,
+    parent_tree: git2::Oid,
+    commits: Option<(git2::Oid, git2::Oid)>,
+) -> anyhow::Result<git2::Oid> {
     // A `:rev(...)` filter has no static inverse (`invert` returns `Err`, like `:workspace` /
     // `:stored` / `:starlark`), so this generic path is automatically skipped for it and it falls
     // through to the per-commit handler / chain recursion below.
@@ -1671,29 +1753,21 @@ pub fn unapply<'a, 'b>(
         let filtered = apply(
             transaction,
             invert(inverted)?,
-            Rewrite::from_tree(parent_tree.clone()),
+            Rewrite::from_tree(parent_tree),
         )?;
-        let matching = apply(transaction, inverted, filtered.clone())?;
-        let stripped = tree::subtract(transaction, parent_tree.id(), matching.tree().id())?;
+        let matching = apply(transaction, inverted, filtered)?;
+        let stripped = tree::subtract(transaction, parent_tree, matching.tree_id())?;
         let x = apply(transaction, inverted, Rewrite::from_tree(tree))?;
 
-        return Ok(transaction.repo().find_tree(tree::overlay(
-            transaction,
-            x.tree().id(),
-            stripped,
-        )?)?);
+        return tree::overlay(transaction, x.tree_id(), stripped);
     }
 
     // `peel_op` (not `to_op`) so a `:~(...)[...]` meta wrapper around e.g. `:rev(...)` is seen
     // through: the meta options (history flags) only affect the forward direction, and the
     // per-commit reverse handler needs the wrapped operator.
-    if let Some(ws) = unapply_per_rev_filter(
-        transaction,
-        &peel_op(filter),
-        tree.clone(),
-        parent_tree.clone(),
-        commits,
-    )? {
+    if let Some(ws) =
+        unapply_per_rev_filter(transaction, &peel_op(filter), tree, parent_tree, commits)?
+    {
         return Ok(ws);
     }
 
@@ -1722,12 +1796,7 @@ pub fn unapply<'a, 'b>(
                 )
             })?;
             let parent_filter = resolve_commit_filter(transaction, &first_op, parent)?;
-            apply(
-                transaction,
-                parent_filter,
-                Rewrite::from_tree(parent_tree.clone()),
-            )?
-            .into_tree()
+            apply(transaction, parent_filter, Rewrite::from_tree(parent_tree))?.tree_id()
         } else {
             let first_normalized = if let Ok(first_inverted) = invert(*first) {
                 invert(first_inverted)?
@@ -1737,9 +1806,9 @@ pub fn unapply<'a, 'b>(
             apply(
                 transaction,
                 first_normalized,
-                Rewrite::from_tree(parent_tree.clone()),
+                Rewrite::from_tree(parent_tree),
             )?
-            .into_tree()
+            .tree_id()
         };
 
         // Recursively unapply: first unapply the rest, then unapply first
@@ -1760,25 +1829,23 @@ pub fn unapply<'a, 'b>(
 /// the sub-filter resolved for the commit, `original_filter` the one resolved for the specific
 /// parent whose tree is `parent_tree`. The reconstruction reproduces the out-of-filter content of
 /// `parent_tree` (strip) and overlays the reconstructed in-filter content of `tree`.
-fn reverse_strip_overlay<'a>(
-    transaction: &'a cache::Transaction,
+fn reverse_strip_overlay(
+    transaction: &cache::Transaction,
     filter: Filter,
     original_filter: Filter,
-    tree: git2::Tree<'a>,
-    parent_tree: git2::Tree<'a>,
-) -> anyhow::Result<git2::Tree<'a>> {
+    tree: git2::Oid,
+    parent_tree: git2::Oid,
+) -> anyhow::Result<git2::Oid> {
     let filtered = apply(
         transaction,
         original_filter,
-        Rewrite::from_tree(parent_tree.clone()),
+        Rewrite::from_tree(parent_tree),
     )?;
-    let matching = apply(transaction, invert(original_filter)?, filtered.clone())?;
-    let stripped = tree::subtract(transaction, parent_tree.id(), matching.tree().id())?;
+    let matching = apply(transaction, invert(original_filter)?, filtered)?;
+    let stripped = tree::subtract(transaction, parent_tree, matching.tree_id())?;
     let x = apply(transaction, invert(filter)?, Rewrite::from_tree(tree))?;
 
-    Ok(transaction
-        .repo()
-        .find_tree(tree::overlay(transaction, x.tree().id(), stripped)?)?)
+    tree::overlay(transaction, x.tree_id(), stripped)
 }
 
 /// Resolve the concrete sub-filter of a per-commit filter whose selector lives in *commit identity*
@@ -1788,11 +1855,11 @@ fn reverse_strip_overlay<'a>(
 fn resolve_commit_filter(
     transaction: &cache::Transaction,
     op: &Op,
-    commit: &git2::Commit,
+    commit: git2::Oid,
 ) -> anyhow::Result<Filter> {
     match op {
-        Op::Rev(revs) => get_rev_filter(transaction, commit.id(), revs),
-        Op::Hook(hook) => transaction.lookup_filter_hook(hook, commit.id()),
+        Op::Rev(revs) => get_rev_filter(transaction, commit, revs),
+        Op::Hook(hook) => transaction.lookup_filter_hook(hook, commit),
         _ => Err(anyhow!("not a per-commit (rev/hook) filter")),
     }
 }
@@ -1803,13 +1870,13 @@ fn is_commit_resolved_filter(op: &Op) -> bool {
     matches!(op, Op::Rev(_) | Op::Hook(_))
 }
 
-fn unapply_per_rev_filter<'a, 'b>(
-    transaction: &'a cache::Transaction,
+fn unapply_per_rev_filter(
+    transaction: &cache::Transaction,
     op: &Op,
-    tree: git2::Tree<'a>,
-    parent_tree: git2::Tree<'a>,
-    commits: Option<(&'b git2::Commit<'b>, &'b git2::Commit<'b>)>,
-) -> anyhow::Result<Option<git2::Tree<'a>>> {
+    tree: git2::Oid,
+    parent_tree: git2::Oid,
+    commits: Option<(git2::Oid, git2::Oid)>,
+) -> anyhow::Result<Option<git2::Oid>> {
     if is_commit_resolved_filter(op) {
         // `:rev`/`:hook` select their sub-filter from commit identity (mirroring the forward
         // `Op::Rev`/`Op::Hook` paths): resolve it for the commit being reconstructed and for the
@@ -1832,10 +1899,24 @@ fn unapply_per_rev_filter<'a, 'b>(
 
     match op {
         Op::Workspace(path) => {
+            let odb = transaction.odb()?;
             let tree = pre_process_tree(transaction, tree)?;
-            let workspace = get_filter(transaction, &tree, Path::new("workspace.josh"));
-            let original_workspace =
-                get_filter(transaction, &parent_tree, &path.join("workspace.josh"));
+            let tree_reader = tree::read_tree(transaction, &odb, tree)?;
+            let parent_reader = tree::read_tree(transaction, &odb, parent_tree)?;
+            let workspace = get_filter(
+                transaction,
+                &odb,
+                tree,
+                &tree_reader,
+                Path::new("workspace.josh"),
+            );
+            let original_workspace = get_filter(
+                transaction,
+                &odb,
+                parent_tree,
+                &parent_reader,
+                &path.join("workspace.josh"),
+            );
 
             let root = to_filter(Op::Subdir(path.to_owned()));
             let wsj_file = to_filter(Op::File(
@@ -1854,9 +1935,13 @@ fn unapply_per_rev_filter<'a, 'b>(
             )?))
         }
         Op::Stored(path) => {
+            let odb = transaction.odb()?;
             let stored_path = path.with_added_extension("josh");
-            let stored = get_filter(transaction, &tree, &stored_path);
-            let original_stored = get_filter(transaction, &parent_tree, &stored_path);
+            let tree_reader = tree::read_tree(transaction, &odb, tree)?;
+            let parent_reader = tree::read_tree(transaction, &odb, parent_tree)?;
+            let stored = get_filter(transaction, &odb, tree, &tree_reader, &stored_path);
+            let original_stored =
+                get_filter(transaction, &odb, parent_tree, &parent_reader, &stored_path);
 
             let sj_file = Filter::new().file(stored_path.clone());
             let filter = compose(&[sj_file, stored]);
@@ -1870,8 +1955,18 @@ fn unapply_per_rev_filter<'a, 'b>(
             )?))
         }
         Op::Starlark(path, subfilter) => {
-            let filter = get_starlark(transaction, &tree, path, *subfilter);
-            let original_filter = get_starlark(transaction, &parent_tree, path, *subfilter);
+            let odb = transaction.odb()?;
+            let tree_reader = tree::read_tree(transaction, &odb, tree)?;
+            let parent_reader = tree::read_tree(transaction, &odb, parent_tree)?;
+            let filter = get_starlark(transaction, &odb, tree, &tree_reader, path, *subfilter);
+            let original_filter = get_starlark(
+                transaction,
+                &odb,
+                parent_tree,
+                &parent_reader,
+                path,
+                *subfilter,
+            );
             Ok(Some(reverse_strip_overlay(
                 transaction,
                 filter,
@@ -1884,13 +1979,13 @@ fn unapply_per_rev_filter<'a, 'b>(
     }
 }
 
-fn pre_process_tree<'a>(
-    transaction: &'a cache::Transaction,
-    tree: git2::Tree<'a>,
-) -> anyhow::Result<git2::Tree<'a>> {
-    let repo = transaction.repo();
+fn pre_process_tree(
+    transaction: &cache::Transaction,
+    tree: git2::Oid,
+) -> anyhow::Result<git2::Oid> {
+    let odb = transaction.odb()?;
     let path = Path::new("workspace.josh");
-    let ws_file = tree::get_blob(repo, &tree, path);
+    let ws_file = tree::get_blob(transaction, &odb, tree, path);
     let parsed = filter::parse(&ws_file)?;
 
     if invert(parsed).is_err() {
@@ -1905,11 +2000,11 @@ fn pre_process_tree<'a>(
     }
     let blob = &format!("{}{}\n", &blob, pretty(parsed, 0));
 
-    let tree = tree::insert(
-        repo,
-        &tree,
+    let tree = tree::insert_oid(
+        &odb,
+        tree,
         path,
-        repo.blob(blob.as_bytes())?,
+        odb.write(gix_object::Kind::Blob, blob.as_bytes()),
         git2::FileMode::Blob.into(), // Should this handle filemode?
     )?;
 
@@ -1917,18 +2012,24 @@ fn pre_process_tree<'a>(
 }
 
 /// Compute the warnings (filters not matching anything) for the filter applied to the tree
-pub fn compute_warnings<'a>(
-    transaction: &'a cache::Transaction,
+pub fn compute_warnings(
+    transaction: &cache::Transaction,
     filter: Filter,
-    tree: git2::Tree<'a>,
+    tree: git2::Oid,
 ) -> Vec<String> {
     let mut warnings = Vec::new();
     let mut filter = filter;
 
+    let odb = match transaction.odb() {
+        Ok(odb) => odb,
+        Err(_) => return warnings,
+    };
+
     if let Op::Workspace(path) = to_op(filter) {
         let workspace_filter = &tree::get_blob(
-            transaction.repo(),
-            &tree,
+            transaction,
+            &odb,
+            tree,
             &path.join(Path::new("workspace.josh")),
         );
         if let Ok(res) = parse(workspace_filter) {
@@ -1941,7 +2042,7 @@ pub fn compute_warnings<'a>(
 
     if let Op::Stored(path) = to_op(filter) {
         let stored_path = path.with_added_extension("josh");
-        let stored_filter = &tree::get_blob(transaction.repo(), &tree, &stored_path);
+        let stored_filter = &tree::get_blob(transaction, &odb, tree, &stored_path);
         if let Ok(res) = parse(stored_filter) {
             filter = res;
         } else {
@@ -1953,10 +2054,7 @@ pub fn compute_warnings<'a>(
     let filter = opt::flatten(filter);
     if let Op::Compose(filters) = to_op(filter) {
         for f in filters {
-            let tree = transaction.repo().find_tree(tree.id());
-            if let Ok(tree) = tree {
-                warnings.append(&mut compute_warnings2(transaction, f, tree));
-            }
+            warnings.append(&mut compute_warnings2(transaction, f, tree));
         }
     } else {
         warnings.append(&mut compute_warnings2(transaction, filter, tree));
@@ -1964,16 +2062,16 @@ pub fn compute_warnings<'a>(
     warnings
 }
 
-fn compute_warnings2<'a>(
-    transaction: &'a cache::Transaction,
+fn compute_warnings2(
+    transaction: &cache::Transaction,
     filter: Filter,
-    tree: git2::Tree<'a>,
+    tree: git2::Oid,
 ) -> Vec<String> {
     let mut warnings = Vec::new();
 
     let x = apply(transaction, filter, Rewrite::from_tree(tree));
     if let Ok(x) = x
-        && x.tree().is_empty()
+        && x.tree_id() == tree::empty_id()
     {
         warnings.push(format!("No match for \"{}\"", pretty(filter, 2)));
     }
@@ -2049,33 +2147,47 @@ fn needs_legalization(f: Filter) -> bool {
     }
 }
 
-fn legalize_stored(t: &cache::Transaction, f: Filter, tree: &git2::Tree) -> anyhow::Result<Filter> {
+fn legalize_stored(
+    t: &cache::Transaction,
+    odb: &josh_memodb::Odb,
+    f: Filter,
+    tree: git2::Oid,
+    reader: &tree::TreeReader,
+) -> anyhow::Result<Filter> {
     if !needs_legalization(f) {
         return Ok(f);
     }
 
-    if let Some(f) = t.get_legalize((f, tree.id())) {
+    if let Some(f) = t.get_legalize((f, tree)) {
         return Ok(f);
     }
 
     // Put an entry into the hashtable to prevent infinite recursion.
     // If we get called with the same arguments again before we return,
     // Above check breaks the recursion.
-    t.insert_legalize((f, tree.id()), Filter::new().empty());
+    t.insert_legalize((f, tree), Filter::new().empty());
 
     let r = match to_op(f) {
         Op::Compose(f) => {
             let f = f
                 .into_iter()
-                .map(|f| legalize_stored(t, f, tree))
+                .map(|f| legalize_stored(t, odb, f, tree, reader))
                 .collect::<anyhow::Result<Vec<_>>>()?;
             to_filter(Op::Compose(f))
         }
         Op::Chain(filters) => {
             let mut result = Vec::with_capacity(filters.len());
-            let mut current_tree = tree.clone();
+            let mut current_tree = tree;
             for (i, filter) in filters.iter().enumerate() {
-                let legalized = legalize_stored(t, *filter, &current_tree)?;
+                // Chain steps past the first run against freshly applied intermediate
+                // trees; those need their own read+parse (the caller's parse only covers
+                // `tree`).
+                let legalized = if current_tree == tree {
+                    legalize_stored(t, odb, *filter, tree, reader)?
+                } else {
+                    let current_parsed = tree::read_tree(t, odb, current_tree)?;
+                    legalize_stored(t, odb, *filter, current_tree, &current_parsed)?
+                };
                 result.push(legalized);
                 // Only compute the intermediate tree if a subsequent element still needs
                 // legalization — the tree is passed to legalize_stored, which uses it to
@@ -2083,27 +2195,35 @@ fn legalize_stored(t: &cache::Transaction, f: Filter, tree: &git2::Tree) -> anyh
                 // (e.g. a trailing Prefix) return immediately via the fast-path, so
                 // running apply just to compute a tree they'll never use is pure waste.
                 if filters[i + 1..].iter().any(|&f| needs_legalization(f)) {
-                    current_tree =
-                        apply(t, legalized, Rewrite::from_tree(current_tree.clone()))?.tree;
+                    current_tree = apply(t, legalized, Rewrite::from_tree(current_tree))?.tree;
                 }
             }
             to_filter(Op::Chain(result))
         }
         Op::Subtract(a, b) => to_filter(Op::Subtract(
-            legalize_stored(t, a, tree)?,
-            legalize_stored(t, b, tree)?,
+            legalize_stored(t, odb, a, tree, reader)?,
+            legalize_stored(t, odb, b, tree, reader)?,
         )),
-        Op::Exclude(f) => to_filter(Op::Exclude(legalize_stored(t, f, tree)?)),
-        Op::Select(f) => to_filter(Op::Select(legalize_stored(t, f, tree)?)),
-        Op::Meta(meta, f) => to_filter(Op::Meta(meta, legalize_stored(t, f, tree)?)),
-        Op::Pin(f) => to_filter(Op::Pin(legalize_stored(t, f, tree)?)),
-        Op::Stored(path) => get_stored(t, tree, &path),
-        Op::Starlark(path, sub) => get_starlark(t, tree, &path, legalize_stored(t, sub, tree)?),
-        Op::TreeId(path, f) => to_filter(Op::TreeId(path, legalize_stored(t, f, tree)?)),
+        Op::Exclude(f) => to_filter(Op::Exclude(legalize_stored(t, odb, f, tree, reader)?)),
+        Op::Select(f) => to_filter(Op::Select(legalize_stored(t, odb, f, tree, reader)?)),
+        Op::Meta(meta, f) => to_filter(Op::Meta(meta, legalize_stored(t, odb, f, tree, reader)?)),
+        Op::Pin(f) => to_filter(Op::Pin(legalize_stored(t, odb, f, tree, reader)?)),
+        Op::Stored(path) => get_stored(t, odb, tree, reader, &path),
+        Op::Starlark(path, sub) => get_starlark(
+            t,
+            odb,
+            tree,
+            reader,
+            &path,
+            legalize_stored(t, odb, sub, tree, reader)?,
+        ),
+        Op::TreeId(path, f) => {
+            to_filter(Op::TreeId(path, legalize_stored(t, odb, f, tree, reader)?))
+        }
         _ => f,
     };
 
-    t.insert_legalize((f, tree.id()), r);
+    t.insert_legalize((f, tree), r);
 
     Ok(r)
 }
@@ -2197,7 +2317,7 @@ fn per_rev_filter(
             let pin_subtract = apply(
                 transaction,
                 opt::optimize(to_filter(Op::Subtract(legalized_a, legalized_b))),
-                Rewrite::from_commit_data(transaction.repo(), commit)?,
+                Rewrite::from_commit_data(commit)?,
             )?;
 
             let parent_tree_id = history::filtered_parent_tree_id(transaction, parent)?;
@@ -2206,9 +2326,9 @@ fn per_rev_filter(
             // parent's entries whose path is pinned. Equivalent to the older
             // `populate(pathstree(pin_subtract), parent)` spelling of "select the pinned paths out
             // of the previous tree", but in a single path-intersection pass.
-            let pin_overlay = tree::intersect(transaction, parent_tree_id, pin_subtract.tree.id())?;
+            let pin_overlay = tree::intersect(transaction, parent_tree_id, pin_subtract.tree_id())?;
 
-            Some((pin_subtract.tree.id(), pin_overlay))
+            Some((pin_subtract.tree_id(), pin_overlay))
         } else {
             None
         }
@@ -2245,6 +2365,8 @@ fn per_rev_filter(
                 .iter()
                 .filter(|x| **x != git2::Oid::ZERO_SHA1 && **x != target_id)
             {
+                // PORT: libgit2 graph compute over filtered (possibly unflushed)
+                // commits, served by the registered backend.
                 if !transaction.repo().graph_descendant_of(target_id, *id)? {
                     return Err(anyhow!(
                         "cannot squash {}: its filtered parents {} and {} do not descend \
@@ -2267,14 +2389,14 @@ fn per_rev_filter(
     let mut tree_data = apply(
         transaction,
         commit_filter,
-        Rewrite::from_commit_data(transaction.repo(), commit)?,
+        Rewrite::from_commit_data(commit)?,
     )?;
 
     if let Some((pin_subtract, pin_overlay)) = pin_details {
-        let with_exclude = tree::subtract(transaction, tree_data.tree().id(), pin_subtract)?;
+        let with_exclude = tree::subtract(transaction, tree_data.tree_id(), pin_subtract)?;
         let with_overlay = tree::overlay(transaction, pin_overlay, with_exclude)?;
 
-        tree_data = tree_data.with_tree(transaction.repo().find_tree(with_overlay)?);
+        tree_data = tree_data.with_tree(with_overlay);
     }
 
     return Some(history::create_filtered_commit_with_meta(
@@ -2292,12 +2414,16 @@ fn per_rev_filter(
 /// whose changed paths are disjoint from the tip's changes, then reapply the tip
 /// onto the minimised base via a 3-way merge. Returns the new tip OID.
 pub fn downstack(
-    repo: &git2::Repository,
     transaction: &cache::Transaction,
     change_oid: git2::Oid,
     base_oid: git2::Oid,
 ) -> anyhow::Result<git2::Oid> {
-    if !repo.graph_descendant_of(change_oid, base_oid)? {
+    // PORT: libgit2 graph compute over possibly-unflushed commits, served by the
+    // registered backend.
+    if !transaction
+        .repo()
+        .graph_descendant_of(change_oid, base_oid)?
+    {
         return Err(anyhow!(
             "change {} is not a descendant of base {}",
             change_oid,
@@ -2336,74 +2462,80 @@ pub fn downstack(
         return Ok(change_oid);
     }
 
-    let mut commits: Vec<git2::Commit> = oids
+    let mut commits: Vec<objects::CommitData> = oids
         .into_iter()
-        .map(|oid| repo.find_commit(oid))
-        .collect::<Result<Vec<_>, _>>()?;
+        .map(|oid| objects::CommitData::read(&odb, oid))
+        .collect::<anyhow::Result<Vec<_>>>()?;
 
     // The last commit is `change`; split it off from the intermediates
     let change_commit = commits.pop().unwrap();
 
     // Seed the affected dependency set with the change's own deps, then walk
     // intermediates backwards, keeping any commit whose deps intersect.
-    let mut affected = downstack_commit_deps(repo, transaction, &change_commit)?;
+    let mut affected = downstack_commit_deps(transaction, &odb, &change_commit)?;
     let mut needed: Vec<bool> = vec![false; commits.len()];
     for (i, intermediate) in commits.iter().enumerate().rev() {
-        let deps = downstack_commit_deps(repo, transaction, intermediate)?;
+        let deps = downstack_commit_deps(transaction, &odb, intermediate)?;
         if !deps.is_disjoint(&affected) {
             needed[i] = true;
             affected.extend(deps);
         }
     }
 
-    // Rebase needed intermediates forward onto current_base.
-    let mut current_base = repo.find_commit(base_oid)?;
+    // Rebase needed intermediates forward onto current_base. The rebuilt base's tree is the
+    // merge result just written, so no commit read-back is needed between steps.
+    let mut current_base_id = base_oid;
+    let mut current_base_tree = git::read_tree_id(&odb, base_oid)?;
     for (intermediate, is_needed) in commits.iter().zip(needed.iter()) {
         if !is_needed {
             continue;
         }
-        let inter_parent = intermediate.parent(0)?;
+        let inter_parent = intermediate.first_parent_id().ok_or_else(|| {
+            anyhow!(
+                "downstack: intermediate {} has no parent",
+                intermediate.id()
+            )
+        })?;
         let new_tree_oid = cached_merge_trees(
-            repo,
             transaction,
-            inter_parent.tree_id(),
-            current_base.tree_id(),
-            intermediate.tree_id(),
+            git::read_tree_id(&odb, inter_parent)?,
+            current_base_tree,
+            intermediate.tree_id()?,
         )?;
-        let new_tree = repo.find_tree(new_tree_oid)?;
         let new_oid = history::rewrite_commit(
             &odb,
-            &objects::CommitData::read(&odb, intermediate.id())?,
-            &[current_base.id()],
-            Rewrite::from_tree(new_tree),
+            intermediate,
+            &[current_base_id],
+            Rewrite::from_tree(new_tree_oid),
             history::GpgsigMode::Preserve,
         )?;
-        current_base = repo.find_commit(new_oid)?;
+        current_base_id = new_oid;
+        current_base_tree = new_tree_oid;
     }
 
     // Apply the change on top of the minimal base via 3-way merge.
-    let change_parent = change_commit.parent(0)?;
+    let change_parent = change_commit
+        .first_parent_id()
+        .ok_or_else(|| anyhow!("downstack: change {} has no parent", change_commit.id()))?;
     let new_tree_oid = cached_merge_trees(
-        repo,
         transaction,
-        change_parent.tree_id(),
-        current_base.tree_id(),
-        change_commit.tree_id(),
+        git::read_tree_id(&odb, change_parent)?,
+        current_base_tree,
+        change_commit.tree_id()?,
     )?;
-    let new_tree = repo.find_tree(new_tree_oid)?;
 
     // First-parent is remapped onto the minimal base; any further parents are
     // carried through untouched. A merge commit in the stack is treated as an
     // ordinary linear change (diffed against its first parent), but the rebuilt
     // change keeps its second-parent link so the merge survives the rewrite.
-    let mut new_parents = vec![current_base.id()];
+    let mut new_parents = vec![current_base_id];
     new_parents.extend(change_commit.parent_ids().skip(1));
 
     let new_oid = history::rewrite_commit(
         &odb,
-        &objects::CommitData::read(&odb, change_commit.id())?,
+        &change_commit,
         &new_parents,
-        Rewrite::from_tree(new_tree),
+        Rewrite::from_tree(new_tree_oid),
         history::GpgsigMode::Preserve,
     )?;
 
@@ -2418,7 +2550,6 @@ pub fn downstack(
 /// than process-wide) keeps `josh-proxy` from accumulating entries across
 /// unrelated operations.
 fn cached_merge_trees(
-    repo: &git2::Repository,
     transaction: &cache::Transaction,
     a: git2::Oid,
     b: git2::Oid,
@@ -2439,6 +2570,9 @@ fn cached_merge_trees(
     if let Some(hit) = transaction.get_merge_trees(key) {
         return Ok(hit);
     }
+    // PORT: libgit2-internal merge compute -- the find_tree bridges read and
+    // `write_tree_to` writes possibly-unflushed objects through the registered backend.
+    let repo = transaction.repo();
     let tree_a = repo.find_tree(a)?;
     let tree_b = repo.find_tree(b)?;
     let tree_c = repo.find_tree(c)?;
@@ -2465,9 +2599,9 @@ pub(crate) enum DownstackDep {
 /// lives on the transaction so `josh-proxy` doesn't accumulate entries
 /// across unrelated operations.
 fn downstack_commit_deps(
-    repo: &git2::Repository,
     transaction: &cache::Transaction,
-    commit: &git2::Commit,
+    odb: &josh_memodb::Odb,
+    commit: &objects::CommitData,
 ) -> anyhow::Result<std::collections::HashSet<DownstackDep>> {
     let oid = commit.id();
     if let Some(hit) = transaction.get_downstack_deps(oid) {
@@ -2477,20 +2611,27 @@ fn downstack_commit_deps(
     // Use the in-crate `tree::diff_paths` rather than git2's full diff
     // pipeline: it short-circuits subtrees by oid equality, which collapses
     // the typical "stack of single-file commits" deps walk down to a few
-    // tree lookups per call.
-    let parent_tree_id = if commit.parent_count() > 0 {
-        commit.parent(0)?.tree()?.id()
-    } else {
-        git2::Oid::ZERO_SHA1
-    };
-    let commit_tree_id = commit.tree()?.id();
+    // tree lookups per call. An unreadable first parent is a hard error;
+    // only the no-parent case diffs against nothing.
+    let parent_tree_id = commit
+        .first_parent_id()
+        .map(|p| git::read_tree_id(odb, p))
+        .transpose()?
+        .unwrap_or(git2::Oid::ZERO_SHA1);
+    let commit_tree_id = commit.tree_id()?;
 
     let mut deps = std::collections::HashSet::new();
-    for (path, _polarity) in tree::diff_paths(repo, parent_tree_id, commit_tree_id, "")? {
+    for (path, _polarity) in tree::diff_paths(odb, parent_tree_id, commit_tree_id, "")? {
         deps.insert(DownstackDep::Path(path));
     }
 
-    let (_, series) = crate::trailers::parse_change_meta(commit.message().unwrap_or(""));
+    // A non-UTF-8 message reads as empty.
+    let message = commit
+        .message()
+        .ok()
+        .and_then(|m| std::str::from_utf8(m).ok())
+        .unwrap_or("");
+    let (_, series) = crate::trailers::parse_change_meta(message);
     for s in series {
         deps.insert(DownstackDep::Series(s));
     }
@@ -2694,7 +2835,6 @@ mod tests {
         let tree = b
             .create_updated(&repo, &repo.find_tree(empty).unwrap())
             .unwrap();
-        let tree = repo.find_tree(tree).unwrap();
 
         let cachestack = std::sync::Arc::new(
             cache::CacheStack::new().with_backend(cache::SledCacheBackend::new(td.path())),
@@ -2703,7 +2843,7 @@ mod tests {
         let t = ctx.open().unwrap();
 
         let apply_tree = |f: Filter| -> anyhow::Result<git2::Oid> {
-            Ok(apply(&t, f, Rewrite::from_tree(tree.clone()))?.tree().id())
+            Ok(apply(&t, f, Rewrite::from_tree(tree))?.tree_id())
         };
 
         // The pin-legalisation subtract, built exactly like per_rev_filter.
@@ -2850,7 +2990,7 @@ mod tests {
         let t = ctx.open().unwrap();
 
         let out = repo
-            .find_commit(downstack(t.repo(), &t, merge, base).unwrap())
+            .find_commit(downstack(&t, merge, base).unwrap())
             .unwrap();
         assert_eq!(out.parent_count(), 2, "merge change lost its second parent");
         assert_eq!(
@@ -2867,7 +3007,7 @@ mod tests {
         // A single-parent change is unaffected by the parent-preserving rewrite.
         let linear = mk_commit(mk_tree(&[("a", "1"), ("n", "n")]), &[base], "linear change");
         let out_linear = repo
-            .find_commit(downstack(t.repo(), &t, linear, base).unwrap())
+            .find_commit(downstack(&t, linear, base).unwrap())
             .unwrap();
         assert_eq!(out_linear.parent_count(), 1);
     }

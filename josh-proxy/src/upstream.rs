@@ -509,7 +509,7 @@ pub fn process_repo_update(repo_update: RepoUpdate) -> anyhow::Result<String> {
             let mut warnings = josh_core::filter::compute_warnings(
                 &transaction,
                 filter,
-                transaction.repo().find_commit(push_ref.oid)?.tree()?,
+                transaction.repo().find_commit(push_ref.oid)?.tree_id(),
             );
 
             if !warnings.is_empty() {

@@ -303,11 +303,15 @@ fn handle_link_update(
                 .context("Failed to find filtered commit")?
                 .tree()
                 .context("Failed to get filtered tree")?;
-            josh_core::link::find_link_files(&repo, &filtered_tree)
-                .context("Failed to find link files in filtered tree")?
+            josh_core::link::find_link_files(
+                &josh_core::objects::Git2Odb(&repo.odb()?),
+                filtered_tree.id(),
+            )
+            .context("Failed to find link files in filtered tree")?
         }
     } else {
-        josh_core::link::find_link_files(&repo, &head_tree).context("Failed to find link files")?
+        josh_core::link::find_link_files(&josh_core::objects::Git2Odb(&repo.odb()?), head_tree.id())
+            .context("Failed to find link files")?
     };
 
     if link_files.is_empty() {
@@ -393,8 +397,11 @@ fn handle_link_push(
     }
 
     // Find the .link.josh file at the given path
-    let link_files =
-        josh_core::link::find_link_files(&repo, &head_tree).context("Failed to find link files")?;
+    let link_files = josh_core::link::find_link_files(
+        &josh_core::objects::Git2Odb(&repo.odb()?),
+        head_tree.id(),
+    )
+    .context("Failed to find link files")?;
 
     let link_path = std::path::PathBuf::from(normalized_path);
     let (_, link_file) = link_files
