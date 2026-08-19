@@ -195,7 +195,7 @@ impl Revision {
         let transaction = context.transaction.lock().unwrap();
         let filter_commit_id = filter::apply_to_commit(self.filter, self.commit_id, &transaction)?;
 
-        let parents = josh_core::git::read_parent_ids(transaction.repo(), filter_commit_id)?
+        let parents = josh_core::git::read_parent_ids(&transaction.odb()?, filter_commit_id)?
             .into_iter()
             .map(|id| Revision {
                 filter: self.filter,
@@ -248,7 +248,7 @@ impl Revision {
 
                 if orig != git2::Oid::ZERO_SHA1 {
                     ids[i] = orig;
-                    contained_in = josh_core::git::read_parent_ids(transaction.repo(), ids[i])?
+                    contained_in = josh_core::git::read_parent_ids(&transaction.odb()?, ids[i])?
                         .into_iter()
                         .next()
                         .unwrap_or(ids[i]);

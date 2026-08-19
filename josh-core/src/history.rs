@@ -23,7 +23,7 @@ pub fn walk2(
         return Ok(());
     }
 
-    let odb = transaction.repo().odb()?;
+    let odb = transaction.odb()?;
 
     // `walk.push` rejects a missing or non-commit input as a hard error.
     let mut walk = objects::RevWalk::new(&odb);
@@ -106,7 +106,7 @@ fn find_unapply_base(
     // least one other commit references them as a parent ("unlocked"); the start
     // commit has no children in this subgraph, so it's unlocked immediately.
     // Processing a commit may unlock pending ones, which are then processed too.
-    let odb = transaction.repo().odb()?;
+    let odb = transaction.odb()?;
     let mut walk = objects::RevWalk::new(&odb);
     walk.push(contained_in)?;
 
@@ -136,7 +136,7 @@ fn find_unapply_base(
                 return Ok(std::ops::ControlFlow::Break(()));
             }
 
-            for parent_id in git::read_parent_ids(transaction.repo(), pending_oid)? {
+            for parent_id in git::read_parent_ids(&odb, pending_oid)? {
                 unlocked.insert(parent_id);
             }
         }
@@ -170,7 +170,7 @@ pub fn find_original(
     if filter.is_nop() {
         return Ok(filtered);
     }
-    let odb = transaction.repo().odb()?;
+    let odb = transaction.odb()?;
     let mut walk = objects::RevWalk::new(&odb);
     if linear {
         walk.simplify_first_parent();
@@ -179,7 +179,7 @@ pub fn find_original(
 
     for original in walk.into_topo_vec(|_| false)? {
         if filtered == filter::apply_to_commit(filter, original, transaction)? {
-            let parent_ids = git::read_parent_ids(transaction.repo(), original)?;
+            let parent_ids = git::read_parent_ids(&odb, original)?;
             if parent_ids.len() == 1 {
                 let fp = filter::apply_to_commit(filter, parent_ids[0], transaction)?;
 
@@ -197,15 +197,13 @@ pub fn find_original(
 // takes everything from base except its tree and replaces it with the tree
 // given
 pub fn rewrite_commit(
-    repo: &git2::Repository,
+    odb: &josh_memodb::Odb,
     base: &objects::CommitData,
     parents: &[git2::Oid],
     rewrite_data: filter::Rewrite,
     gpgsig: GpgsigMode,
 ) -> anyhow::Result<git2::Oid> {
     use gix_object::bstr::BString;
-
-    let odb = repo.odb()?;
 
     // gix_object::CommitRef uses byte strings for Oids, but in hex representation, not raw bytes.
     // Its `Format` implementation writes out hex-encoded bytes. Because of CommitRef's reference
@@ -294,7 +292,7 @@ pub fn rewrite_commit(
     let mut b = vec![];
     gix_object::WriteTo::write_to(&commit, &mut b)?;
 
-    Ok(odb.write(git2::ObjectType::Commit, &b)?)
+    Ok(odb.write(gix_object::Kind::Commit, &b))
 }
 
 // Given an OID of an unfiltered commit and a filter,
@@ -305,7 +303,7 @@ fn find_oldest_similar_commit(
     filter: filter::Filter,
     unfiltered: git2::Oid,
 ) -> anyhow::Result<git2::Oid> {
-    let odb = transaction.repo().odb()?;
+    let odb = transaction.odb()?;
     let mut walk = objects::RevWalk::new(&odb);
     walk.push(unfiltered)?;
     tracing::info!("oldest similar?");
@@ -331,7 +329,7 @@ fn find_new_branch_base(
     contained_in: git2::Oid,
     filtered: git2::Oid,
 ) -> anyhow::Result<git2::Oid> {
-    let odb = transaction.repo().odb()?;
+    let odb = transaction.odb()?;
     let mut walk = objects::RevWalk::new(&odb);
     walk.push(filtered)?;
     tracing::info!("new branch base?");
@@ -423,13 +421,13 @@ pub fn unapply_filter(
 
     tracing::info!("before walk");
 
-    let odb = transaction.repo().odb()?;
+    let odb = transaction.odb()?;
 
     // The old filtered oid can be missing from the repo (e.g. a new branch);
     // there is no range to exclude then, so take everything reachable.
     let old_filtered_exists = matches!(
         odb.read_header(old_filtered_oid),
-        Ok((_, git2::ObjectType::Commit))
+        Ok((gix_object::Kind::Commit, _))
     );
     let revs = if old_filtered_exists {
         // The sequence lookup computes hints on demand and is only consulted
@@ -697,7 +695,7 @@ pub fn unapply_filter(
         let original_parent_oids: Vec<git2::Oid> =
             original_parents.iter().map(|c| c.id()).collect();
         ret = rewrite_commit(
-            transaction.repo(),
+            &odb,
             &objects::CommitData::read(&odb, module_commit.id())?,
             &original_parent_oids,
             apply,
@@ -721,7 +719,7 @@ pub fn unapply_filter(
 }
 
 fn select_parent_commits(
-    repo: &git2::Repository,
+    odb: &josh_memodb::Odb,
     original_commit: &objects::CommitData,
     filtered_tree_id: git2::Oid,
     filtered_parents: &[(git2::Oid, git2::Oid)],
@@ -733,7 +731,7 @@ fn select_parent_commits(
     let original_tree_id = original_commit.tree_id()?;
     let mut all_diffs_empty = true;
     for p in original_commit.parent_ids() {
-        if git::read_tree_id(repo, p)? != original_tree_id {
+        if git::read_tree_id(odb, p)? != original_tree_id {
             all_diffs_empty = false;
             break;
         }
@@ -860,7 +858,9 @@ fn create_filtered_commit2(
             // No first parent is not a trivial merge; a present first parent
             // must have a readable tree.
             let was_trivial_merge = match original_commit.first_parent_id() {
-                Some(parent) => git::read_tree_id(repo, parent)? == original_commit.tree_id()?,
+                Some(parent) => {
+                    git::read_tree_id(&transaction.odb()?, parent)? == original_commit.tree_id()?
+                }
                 None => false,
             };
 
@@ -872,7 +872,7 @@ fn create_filtered_commit2(
     }
 
     let selected_filtered_parent_ids: Vec<git2::Oid> = select_parent_commits(
-        repo,
+        &transaction.odb()?,
         original_commit,
         rewrite_data.tree().id(),
         &filtered_parents,
@@ -899,7 +899,7 @@ fn create_filtered_commit2(
 
     let new_tree_id = rewrite_data.tree().id();
     let new_oid = rewrite_commit(
-        repo,
+        &transaction.odb()?,
         original_commit,
         &selected_filtered_parent_ids,
         rewrite_data,
@@ -924,7 +924,7 @@ pub(crate) fn filtered_parent_tree_id(
             return Ok(tree_id);
         }
     }
-    git::read_tree_id(transaction.repo(), oid)
+    git::read_tree_id(&transaction.odb()?, oid)
 }
 
 fn is_empty_root(repo: &git2::Repository, tree: &git2::Tree) -> bool {

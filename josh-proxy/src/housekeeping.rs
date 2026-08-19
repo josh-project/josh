@@ -148,8 +148,6 @@ pub fn run(
         .open()?;
 
     transaction_overlay
-        .repo()
-        .odb()?
         .add_disk_alternate(repo_path.join("mirror").join("objects").to_str().unwrap())?;
 
     let mirror_object_count: ParsedCommandResult<CountObjectsOutput> = run_command(

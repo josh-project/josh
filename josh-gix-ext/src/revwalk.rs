@@ -30,17 +30,24 @@ use crate::git2_oid;
 
 type Visit<'v> = &'v mut dyn FnMut(git2::Oid) -> anyhow::Result<ControlFlow<()>>;
 
-/// Read a commit's parent ids: one raw odb read, one `CommitRefIter` pass
+/// Read a commit's parent ids: one raw object read, one `CommitRefIter` pass
 /// stopped at the first non-tree/parent header. A missing or non-commit
 /// object is a hard error; headers past the parents (author, committer,
 /// message) are never read or validated.
-fn read_parent_oids(odb: &git2::Odb, oid: git2::Oid) -> anyhow::Result<Vec<git2::Oid>> {
-    let obj = odb.read(oid)?;
-    if obj.kind() != git2::ObjectType::Commit {
+fn read_parent_oids(
+    src: &impl gix_object::Find,
+    oid: git2::Oid,
+    buf: &mut Vec<u8>,
+) -> anyhow::Result<Vec<git2::Oid>> {
+    let data = src
+        .try_find(&crate::gix_oid(oid), buf)
+        .map_err(|e| anyhow::anyhow!("read_parent_oids: {e}"))?
+        .ok_or_else(|| anyhow::anyhow!("object {} not found", oid))?;
+    if data.kind != gix_object::Kind::Commit {
         anyhow::bail!("object {} is not a commit", oid);
     }
     let mut parents = Vec::new();
-    for token in gix_object::CommitRefIter::from_bytes(obj.data(), gix_hash::Kind::Sha1) {
+    for token in gix_object::CommitRefIter::from_bytes(data.data, gix_hash::Kind::Sha1) {
         use gix_object::commit::ref_iter::Token;
         match token? {
             Token::Tree { .. } => {}
@@ -52,9 +59,12 @@ fn read_parent_oids(odb: &git2::Odb, oid: git2::Oid) -> anyhow::Result<Vec<git2:
 }
 
 /// Verify `oid` names a commit without decompressing it.
-fn ensure_commit(odb: &git2::Odb, oid: git2::Oid) -> anyhow::Result<()> {
-    let (_, kind) = odb.read_header(oid)?;
-    if kind != git2::ObjectType::Commit {
+fn ensure_commit(src: &impl gix_object::FindHeader, oid: git2::Oid) -> anyhow::Result<()> {
+    let header = src
+        .try_header(&crate::gix_oid(oid))
+        .map_err(|e| anyhow::anyhow!("ensure_commit: {e}"))?
+        .ok_or_else(|| anyhow::anyhow!("object {} not found", oid))?;
+    if header.kind != gix_object::Kind::Commit {
         anyhow::bail!("object {} is not a commit", oid);
     }
     Ok(())
@@ -94,23 +104,26 @@ struct Node {
 /// [`simplify_first_parent`]: RevWalk::simplify_first_parent
 /// [`into_topo_vec`]: RevWalk::into_topo_vec
 /// [`discover`]: RevWalk::discover
-pub struct RevWalk<'a> {
-    odb: &'a git2::Odb<'a>,
+pub struct RevWalk<'a, S> {
+    odb: &'a S,
     nodes: Vec<Node>,
     by_oid: HashMap<git2::Oid, usize>,
     /// Pushed tips in push order; the DFS explores them in this order.
     tips: Vec<usize>,
     first_parent: bool,
+    /// Reused per-commit read buffer, so a walk does one allocation, not one per commit.
+    scratch: Vec<u8>,
 }
 
-impl<'a> RevWalk<'a> {
-    pub fn new(odb: &'a git2::Odb<'a>) -> Self {
+impl<'a, S: gix_object::Find + gix_object::FindHeader> RevWalk<'a, S> {
+    pub fn new(odb: &'a S) -> Self {
         RevWalk {
             odb,
             nodes: Vec::new(),
             by_oid: HashMap::new(),
             tips: Vec::new(),
             first_parent: false,
+            scratch: Vec::new(),
         }
     }
 
@@ -171,7 +184,7 @@ impl<'a> RevWalk<'a> {
         if self.nodes[commit].parsed {
             return Ok(());
         }
-        let parents = read_parent_oids(self.odb, self.nodes[commit].oid)?
+        let parents = read_parent_oids(self.odb, self.nodes[commit].oid, &mut self.scratch)?
             .into_iter()
             .map(|p| self.intern(p))
             .collect();
@@ -277,16 +290,18 @@ struct RangeNode {
 ///
 /// The two strategies yield different topological orders, which is fine
 /// because the callers consume the whole yield set parents-first.
-pub struct RangeWalk<'a> {
-    odb: &'a git2::Odb<'a>,
+pub struct RangeWalk<'a, S> {
+    odb: &'a S,
     sequence_numbers: Box<dyn Fn(git2::Oid) -> anyhow::Result<u64> + 'a>,
     nodes: Vec<RangeNode>,
     by_oid: HashMap<git2::Oid, usize>,
+    /// Reused per-commit read buffer, so a walk does one allocation, not one per commit.
+    scratch: Vec<u8>,
 }
 
-impl<'a> RangeWalk<'a> {
+impl<'a, S: gix_object::Find + gix_object::FindHeader> RangeWalk<'a, S> {
     pub fn new(
-        odb: &'a git2::Odb<'a>,
+        odb: &'a S,
         sequence_numbers: impl Fn(git2::Oid) -> anyhow::Result<u64> + 'a,
     ) -> Self {
         RangeWalk {
@@ -294,6 +309,7 @@ impl<'a> RangeWalk<'a> {
             sequence_numbers: Box::new(sequence_numbers),
             nodes: Vec::new(),
             by_oid: HashMap::new(),
+            scratch: Vec::new(),
         }
     }
 
@@ -343,7 +359,7 @@ impl<'a> RangeWalk<'a> {
         if self.nodes[commit].parsed {
             return Ok(());
         }
-        let parents = read_parent_oids(self.odb, self.nodes[commit].oid)?
+        let parents = read_parent_oids(self.odb, self.nodes[commit].oid, &mut self.scratch)?
             .into_iter()
             .map(|p| self.intern(p))
             .collect();
@@ -565,6 +581,7 @@ mod tests {
         first_parent: bool,
     ) -> anyhow::Result<Vec<git2::Oid>> {
         let odb = repo.odb().unwrap();
+        let odb = crate::Git2Odb(&odb);
         let mut walk = RevWalk::new(&odb);
         if first_parent {
             walk.simplify_first_parent();
@@ -582,6 +599,7 @@ mod tests {
     ) -> anyhow::Result<Vec<git2::Oid>> {
         let memo = std::cell::RefCell::new(HashMap::new());
         let odb = repo.odb().unwrap();
+        let odb = crate::Git2Odb(&odb);
         let walk = RangeWalk::new(&odb, |oid| exact_seq(repo, &memo, oid));
         walk.into_topo_vec(tip, base)
     }
@@ -800,6 +818,7 @@ mod tests {
         let memo = std::cell::RefCell::new(HashMap::new());
         let calls = std::cell::Cell::new(0usize);
         let odb = t.repo.odb().unwrap();
+        let odb = crate::Git2Odb(&odb);
         let walk = RangeWalk::new(&odb, |oid| {
             calls.set(calls.get() + 1);
             exact_seq(&t.repo, &memo, oid)
@@ -832,6 +851,7 @@ mod tests {
         for blind in [tip, base, b] {
             let memo = std::cell::RefCell::new(HashMap::new());
             let odb = t.repo.odb().unwrap();
+            let odb = crate::Git2Odb(&odb);
             let walk = RangeWalk::new(&odb, |oid| {
                 if oid == blind {
                     anyhow::bail!("no sequence number for {}", oid);
@@ -871,6 +891,7 @@ mod tests {
         let dup = t.raw_commit("dup", &[b, b, a]);
         let mut calls = Vec::new();
         let odb = t.repo.odb().unwrap();
+        let odb = crate::Git2Odb(&odb);
         let mut w = RevWalk::new(&odb);
         w.push(dup).unwrap();
         w.into_topo_vec(|oid| {
@@ -931,6 +952,7 @@ mod tests {
         let tag = t.repo.tag("v1", &obj, &sig, "annotated", false).unwrap();
 
         let odb = t.repo.odb().unwrap();
+        let odb = crate::Git2Odb(&odb);
         // Missing oids and non-commits (including annotated tags, which are
         // NOT peeled) error immediately.
         for bad in [missing, blob, tree, tag] {
@@ -950,6 +972,7 @@ mod tests {
 
         // A pushed commit with a missing parent errors during the walk.
         let odb = t.repo.odb().unwrap();
+        let odb = crate::Git2Odb(&odb);
         let mut w = RevWalk::new(&odb);
         w.push(dangling).unwrap();
         assert!(w.into_topo_vec(|_| false).is_err());
@@ -983,6 +1006,7 @@ mod tests {
                 format!("tree {}\n", tree_id).as_bytes(),
             )
             .unwrap();
+        let odb = crate::Git2Odb(&odb);
         let tip = t.raw_commit("tip", &[trunc]);
         let mut w = RevWalk::new(&odb);
         w.push(tip).unwrap();
@@ -997,6 +1021,7 @@ mod tests {
         let c = t.commit("c", &[a]);
         let m = t.commit("m", &[b, c]);
         let odb = t.repo.odb().unwrap();
+        let odb = crate::Git2Odb(&odb);
 
         // Pre-order: each commit before its parents, first parent's subgraph
         // before the second's.

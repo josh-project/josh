@@ -46,16 +46,11 @@ pub(crate) fn write_snapshot(objects_dir: &Path, snapshot: &Snapshot) -> Result<
     let mut odb = gix_odb::at(objects_dir.to_owned()).map_err(pack_error)?;
     odb.refresh = gix_odb::store::RefreshMode::Never;
 
-    let to_pack = snapshot
+    let to_pack: Vec<_> = snapshot
         .iter()
-        .filter(|(oid, _, _)| !odb.exists(&josh_gix_ext::gix_oid(*oid)))
-        .map(|(oid, kind, data)| {
-            let kind = git2::ObjectType::from_raw(*kind)
-                .and_then(josh_gix_ext::gix_kind)
-                .ok_or_else(|| pack_error(format!("object {oid} has no packable kind")))?;
-            Ok((josh_gix_ext::gix_oid(*oid), kind, data))
-        })
-        .collect::<Result<Vec<_>, git2::Error>>()?;
+        .filter(|(oid, _, _)| !odb.exists(oid))
+        .map(|(oid, kind, data)| (*oid, *kind, data))
+        .collect();
     if to_pack.is_empty() {
         return Ok(());
     }

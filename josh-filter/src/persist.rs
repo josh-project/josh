@@ -96,7 +96,7 @@ fn push_tree_entries(
 }
 
 struct InMemoryBuilder<'a> {
-    staging: josh_gix_ext::StagingOdb<'a>,
+    staging: josh_gix_ext::StagingOdb,
     /// Present when building for persistence (`as_tree`): used to resolve the object kind of
     /// `InsertContent::Oid` so the object can be referenced as a tree entry with the correct
     /// mode. Absent when computing `Filter::id`, which must stay repository-independent.
@@ -621,7 +621,7 @@ impl<'a> InMemoryBuilder<'a> {
     /// it (and every ancestor) is always built to learn its persist-time id.
     fn build_persist(
         &mut self,
-        odb: &git2::Odb,
+        out: &impl gix_object::Exists,
         filter: Filter,
     ) -> anyhow::Result<gix_hash::ObjectId> {
         if let Some(oid) = self.persist_ids.get(&filter) {
@@ -630,13 +630,13 @@ impl<'a> InMemoryBuilder<'a> {
         let op = to_op_ref(filter);
         let mut dirty = matches!(op, Op::Insert(_, InsertContent::Oid(_)));
         for child in child_filters(op) {
-            let child_oid = self.build_persist(odb, child)?;
+            let child_oid = self.build_persist(out, child)?;
             dirty |= child_oid.as_bytes() != child.id().as_bytes();
         }
         let oid = if dirty {
             self.build_op(op)?
         } else {
-            if !odb.exists(filter.id()) {
+            if !out.exists(&josh_gix_ext::gix_oid(filter.id())) {
                 self.build_op(op)?;
             }
             gix_hash::ObjectId::from_bytes_or_panic(filter.id().as_bytes())
@@ -646,15 +646,18 @@ impl<'a> InMemoryBuilder<'a> {
     }
 }
 
-pub fn as_tree(repo: &git2::Repository, filter: Filter) -> anyhow::Result<git2::Oid> {
-    let odb = repo.odb()?;
+pub fn as_tree(
+    repo: &git2::Repository,
+    out: &(impl gix_object::Exists + gix_object::Write),
+    filter: Filter,
+) -> anyhow::Result<git2::Oid> {
     let filter = crate::opt::optimize(filter);
 
     let mut builder = InMemoryBuilder::new(Some(repo));
-    let root_oid = builder.build_persist(&odb, filter)?;
+    let root_oid = builder.build_persist(out, filter)?;
     let root_oid = git2::Oid::from_bytes(root_oid.as_bytes())?;
 
-    builder.staging.flush(&odb)?;
+    builder.staging.flush(out)?;
 
     // Now the tree should really be in the ODB
     Ok(root_oid)

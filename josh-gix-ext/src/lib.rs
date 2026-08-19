@@ -67,17 +67,16 @@ pub fn hash_blob(data: &[u8]) -> git2::Oid {
     )
 }
 
-/// Serialize `entries` as a git tree in exactly the order given and write it straight to `odb`.
-/// Used on hot paths while git2 still owns all I/O: the write is immediately visible to every
-/// reader of the repository (and lands in the in-memory memodb store when one is registered),
-/// so ported and unported code can interleave freely.
+/// Serialize `entries` as a git tree in exactly the order given and write it straight to `out`
+/// (in practice the transaction's memodb-backed facade, so the write is immediately visible
+/// to every reader of the repository).
 ///
 /// The order is the caller's responsibility: rebuilds of existing trees preserve the input's
 /// entry order byte-for-byte (canonical or not), and freshly inserted entries are placed at
 /// their canonical position by the caller. Serialization is manual because gix's tree writer
 /// asserts canonical order, which fsck-invalid input trees do not have.
 pub fn write_tree_now(
-    odb: &git2::Odb,
+    out: &impl gix_object::Write,
     entries: Vec<gix_object::tree::Entry>,
 ) -> anyhow::Result<git2::Oid> {
     // Exact-fit upper bound: mode (<= 6 octal digits) + space + name + NUL + 20 oid bytes.
@@ -101,7 +100,10 @@ pub fn write_tree_now(
         buffer.push(0);
         buffer.extend_from_slice(entry.oid.as_bytes());
     }
-    Ok(odb.write(git2::ObjectType::Tree, &buffer)?)
+    let id = out
+        .write_buf(gix_object::Kind::Tree, &buffer)
+        .map_err(|e| anyhow::anyhow!("write_tree_now: {e}"))?;
+    Ok(git2_oid(&id))
 }
 
 /// A commit's id + raw odb bytes, owned. Send + Sync plain data; never stored in a transaction.
@@ -114,22 +116,22 @@ pub struct CommitData {
 }
 
 impl CommitData {
-    /// odb.read + kind check. Errors if the object is missing or not a commit -- matching
-    /// `find_commit`'s contract (both are hard errors there too). Reads go through the odb's
-    /// registered backends (memodb visibility preserved).
-    pub fn read(odb: &git2::Odb<'_>, oid: git2::Oid) -> anyhow::Result<CommitData> {
-        let obj = odb.read(oid)?;
-        if obj.kind() != git2::ObjectType::Commit {
+    /// Errors if the object is missing or not a commit. `src` is the transaction's facade in
+    /// practice, so unflushed in-memory commits resolve.
+    pub fn read(src: &impl gix_object::Find, oid: git2::Oid) -> anyhow::Result<CommitData> {
+        let mut bytes = Vec::new();
+        let data = src
+            .try_find(&gix_oid(oid), &mut bytes)
+            .map_err(|e| anyhow::anyhow!("CommitData::read: {e}"))?
+            .ok_or_else(|| anyhow::anyhow!("object {} not found", oid))?;
+        if data.kind != gix_object::Kind::Commit {
             return Err(anyhow::anyhow!(
                 "object {} is not a commit but a {:?}",
                 oid,
-                obj.kind()
+                data.kind
             ));
         }
-        Ok(CommitData {
-            id: oid,
-            bytes: obj.data().to_vec(),
-        })
+        Ok(CommitData { id: oid, bytes })
     }
 
     pub fn id(&self) -> git2::Oid {
@@ -173,21 +175,16 @@ impl CommitData {
     }
 }
 
-/// An in-memory staging store over an optional read-through object database.
-///
-/// Writes stage objects in a hash map; reads (via the [`gix_object::Find`] family) consult the
-/// staged objects first and fall back to the repository ODB when one is attached. Constructed
-/// without an ODB it is a pure store for computing content hashes repository-independently (the
-/// `Filter::id` use case, which must not touch a repository at all).
-pub struct StagingOdb<'a> {
+/// An in-memory staging store: a pure map for computing content hashes
+/// repository-independently (the `Filter::id` use case, which must not touch a repository at
+/// all) and for batching writes until an explicit [`flush`](StagingOdb::flush) into an object
+/// sink. Reads (via the [`gix_object::Find`] family) see only staged objects.
+pub struct StagingOdb {
     /// Staged objects by content hash: `(kind, raw bytes)`, not yet written to the repository.
     pending: HashMap<gix_hash::ObjectId, (gix_object::Kind, Vec<u8>)>,
-    /// Read-through target, when reads are needed.
-    odb: Option<git2::Odb<'a>>,
 }
 
-impl<'a> StagingOdb<'a> {
-    /// A pure in-memory store without read-through: reads only see staged objects.
+impl StagingOdb {
     pub fn new() -> Self {
         // Pre-seed the empty blob because `write_blob` short-cuts hashing for empty content;
         // seeding keeps the shortcut consistent with flushing (the object is written if missing).
@@ -196,15 +193,7 @@ impl<'a> StagingOdb<'a> {
             gix_hash::ObjectId::empty_blob(gix_hash::Kind::Sha1),
             (gix_object::Kind::Blob, Vec::new()),
         );
-        Self { pending, odb: None }
-    }
-
-    /// A staging store reading through to `odb` for objects that are not staged.
-    pub fn with_odb(odb: git2::Odb<'a>) -> Self {
-        Self {
-            odb: Some(odb),
-            ..Self::new()
-        }
+        Self { pending }
     }
 
     /// Stage a raw object that is already serialized. Returns its content hash.
@@ -242,44 +231,79 @@ impl<'a> StagingOdb<'a> {
         self.write_raw(gix_object::Kind::Commit, buffer)
     }
 
-    /// Write every staged object to `odb`, emptying the staging map. Objects the ODB already
-    /// has are skipped (see module docs).
-    pub fn flush(&mut self, odb: &git2::Odb) -> anyhow::Result<()> {
+    /// Write every staged object to `out`, emptying the staging map. Objects the sink already
+    /// has are skipped (see module docs); ids were computed at stage time and are passed on
+    /// so the sink need not re-hash.
+    pub fn flush(
+        &mut self,
+        out: &(impl gix_object::Exists + gix_object::Write),
+    ) -> anyhow::Result<()> {
         for (oid, (kind, data)) in self.pending.drain() {
-            let oid = git2_oid(&oid);
-            if !odb.exists(oid) {
-                odb.write(git2_kind(kind), &data)?;
+            if !out.exists(&oid) {
+                out.write_buf_with_known_id(kind, &data, oid)
+                    .map_err(|e| anyhow::anyhow!("staging flush: {e}"))?;
             }
         }
         Ok(())
     }
 }
 
-impl Default for StagingOdb<'_> {
+impl Default for StagingOdb {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl gix_object::Find for StagingOdb<'_> {
+impl gix_object::Find for StagingOdb {
     fn try_find<'b>(
         &self,
         id: &gix_hash::oid,
         buffer: &'b mut Vec<u8>,
     ) -> Result<Option<gix_object::Data<'b>>, gix_object::find::Error> {
-        if let Some((kind, data)) = self.pending.get(id) {
-            buffer.clear();
-            buffer.extend_from_slice(data);
-            return Ok(Some(gix_object::Data {
-                kind: *kind,
-                object_hash: id.kind(),
-                data: buffer,
-            }));
-        }
-        let Some(odb) = &self.odb else {
+        let Some((kind, data)) = self.pending.get(id) else {
             return Ok(None);
         };
-        let obj = match odb.read(git2_oid(id)) {
+        buffer.clear();
+        buffer.extend_from_slice(data);
+        Ok(Some(gix_object::Data {
+            kind: *kind,
+            object_hash: id.kind(),
+            data: buffer,
+        }))
+    }
+}
+
+impl gix_object::FindHeader for StagingOdb {
+    fn try_header(
+        &self,
+        id: &gix_hash::oid,
+    ) -> Result<Option<gix_object::Header>, gix_object::find::Error> {
+        Ok(self.pending.get(id).map(|(kind, data)| gix_object::Header {
+            kind: *kind,
+            size: data.len() as u64,
+        }))
+    }
+}
+
+impl gix_object::Exists for StagingOdb {
+    fn exists(&self, id: &gix_hash::oid) -> bool {
+        self.pending.contains_key(id)
+    }
+}
+
+/// [`gix_object`] object access over a bare `git2::Odb`: reads/exists resolve through the
+/// odb's backends (including a registered memodb and alternates), writes go through
+/// `git_odb_write`. The bridge for code that has a git2 odb handle but no memodb store —
+/// walker unit tests, and `persist::as_tree` on repositories below the cache stack.
+pub struct Git2Odb<'a>(pub &'a git2::Odb<'a>);
+
+impl gix_object::Find for Git2Odb<'_> {
+    fn try_find<'b>(
+        &self,
+        id: &gix_hash::oid,
+        buffer: &'b mut Vec<u8>,
+    ) -> Result<Option<gix_object::Data<'b>>, gix_object::find::Error> {
+        let obj = match self.0.read(git2_oid(id)) {
             Ok(obj) => obj,
             Err(e) if e.code() == git2::ErrorCode::NotFound => return Ok(None),
             Err(e) => return Err(Box::new(e)),
@@ -297,21 +321,12 @@ impl gix_object::Find for StagingOdb<'_> {
     }
 }
 
-impl gix_object::FindHeader for StagingOdb<'_> {
+impl gix_object::FindHeader for Git2Odb<'_> {
     fn try_header(
         &self,
         id: &gix_hash::oid,
     ) -> Result<Option<gix_object::Header>, gix_object::find::Error> {
-        if let Some((kind, data)) = self.pending.get(id) {
-            return Ok(Some(gix_object::Header {
-                kind: *kind,
-                size: data.len() as u64,
-            }));
-        }
-        let Some(odb) = &self.odb else {
-            return Ok(None);
-        };
-        let (size, kind) = match odb.read_header(git2_oid(id)) {
+        let (size, kind) = match self.0.read_header(git2_oid(id)) {
             Ok(h) => h,
             Err(e) if e.code() == git2::ErrorCode::NotFound => return Ok(None),
             Err(e) => return Err(Box::new(e)),
@@ -326,13 +341,51 @@ impl gix_object::FindHeader for StagingOdb<'_> {
     }
 }
 
-impl gix_object::Exists for StagingOdb<'_> {
+impl gix_object::Exists for Git2Odb<'_> {
     fn exists(&self, id: &gix_hash::oid) -> bool {
-        self.pending.contains_key(id)
-            || self
-                .odb
-                .as_ref()
-                .is_some_and(|odb| odb.exists(git2_oid(id)))
+        self.0.exists(git2_oid(id))
+    }
+}
+
+impl gix_object::Write for Git2Odb<'_> {
+    fn write_buf(
+        &self,
+        object: gix_object::Kind,
+        from: &[u8],
+    ) -> Result<gix_hash::ObjectId, gix_object::write::Error> {
+        let oid = self.0.write(git2_kind(object), from)?;
+        Ok(gix_oid(oid))
+    }
+
+    fn write_buf_with_known_id(
+        &self,
+        object: gix_object::Kind,
+        from: &[u8],
+        _id: gix_hash::ObjectId,
+    ) -> Result<gix_hash::ObjectId, gix_object::write::Error> {
+        // libgit2 re-hashes on write regardless; the result is the same id.
+        self.write_buf(object, from)
+    }
+
+    fn write_stream(
+        &self,
+        kind: gix_object::Kind,
+        size: u64,
+        from: &mut dyn std::io::Read,
+    ) -> Result<gix_hash::ObjectId, gix_object::write::Error> {
+        let mut data = Vec::with_capacity(size as usize);
+        from.read_to_end(&mut data)?;
+        self.write_buf(kind, &data)
+    }
+
+    fn write_stream_with_known_id(
+        &self,
+        kind: gix_object::Kind,
+        size: u64,
+        from: &mut dyn std::io::Read,
+        _id: gix_hash::ObjectId,
+    ) -> Result<gix_hash::ObjectId, gix_object::write::Error> {
+        self.write_stream(kind, size, from)
     }
 }
 

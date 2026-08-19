@@ -240,43 +240,40 @@ impl GitCommand {
     }
 }
 
-/// Read a commit's parent OIDs directly from the raw ODB bytes, parsing only the parent lines via
-/// `gix_object::CommitRefIter`. This avoids libgit2's commit parse cache (a lock-guarded global
-/// that also decodes author/committer/message) whenever a caller only needs the parent ids.
-pub fn read_parent_ids(repo: &git2::Repository, oid: git2::Oid) -> anyhow::Result<Vec<git2::Oid>> {
-    let odb = repo.odb()?;
-    let odb_commit = odb.read(oid)?;
+/// Read a commit's parent OIDs directly from the raw object bytes, parsing only the parent
+/// lines via `gix_object::CommitRefIter`. This avoids libgit2's commit parse cache (a
+/// lock-guarded global that also decodes author/committer/message) whenever a caller only
+/// needs the parent ids; memory-store hits are zero-copy.
+pub fn read_parent_ids(odb: &josh_memodb::Odb, oid: git2::Oid) -> anyhow::Result<Vec<git2::Oid>> {
+    let (kind, bytes) = odb.read(oid)?;
     // A hard error, not an assert: this is reachable from inside git2 callback frames,
     // where unwinding across the FFI boundary would abort.
-    if odb_commit.kind() != git2::ObjectType::Commit {
+    if kind != gix_object::Kind::Commit {
         return Err(anyhow::anyhow!(
             "object {} is not a commit but a {:?}",
             oid,
-            odb_commit.kind()
+            kind
         ));
     }
-    gix_object::CommitRefIter::from_bytes(odb_commit.data(), gix_hash::Kind::Sha1)
+    gix_object::CommitRefIter::from_bytes(&bytes, gix_hash::Kind::Sha1)
         .parent_ids()
         .map(|p| Ok(git2::Oid::from_bytes(p.as_bytes())?))
         .collect()
 }
 
-/// Sibling of [`read_parent_ids`]: read a commit's tree OID from the raw ODB bytes via
-/// `gix_object::CommitRefIter`, replacing `find_commit(oid)?.tree_id()` without touching
-/// libgit2's commit parse cache.
-pub fn read_tree_id(repo: &git2::Repository, oid: git2::Oid) -> anyhow::Result<git2::Oid> {
-    let odb = repo.odb()?;
-    let odb_commit = odb.read(oid)?;
+/// Sibling of [`read_parent_ids`]: read a commit's tree OID without touching libgit2's
+/// commit parse cache.
+pub fn read_tree_id(odb: &josh_memodb::Odb, oid: git2::Oid) -> anyhow::Result<git2::Oid> {
+    let (kind, bytes) = odb.read(oid)?;
     // Same hard-error rationale as read_parent_ids.
-    if odb_commit.kind() != git2::ObjectType::Commit {
+    if kind != gix_object::Kind::Commit {
         return Err(anyhow::anyhow!(
             "object {} is not a commit but a {:?}",
             oid,
-            odb_commit.kind()
+            kind
         ));
     }
-    let tree_id =
-        gix_object::CommitRefIter::from_bytes(odb_commit.data(), gix_hash::Kind::Sha1).tree_id()?;
+    let tree_id = gix_object::CommitRefIter::from_bytes(&bytes, gix_hash::Kind::Sha1).tree_id()?;
     Ok(git2::Oid::from_bytes(tree_id.as_bytes())?)
 }
 
@@ -291,8 +288,10 @@ mod tests {
         let tree = repo.find_tree(tree_id).unwrap();
         let commit_id = repo.commit(None, &sig, &sig, "test", &tree, &[]).unwrap();
 
+        let store = josh_memodb::MemOdb::new(None, josh_memodb::objects_dir(&repo));
+        let odb = josh_memodb::Odb::new(store, repo.odb().unwrap());
         assert_eq!(
-            super::read_tree_id(&repo, commit_id).unwrap(),
+            super::read_tree_id(&odb, commit_id).unwrap(),
             repo.find_commit(commit_id).unwrap().tree_id()
         );
     }

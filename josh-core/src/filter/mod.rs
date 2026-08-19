@@ -24,7 +24,7 @@ pub mod text;
 pub mod tree;
 
 pub fn as_tree(transaction: &cache::Transaction, filter: Filter) -> anyhow::Result<git2::Oid> {
-    josh_filter::persist::as_tree(transaction.repo(), filter)
+    josh_filter::persist::as_tree(transaction.repo(), &transaction.odb()?, filter)
 }
 
 pub fn from_tree(transaction: &cache::Transaction, tree_oid: git2::Oid) -> anyhow::Result<Filter> {
@@ -551,7 +551,7 @@ fn get_rev_filter(
         } else {
             return Err(anyhow!("unresolved lazy ref"));
         };
-        if match_op != &RevMatch::Default && !transaction.repo().odb()?.exists(*filter_tip) {
+        if match_op != &RevMatch::Default && !transaction.odb()?.contains(*filter_tip) {
             return Err(anyhow!("`:rev(...)` with nonexistent OID: {}", filter_tip));
         }
         let matches = match match_op {
@@ -616,10 +616,10 @@ pub fn apply_to_commit2(
             return Ok(Some(current_oid));
         }
         Op::Squash(None) => {
-            let odb = repo.odb()?;
+            let odb = transaction.odb()?;
             let commit = objects::CommitData::read(&odb, commit_id)?;
             return Some(history::rewrite_commit(
-                repo,
+                &odb,
                 &commit,
                 &[],
                 Rewrite::from_commit_data(repo, &commit)?,
@@ -646,7 +646,7 @@ pub fn apply_to_commit2(
         }
     };
 
-    let odb = repo.odb()?;
+    let odb = transaction.odb()?;
     let commit = objects::CommitData::read(&odb, commit_id)?;
 
     let rewrite_data = match &op {
@@ -832,7 +832,7 @@ pub fn apply_to_commit2(
             // A root commit (no first parent) keeps every root; when a first
             // parent is present its tree must be readable.
             let parent_tree = match commit.first_parent_id() {
-                Some(parent) => Some(repo.find_tree(git::read_tree_id(repo, parent)?)?),
+                Some(parent) => Some(repo.find_tree(git::read_tree_id(&odb, parent)?)?),
                 None => None,
             };
             if let Some(parent_tree) = parent_tree {
@@ -939,7 +939,7 @@ pub fn apply_to_commit2(
             let parent_filters = commit
                 .parent_ids()
                 .map(|parent| {
-                    let tree_id = git::read_tree_id(repo, parent)?;
+                    let tree_id = git::read_tree_id(&odb, parent)?;
                     let pcw = get_workspace(transaction, &repo.find_tree(tree_id)?, ws_path);
                     Ok((parent, pcw))
                 })
@@ -954,7 +954,7 @@ pub fn apply_to_commit2(
             let parent_filters = commit
                 .parent_ids()
                 .map(|parent| {
-                    let tree_id = git::read_tree_id(repo, parent)?;
+                    let tree_id = git::read_tree_id(&odb, parent)?;
                     let pcs = get_stored(transaction, &repo.find_tree(tree_id)?, s_path);
                     Ok((parent, pcs))
                 })
@@ -974,7 +974,7 @@ pub fn apply_to_commit2(
             let parent_filters = commit
                 .parent_ids()
                 .map(|parent| {
-                    let tree_id = git::read_tree_id(repo, parent)?;
+                    let tree_id = git::read_tree_id(&odb, parent)?;
                     let pcs =
                         get_starlark(transaction, &repo.find_tree(tree_id)?, s_path, *s_subfilter);
                     Ok((parent, pcs))
@@ -2004,7 +2004,7 @@ pub fn is_ancestor_of(
             let mut todo = vec![tip];
             let mut ancestors = std::collections::HashSet::from_iter(todo.iter().copied());
             while let Some(commit) = todo.pop() {
-                for parent in crate::git::read_parent_ids(transaction.repo(), commit)? {
+                for parent in crate::git::read_parent_ids(&transaction.odb()?, commit)? {
                     if ancestors.insert(parent) {
                         // Newly inserted! Also handle its parents.
                         todo.push(parent);
@@ -2311,7 +2311,7 @@ pub fn downstack(
     // RangeWalk needed. A base that passes the descendant check but is NOT on
     // the spine would make "the stack from base" ill-defined; error instead
     // of answering.
-    let odb = repo.odb()?;
+    let odb = transaction.odb()?;
     let mut walk = objects::RevWalk::new(&odb);
     walk.simplify_first_parent();
     walk.push(change_oid)?;
@@ -2372,7 +2372,7 @@ pub fn downstack(
         )?;
         let new_tree = repo.find_tree(new_tree_oid)?;
         let new_oid = history::rewrite_commit(
-            repo,
+            &odb,
             &objects::CommitData::read(&odb, intermediate.id())?,
             &[current_base.id()],
             Rewrite::from_tree(new_tree),
@@ -2400,7 +2400,7 @@ pub fn downstack(
     new_parents.extend(change_commit.parent_ids().skip(1));
 
     let new_oid = history::rewrite_commit(
-        repo,
+        &odb,
         &objects::CommitData::read(&odb, change_commit.id())?,
         &new_parents,
         Rewrite::from_tree(new_tree),
@@ -2643,7 +2643,8 @@ mod tests {
         let meta_filter = to_filter(Op::Meta(meta.clone(), inner_filter));
 
         // Serialize to tree
-        let tree_oid = as_tree(&repo, meta_filter).unwrap();
+        let odb = repo.odb().unwrap();
+        let tree_oid = as_tree(&repo, &objects::Git2Odb(&odb), meta_filter).unwrap();
 
         // Deserialize from tree
         let deserialized_filter = from_tree(&repo, tree_oid).unwrap();
