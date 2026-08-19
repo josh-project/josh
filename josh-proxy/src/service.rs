@@ -637,9 +637,7 @@ async fn filter_to_namespace(
         };
 
         let t2 = service.open_overlay(None)?;
-        t2.repo()
-            .odb()?
-            .add_disk_alternate(repo_path.join("mirror").join("objects").to_str().unwrap())?;
+        t2.add_disk_alternate(repo_path.join("mirror").join("objects").to_str().unwrap())?;
 
         let (filtered_refs, _) = josh_core::filter_refs(&t2, filter, &refs_to_filter);
         let populate_refs = filtered_refs
@@ -1334,7 +1332,7 @@ async fn serve_render_template(
 
         let transaction = serv.open_overlay(None)?;
 
-        transaction.repo().odb()?.add_disk_alternate(
+        transaction.add_disk_alternate(
             serv.repo_path
                 .join("mirror")
                 .join("objects")
@@ -1438,7 +1436,7 @@ async fn handle_graphql(
 
     let transaction = serv.open_overlay(None)?;
 
-    transaction.repo().odb()?.add_disk_alternate(
+    transaction.add_disk_alternate(
         serv.repo_path
             .join("mirror")
             .join("objects")

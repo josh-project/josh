@@ -71,7 +71,8 @@ impl DistributedCacheBackend {
         if let Some(oid) = self.tree_ids.lock().unwrap().get(&filter) {
             return Ok(*oid);
         }
-        let oid = josh_filter::persist::as_tree(repo, filter)?;
+        let odb = repo.odb()?;
+        let oid = josh_filter::persist::as_tree(repo, &josh_gix_ext::Git2Odb(&odb), filter)?;
         self.tree_ids.lock().unwrap().insert(filter, oid);
         Ok(oid)
     }

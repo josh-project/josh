@@ -269,21 +269,46 @@ impl Transaction {
         &self.repo
     }
 
+    /// The transaction's object-database facade: memory store first, repository odb
+    /// fallback (see [`josh_memodb::Odb`]).
+    pub fn odb(&self) -> anyhow::Result<josh_memodb::Odb<'_>> {
+        Ok(josh_memodb::Odb::new(
+            self.mem_odb.clone(),
+            self.repo.odb()?,
+        ))
+    }
+
+    /// Add `path` (an objects directory) as a runtime alternate of both the repository odb
+    /// and the memory store's write-dedup probe (see [`josh_memodb::Odb::write`]).
+    pub fn add_disk_alternate(&self, path: &str) -> anyhow::Result<()> {
+        self.repo.odb()?.add_disk_alternate(path)?;
+        self.mem_odb.add_alternate(path)?;
+        Ok(())
+    }
+
     /// Read the raw bytes of the tree `oid` through the per-transaction [`TreeCache`]
     /// (see there for the promotion and eviction policy). `Ok(None)` means the object exists
     /// but is not a tree; a missing object is an error, like a plain odb read.
+    ///
+    /// Trees still buffered in the memory store come back as zero-copy `Arc` clones of the
+    /// store's own buffers and bypass the TreeCache promotion accounting -- caching them
+    /// again would only duplicate memory the store already holds.
     pub fn read_tree_bytes<'a>(
         &self,
-        odb: &'a git2::Odb,
+        odb: &'a josh_memodb::Odb,
         oid: git2::Oid,
     ) -> anyhow::Result<Option<TreeBytes<'a>>> {
         if let Some(bytes) = self.t2.borrow().tree_cache.get(oid) {
             return Ok(Some(TreeBytes::Cached(bytes)));
         }
-        let obj = odb.read(oid)?;
-        if obj.kind() != git2::ObjectType::Tree {
+        let (kind, bytes) = odb.read(oid)?;
+        if kind != gix_object::Kind::Tree {
             return Ok(None);
         }
+        let obj = match bytes {
+            josh_memodb::Bytes::Mem(bytes) => return Ok(Some(TreeBytes::Cached(bytes))),
+            josh_memodb::Bytes::Disk(obj) => obj,
+        };
         let mut t2 = self.t2.borrow_mut();
         if t2.tree_cache.should_promote(oid) {
             let bytes: std::sync::Arc<[u8]> = obj.data().into();
@@ -630,7 +655,7 @@ impl Transaction {
         let oid = t2.cache.read_propagate(filter, tree, hint, true).ok()??;
         // Per-subtree index trees are anchored by no ref, so gc may have pruned a
         // cached one; treat a dangling hit as a miss and reindex.
-        if self.repo.odb().ok()?.exists(oid) {
+        if self.odb().ok()?.contains(oid) {
             Some(oid)
         } else {
             None
@@ -665,7 +690,7 @@ impl Transaction {
     pub fn get_ref(&self, filter: crate::filter::Filter, from: git2::Oid) -> Option<git2::Oid> {
         if let Some(m) = REF_CACHE.read().unwrap().get(&filter.id())
             && let Some(oid) = m.get(&from)
-            && self.repo.odb().unwrap().exists(*oid)
+            && self.odb().unwrap().contains(*oid)
         {
             return Some(*oid);
         }
@@ -802,7 +827,7 @@ impl Transaction {
                 return Ok(Some(oid));
             }
 
-            if self.repo.odb()?.exists(oid) {
+            if self.odb()?.contains(oid) {
                 // Only report an object as cached if it exists in the object database.
                 // This forces a rebuild in case the object was garbage collected.
                 return Ok(Some(oid));

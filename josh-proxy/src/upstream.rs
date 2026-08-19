@@ -336,7 +336,7 @@ pub fn process_repo_update(repo_update: RepoUpdate) -> anyhow::Result<String> {
         let transaction = transaction_ctx.open()?;
         let transaction_mirror = transaction_mirror_ctx.open()?;
 
-        transaction.repo().odb()?.add_disk_alternate(
+        transaction.add_disk_alternate(
             transaction_mirror
                 .repo()
                 .path()

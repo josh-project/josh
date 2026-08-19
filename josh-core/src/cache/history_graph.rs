@@ -66,7 +66,7 @@ pub fn collect_history_graph_info(
 
     Ok(HistoryGraphInfo {
         sequence_number: hint.sequence_number,
-        reachable_roots: read_roots_blob(transaction.repo(), blob)?,
+        reachable_roots: read_roots_blob(&transaction.odb()?, blob)?,
     })
 }
 
@@ -99,14 +99,14 @@ pub fn parents_share_root(
 
     // Parents disagree on the roots blob: read each blob and intersect.
     let mut common: std::collections::BTreeSet<git2::Oid> =
-        read_roots_blob(transaction.repo(), first_blob)?
+        read_roots_blob(&transaction.odb()?, first_blob)?
             .into_iter()
             .collect();
     for blob_oid in &parent_blobs[1..] {
         if common.is_empty() {
             return Ok(false);
         }
-        let p_set: std::collections::BTreeSet<_> = read_roots_blob(transaction.repo(), *blob_oid)?
+        let p_set: std::collections::BTreeSet<_> = read_roots_blob(&transaction.odb()?, *blob_oid)?
             .into_iter()
             .collect();
         common = common.intersection(&p_set).copied().collect();
@@ -128,11 +128,12 @@ fn ensure_hint_cached(
         return Ok(hint);
     }
 
-    if !transaction.repo().odb()?.exists(input) {
+    let odb = transaction.odb()?;
+    if !odb.contains(input) {
         return Err(anyhow!("ensure_hint_cached: input does not exist"));
     }
 
-    let parent_ids = crate::git::read_parent_ids(transaction.repo(), input)?;
+    let parent_ids = crate::git::read_parent_ids(&odb, input)?;
 
     // Fast path: every parent already has both pieces cached.
     let parents_hint: Option<Vec<(u64, git2::Oid)>> = parent_ids
@@ -144,13 +145,12 @@ fn ensure_hint_cached(
         .collect::<anyhow::Result<_>>()?;
 
     if let Some(parents_hint) = parents_hint {
-        let hint = derive_from_parents(transaction.repo(), input, &parents_hint)?;
+        let hint = derive_from_parents(&odb, input, &parents_hint)?;
         store_hint(transaction, input, hint)?;
         return Ok(hint);
     }
 
     log::info!("ensure_hint_cached: new_walk for {:?}", input);
-    let odb = transaction.repo().odb()?;
     let mut walk = crate::objects::RevWalk::new(&odb);
     walk.push(input)?;
 
@@ -170,16 +170,15 @@ fn ensure_hint_cached(
     })?;
 
     for &oid in sorted.iter().rev() {
-        let parents_hint: Vec<(u64, git2::Oid)> =
-            crate::git::read_parent_ids(transaction.repo(), oid)?
-                .into_iter()
-                .map(|p| {
-                    try_read_cached_hint(transaction, p)?
-                        .map(|(hint, blob)| (hint.sequence_number, blob))
-                        .ok_or_else(|| anyhow!("parent {} hint missing during walk for {}", p, oid))
-                })
-                .collect::<anyhow::Result<Vec<_>>>()?;
-        let hint = derive_from_parents(transaction.repo(), oid, &parents_hint)?;
+        let parents_hint: Vec<(u64, git2::Oid)> = crate::git::read_parent_ids(&odb, oid)?
+            .into_iter()
+            .map(|p| {
+                try_read_cached_hint(transaction, p)?
+                    .map(|(hint, blob)| (hint.sequence_number, blob))
+                    .ok_or_else(|| anyhow!("parent {} hint missing during walk for {}", p, oid))
+            })
+            .collect::<anyhow::Result<Vec<_>>>()?;
+        let hint = derive_from_parents(&odb, oid, &parents_hint)?;
         store_hint(transaction, oid, hint)?;
     }
 
@@ -192,7 +191,7 @@ fn ensure_hint_cached(
 /// only when parents disagree on the blob; otherwise reuses the parent blob
 /// OID (or, for the root case, writes a single-element blob).
 fn derive_from_parents(
-    repo: &git2::Repository,
+    odb: &josh_memodb::Odb,
     self_oid: git2::Oid,
     parents_hint: &[(u64, git2::Oid)],
 ) -> anyhow::Result<(HistoryGraphHint, git2::Oid)> {
@@ -205,7 +204,7 @@ fn derive_from_parents(
                 jump_delta: 0,
                 jump_is_second: false,
             },
-            write_roots_blob(repo, &[self_oid])?,
+            write_roots_blob(odb, &[self_oid])?,
         ));
     }
 
@@ -233,10 +232,10 @@ fn derive_from_parents(
     } else {
         let mut set: std::collections::BTreeSet<git2::Oid> = Default::default();
         for (_, blob_oid) in parents_hint {
-            set.extend(read_roots_blob(repo, *blob_oid)?);
+            set.extend(read_roots_blob(odb, *blob_oid)?);
         }
         let roots: Vec<_> = set.into_iter().collect();
-        write_roots_blob(repo, &roots)?
+        write_roots_blob(odb, &roots)?
     };
 
     Ok((
@@ -279,17 +278,20 @@ fn store_hint(
     Ok(())
 }
 
-fn write_roots_blob(repo: &git2::Repository, roots: &[git2::Oid]) -> anyhow::Result<git2::Oid> {
+fn write_roots_blob(odb: &josh_memodb::Odb, roots: &[git2::Oid]) -> anyhow::Result<git2::Oid> {
     let mut bytes = Vec::with_capacity(roots.len() * 20);
     for r in roots {
         bytes.extend_from_slice(r.as_bytes());
     }
-    Ok(repo.blob(&bytes)?)
+    Ok(odb.write(gix_object::Kind::Blob, &bytes))
 }
 
-fn read_roots_blob(repo: &git2::Repository, oid: git2::Oid) -> anyhow::Result<Vec<git2::Oid>> {
-    let blob = repo.find_blob(oid)?;
-    let content = blob.content();
+fn read_roots_blob(odb: &josh_memodb::Odb, oid: git2::Oid) -> anyhow::Result<Vec<git2::Oid>> {
+    let (kind, content) = odb.read(oid)?;
+    if kind != gix_object::Kind::Blob {
+        return Err(anyhow!("reachable_roots object {} is not a blob", oid));
+    }
+    let content = &content[..];
     if content.len() % 20 != 0 {
         return Err(anyhow!(
             "malformed reachable_roots blob {}: length {} not a multiple of 20",

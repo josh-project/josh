@@ -37,7 +37,7 @@ impl GraphQLHelper {
 
         let path = josh_core::normalize_path(&path);
         let transaction = if let Ok(to) = self.transaction_context(&mirror_path).open() {
-            to.repo().odb()?.add_disk_alternate(
+            to.add_disk_alternate(
                 self.repo_path
                     .join("overlay")
                     .join("objects")
@@ -67,7 +67,7 @@ impl GraphQLHelper {
 
         let (transaction, transaction_mirror) =
             if let Ok(to) = self.transaction_context(&overlay_path).open() {
-                to.repo().odb()?.add_disk_alternate(
+                to.add_disk_alternate(
                     self.repo_path
                         .join("mirror")
                         .join("objects")
@@ -179,7 +179,7 @@ pub fn render(
 
             let (transaction, transaction_mirror) =
                 if let Ok(to) = TransactionContext::new(&overlay_path, cache.clone()).open() {
-                    to.repo().odb()?.add_disk_alternate(
+                    to.add_disk_alternate(
                         transaction
                             .repo()
                             .path()

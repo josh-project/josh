@@ -16,18 +16,19 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
 use git2::{ErrorClass, ErrorCode, ObjectType, Oid};
-use libgit2_sys as raw;
+use gix_hash::ObjectId;
+use gix_object::Kind;
 
 use crate::odb_backend::{self, OdbBackend};
 
 /// Object bytes are held behind an `Arc` so a flush can snapshot them without copying: the store
 /// must keep serving reads while the flusher packs (eviction only happens once the pack is
 /// durable), so the snapshot shares the buffers instead of draining or cloning them.
-type ObjectMap = BTreeMap<Oid, (raw::git_object_t, Arc<[u8]>)>;
+type ObjectMap = BTreeMap<ObjectId, (Kind, Arc<[u8]>)>;
 
 /// A `Send` snapshot of buffered objects in sorted-oid order (the `ObjectMap` iteration order),
 /// which keeps the resulting packfile — and hence its checksum-derived name — deterministic.
-pub(crate) type Snapshot = Vec<(Oid, raw::git_object_t, Arc<[u8]>)>;
+pub(crate) type Snapshot = Vec<(ObjectId, Kind, Arc<[u8]>)>;
 
 /// The buffered objects plus a running total of their data size, guarded by one lock so that an
 /// insert and the overflow check following it are observed atomically.
@@ -51,6 +52,15 @@ pub struct MemOdb {
     /// path does not pile up redundant chunk requests every time the store crosses its limit.
     /// Cleared by the flusher once the chunk has packed and evicted.
     chunk_in_flight: AtomicBool,
+    /// A mirror of the runtime alternates registered on the owning repository
+    /// (see [`MemOdb::add_alternate`]): an odb over ONLY the alternate object directories, no
+    /// repository attached. The direct write path probes it so alternate-resident objects
+    /// (the proxy overlay's mirror) are never buffered — flushed packs must not contain
+    /// duplicates of mirror objects, and the pack-time disk filter cannot see runtime
+    /// alternates. Deliberately excludes the repository's own odb: locally-durable objects
+    /// are dropped at pack time instead, and with no alternates registered the probe is a
+    /// `None` check, no filesystem I/O.
+    alternates: Mutex<Option<git2::Odb<'static>>>,
 }
 
 impl MemOdb {
@@ -68,7 +78,30 @@ impl MemOdb {
             limit,
             objects_dir,
             chunk_in_flight: AtomicBool::new(false),
+            alternates: Mutex::new(None),
         })
+    }
+
+    /// Record `path` (an objects directory) as a runtime alternate of the owning repository.
+    /// Callers add the alternate to the repository odb themselves (`Odb::add_disk_alternate`);
+    /// this mirror only feeds the direct write path's dedup probe (see [`Self::alternates`]).
+    pub fn add_alternate(&self, path: &str) -> Result<(), git2::Error> {
+        let mut alternates = self.alternates.lock().unwrap();
+        let odb = match alternates.as_mut() {
+            Some(odb) => odb,
+            None => alternates.insert(git2::Odb::new()?),
+        };
+        odb.add_disk_alternate(path)
+    }
+
+    /// Whether `oid` exists in one of the registered alternates. `false` without filesystem
+    /// I/O when no alternates are registered.
+    pub(crate) fn exists_in_alternates(&self, oid: Oid) -> bool {
+        self.alternates
+            .lock()
+            .unwrap()
+            .as_ref()
+            .is_some_and(|odb| odb.exists(oid))
     }
 
     /// Replace `repo`'s object database with a backend that reads from / writes to this store,
@@ -83,15 +116,58 @@ impl MemOdb {
         );
     }
 
-    /// Buffer `oid` (a no-op for a content-addressed duplicate) and return whether the store has now
-    /// exceeded its size limit, so the caller can flush.
-    fn insert(&self, oid: Oid, kind: raw::git_object_t, data: Arc<[u8]>) -> bool {
+    /// Buffer `oid` and return whether the store has now exceeded its size limit, so the caller
+    /// can flush. A content-addressed duplicate is a no-op and never reports overflow: it adds
+    /// no bytes, so it must not trigger a pack.
+    fn insert(&self, oid: ObjectId, kind: Kind, data: Arc<[u8]>) -> bool {
         let len = data.len();
         let mut inner = self.inner.lock().unwrap();
-        if inner.map.insert(oid, (kind, data)).is_none() {
-            inner.size += len;
+        if inner.map.insert(oid, (kind, data)).is_some() {
+            return false;
         }
+        inner.size += len;
         self.limit.is_some_and(|limit| inner.size > limit)
+    }
+
+    /// Hash `data` and buffer it, enqueueing a background pack if the store overflows its
+    /// limit. Callers that dedup against on-disk objects gate before calling (see
+    /// [`crate::odb::Odb`]); the store itself only dedups against its own buffered contents.
+    pub fn write(self: &Arc<Self>, kind: Kind, data: &[u8]) -> ObjectId {
+        let id = gix_object::compute_hash(gix_hash::Kind::Sha1, kind, data)
+            .expect("failed to compute hash");
+        self.write_with_id(id, kind, data);
+        id
+    }
+
+    /// [`MemOdb::write`] with a caller-computed content hash, trusted verbatim.
+    pub fn write_with_id(self: &Arc<Self>, id: ObjectId, kind: Kind, data: &[u8]) {
+        if self.insert(id, kind, data.into()) {
+            self.enqueue_chunk();
+        }
+    }
+
+    /// The buffered object `id`, as a zero-copy clone of the store's shared buffer.
+    pub fn get(&self, id: &gix_hash::oid) -> Option<(Kind, Arc<[u8]>)> {
+        self.inner
+            .lock()
+            .unwrap()
+            .map
+            .get(id)
+            .map(|(kind, data)| (*kind, data.clone()))
+    }
+
+    /// Kind and size of the buffered object `id`, without touching its bytes.
+    pub fn header(&self, id: &gix_hash::oid) -> Option<(Kind, u64)> {
+        self.inner
+            .lock()
+            .unwrap()
+            .map
+            .get(id)
+            .map(|(kind, data)| (*kind, data.len() as u64))
+    }
+
+    pub fn contains(&self, id: &gix_hash::oid) -> bool {
+        self.inner.lock().unwrap().map.contains_key(id)
     }
 
     /// Drain every in-memory object into a packfile on disk and evict it from the store, blocking
@@ -186,28 +262,31 @@ fn not_found() -> git2::Error {
 impl OdbBackend for MemBackend {
     fn read_header(&self, oid: Oid) -> Result<(usize, ObjectType), git2::Error> {
         self.store
-            .inner
-            .lock()
-            .unwrap()
-            .map
-            .get(&oid)
-            .map(|(kind, data)| (data.len(), raw_to_kind(*kind)))
+            .header(&josh_gix_ext::gix_oid(oid))
+            .map(|(kind, size)| (size as usize, josh_gix_ext::git2_kind(kind)))
             .ok_or_else(not_found)
     }
 
     fn read(&self, oid: Oid) -> Result<(Vec<u8>, ObjectType), git2::Error> {
         self.store
-            .inner
-            .lock()
-            .unwrap()
-            .map
-            .get(&oid)
-            .map(|(kind, data)| (data.to_vec(), raw_to_kind(*kind)))
+            .get(&josh_gix_ext::gix_oid(oid))
+            .map(|(kind, data)| (data.to_vec(), josh_gix_ext::git2_kind(kind)))
             .ok_or_else(not_found)
     }
 
     fn write(&mut self, oid: Oid, data: Vec<u8>, kind: ObjectType) -> Result<(), git2::Error> {
-        let overflow = self.store.insert(oid, kind.raw(), data.into());
+        // No dedup gate here: `git_odb__freshen` runs before this trampoline and is the
+        // dedup for the git2 write path.
+        let Some(kind) = josh_gix_ext::gix_kind(kind) else {
+            return Err(git2::Error::new(
+                git2::ErrorCode::Invalid,
+                ErrorClass::Odb,
+                "not a writable object kind",
+            ));
+        };
+        let overflow = self
+            .store
+            .insert(josh_gix_ext::gix_oid(oid), kind, data.into());
         if overflow {
             self.store.enqueue_chunk();
         }
@@ -215,7 +294,7 @@ impl OdbBackend for MemBackend {
     }
 
     fn exists(&self, oid: Oid) -> bool {
-        self.store.inner.lock().unwrap().map.contains_key(&oid)
+        self.store.contains(&josh_gix_ext::gix_oid(oid))
     }
 
     fn exists_prefix(&self, _oid: Oid, _oid_len: usize) -> Option<Oid> {
@@ -223,10 +302,6 @@ impl OdbBackend for MemBackend {
         // (the hot path) are unaffected, and prefix lookups fall through to the on-disk backends.
         None
     }
-}
-
-fn raw_to_kind(kind: raw::git_object_t) -> ObjectType {
-    ObjectType::from_raw(kind).expect("stored objects always have a valid git type")
 }
 
 #[cfg(test)]

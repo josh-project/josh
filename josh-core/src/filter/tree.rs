@@ -8,7 +8,7 @@ pub fn pathstree<'a>(
     transaction: &'a cache::Transaction,
 ) -> anyhow::Result<git2::Tree<'a>> {
     let repo = transaction.repo();
-    let odb = repo.odb()?;
+    let odb = transaction.odb()?;
     let result = pathstree_inner(root, input, transaction, &odb)?;
     Ok(repo.find_tree(result)?)
 }
@@ -18,7 +18,7 @@ fn pathstree_inner(
     root: &str,
     input: git2::Oid,
     transaction: &cache::Transaction,
-    odb: &git2::Odb,
+    odb: &josh_memodb::Odb,
 ) -> anyhow::Result<git2::Oid> {
     if let Some(cached) = transaction.get_paths((input, root.to_string())) {
         return Ok(cached);
@@ -64,7 +64,7 @@ fn pathstree_inner(
             rebuild.keep(gix_object::tree::Entry {
                 mode: gix_object::tree::EntryKind::Blob.into(),
                 filename: entry.filename.to_owned(),
-                oid: objects::gix_oid(repo.blob(file_contents.as_bytes())?),
+                oid: objects::gix_oid(odb.write(gix_object::Kind::Blob, file_contents.as_bytes())),
             });
         }
     }
@@ -80,7 +80,7 @@ pub fn regex_replace<'a>(
     transaction: &'a cache::Transaction,
 ) -> anyhow::Result<git2::Tree<'a>> {
     let repo = transaction.repo();
-    let odb = repo.odb()?;
+    let odb = transaction.odb()?;
     let result = regex_replace_inner(input, regex, replacement, transaction, &odb)?;
     Ok(repo.find_tree(result)?)
 }
@@ -91,7 +91,7 @@ fn regex_replace_inner(
     regex: &regex::Regex,
     replacement: &str,
     transaction: &cache::Transaction,
-    odb: &git2::Odb,
+    odb: &josh_memodb::Odb,
 ) -> anyhow::Result<git2::Oid> {
     let repo = transaction.repo();
     let bytes = transaction
@@ -126,7 +126,7 @@ fn regex_replace_inner(
             rebuild.keep(gix_object::tree::Entry {
                 mode: entry.mode,
                 filename: entry.filename.to_owned(),
-                oid: objects::gix_oid(repo.blob(replaced.as_bytes())?),
+                oid: objects::gix_oid(odb.write(gix_object::Kind::Blob, replaced.as_bytes())),
             });
         }
     }
@@ -207,7 +207,7 @@ impl TreeRebuild {
     /// Write the rebuilt tree, or return `input` unchanged when nothing was dropped or
     /// rewritten: an untouched entry set reproduces `input` bit-identically, since git trees
     /// are content-addressed and the write preserves entry order.
-    fn finish(self, odb: &git2::Odb, input: git2::Oid) -> anyhow::Result<git2::Oid> {
+    fn finish(self, odb: &josh_memodb::Odb, input: git2::Oid) -> anyhow::Result<git2::Oid> {
         if self.changed {
             objects::write_tree_now(odb, self.out)
         } else {
@@ -289,7 +289,7 @@ pub fn remove_pred(
     pred: &dyn Fn(&str, bool) -> bool,
     key: git2::Oid,
 ) -> anyhow::Result<git2::Oid> {
-    let odb = transaction.repo().odb()?;
+    let odb = transaction.odb()?;
     remove_pred_inner(transaction, &odb, path, input, pred, key)
 }
 
@@ -297,7 +297,7 @@ pub fn remove_pred(
 /// creating one per recursion level costs an FFI round-trip per tree node.
 fn remove_pred_inner(
     transaction: &cache::Transaction,
-    odb: &git2::Odb,
+    odb: &josh_memodb::Odb,
     path: &mut String,
     input: git2::Oid,
     pred: &dyn Fn(&str, bool) -> bool,
@@ -386,14 +386,14 @@ pub fn remove_pattern(
     key: git2::Oid,
     state: u64,
 ) -> anyhow::Result<git2::Oid> {
-    let odb = transaction.repo().odb()?;
+    let odb = transaction.odb()?;
     remove_pattern_inner(transaction, &odb, input, cp, key, state)
 }
 
 /// Recursive body of [`remove_pattern`]; see [`remove_pred_inner`] for why the odb is hoisted.
 fn remove_pattern_inner(
     transaction: &cache::Transaction,
-    odb: &git2::Odb,
+    odb: &josh_memodb::Odb,
     input: git2::Oid,
     cp: &CompiledPattern,
     key: git2::Oid,
@@ -515,14 +515,14 @@ pub fn subtract(
     input1: git2::Oid,
     input2: git2::Oid,
 ) -> anyhow::Result<git2::Oid> {
-    let odb = transaction.repo().odb()?;
+    let odb = transaction.odb()?;
     subtract_inner(transaction, &odb, input1, input2)
 }
 
 /// Recursive body of [`subtract`]; see [`remove_pred_inner`] for why the odb is hoisted.
 fn subtract_inner(
     transaction: &cache::Transaction,
-    odb: &git2::Odb,
+    odb: &josh_memodb::Odb,
     input1: git2::Oid,
     input2: git2::Oid,
 ) -> anyhow::Result<git2::Oid> {
@@ -599,14 +599,14 @@ pub fn intersect(
     input1: git2::Oid,
     input2: git2::Oid,
 ) -> anyhow::Result<git2::Oid> {
-    let odb = transaction.repo().odb()?;
+    let odb = transaction.odb()?;
     intersect_inner(transaction, &odb, input1, input2)
 }
 
 /// Recursive body of [`intersect`]; see [`remove_pred_inner`] for why the odb is hoisted.
 fn intersect_inner(
     transaction: &cache::Transaction,
-    odb: &git2::Odb,
+    odb: &josh_memodb::Odb,
     input1: git2::Oid,
     input2: git2::Oid,
 ) -> anyhow::Result<git2::Oid> {
@@ -667,12 +667,12 @@ fn component_bytes(c: &std::ffi::OsStr) -> &[u8] {
     std::os::unix::ffi::OsStrExt::as_bytes(c)
 }
 
-/// Read `oid` as a raw tree object, or `None` if it is missing or not a tree. Uncached: the
-/// insert path is used from repository-only contexts (josh-link, josh-changes) that have no
-/// transaction to hang the tree cache off.
-fn tree_object<'a>(odb: &'a git2::Odb, oid: git2::Oid) -> Option<git2::OdbObject<'a>> {
-    match odb.read(oid) {
-        Ok(obj) if obj.kind() == git2::ObjectType::Tree => Some(obj),
+/// Read `oid` as raw tree bytes, or `None` if it is missing or not a tree. Uncached: the
+/// insert path can be called without a transaction to hang the tree cache off.
+fn tree_bytes(src: &impl gix_object::Find, oid: git2::Oid) -> Option<Vec<u8>> {
+    let mut buf = Vec::new();
+    match src.try_find(&objects::gix_oid(oid), &mut buf) {
+        Ok(Some(data)) if data.kind == gix_object::Kind::Tree => Some(buf),
         _ => None,
     }
 }
@@ -683,15 +683,15 @@ fn tree_object<'a>(odb: &'a git2::Odb, oid: git2::Oid) -> Option<git2::OdbObject
 /// `child`, so duplicates of the name collapse: every occurrence is removed and the
 /// replacement takes the first one's position.
 fn replace_child_inner(
-    odb: &git2::Odb,
+    odb: &(impl gix_object::Find + gix_object::Write),
     child: &[u8],
     oid: git2::Oid,
     mode: i32,
     tree_oid: git2::Oid,
 ) -> anyhow::Result<git2::Oid> {
-    let mut out = match tree_object(odb, tree_oid) {
-        Some(obj) => seed_entries(&gix_object::TreeRef::from_bytes(
-            obj.data(),
+    let mut out = match tree_bytes(odb, tree_oid) {
+        Some(bytes) => seed_entries(&gix_object::TreeRef::from_bytes(
+            &bytes,
             gix_hash::Kind::Sha1,
         )?),
         None => Vec::new(),
@@ -718,7 +718,7 @@ fn replace_child_inner(
 /// (`oid`, `mode`), creating intermediate trees as needed and treating blobs on the way as
 /// overwritable.
 fn insert_inner(
-    odb: &git2::Odb,
+    odb: &(impl gix_object::Find + gix_object::Write),
     full_tree: git2::Oid,
     path: &Path,
     oid: git2::Oid,
@@ -745,9 +745,9 @@ fn insert_inner(
     let mut st = full_tree;
     for c in parent.components() {
         let cb = component_bytes(c.as_os_str());
-        st = match tree_object(odb, st) {
-            Some(obj) => {
-                let tree = gix_object::TreeRef::from_bytes(obj.data(), gix_hash::Kind::Sha1)?;
+        st = match tree_bytes(odb, st) {
+            Some(bytes) => {
+                let tree = gix_object::TreeRef::from_bytes(&bytes, gix_hash::Kind::Sha1)?;
                 let sorted = entries_canonically_sorted(&tree);
                 match lookup_entry(&tree, cb.into(), sorted) {
                     Some(e) => objects::git2_oid(e.oid),
@@ -770,8 +770,10 @@ pub fn insert<'a>(
     oid: git2::Oid,
     mode: i32,
 ) -> anyhow::Result<git2::Tree<'a>> {
+    // No transaction in scope here; the repo odb still serves the memory store through the
+    // registered backend.
     let odb = repo.odb()?;
-    let result = insert_inner(&odb, full_tree.id(), path, oid, mode)?;
+    let result = insert_inner(&objects::Git2Odb(&odb), full_tree.id(), path, oid, mode)?;
     Ok(repo.find_tree(result)?)
 }
 
@@ -868,14 +870,14 @@ pub fn overlay(
     input1: git2::Oid,
     input2: git2::Oid,
 ) -> anyhow::Result<git2::Oid> {
-    let odb = transaction.repo().odb()?;
+    let odb = transaction.odb()?;
     overlay_inner(transaction, &odb, input1, input2)
 }
 
 /// Recursive body of [`overlay`]; see [`remove_pred_inner`] for why the odb is hoisted.
 fn overlay_inner(
     transaction: &cache::Transaction,
-    odb: &git2::Odb,
+    odb: &josh_memodb::Odb,
     input1: git2::Oid,
     input2: git2::Oid,
 ) -> anyhow::Result<git2::Oid> {
