@@ -330,8 +330,10 @@ fn run_filter(args: Vec<String>) -> anyhow::Result<i32> {
     if args.get_flag("discover") {
         // PORT: rev-parse stays on the git2 handle until flag day (gix rev_parse then).
         let r = repo.revparse_single(&input_ref)?;
-        let hs =
-            josh_core::housekeeping::find_all_workspaces_and_subdirectories(&r.peel_to_tree()?)?;
+        let hs = josh_core::housekeeping::find_all_workspaces_and_subdirectories(
+            &josh_core::objects::Git2Odb(&repo.odb()?),
+            r.peel_to_tree()?.id(),
+        )?;
         for i in hs {
             let (mut updated_refs, _) = josh_core::filter_refs(
                 &transaction,

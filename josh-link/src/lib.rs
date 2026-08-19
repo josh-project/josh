@@ -93,7 +93,8 @@ pub fn collect_all_link_refs(
         let tree = commit.tree().context("Failed to get commit tree")?;
 
         let link_files =
-            josh_core::link::find_link_files(repo, &tree).context("Failed to find link files")?;
+            josh_core::link::find_link_files(&josh_core::objects::Git2Odb(&repo.odb()?), tree.id())
+                .context("Failed to find link files")?;
 
         for (_, filter) in link_files {
             if let (Some(remote), Some(commit)) =
@@ -198,8 +199,11 @@ pub fn update_links(
     let head_tree_id = head_tree.id();
 
     // Find all link files to get their current metadata
-    let link_files =
-        josh_core::link::find_link_files(repo, &head_tree).context("Failed to find link files")?;
+    let link_files = josh_core::link::find_link_files(
+        &josh_core::objects::Git2Odb(&repo.odb()?),
+        head_tree.id(),
+    )
+    .context("Failed to find link files")?;
 
     // Update the link files with new commit OIDs
     let mut updated_link_files: Vec<(PathBuf, josh_core::filter::Filter)> = Vec::new();

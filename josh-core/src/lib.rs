@@ -171,6 +171,8 @@ pub fn filter_commit(
     oid: git2::Oid,
 ) -> anyhow::Result<git2::Oid> {
     let original_commit = {
+        // PORT: oid comes from refs and `peel_to_commit` tolerates annotated tags -- stays
+        // on git2 until flag day.
         let obj = transaction.repo().find_object(oid, None)?;
         obj.peel_to_commit()?
     };

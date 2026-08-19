@@ -77,10 +77,13 @@ impl Revision {
         let x = filter::apply(
             &transaction,
             self.filter,
-            Rewrite::from_tree(commit.tree()?),
+            Rewrite::from_tree(commit.tree_id()),
         )?;
-        let tree_id = x.tree().id();
-        let paths = find_paths(&transaction, x.tree().clone(), at, depth, kind)?;
+        let tree_id = x.tree_id();
+        // PORT: the typed helpers below take a git2::Tree; the bridge read resolves
+        // fresh filtered trees through the registered backend.
+        let tree = transaction.repo().find_tree(tree_id)?;
+        let paths = find_paths(&transaction, tree, at, depth, kind)?;
         let mut ws = vec![];
         for path in paths {
             ws.push(Path {
@@ -306,7 +309,7 @@ impl Revision {
             .unwrap_or((git2::Oid::ZERO_SHA1, git2::Oid::ZERO_SHA1));
 
         let d = filter::tree::diff_paths(
-            transaction.repo(),
+            &transaction.odb()?,
             parent_tree_id,
             filter_commit.tree_id(),
             "",
@@ -356,17 +359,19 @@ impl Revision {
     fn file(&self, path: String, context: &Context) -> FieldResult<Option<Path>> {
         let transaction = context.transaction.lock().unwrap();
         let path = std::path::Path::new(&path).to_owned();
-        let tree = transaction.repo().find_commit(self.commit_id)?.tree()?;
+        let tree = transaction.repo().find_commit(self.commit_id)?.tree_id();
 
         let x = filter::apply(&transaction, self.filter, Rewrite::from_tree(tree))?;
 
-        if let Ok(entry) = x.tree().get_path(&path) {
+        // PORT: git2::Tree bridge read (see files_or_dirs).
+        let filtered_tree = transaction.repo().find_tree(x.tree_id())?;
+        if let Ok(entry) = filtered_tree.get_path(&path) {
             if let Some(git2::ObjectType::Blob) = entry.kind() {
                 Ok(Some(Path {
                     path,
                     commit_id: self.commit_id,
                     filter: self.filter,
-                    tree: x.tree().id(),
+                    tree: x.tree_id(),
                 }))
             } else {
                 Err(anyhow!("not a blob").into())
@@ -379,7 +384,7 @@ impl Revision {
     fn dir(&self, path: Option<String>, context: &Context) -> FieldResult<Option<Path>> {
         let path = path.unwrap_or_default();
         let transaction = context.transaction.lock().unwrap();
-        let tree = transaction.repo().find_commit(self.commit_id)?.tree()?;
+        let tree = transaction.repo().find_commit(self.commit_id)?.tree_id();
 
         let x = filter::apply(&transaction, self.filter, Rewrite::from_tree(tree))?;
 
@@ -390,17 +395,19 @@ impl Revision {
                 path,
                 commit_id: self.commit_id,
                 filter: self.filter,
-                tree: x.tree().id(),
+                tree: x.tree_id(),
             }));
         }
 
-        if let Ok(entry) = x.tree().get_path(&path) {
+        // PORT: git2::Tree bridge read (see files_or_dirs).
+        let filtered_tree = transaction.repo().find_tree(x.tree_id())?;
+        if let Ok(entry) = filtered_tree.get_path(&path) {
             if let Some(git2::ObjectType::Tree) = entry.kind() {
                 Ok(Some(Path {
                     path,
                     commit_id: self.commit_id,
                     filter: self.filter,
-                    tree: x.tree().id(),
+                    tree: x.tree_id(),
                 }))
             } else {
                 Err(anyhow!("not a tree").into())
@@ -414,7 +421,7 @@ impl Revision {
         let transaction = context.transaction.lock().unwrap();
         let commit = transaction.repo().find_commit(self.commit_id)?;
 
-        let warnings = filter::compute_warnings(&transaction, self.filter, commit.tree()?)
+        let warnings = filter::compute_warnings(&transaction, self.filter, commit.tree_id())
             .into_iter()
             .map(|text| Warning { text })
             .collect();
@@ -424,25 +431,28 @@ impl Revision {
 
     fn search(&self, string: String, context: &Context) -> FieldResult<Option<Vec<SearchResult>>> {
         let transaction = context.transaction.lock().unwrap();
-        let tree = transaction.repo().find_commit(self.commit_id)?.tree()?;
+        let tree = transaction.repo().find_commit(self.commit_id)?.tree_id();
 
         let x = filter::apply(&transaction, self.filter, Rewrite::from_tree(tree))?;
 
+        // PORT: git2::Tree bridge read (see files_or_dirs).
+        let filtered_tree = transaction.repo().find_tree(x.tree_id())?;
         /* let start = std::time::Instant::now(); */
         // The trigram index is experimental; without it every file is a candidate and
         // search_matches does all the filtering, so results are identical, just slower.
         let candidates = if filter::experimental_features_enabled() {
             let ifilterobj = filter::parse(":SQUASH:INDEX")?;
             let index_tree = filter::apply(&transaction, ifilterobj, x.clone())?;
+            let index_tree = transaction.repo().find_tree(index_tree.tree_id())?;
             josh_search::search_candidates(
                 transaction.repo(),
-                index_tree.tree(),
-                x.tree(),
+                &index_tree,
+                &filtered_tree,
                 &string,
             )?
         } else {
             let mut scan = vec![];
-            x.tree().walk(git2::TreeWalkMode::PreOrder, |root, entry| {
+            filtered_tree.walk(git2::TreeWalkMode::PreOrder, |root, entry| {
                 if entry.kind() == Some(git2::ObjectType::Blob)
                     && let Ok(name) = entry.name()
                 {
@@ -453,7 +463,7 @@ impl Revision {
             scan
         };
         let results =
-            josh_search::search_matches(transaction.repo(), x.tree(), &string, &candidates)?;
+            josh_search::search_matches(transaction.repo(), &filtered_tree, &string, &candidates)?;
         /* let duration = start.elapsed(); */
 
         let mut r = vec![];
@@ -469,7 +479,7 @@ impl Revision {
                 path: std::path::PathBuf::from(m.0),
                 commit_id: self.commit_id,
                 filter: self.filter,
-                tree: x.tree().id(),
+                tree: x.tree_id(),
             };
             r.push(SearchResult { path, matches });
         }
@@ -573,7 +583,7 @@ impl Markers {
         let path = if self.filter.is_nop() {
             marker_path(&commit, &self.topic).join(&self.path)
         } else {
-            let t = transaction.repo().find_commit(self.commit_id)?.tree()?;
+            let t = transaction.repo().find_commit(self.commit_id)?.tree_id();
             let o = filter::tree::original_path(&transaction, self.filter, t, &self.path)?;
             marker_path(&commit, &self.topic).join(o)
         };
@@ -635,8 +645,8 @@ impl Markers {
                 .find_tree(filter::tree::repopulated_tree(
                     &transaction,
                     self.filter,
-                    transaction.repo().find_commit(self.commit_id)?.tree()?,
-                    mtree,
+                    transaction.repo().find_commit(self.commit_id)?.tree_id(),
+                    mtree.id(),
                 )?)?
         };
         if let Ok(p) = mtree.get_path(&self.path) {

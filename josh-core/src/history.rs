@@ -208,7 +208,7 @@ pub fn rewrite_commit(
     // gix_object::CommitRef uses byte strings for Oids, but in hex representation, not raw bytes.
     // Its `Format` implementation writes out hex-encoded bytes. Because of CommitRef's reference
     // lifetimes we have to this, before creating CommitRef
-    let tree_id = BString::from(rewrite_data.tree().id().to_string());
+    let tree_id = BString::from(rewrite_data.tree_id().to_string());
     let parent_ids = parents
         .iter()
         .map(|p| BString::from(p.to_string()))
@@ -451,13 +451,15 @@ pub fn unapply_filter(
         let _span_guard = span.enter();
 
         tracing::info!("walk commit: {:?}", rev);
-        let module_commit = transaction.repo().find_commit(rev)?;
+        let module_commit = objects::CommitData::read(&odb, rev)?;
 
         if filtered_to_original.contains_key(&module_commit.id()) {
             continue;
         }
 
         let mut filtered_parent_ids: Vec<_> = module_commit.parent_ids().collect();
+        // PORT: libgit2 graph compute over filtered (possibly unflushed) commits,
+        // served by the registered backend.
         let has_new_orphan = filtered_parent_ids.len() > 1
             && transaction
                 .repo()
@@ -479,7 +481,7 @@ pub fn unapply_filter(
                           '-o merge' to import new history by creating merge commit
                           '-o edit' if you are editing a stored filter or workspace
                         "###,
-                        module_commit.summary().ok().flatten().unwrap_or_default(),
+                        module_commit.summary().unwrap_or_default(),
                         module_commit.id(),
                     )));
                 }
@@ -506,14 +508,14 @@ pub fn unapply_filter(
                 }
             })
             .map(|unapply_base| -> anyhow::Result<_> {
-                Ok(transaction.repo().find_commit(unapply_base?)?)
+                objects::CommitData::read(&odb, unapply_base?)
             })
             .collect();
 
         // If there are no parents and "reparent" option is given, use the given OID as a parent
         let mut original_parents = original_parents?;
         if let (0, Some(reparent)) = (original_parents.len(), reparent_orphans) {
-            original_parents = vec![transaction.repo().find_commit(reparent)?];
+            original_parents = vec![objects::CommitData::read(&odb, reparent)?];
         }
 
         tracing::info!(
@@ -522,14 +524,10 @@ pub fn unapply_filter(
             filtered_parent_ids
         );
 
-        // Convert original_parents to a vector of (rust) references
-        let original_parents: Vec<&git2::Commit> = original_parents.iter().collect();
-        let tree = module_commit.tree()?;
+        let tree = module_commit.tree_id()?;
         let commit_message = module_commit
             .summary()
-            .ok()
-            .flatten()
-            .unwrap_or("NO COMMIT MESSAGE");
+            .unwrap_or_else(|| "NO COMMIT MESSAGE".to_string());
 
         let new_trees: anyhow::Result<Vec<_>> = {
             let span = tracing::span!(
@@ -547,14 +545,13 @@ pub fn unapply_filter(
                 .map(|commit| -> anyhow::Result<_> {
                     // Pass the commit context so a `:rev(...)` cutoff in the filter is resolved
                     // per commit (current vs this parent) rather than collapsed uniformly.
-                    Ok(filter::unapply(
+                    filter::unapply(
                         transaction,
                         filter,
-                        tree.clone(),
-                        commit.tree()?,
-                        Some((&module_commit, *commit)),
-                    )?
-                    .id())
+                        tree,
+                        commit.tree_id()?,
+                        Some((module_commit.id(), commit.id())),
+                    )
                 })
                 .collect()
         };
@@ -582,7 +579,7 @@ pub fn unapply_filter(
             // The normal case: Either there was only one parent or all of them where the same
             // outside of the current filter in which case they collapse into one tree and that
             // is the one we pick
-            1 => transaction.repo().find_tree(new_trees[0])?,
+            1 => new_trees[0],
 
             // 0 means the history is unrelated. Pushing it will fail if we are not
             // dealing with either a force push or a push with the "merge" option set.
@@ -594,8 +591,8 @@ pub fn unapply_filter(
                     transaction,
                     filter,
                     tree,
-                    filter::tree::empty(transaction.repo()),
-                    Some((&module_commit, &module_commit)),
+                    filter::tree::empty_id(),
+                    Some((module_commit.id(), module_commit.id())),
                 )?
             }
 
@@ -606,6 +603,7 @@ pub fn unapply_filter(
                 for i in 0..parent_count {
                     // If one of the parents is a descendant of the target branch and the other is
                     // not, pick the tree of the one that is a descendant.
+                    // PORT: libgit2 graph compute, served by the registered backend.
                     if (original_parents[i].id() == original_target)
                         || transaction
                             .repo()
@@ -628,42 +626,44 @@ pub fn unapply_filter(
                     // If our assumption was correct and all conflicts were in filtered files,
                     // both resulting trees will be the same and we can pick the result to proceed.
 
+                    // PORT: libgit2-internal merge compute -- the find_commit bridges and
+                    // `write_tree_to` move possibly-unflushed objects through the
+                    // registered backend.
+                    let parent0 = transaction.repo().find_commit(original_parents[0].id())?;
+                    let parent1 = transaction.repo().find_commit(original_parents[1].id())?;
+
                     let mut mergeopts = git2::MergeOptions::new();
                     mergeopts.file_favor(git2::FileFavor::Ours);
 
-                    let mut merged_index = transaction.repo().merge_commits(
-                        original_parents[0],
-                        original_parents[1],
-                        Some(&mergeopts),
-                    )?;
+                    let mut merged_index =
+                        transaction
+                            .repo()
+                            .merge_commits(&parent0, &parent1, Some(&mergeopts))?;
                     let base_tree = merged_index.write_tree_to(transaction.repo())?;
                     // The base is a merge of both original parents; resolve any `:rev(...)` cutoff
                     // against the first parent (mirrors the descendant-pick preference above).
                     let tid_ours = filter::unapply(
                         transaction,
                         filter,
-                        tree.clone(),
-                        transaction.repo().find_tree(base_tree)?,
-                        Some((&module_commit, original_parents[0])),
-                    )?
-                    .id();
+                        tree,
+                        base_tree,
+                        Some((module_commit.id(), original_parents[0].id())),
+                    )?;
 
                     mergeopts.file_favor(git2::FileFavor::Theirs);
 
-                    let mut merged_index = transaction.repo().merge_commits(
-                        original_parents[0],
-                        original_parents[1],
-                        Some(&mergeopts),
-                    )?;
+                    let mut merged_index =
+                        transaction
+                            .repo()
+                            .merge_commits(&parent0, &parent1, Some(&mergeopts))?;
                     let base_tree = merged_index.write_tree_to(transaction.repo())?;
                     let tid_theirs = filter::unapply(
                         transaction,
                         filter,
-                        tree.clone(),
-                        transaction.repo().find_tree(base_tree)?,
-                        Some((&module_commit, original_parents[0])),
-                    )?
-                    .id();
+                        tree,
+                        base_tree,
+                        Some((module_commit.id(), original_parents[0].id())),
+                    )?;
 
                     if tid_ours == tid_theirs {
                         tid = tid_ours;
@@ -677,7 +677,7 @@ pub fn unapply_filter(
                     return Err(anyhow!(
                         "rejecting merge with {} parents:\n{:?} ({:?})\n1) {:?} ({:?})\n2) {:?} ({:?})",
                         parent_count,
-                        module_commit.summary().ok().flatten().unwrap_or_default(),
+                        module_commit.summary().unwrap_or_default(),
                         module_commit.id(),
                         original_parents[0].summary().unwrap_or_default(),
                         original_parents[0].id(),
@@ -686,25 +686,28 @@ pub fn unapply_filter(
                     ));
                 }
 
-                transaction.repo().find_tree(tid)?
+                tid
             }
         };
 
-        let apply = filter::Rewrite::from_tree(new_tree.clone());
+        let apply = filter::Rewrite::from_tree(new_tree);
 
         let original_parent_oids: Vec<git2::Oid> =
             original_parents.iter().map(|c| c.id()).collect();
         ret = rewrite_commit(
             &odb,
-            &objects::CommitData::read(&odb, module_commit.id())?,
+            &module_commit,
             &original_parent_oids,
             apply,
             GpgsigMode::Preserve,
         )?;
 
         ret = if original_parents.len() == 1
-            && new_tree.id() == original_parents[0].tree_id()
-            && Some(module_commit.tree_id()) != module_commit.parents().next().map(|x| x.tree_id())
+            && new_tree == original_parents[0].tree_id()?
+            && Some(module_commit.tree_id()?)
+                != module_commit
+                    .first_parent_id()
+                    .and_then(|p| git::read_tree_id(&odb, p).ok())
         {
             original_parents[0].id()
         } else {
@@ -810,7 +813,7 @@ fn create_filtered_commit2(
     rewrite_data: filter::Rewrite,
     options: BTreeMap<String, String>,
 ) -> anyhow::Result<(git2::Oid, bool)> {
-    let repo = transaction.repo();
+    let odb = transaction.odb()?;
     let mut filtered_parents: Vec<(git2::Oid, git2::Oid)> = filtered_parent_ids
         .iter()
         .filter(|x| **x != git2::Oid::ZERO_SHA1)
@@ -854,13 +857,11 @@ fn create_filtered_commit2(
         "keep-trivial-merges",
     ) {
         if filtered_parents.len() > 1 {
-            let is_trivial_merge = filtered_parents[0].1 == rewrite_data.tree().id();
+            let is_trivial_merge = filtered_parents[0].1 == rewrite_data.tree_id();
             // No first parent is not a trivial merge; a present first parent
             // must have a readable tree.
             let was_trivial_merge = match original_commit.first_parent_id() {
-                Some(parent) => {
-                    git::read_tree_id(&transaction.odb()?, parent)? == original_commit.tree_id()?
-                }
+                Some(parent) => git::read_tree_id(&odb, parent)? == original_commit.tree_id()?,
                 None => false,
             };
 
@@ -872,21 +873,21 @@ fn create_filtered_commit2(
     }
 
     let selected_filtered_parent_ids: Vec<git2::Oid> = select_parent_commits(
-        &transaction.odb()?,
+        &odb,
         original_commit,
-        rewrite_data.tree().id(),
+        rewrite_data.tree_id(),
         &filtered_parents,
     )?;
 
     if selected_filtered_parent_ids.is_empty()
         && !(original_commit.parent_count() == 0
-            && is_empty_root(repo, &repo.find_tree(original_commit.tree_id()?)?))
+            && is_empty_root(transaction, &odb, original_commit.tree_id()?)?)
     {
         if !filtered_parents.is_empty() {
             // Returning the parent id here means the commit is dropped from the output history
             return Ok((filtered_parents[0].0, false));
         }
-        if rewrite_data.tree().id() == filter::tree::empty_id() {
+        if rewrite_data.tree_id() == filter::tree::empty_id() {
             return Ok((git2::Oid::ZERO_SHA1, false));
         }
     }
@@ -897,9 +898,9 @@ fn create_filtered_commit2(
         _ => GpgsigMode::Preserve,
     };
 
-    let new_tree_id = rewrite_data.tree().id();
+    let new_tree_id = rewrite_data.tree_id();
     let new_oid = rewrite_commit(
-        &transaction.odb()?,
+        &odb,
         original_commit,
         &selected_filtered_parent_ids,
         rewrite_data,
@@ -927,19 +928,102 @@ pub(crate) fn filtered_parent_tree_id(
     git::read_tree_id(&transaction.odb()?, oid)
 }
 
-fn is_empty_root(repo: &git2::Repository, tree: &git2::Tree) -> bool {
-    if tree.id() == filter::tree::empty_id() {
+/// Whether `oid` is a tree containing nothing but (recursively) empty trees. An unreadable
+/// root is a hard error, while unreadable or non-tree entries below fold to `false`.
+fn is_empty_root(
+    transaction: &cache::Transaction,
+    odb: &josh_memodb::Odb,
+    oid: git2::Oid,
+) -> anyhow::Result<bool> {
+    if oid == filter::tree::empty_id() {
+        return Ok(true);
+    }
+
+    let bytes = transaction
+        .read_tree_bytes(odb, oid)?
+        .ok_or_else(|| anyhow!("{} is not a tree", oid))?;
+    let tree = gix_object::TreeRef::from_bytes(&bytes, gix_hash::Kind::Sha1)?;
+    Ok(tree
+        .entries
+        .iter()
+        .all(|e| e.mode.is_tree() && is_empty_subtree(transaction, odb, objects::git2_oid(e.oid))))
+}
+
+fn is_empty_subtree(
+    transaction: &cache::Transaction,
+    odb: &josh_memodb::Odb,
+    oid: git2::Oid,
+) -> bool {
+    if oid == filter::tree::empty_id() {
         return true;
     }
+    let Ok(Some(bytes)) = transaction.read_tree_bytes(odb, oid) else {
+        return false;
+    };
+    let Ok(tree) = gix_object::TreeRef::from_bytes(&bytes, gix_hash::Kind::Sha1) else {
+        return false;
+    };
+    tree.entries
+        .iter()
+        .all(|e| e.mode.is_tree() && is_empty_subtree(transaction, odb, objects::git2_oid(e.oid)))
+}
 
-    let mut all_empty = true;
+#[cfg(test)]
+mod tests {
+    use super::*;
 
-    for e in tree.iter() {
-        if let Ok(Ok(t)) = e.to_object(repo).map(|x| x.into_tree()) {
-            all_empty = all_empty && is_empty_root(repo, &t);
-        } else {
-            return false;
-        }
+    // A root is "empty" iff it contains nothing but (recursively) empty trees: the empty tree
+    // itself and nested empty chains qualify; any blob or gitlink anywhere disqualifies.
+    #[test]
+    fn is_empty_root_contract() {
+        let td = tempfile::tempdir().unwrap();
+        let repo = git2::Repository::init_bare(td.path()).unwrap();
+        let cachestack = std::sync::Arc::new(
+            cache::CacheStack::new().with_backend(cache::SledCacheBackend::new(td.path())),
+        );
+        let ctx = cache::TransactionContext::new(td.path(), cachestack);
+        let t = ctx.open().unwrap();
+        let odb = t.odb().unwrap();
+
+        let empty = filter::tree::empty_id();
+        assert!(is_empty_root(&t, &odb, empty).unwrap());
+
+        // A chain of trees bottoming out in the (virtualized) empty tree is empty. Built by
+        // hand: normal tree builders drop empty subtrees.
+        let mut data = Vec::new();
+        data.extend_from_slice(b"40000 sub");
+        data.push(0);
+        data.extend_from_slice(empty.as_bytes());
+        let chain = repo
+            .odb()
+            .unwrap()
+            .write(git2::ObjectType::Tree, &data)
+            .unwrap();
+        let mut data = Vec::new();
+        data.extend_from_slice(b"40000 nested");
+        data.push(0);
+        data.extend_from_slice(chain.as_bytes());
+        let chain2 = repo
+            .odb()
+            .unwrap()
+            .write(git2::ObjectType::Tree, &data)
+            .unwrap();
+        assert!(is_empty_root(&t, &odb, chain2).unwrap());
+
+        // A blob anywhere makes the root non-empty; so does a gitlink.
+        let blob = repo.blob(b"x").unwrap();
+        let mut b = git2::build::TreeUpdateBuilder::new();
+        b.upsert("a/b/file.txt", blob, git2::FileMode::Blob);
+        let base = repo.treebuilder(None).unwrap().write().unwrap();
+        let with_blob = b
+            .create_updated(&repo, &repo.find_tree(base).unwrap())
+            .unwrap();
+        assert!(!is_empty_root(&t, &odb, with_blob).unwrap());
+
+        let gitlink = git2::Oid::from_str("0123456789012345678901234567890123456789").unwrap();
+        let mut b = repo.treebuilder(None).unwrap();
+        b.insert("sub", gitlink, 0o160000).unwrap();
+        let with_gitlink = b.write().unwrap();
+        assert!(!is_empty_root(&t, &odb, with_gitlink).unwrap());
     }
-    all_empty
 }
