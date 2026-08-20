@@ -159,6 +159,54 @@ pub fn write_tree_now(
     Ok(git2_oid(&id))
 }
 
+/// Write `data` as a blob to `out`.
+pub fn write_blob(out: &impl gix_object::Write, data: &[u8]) -> anyhow::Result<git2::Oid> {
+    let id = out
+        .write_buf(gix_object::Kind::Blob, data)
+        .map_err(|e| anyhow::anyhow!("write_blob: {e}"))?;
+    Ok(git2_oid(&id))
+}
+
+/// Serialize a new commit and write it to `out`. Signatures carry the seconds and UTC
+/// offset of the given git2 signatures; the message is written verbatim, so any cleanup is
+/// the caller's business.
+pub fn write_commit(
+    out: &impl gix_object::Write,
+    tree: git2::Oid,
+    parents: &[git2::Oid],
+    author: &git2::Signature<'_>,
+    committer: &git2::Signature<'_>,
+    message: &str,
+) -> anyhow::Result<git2::Oid> {
+    let commit = gix_object::Commit {
+        tree: gix_oid(tree),
+        parents: parents.iter().map(|p| gix_oid(*p)).collect(),
+        author: gix_signature(author)?,
+        committer: gix_signature(committer)?,
+        encoding: None,
+        message: message.into(),
+        extra_headers: vec![],
+    };
+    let mut buffer = Vec::with_capacity(commit.size() as usize);
+    gix_object::WriteTo::write_to(&commit, &mut buffer)?;
+    let id = out
+        .write_buf(gix_object::Kind::Commit, &buffer)
+        .map_err(|e| anyhow::anyhow!("write_commit: {e}"))?;
+    Ok(git2_oid(&id))
+}
+
+fn gix_signature(sig: &git2::Signature<'_>) -> anyhow::Result<gix_actor::Signature> {
+    let when = sig.when();
+    Ok(gix_actor::Signature {
+        name: sig.name_bytes().into(),
+        email: sig.email_bytes().into(),
+        time: gix_actor::date::Time {
+            seconds: when.seconds(),
+            offset: i32::from(when.offset_minutes()) * 60,
+        },
+    })
+}
+
 /// A commit's id + raw odb bytes, owned. Send + Sync plain data; never stored in a transaction.
 /// Parse-on-demand: `CommitRef`/`CommitRefIter` borrow `&self` and never outlive the frame.
 /// The internal representation can become `Arc<[u8]>` later without any signature change.
@@ -494,6 +542,94 @@ mod tests {
             .unwrap()
             .write(git2::ObjectType::Commit, &data)
             .unwrap()
+    }
+
+    /// Commits written here must be byte-identical to the ones libgit2 writes for the same
+    /// inputs -- every ref josh publishes is content-addressed, so a formatting difference
+    /// would renumber history.
+    #[test]
+    fn write_commit_matches_git2() {
+        let dir = tempfile::tempdir().unwrap();
+        let repo = git2::Repository::init_bare(dir.path()).unwrap();
+        let odb = repo.odb().unwrap();
+
+        let tree = repo.treebuilder(None).unwrap().write().unwrap();
+        let blob = repo.blob(b"x").unwrap();
+        let mut b = repo.treebuilder(None).unwrap();
+        b.insert("f", blob, 0o100644).unwrap();
+        let tree2 = b.write().unwrap();
+
+        let sig = |name: &str, email: &str, secs: i64, offset: i32| {
+            git2::Signature::new(name, email, &git2::Time::new(secs, offset)).unwrap()
+        };
+
+        let cases: Vec<(git2::Signature, git2::Signature, &str, git2::Oid)> = vec![
+            (
+                sig("A", "a@e", 0, 0),
+                sig("A", "a@e", 0, 0),
+                "subject\n",
+                tree,
+            ),
+            (
+                sig("A", "a@e", 1234567890, 120),
+                sig("B", "b@e", 1234567899, -330),
+                "subject\n\nbody with trailing newline\n",
+                tree2,
+            ),
+            (
+                sig("Ünïcode Nàme", "u@e", 42, -60),
+                sig("Ünïcode Nàme", "u@e", 42, -60),
+                "no trailing newline",
+                tree2,
+            ),
+            (sig("A", "a@e", 99, 0), sig("A", "a@e", 99, 0), "", tree),
+        ];
+
+        for (author, committer, message, tree) in &cases {
+            for parents in [vec![], vec![0usize], vec![0, 1]] {
+                // Build the parent commits with git2 so both writers see identical inputs.
+                let parent_ids: Vec<git2::Oid> = parents
+                    .iter()
+                    .map(|i| {
+                        let t = repo.find_tree(*tree).unwrap();
+                        repo.commit(None, author, committer, &format!("parent {i}"), &t, &[])
+                            .unwrap()
+                    })
+                    .collect();
+                let parent_commits: Vec<git2::Commit> = parent_ids
+                    .iter()
+                    .map(|id| repo.find_commit(*id).unwrap())
+                    .collect();
+                let parent_refs: Vec<&git2::Commit> = parent_commits.iter().collect();
+
+                let want = repo
+                    .commit(
+                        None,
+                        author,
+                        committer,
+                        message,
+                        &repo.find_tree(*tree).unwrap(),
+                        &parent_refs,
+                    )
+                    .unwrap();
+                let got = write_commit(
+                    &Git2Odb(&odb),
+                    *tree,
+                    &parent_ids,
+                    author,
+                    committer,
+                    message,
+                )
+                .unwrap();
+                assert_eq!(
+                    want,
+                    got,
+                    "commit id diverged for {:?} with {} parents",
+                    message,
+                    parent_ids.len()
+                );
+            }
+        }
     }
 
     #[test]

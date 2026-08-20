@@ -848,7 +848,7 @@ fn replace_child_inner(
 /// Oid-level body of [`insert`]: replace whatever is at `path` inside the tree `full_tree` with
 /// (`oid`, `mode`), creating intermediate trees as needed and treating blobs on the way as
 /// overwritable.
-pub(crate) fn insert_oid(
+pub fn insert_oid(
     odb: &(impl gix_object::Find + gix_object::Write),
     full_tree: git2::Oid,
     path: &Path,

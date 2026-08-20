@@ -299,22 +299,25 @@ pub fn merge_meta(
     }
     let rev = transaction_mirror.refname("refs/josh/meta");
 
-    let (tree, parent) = if let Some(meta_oid) = transaction_mirror.resolve_ref(&rev)? {
-        let meta_commit = transaction.repo().find_commit(meta_oid)?;
-        let tree = meta_commit.tree()?;
-        (tree, Some(meta_commit))
+    let odb = transaction.odb()?;
+    let (mut tree, parents) = if let Some(meta_oid) = transaction_mirror.resolve_ref(&rev)? {
+        let meta_commit = josh_core::objects::CommitData::read(&odb, meta_oid)?;
+        (meta_commit.tree_id()?, vec![meta_oid])
     } else {
-        (josh_core::filter::tree::empty(transaction.repo()), None)
+        (josh_core::filter::tree::empty_id(), vec![])
     };
 
-    let mut tree = tree;
-
     for (path, add_lines) in meta_add.iter() {
-        let prev = if let Ok(e) = tree.get_path(path) {
-            let blob = transaction.repo().find_blob(e.id())?;
-            std::str::from_utf8(blob.content())?.to_owned()
-        } else {
-            "".to_owned()
+        let prev = match josh_core::filter::tree::get_path_entry(transaction, &odb, tree, path)? {
+            Some(entry) => {
+                let blob = josh_core::filter::tree::blob_bytes(
+                    &odb,
+                    josh_core::objects::git2_oid(&entry.oid),
+                )
+                .ok_or_else(|| anyhow!("not a blob: {}", entry.oid))?;
+                std::str::from_utf8(&blob)?.to_owned()
+            }
+            None => "".to_owned(),
         };
 
         let mut lines = prev
@@ -327,20 +330,14 @@ pub fn merge_meta(
         lines.sort_unstable();
         lines.dedup();
 
-        let blob = transaction.repo().blob(lines.join("\n").as_bytes())?;
+        let blob = josh_core::objects::write_blob(&odb, lines.join("\n").as_bytes())?;
 
-        tree = josh_core::filter::tree::insert(transaction.repo(), &tree, path, blob, 0o0100644)?;
+        tree = josh_core::filter::tree::insert_oid(&odb, tree, path, blob, 0o0100644)?;
     }
 
     let signature = josh_core::git::josh_commit_signature()?;
-    let oid = transaction.repo().commit(
-        None,
-        &signature,
-        &signature,
-        "marker",
-        &tree,
-        &parent.as_ref().into_iter().collect::<Vec<_>>(),
-    )?;
+    let oid =
+        josh_core::objects::write_commit(&odb, tree, &parents, &signature, &signature, "marker")?;
 
     Ok(Some(("refs/josh/meta".to_string(), oid)))
 }

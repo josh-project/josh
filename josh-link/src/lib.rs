@@ -18,21 +18,13 @@ impl PreparedLinkAdd {
         head_commit: git2::Oid,
         signature: &git2::Signature,
     ) -> anyhow::Result<git2::Oid> {
-        let repo = transaction.repo();
-        let tree = repo
-            .find_tree(self.tree_oid)
-            .context("Failed to find tree")?;
-        let head_commit = repo
-            .find_commit(head_commit)
-            .context("Failed to find commit")?;
-
-        repo.commit(
-            None,
+        josh_core::objects::write_commit(
+            &transaction.odb()?,
+            self.tree_oid,
+            &[head_commit],
             signature,
             signature,
             &format!("Add link: {}", self.path.display()),
-            &tree,
-            &[&head_commit],
         )
         .context("Failed to create commit")
     }
@@ -66,8 +58,6 @@ pub fn collect_all_link_refs(
     transaction: &josh_core::cache::Transaction,
     commit: git2::Oid,
 ) -> anyhow::Result<HashSet<LinkRef>> {
-    let repo = transaction.repo();
-
     // Apply a filter that keeps only .link.josh files. This prunes the history
     // to only commits that actually changed those files, so the revwalk below
     // visits far fewer commits on typical repositories.
@@ -83,18 +73,19 @@ pub fn collect_all_link_refs(
 
     let mut refs = HashSet::new();
 
-    let mut walk = repo.revwalk().context("Failed to create revwalk")?;
+    let odb = transaction.odb()?;
+    let mut walk = josh_core::objects::RevWalk::new(&odb);
     walk.push(filtered_commit)
         .context("Failed to push commit to revwalk")?;
 
-    for oid in walk {
-        let oid = oid.context("Failed to get OID from revwalk")?;
-        let commit = repo.find_commit(oid).context("Failed to find commit")?;
-        let tree = commit.tree().context("Failed to get commit tree")?;
+    for oid in walk
+        .into_topo_vec(|_| false)
+        .context("Failed to walk history")?
+    {
+        let tree = josh_core::git::read_tree_id(&odb, oid).context("Failed to get commit tree")?;
 
         let link_files =
-            josh_core::link::find_link_files(&josh_core::objects::Git2Odb(&repo.odb()?), tree.id())
-                .context("Failed to find link files")?;
+            josh_core::link::find_link_files(&odb, tree).context("Failed to find link files")?;
 
         for (_, filter) in link_files {
             if let (Some(remote), Some(commit)) =
@@ -138,10 +129,7 @@ pub fn prepare_link_add(
     head_tree: git2::Oid,
     mode: josh_core::filter::LinkMode,
 ) -> anyhow::Result<PreparedLinkAdd> {
-    let repo = transaction.repo();
-    let head_tree = repo
-        .find_tree(head_tree)
-        .context("Failed to find head tree")?;
+    let odb = transaction.odb()?;
 
     // Strip leading slash if present (git tree paths are always relative)
     let path = path.strip_prefix("/").unwrap_or(path);
@@ -161,18 +149,12 @@ pub fn prepare_link_add(
         .with_meta("mode", mode.to_string());
     let link_content = josh_core::filter::as_file(link_filter, 0);
 
-    // Create the blob for the .link.josh file
-    let link_blob = repo
-        .blob(link_content.as_bytes())
-        .context("Failed to create blob")?;
-
-    // Create the path for the .link.josh file
+    let link_blob = josh_core::objects::write_blob(&odb, link_content.as_bytes())?;
     let link_path = path.join(".link.josh");
 
-    // Insert the .link.josh file into the tree
-    let new_tree = tree::insert(
-        repo,
-        &head_tree,
+    let new_tree = tree::insert_oid(
+        &odb,
+        head_tree,
         &link_path,
         link_blob,
         git2::FileMode::Blob.into(),
@@ -180,7 +162,7 @@ pub fn prepare_link_add(
     .context("Failed to insert link file into tree")?;
 
     Ok(PreparedLinkAdd {
-        tree_oid: new_tree.id(),
+        tree_oid: new_tree,
         path: path.to_path_buf(),
     })
 }
@@ -191,19 +173,13 @@ pub fn update_links(
     links_to_update: Vec<(PathBuf, git2::Oid)>,
     signature: &git2::Signature,
 ) -> anyhow::Result<Option<UpdateLinksResult>> {
-    let repo = transaction.repo();
-    let head_commit = repo
-        .find_commit(head_commit)
-        .context("Failed to find commit")?;
-    let head_tree = head_commit.tree().context("Failed to get HEAD tree")?;
-    let head_tree_id = head_tree.id();
+    let odb = transaction.odb()?;
+    let head_tree_id =
+        josh_core::git::read_tree_id(&odb, head_commit).context("Failed to get HEAD tree")?;
 
     // Find all link files to get their current metadata
-    let link_files = josh_core::link::find_link_files(
-        &josh_core::objects::Git2Odb(&repo.odb()?),
-        head_tree.id(),
-    )
-    .context("Failed to find link files")?;
+    let link_files = josh_core::link::find_link_files(&odb, head_tree_id)
+        .context("Failed to find link files")?;
 
     // Update the link files with new commit OIDs
     let mut updated_link_files: Vec<(PathBuf, josh_core::filter::Filter)> = Vec::new();
@@ -221,21 +197,14 @@ pub fn update_links(
     }
 
     // Create new tree with updated .link.josh files
-    let mut new_tree = head_tree;
+    let mut new_tree = head_tree_id;
     for (path, link_file) in &updated_link_files {
         let link_content = josh_core::filter::as_file(*link_file, 0);
-
-        // Create the blob for the .link.josh file
-        let link_blob = repo
-            .blob(link_content.as_bytes())
-            .context("Failed to create blob")?;
-
-        // Create the path for the .link.josh file
+        let link_blob = josh_core::objects::write_blob(&odb, link_content.as_bytes())?;
         let link_path = path.join(".link.josh");
 
-        // Insert the updated .link.josh file into the tree
-        new_tree =
-            tree::insert(repo, &new_tree, &link_path, link_blob, 0o0100644).with_context(|| {
+        new_tree = tree::insert_oid(&odb, new_tree, &link_path, link_blob, 0o0100644)
+            .with_context(|| {
                 format!(
                     "Failed to insert link file into tree at path '{}'",
                     path.display()
@@ -243,28 +212,27 @@ pub fn update_links(
             })?;
     }
 
-    if new_tree.id() == head_tree_id {
+    if new_tree == head_tree_id {
         return Ok(None);
     }
 
     // Create a new commit with the updated tree
-    let commit_with_updates = repo
-        .commit(
-            None, // Don't update any reference
-            signature,
-            signature,
-            &format!(
-                "Update links: {}",
-                updated_link_files
-                    .iter()
-                    .map(|(p, _)| p.display().to_string())
-                    .collect::<Vec<_>>()
-                    .join(", ")
-            ),
-            &new_tree,
-            &[&head_commit],
-        )
-        .context("Failed to create commit")?;
+    let commit_with_updates = josh_core::objects::write_commit(
+        &odb,
+        new_tree,
+        &[head_commit],
+        signature,
+        signature,
+        &format!(
+            "Update links: {}",
+            updated_link_files
+                .iter()
+                .map(|(p, _)| p.display().to_string())
+                .collect::<Vec<_>>()
+                .join(", ")
+        ),
+    )
+    .context("Failed to create commit")?;
 
     // Apply the :link filter to the new commit
     let link_filter = josh_core::filter::parse(":link").context("Failed to parse :link filter")?;
