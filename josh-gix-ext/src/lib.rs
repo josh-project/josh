@@ -23,8 +23,10 @@ use std::collections::HashMap;
 
 use gix_object::WriteTo;
 
+pub mod graph;
 pub mod revwalk;
 
+pub use graph::{is_descendant_of, merge_base_octopus};
 pub use revwalk::{RangeWalk, RevWalk};
 
 /// Map the kind of a raw object between the two libraries. Infallible: both enums cover exactly

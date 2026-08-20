@@ -15,6 +15,7 @@ git2.workspace = true
 gix-actor.workspace = true
 gix-hash.workspace = true
 gix-object.workspace = true
+gix-revision.workspace = true
 
 [dev-dependencies]
 tempfile.workspace = true

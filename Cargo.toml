@@ -58,6 +58,7 @@ gix-hash = { version = "^0.26", features = ["sha1"] }
 gix-object = "0.63.0"
 gix-odb = "0.83"
 gix-pack = { version = "0.73", features = ["sha1"] }
+gix-revision = { version = "0.48.0", default-features = false, features = ["merge_base"] }
 gix-zlib = "0.1"
 gix-config = "0.59.0"
 gix-submodule = "0.33.0"
