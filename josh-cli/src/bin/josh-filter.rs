@@ -435,7 +435,11 @@ fn run_filter(args: Vec<String>) -> anyhow::Result<i32> {
                 // represented in the pushed filtered state would be silently
                 // discarded by the ref update: require fast-forward like git.
                 if rewritten != unfiltered_old
-                    && !repo.graph_descendant_of(rewritten, unfiltered_old)?
+                    && !josh_core::objects::is_descendant_of(
+                        &transaction.odb()?,
+                        rewritten,
+                        unfiltered_old,
+                    )?
                     && !args.get_flag("force")
                 {
                     return Err(anyhow!(
