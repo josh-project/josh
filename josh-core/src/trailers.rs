@@ -9,14 +9,20 @@ pub fn is_trailer_line(line: &str) -> bool {
 /// Extract change-id metadata from a commit, preferring jj/gitbutler's custom
 /// `change-id` commit-object header over any `Change:` / `Change-Id:` trailer
 /// in the message body. The series list comes from message trailers regardless.
-pub fn commit_change_meta(commit: &git2::Commit) -> (Option<String>, Vec<String>) {
-    let (mut id, series) = parse_change_meta(commit.message().unwrap_or(""));
-    if let Ok(buf) = commit.header_field_bytes("change-id") {
-        if let Ok(s) = std::str::from_utf8(&buf) {
-            let s = s.trim();
-            if !s.is_empty() {
-                id = Some(s.to_string());
-            }
+pub fn commit_change_meta(commit: &crate::objects::CommitData) -> (Option<String>, Vec<String>) {
+    let message = commit
+        .message()
+        .ok()
+        .and_then(|m| std::str::from_utf8(m).ok())
+        .unwrap_or("");
+    let (mut id, series) = parse_change_meta(message);
+    if let Ok(parsed) = commit.parsed()
+        && let Some(header) = parsed.extra_headers().find("change-id")
+        && let Ok(s) = std::str::from_utf8(header)
+    {
+        let s = s.trim();
+        if !s.is_empty() {
+            id = Some(s.to_string());
         }
     }
     (id, series)

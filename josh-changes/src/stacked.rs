@@ -95,11 +95,9 @@ pub(crate) fn changes_to_refs(
                 oid: change.commit,
                 change_id: change_id.clone(),
             });
-            if let Some(parent_sha) = transaction
-                .repo()
-                .find_commit(change.commit)?
-                .parent_ids()
-                .next()
+            if let Some(parent_sha) =
+                josh_core::objects::CommitData::read(&transaction.odb()?, change.commit)?
+                    .first_parent_id()
             {
                 refs.push(PushRef {
                     ref_name: StackedRef::ChangeRef(change_ref.as_base()).ref_name(),

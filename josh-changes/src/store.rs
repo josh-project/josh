@@ -1,16 +1,34 @@
 use crate::change::{Change, encode_change_id_path};
 use crate::refs::ChangesRef;
 use josh_core::cache::{Expected, Transaction};
+use josh_core::filter::tree;
+use josh_core::memodb::Odb;
+use josh_core::objects;
 
-pub(crate) fn get_tree<'a>(
-    repo: &'a git2::Repository,
-    tree: &'a git2::Tree,
+/// The subtree at `path`, or `None` when it is missing or not a tree.
+pub(crate) fn get_tree(
+    transaction: &Transaction,
+    odb: &Odb,
+    root: git2::Oid,
     path: &std::path::Path,
-) -> Option<git2::Tree<'a>> {
-    tree.get_path(path)
+) -> Option<git2::Oid> {
+    tree::get_path_entry(transaction, odb, root, path)
         .ok()
-        .and_then(|e| e.to_object(repo).ok())
-        .and_then(|o| o.peel_to_tree().ok())
+        .flatten()
+        .filter(|entry| entry.mode.is_tree())
+        .map(|entry| objects::git2_oid(&entry.oid))
+}
+
+/// The tree of `scope`'s ref, or `None` when the ref does not exist.
+fn scope_tree(
+    transaction: &Transaction,
+    odb: &Odb,
+    scope: &ChangesRef,
+) -> anyhow::Result<Option<git2::Oid>> {
+    match transaction.resolve_ref(&scope.ref_name())? {
+        Some(oid) => Ok(Some(objects::CommitData::read(odb, oid)?.tree_id()?)),
+        None => Ok(None),
+    }
 }
 
 pub(crate) fn parse_timestamp(s: Option<&str>) -> git2::Time {
@@ -37,33 +55,22 @@ pub fn write_changes_tree(
     scope: &ChangesRef,
 ) -> anyhow::Result<()> {
     let repo = transaction.repo();
+    let odb = transaction.odb()?;
     let ref_name = scope.ref_name();
-    let prev_commit = transaction
-        .resolve_ref(&ref_name)?
-        .and_then(|oid| repo.find_commit(oid).ok());
-    let base_tree = prev_commit
-        .as_ref()
-        .and_then(|c| c.tree().ok())
-        .unwrap_or_else(|| repo.find_tree(josh_core::filter::tree::empty_id()).unwrap());
+    let prev_commit = transaction.resolve_ref(&ref_name)?;
+    let base_tree = match prev_commit {
+        Some(oid) => objects::CommitData::read(&odb, oid)?.tree_id()?,
+        None => tree::empty_id(),
+    };
 
     // Skip if the blob already exists at this path.
-    if let Some(existing) = base_tree
-        .get_path(path)
-        .ok()
-        .and_then(|e| e.to_object(repo).ok())
-    {
-        if existing.id() == blob_oid {
+    if let Ok(Some(existing)) = tree::get_path_entry(transaction, &odb, base_tree, path) {
+        if objects::git2_oid(&existing.oid) == blob_oid {
             return Ok(());
         }
     }
 
-    let tree = josh_core::filter::tree::insert(
-        repo,
-        &base_tree,
-        path,
-        blob_oid,
-        git2::FileMode::Blob.into(),
-    )?;
+    let tree = tree::insert_oid(&odb, base_tree, path, blob_oid, git2::FileMode::Blob.into())?;
 
     let sig = match author {
         Some(name) => {
@@ -73,14 +80,11 @@ pub fn write_changes_tree(
         }
         None => josh_core::git::user_signature(repo)?,
     };
-    let parents: Vec<&git2::Commit> = prev_commit.iter().collect();
     let msg = format!("update {}\n", ref_name);
-    let new_oid = repo.commit(None, &sig, &sig, &msg, &tree, &parents)?;
+    let new_oid = objects::write_commit(&odb, tree, prev_commit.as_slice(), &sig, &sig, &msg)?;
     transaction.update_ref(
         &ref_name,
-        prev_commit
-            .as_ref()
-            .map_or(Expected::Absent, |c| Expected::At(c.id())),
+        prev_commit.map_or(Expected::Absent, Expected::At),
         new_oid,
         &msg,
     )?;
@@ -95,23 +99,20 @@ pub fn read_blob_map(
     scope: &ChangesRef,
     path: &std::path::Path,
 ) -> anyhow::Result<std::collections::HashMap<String, String>> {
-    let repo = transaction.repo();
-    let tree = match transaction.resolve_ref(&scope.ref_name())? {
-        Some(oid) => repo.find_commit(oid)?.tree()?,
+    let odb = transaction.odb()?;
+    let tree = match scope_tree(transaction, &odb, scope)? {
+        Some(tree) => tree,
         None => return Ok(Default::default()),
     };
-    let subtree = match get_tree(repo, &tree, path) {
+    let subtree = match get_tree(transaction, &odb, tree, path) {
         Some(t) => t,
         None => return Ok(Default::default()),
     };
     let mut map = std::collections::HashMap::new();
-    for entry in subtree.iter() {
-        if let Ok(name) = entry.name() {
-            if let Ok(blob) = entry.to_object(repo).and_then(|o| o.peel_to_blob()) {
-                map.insert(
-                    name.to_string(),
-                    String::from_utf8_lossy(blob.content()).to_string(),
-                );
+    for entry in tree::read_tree(transaction, &odb, subtree)?.entries() {
+        if let Ok(name) = std::str::from_utf8(entry.filename) {
+            if let Some(blob) = tree::blob_bytes(&odb, objects::git2_oid(&entry.oid)) {
+                map.insert(name.to_string(), String::from_utf8_lossy(&blob).to_string());
             }
         }
     }
@@ -124,6 +125,7 @@ pub fn store_diff_data(
     scope: &ChangesRef,
 ) -> anyhow::Result<()> {
     let repo = transaction.repo();
+    let odb = transaction.odb()?;
     let change_id = change
         .id()
         .ok_or_else(|| anyhow::anyhow!("commit {} has no Change-Id", change.commit()))?;
@@ -131,63 +133,54 @@ pub fn store_diff_data(
     let commit_oid_str = change.commit().to_string();
     let base_str = change.base().to_string();
     let content = format!("{}\n{}", commit_oid_str, base_str);
-    let blob_oid = repo.blob(content.as_bytes())?;
+    let blob_oid = objects::write_blob(&odb, content.as_bytes())?;
 
-    let mut tb = repo.treebuilder(None)?;
     let entry_name = blob_oid.to_string();
-    tb.insert(&entry_name, blob_oid, git2::FileMode::Blob.into())?;
-    let tree_oid = tb.write()?;
+    let tree_oid = tree::insert_oid(
+        &odb,
+        tree::empty_id(),
+        std::path::Path::new(&entry_name),
+        blob_oid,
+        git2::FileMode::Blob.into(),
+    )?;
 
     let ref_name = scope.ref_name();
-    let prev_tip = transaction
-        .resolve_ref(&ref_name)?
-        .and_then(|oid| repo.find_commit(oid).ok());
-    let base_tree = prev_tip
-        .as_ref()
-        .and_then(|c| c.tree().ok())
-        .unwrap_or_else(|| repo.find_tree(josh_core::filter::tree::empty_id()).unwrap());
+    let prev_tip = transaction.resolve_ref(&ref_name)?;
+    let base_tree = match prev_tip {
+        Some(oid) => objects::CommitData::read(&odb, oid)?.tree_id()?,
+        None => tree::empty_id(),
+    };
 
     let path = std::path::Path::new("diffs").join(encode_change_id_path(&change_id));
 
-    if let Some(existing) = base_tree
-        .get_path(&path)
-        .ok()
-        .and_then(|e| e.to_object(repo).ok())
-    {
-        if existing.id() == tree_oid {
+    if let Ok(Some(existing)) = tree::get_path_entry(transaction, &odb, base_tree, &path) {
+        if objects::git2_oid(&existing.oid) == tree_oid {
             return Ok(());
         }
     }
 
-    let tree = josh_core::filter::tree::insert(repo, &base_tree, &path, tree_oid, 0o0040000)?;
+    let tree = tree::insert_oid(&odb, base_tree, &path, tree_oid, 0o0040000)?;
 
     let sig = repo.signature()?;
 
-    let source_commit = repo.find_commit(change.commit())?;
     let anchor_sig = git2::Signature::new("JOSH", "josh@josh-project.dev", &git2::Time::new(0, 0))?;
-    let empty_tree = repo.find_tree(josh_core::filter::tree::empty_id())?;
-    let anchor_oid = repo.commit(
-        None,
+    let anchor_oid = objects::write_commit(
+        &odb,
+        tree::empty_id(),
+        &[change.commit()],
         &anchor_sig,
         &anchor_sig,
         "josh\n",
-        &empty_tree,
-        &[&source_commit],
     )?;
-    let anchor_commit = repo.find_commit(anchor_oid)?;
 
-    let mut parents: Vec<&git2::Commit> = Vec::new();
-    if let Some(ref c) = prev_tip {
-        parents.push(c);
-    }
-    parents.push(&anchor_commit);
+    let mut parents: Vec<git2::Oid> = Vec::new();
+    parents.extend(prev_tip);
+    parents.push(anchor_oid);
     let msg = format!("update {}\n", ref_name);
-    let new_oid = repo.commit(None, &sig, &sig, &msg, &tree, &parents)?;
+    let new_oid = objects::write_commit(&odb, tree, &parents, &sig, &sig, &msg)?;
     transaction.update_ref(
         &ref_name,
-        prev_tip
-            .as_ref()
-            .map_or(Expected::Absent, |c| Expected::At(c.id())),
+        prev_tip.map_or(Expected::Absent, Expected::At),
         new_oid,
         &msg,
     )?;
@@ -202,44 +195,40 @@ pub fn store_pr_data(
     scope: &ChangesRef,
 ) -> anyhow::Result<()> {
     let repo = transaction.repo();
-    let blob_oid = repo.blob(json.as_bytes())?;
+    let odb = transaction.odb()?;
+    let blob_oid = objects::write_blob(&odb, json.as_bytes())?;
 
-    let mut tb = repo.treebuilder(None)?;
-    tb.insert(&blob_oid.to_string(), blob_oid, git2::FileMode::Blob.into())?;
-    let tree_oid = tb.write()?;
+    let tree_oid = tree::insert_oid(
+        &odb,
+        tree::empty_id(),
+        std::path::Path::new(&blob_oid.to_string()),
+        blob_oid,
+        git2::FileMode::Blob.into(),
+    )?;
 
     let ref_name = scope.ref_name();
-    let prev_tip = transaction
-        .resolve_ref(&ref_name)?
-        .and_then(|oid| repo.find_commit(oid).ok());
-    let base_tree = prev_tip
-        .as_ref()
-        .and_then(|c| c.tree().ok())
-        .unwrap_or_else(|| repo.find_tree(josh_core::filter::tree::empty_id()).unwrap());
+    let prev_tip = transaction.resolve_ref(&ref_name)?;
+    let base_tree = match prev_tip {
+        Some(oid) => objects::CommitData::read(&odb, oid)?.tree_id()?,
+        None => tree::empty_id(),
+    };
 
     let path = std::path::Path::new("gh").join(encode_change_id_path(change_id));
 
-    if let Some(existing) = base_tree
-        .get_path(&path)
-        .ok()
-        .and_then(|e| e.to_object(repo).ok())
-    {
-        if existing.id() == tree_oid {
+    if let Ok(Some(existing)) = tree::get_path_entry(transaction, &odb, base_tree, &path) {
+        if objects::git2_oid(&existing.oid) == tree_oid {
             return Ok(());
         }
     }
 
-    let tree = josh_core::filter::tree::insert(repo, &base_tree, &path, tree_oid, 0o0040000)?;
+    let tree = tree::insert_oid(&odb, base_tree, &path, tree_oid, 0o0040000)?;
 
     let sig = repo.signature()?;
-    let parents: Vec<&git2::Commit> = prev_tip.iter().collect();
     let msg = format!("update {}\n", ref_name);
-    let new_oid = repo.commit(None, &sig, &sig, &msg, &tree, &parents)?;
+    let new_oid = objects::write_commit(&odb, tree, prev_tip.as_slice(), &sig, &sig, &msg)?;
     transaction.update_ref(
         &ref_name,
-        prev_tip
-            .as_ref()
-            .map_or(Expected::Absent, |c| Expected::At(c.id())),
+        prev_tip.map_or(Expected::Absent, Expected::At),
         new_oid,
         &msg,
     )?;
@@ -253,19 +242,19 @@ pub fn read_pr_data(
     change_id: &str,
     scope: &ChangesRef,
 ) -> anyhow::Result<Option<String>> {
-    let repo = transaction.repo();
-    let tree = match transaction.resolve_ref(&scope.ref_name())? {
-        Some(oid) => repo.find_commit(oid)?.tree()?,
+    let odb = transaction.odb()?;
+    let tree = match scope_tree(transaction, &odb, scope)? {
+        Some(tree) => tree,
         None => return Ok(None),
     };
     let gh_path = std::path::Path::new("gh").join(encode_change_id_path(change_id));
-    let subtree = match get_tree(repo, &tree, &gh_path) {
+    let subtree = match get_tree(transaction, &odb, tree, &gh_path) {
         Some(t) => t,
         None => return Ok(None),
     };
-    for entry in subtree.iter() {
-        if let Ok(blob) = entry.to_object(repo).and_then(|o| o.peel_to_blob()) {
-            return Ok(Some(String::from_utf8_lossy(blob.content()).to_string()));
+    for entry in tree::read_tree(transaction, &odb, subtree)?.entries() {
+        if let Some(blob) = tree::blob_bytes(&odb, objects::git2_oid(&entry.oid)) {
+            return Ok(Some(String::from_utf8_lossy(&blob).to_string()));
         }
     }
     Ok(None)
@@ -280,16 +269,15 @@ pub fn delete_change(
     scope: &ChangesRef,
 ) -> anyhow::Result<()> {
     let repo = transaction.repo();
+    let odb = transaction.odb()?;
     let encoded = encode_change_id_path(change_id);
 
     let ref_name = scope.ref_name();
     let prev_commit = match transaction.resolve_ref(&ref_name)? {
-        Some(oid) => repo.find_commit(oid)?,
+        Some(oid) => oid,
         None => return Ok(()),
     };
-    let base_tree = prev_commit.tree()?;
-
-    let mut tree = base_tree;
+    let mut tree = objects::CommitData::read(&odb, prev_commit)?.tree_id()?;
     for prefix in &[
         "diffs",
         "comments/C",
@@ -303,15 +291,18 @@ pub fn delete_change(
         "gh_vote_ids",
     ] {
         let path = std::path::Path::new(prefix).join(&encoded);
-        if tree.get_path(&path).is_ok() {
-            tree = josh_core::filter::tree::insert(repo, &tree, &path, git2::Oid::ZERO_SHA1, 0)?;
+        if matches!(
+            tree::get_path_entry(transaction, &odb, tree, &path),
+            Ok(Some(_))
+        ) {
+            tree = tree::insert_oid(&odb, tree, &path, git2::Oid::ZERO_SHA1, 0)?;
         }
     }
 
     let sig = repo.signature()?;
     let msg = format!("update {}\n", ref_name);
-    let new_oid = repo.commit(None, &sig, &sig, &msg, &tree, &[&prev_commit])?;
-    transaction.update_ref(&ref_name, Expected::At(prev_commit.id()), new_oid, &msg)?;
+    let new_oid = objects::write_commit(&odb, tree, &[prev_commit], &sig, &sig, &msg)?;
+    transaction.update_ref(&ref_name, Expected::At(prev_commit), new_oid, &msg)?;
 
     Ok(())
 }

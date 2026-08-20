@@ -119,7 +119,7 @@ impl DistributedCacheBackend {
             };
             let tree = match &base {
                 Some(commit) => commit.tree()?,
-                None => crate::filter::tree::empty(&repo),
+                None => repo.find_tree(crate::filter::tree::empty_id())?,
             };
             let updated = builder.create_updated(&repo, &tree)?;
 

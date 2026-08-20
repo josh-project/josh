@@ -84,10 +84,7 @@ pub fn handle_track(
     )?
     .into_tree_oid();
 
-    let tree_with_link = repo
-        .find_tree(tree_with_link_oid)
-        .context("Failed to find tree with link")?;
-
+    let odb = transaction.odb()?;
     let refs_blob = {
         let refs_map: BTreeMap<String, String> = refs
             .iter()
@@ -97,31 +94,30 @@ pub fn handle_track(
         let refs_json =
             serde_json::to_string_pretty(&refs_map).context("Failed to serialize refs to JSON")?;
 
-        repo.blob(refs_json.as_bytes())
+        josh_core::objects::write_blob(&odb, refs_json.as_bytes())
             .context("Failed to create refs.json blob")?
     };
 
     let refs_path = std::path::Path::new("remotes").join(id).join("refs.json");
 
-    let final_tree = tree::insert(
-        repo,
-        &tree_with_link,
+    let final_tree = tree::insert_oid(
+        &odb,
+        tree_with_link_oid,
         &refs_path,
         refs_blob,
         git2::FileMode::Blob.into(),
     )
     .context("Failed to insert refs.json into tree")?;
 
-    let final_commit = repo
-        .commit(
-            None,
-            &signature,
-            &signature,
-            &format!("Track remote: {}", id),
-            &final_tree,
-            &[&head_commit],
-        )
-        .context("Failed to create final commit")?;
+    let final_commit = josh_core::objects::write_commit(
+        &odb,
+        final_tree,
+        &[head_commit.id()],
+        &signature,
+        &signature,
+        &format!("Track remote: {}", id),
+    )
+    .context("Failed to create final commit")?;
 
     transaction
         .update_ref(

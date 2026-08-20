@@ -1,6 +1,8 @@
 use crate::refs::ChangesRef;
 use crate::store::store_diff_data;
 use anyhow::anyhow;
+use josh_core::filter::tree;
+use josh_core::objects;
 use josh_core::trailers::{commit_change_meta, parse_change_meta};
 
 #[derive(Debug, Clone)]
@@ -17,12 +19,20 @@ impl Change {
         transaction: &josh_core::cache::Transaction,
         commit: git2::Oid,
     ) -> anyhow::Result<Self> {
-        Ok(Self::from_commit(&transaction.repo().find_commit(commit)?))
+        Ok(Self::from_commit(&objects::CommitData::read(
+            &transaction.odb()?,
+            commit,
+        )?))
     }
 
-    pub(crate) fn from_commit(commit: &git2::Commit) -> Self {
+    pub(crate) fn from_commit(commit: &objects::CommitData) -> Self {
+        let author = commit
+            .parsed()
+            .and_then(|c| Ok(c.author()?.email.to_owned()))
+            .map(|email| String::from_utf8_lossy(&email).into_owned())
+            .unwrap_or_default();
         let mut change = Self {
-            author: commit.author().email().unwrap_or("").to_string(),
+            author,
             id: None,
             series: Vec::new(),
             commit: commit.id(),
@@ -63,14 +73,14 @@ impl Change {
         &self,
         transaction: &josh_core::cache::Transaction,
     ) -> anyhow::Result<Vec<git2::Oid>> {
-        let mut walk = transaction.repo().revwalk()?;
-        walk.simplify_first_parent()?;
-        walk.set_sorting(git2::Sort::TOPOLOGICAL)?;
+        // First-parent walk down to (but not including) the base.
+        let odb = transaction.odb()?;
+        let mut walk = objects::RevWalk::new(&odb);
+        walk.simplify_first_parent();
         walk.push(self.commit)?;
-        if self.base != git2::Oid::ZERO_SHA1 {
-            walk.hide(self.base)?;
-        }
-        let mut oids: Vec<git2::Oid> = walk.collect::<Result<Vec<_>, _>>()?;
+        let base = self.base;
+        let mut oids = walk.into_topo_vec(|oid| base != git2::Oid::ZERO_SHA1 && oid == base)?;
+        oids.retain(|oid| *oid != base);
         if oids.first() == Some(&self.commit) {
             oids.remove(0);
         }
@@ -91,23 +101,17 @@ pub fn create_synthetic_merge_commit(
     target_branch_tip: git2::Oid,
     message: &str,
 ) -> anyhow::Result<git2::Oid> {
-    let repo = transaction.repo();
-    let pr_head = repo.find_commit(pr_head)?;
-    let target_branch_tip = repo.find_commit(target_branch_tip)?;
-    let tree = pr_head.tree()?;
-    let author = pr_head.author();
-    let committer = pr_head.committer();
+    let odb = transaction.odb()?;
+    let head = objects::CommitData::read(&odb, pr_head)?;
+    let tree = head.tree_id()?;
 
-    let oid = repo.commit(
-        None,
-        &author,
-        &committer,
+    objects::write_commit_with_signatures_of(
+        &odb,
+        &head,
+        tree,
+        &[target_branch_tip, pr_head],
         message,
-        &tree,
-        &[&target_branch_tip, &pr_head],
-    )?;
-
-    Ok(oid)
+    )
 }
 
 pub(crate) fn decode_change_id_path(enc: &str) -> String {
@@ -139,18 +143,17 @@ pub(crate) fn get_changes(
     tip: git2::Oid,
     base: git2::Oid,
 ) -> anyhow::Result<std::collections::HashMap<git2::Oid, Change>> {
-    let repo = transaction.repo();
-    let mut walk = repo.revwalk()?;
-    walk.set_sorting(git2::Sort::REVERSE | git2::Sort::TOPOLOGICAL)?;
-    walk.simplify_first_parent()?;
+    let odb = transaction.odb()?;
+    let mut walk = objects::RevWalk::new(&odb);
+    walk.simplify_first_parent();
     walk.push(tip)?;
-    if base != git2::Oid::ZERO_SHA1 {
-        walk.hide(base)?;
-    }
+    let mut oids = walk.into_topo_vec(|oid| base != git2::Oid::ZERO_SHA1 && oid == base)?;
+    oids.retain(|oid| *oid != base);
+    oids.reverse();
 
     let mut changes = std::collections::HashMap::new();
-    for rev in walk {
-        let commit = repo.find_commit(rev?)?;
+    for rev in oids {
+        let commit = objects::CommitData::read(&odb, rev)?;
         let mut change = Change::from_commit(&commit);
         if change.id.is_none() {
             continue;
@@ -183,45 +186,38 @@ pub fn list_changes(
     transaction: &josh_core::cache::Transaction,
     scope: &ChangesRef,
 ) -> anyhow::Result<Vec<Change>> {
-    let repo = transaction.repo();
+    let odb = transaction.odb()?;
     let tree = match transaction.resolve_ref(&scope.ref_name())? {
-        Some(oid) => repo.find_commit(oid)?.tree()?,
+        Some(oid) => objects::CommitData::read(&odb, oid)?.tree_id()?,
         None => return Ok(Vec::new()),
     };
 
-    let diffs_tree = match tree
-        .get_name("diffs")
-        .and_then(|e| e.to_object(repo).ok())
-        .and_then(|o| o.peel_to_tree().ok())
-    {
-        Some(t) => t,
-        None => return Ok(Vec::new()),
-    };
+    let diffs_tree =
+        match crate::store::get_tree(transaction, &odb, tree, std::path::Path::new("diffs")) {
+            Some(t) => t,
+            None => return Ok(Vec::new()),
+        };
 
     let mut changes = Vec::new();
-    for entry in diffs_tree.iter() {
-        let change_id = decode_change_id_path(entry.name().unwrap_or(""));
-        if change_id.is_empty() {
+    for entry in tree::read_tree(transaction, &odb, diffs_tree)?.entries() {
+        let change_id = decode_change_id_path(std::str::from_utf8(entry.filename).unwrap_or(""));
+        if change_id.is_empty() || !entry.mode.is_tree() {
             continue;
         }
-        let subtree = match entry
-            .to_object(repo)
-            .ok()
-            .and_then(|o| o.peel_to_tree().ok())
-        {
-            Some(t) => t,
-            None => continue,
+        let subtree = match tree::read_tree(transaction, &odb, objects::git2_oid(&entry.oid)) {
+            Ok(t) => t,
+            Err(_) => continue,
         };
         // The subtree has a single blob named by its content hash.
         // Read it to get tip and base OIDs.
         let mut tip_oid = git2::Oid::ZERO_SHA1;
         let mut base_oid = git2::Oid::ZERO_SHA1;
-        for se in subtree.iter() {
-            let blob = match se.to_object(repo).ok().and_then(|o| o.peel_to_blob().ok()) {
+        for se in subtree.entries() {
+            let blob = match tree::blob_bytes(&odb, objects::git2_oid(&se.oid)) {
                 Some(b) => b,
                 None => continue,
             };
-            let content = String::from_utf8_lossy(blob.content());
+            let content = String::from_utf8_lossy(&blob);
             if let Some((tip_str, base_str)) = content.split_once('\n') {
                 tip_oid = git2::Oid::from_str(tip_str).unwrap_or(git2::Oid::ZERO_SHA1);
                 base_oid = git2::Oid::from_str(base_str).unwrap_or(git2::Oid::ZERO_SHA1);
@@ -231,7 +227,7 @@ pub fn list_changes(
         if tip_oid == git2::Oid::ZERO_SHA1 {
             continue;
         }
-        let commit = match repo.find_commit(tip_oid) {
+        let commit = match objects::CommitData::read(&odb, tip_oid) {
             Ok(c) => c,
             Err(_) => continue,
         };
@@ -251,9 +247,10 @@ pub fn resolve_change(
     spec: &str,
 ) -> anyhow::Result<Change> {
     let repo = transaction.repo();
+    let odb = transaction.odb()?;
     // Try as a full OID first.
     if let Ok(oid) = git2::Oid::from_str(spec) {
-        if let Ok(commit) = repo.find_commit(oid) {
+        if let Ok(commit) = objects::CommitData::read(&odb, oid) {
             return Ok(Change::from_commit(&commit));
         }
     }
@@ -261,20 +258,25 @@ pub fn resolve_change(
     // Try as a revparse (branch, tag, short SHA).
     // PORT: rev-parse stays on the git2 handle until flag day (gix rev_parse then).
     if let Ok(obj) = repo.revparse_single(spec) {
-        if let Ok(commit) = obj.peel_to_commit() {
+        if let Ok(commit) = obj.peel_to_commit()
+            && let Ok(commit) = objects::CommitData::read(&odb, commit.id())
+        {
             return Ok(Change::from_commit(&commit));
         }
     }
 
     // Walk from head to find a commit with matching Change-Id.
-    let mut walk = repo.revwalk()?;
-    walk.simplify_first_parent()?;
-    walk.set_sorting(git2::Sort::TOPOLOGICAL)?;
+    let mut walk = objects::RevWalk::new(&odb);
+    walk.simplify_first_parent();
     walk.push(head)?;
-    for oid in walk {
-        let oid = oid?;
-        if let Ok(c) = repo.find_commit(oid) {
-            let (id, _) = parse_change_meta(c.message().unwrap_or(""));
+    for oid in walk.into_topo_vec(|_| false)? {
+        if let Ok(c) = objects::CommitData::read(&odb, oid) {
+            let message = c
+                .message()
+                .ok()
+                .and_then(|m| std::str::from_utf8(m).ok())
+                .unwrap_or("");
+            let (id, _) = parse_change_meta(message);
             if id.as_deref() == Some(spec) {
                 return Ok(Change::from_commit(&c));
             }

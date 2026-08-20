@@ -74,16 +74,18 @@ fn message_with_gerrit_change_id(message: &str, gerrit_id: &str) -> String {
 /// a stable id and re-publishing lands as a new patchset on the same Gerrit
 /// change rather than a duplicate.
 fn rewrite_chain_with_gerrit_ids(
-    repo: &git2::Repository,
+    transaction: &josh_core::cache::Transaction,
     tip: git2::Oid,
     base: git2::Oid,
 ) -> anyhow::Result<git2::Oid> {
+    let odb = transaction.odb()?;
+
     // Collect the chain from tip down to (but excluding) base, first parent only.
     let mut chain: Vec<git2::Oid> = Vec::new();
     let mut cur = tip;
     while cur != base {
         chain.push(cur);
-        match repo.find_commit(cur)?.parent_ids().next() {
+        match josh_core::objects::CommitData::read(&odb, cur)?.first_parent_id() {
             Some(p) => cur = p,
             None => break,
         }
@@ -92,26 +94,24 @@ fn rewrite_chain_with_gerrit_ids(
 
     let mut new_parent = (base != git2::Oid::ZERO_SHA1).then_some(base);
     for oid in chain {
-        let commit = repo.find_commit(oid)?;
+        let commit = josh_core::objects::CommitData::read(&odb, oid)?;
         let (josh_id, _) = josh_core::trailers::commit_change_meta(&commit);
         // A commit with no josh change id gets one derived from its own oid: rare
         // for a change stack, but Gerrit requires a Change-Id on every commit.
         let gerrit_id = gerrit_change_id(josh_id.as_deref().unwrap_or(&oid.to_string()))?;
-        let new_message = message_with_gerrit_change_id(commit.message().unwrap_or(""), &gerrit_id);
+        let message = commit
+            .message()
+            .ok()
+            .and_then(|m| std::str::from_utf8(m).ok())
+            .unwrap_or("");
+        let new_message = message_with_gerrit_change_id(message, &gerrit_id);
 
-        let parents: Vec<git2::Commit> = new_parent
-            .map(|p| repo.find_commit(p))
-            .transpose()?
-            .into_iter()
-            .collect();
-        let parent_refs: Vec<&git2::Commit> = parents.iter().collect();
-        new_parent = Some(repo.commit(
-            None,
-            &commit.author(),
-            &commit.committer(),
+        new_parent = Some(josh_core::objects::write_commit_with_signatures_of(
+            &odb,
+            &commit,
+            commit.tree_id()?,
+            new_parent.as_slice(),
             &new_message,
-            &commit.tree()?,
-            &parent_refs,
         )?);
     }
 
@@ -142,7 +142,7 @@ pub fn build_gerrit_push(
         return Ok(vec![]);
     }
 
-    let new_tip = rewrite_chain_with_gerrit_ids(transaction.repo(), tip, base)?;
+    let new_tip = rewrite_chain_with_gerrit_ids(transaction, tip, base)?;
     Ok(vec![PushRef {
         ref_name: format!("refs/for/{}", branch),
         oid: new_tip,
@@ -196,7 +196,7 @@ pub fn build_gerrit_independent_push(
         }
 
         let gerrit_id = gerrit_change_id(&josh_id)?;
-        let new_tip = rewrite_chain_with_gerrit_ids(repo, change.commit, base)?;
+        let new_tip = rewrite_chain_with_gerrit_ids(transaction, change.commit, base)?;
         refs.push(PushRef {
             ref_name: ref_name.clone(),
             oid: new_tip,

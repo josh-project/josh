@@ -228,10 +228,12 @@ fn resolve_upstream_ref(
 /// Walks all parents (not just first-parent) so changes landed via merge
 /// commits (e.g. by a merge queue) are detected as well.
 fn upstream_change_ids(
-    repo: &git2::Repository,
+    transaction: &josh_core::cache::Transaction,
     tip: git2::Oid,
     base: git2::Oid,
 ) -> anyhow::Result<std::collections::HashSet<String>> {
+    let repo = transaction.repo();
+    let odb = transaction.odb()?;
     let mut ids = std::collections::HashSet::new();
     let mut walk = repo.revwalk()?;
     walk.push(tip)?;
@@ -240,7 +242,7 @@ fn upstream_change_ids(
     }
 
     for oid in walk {
-        let commit = repo.find_commit(oid?)?;
+        let commit = josh_core::objects::CommitData::read(&odb, oid?)?;
         if let (Some(id), _) = commit_change_meta(&commit) {
             ids.insert(id);
         }
@@ -281,6 +283,8 @@ fn restack_commits(
             continue;
         }
 
+        // PORT: the rebased tree comes out of a libgit2 index merge, so this commit
+        // stays on the repository handle with it.
         let tree = repo.find_tree(tree_oid)?;
         let new_oid = repo.commit(
             None,
@@ -377,12 +381,12 @@ pub fn integrate(
             local_commits.push(oid);
         }
 
-        let applied = upstream_change_ids(repo, new, merge_base)?;
+        let applied = upstream_change_ids(transaction, new, merge_base)?;
 
         let mut skipped = Vec::new();
         let mut remaining = Vec::new();
         for &oid in &local_commits {
-            let commit = repo.find_commit(oid)?;
+            let commit = josh_core::objects::CommitData::read(&transaction.odb()?, oid)?;
             match commit_change_meta(&commit) {
                 (Some(id), _) if applied.contains(&id) => skipped.push(id),
                 // A commit with a Change-Id not yet applied upstream, or one

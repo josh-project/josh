@@ -1,5 +1,7 @@
 use crate::change::{Change, encode_change_id_path};
 use crate::refs::ChangesRef;
+use josh_core::filter::tree;
+use josh_core::objects;
 
 #[derive(Debug, Clone)]
 pub struct Revision {
@@ -13,87 +15,74 @@ pub fn read_revisions(
     change: &Change,
     scope: &ChangesRef,
 ) -> anyhow::Result<Vec<Revision>> {
-    let repo = transaction.repo();
+    let odb = transaction.odb()?;
     let change_id = match change.id() {
         Some(id) => id,
         None => return Ok(Vec::new()),
     };
 
     let head = match transaction.resolve_ref(&scope.ref_name())? {
-        Some(oid) => repo.find_commit(oid)?,
+        Some(oid) => oid,
         None => return Ok(Vec::new()),
+    };
+
+    // The change's diffs subtree, when the commit has one.
+    let diffs_of = |tree: git2::Oid| -> Option<git2::Oid> {
+        crate::store::get_tree(
+            transaction,
+            &odb,
+            tree,
+            &std::path::Path::new("diffs").join(encode_change_id_path(change_id)),
+        )
     };
 
     let mut revs: Vec<Revision> = Vec::new();
     let mut seen: std::collections::HashSet<String> = std::collections::HashSet::new();
-    let mut walk = repo.revwalk()?;
-    walk.simplify_first_parent()?;
-    walk.push(head.id())?;
+    let mut walk = objects::RevWalk::new(&odb);
+    walk.simplify_first_parent();
+    walk.push(head)?;
 
-    for oid in walk {
-        let oid = oid?;
-        let commit = repo.find_commit(oid)?;
-        let tree = match commit.parent(0) {
-            Ok(p) => (p.tree().ok(), commit.tree().ok()),
-            Err(_) => (None, commit.tree().ok()),
+    for oid in walk.into_topo_vec(|_| false)? {
+        let commit = objects::CommitData::read(&odb, oid)?;
+        let Ok(cur_tree) = commit.tree_id() else {
+            continue;
         };
-        let (parent_tree, cur_tree) = tree;
-        let cur_tree = match cur_tree {
+        let cid_tree = match diffs_of(cur_tree) {
             Some(t) => t,
             None => continue,
         };
+        let parent_cid_tree = commit
+            .first_parent_id()
+            .and_then(|p| josh_core::git::read_tree_id(&odb, p).ok())
+            .and_then(diffs_of)
+            .and_then(|t| tree::read_tree(transaction, &odb, t).ok());
 
-        let diffs_tree = match cur_tree
-            .get_name("diffs")
-            .and_then(|e| e.to_object(repo).ok())
-            .and_then(|o| o.peel_to_tree().ok())
-        {
-            Some(t) => t,
-            None => continue,
-        };
-        let cid_tree = match diffs_tree
-            .get_name(&encode_change_id_path(change_id))
-            .and_then(|e| e.to_object(repo).ok())
-            .and_then(|o| o.peel_to_tree().ok())
-        {
-            Some(t) => t,
-            None => continue,
-        };
-
-        let parent_cid_tree = parent_tree.as_ref().and_then(|pt| {
-            let diffs = pt
-                .get_name("diffs")?
-                .to_object(repo)
-                .ok()?
-                .peel_to_tree()
-                .ok()?;
-            let cid = diffs
-                .get_name(&encode_change_id_path(change_id))?
-                .to_object(repo)
-                .ok()?
-                .peel_to_tree()
-                .ok()?;
-            Some(cid)
-        });
-
-        for entry in cid_tree.iter() {
-            let commit_oid = entry.name().unwrap_or("").to_string();
+        for entry in tree::read_tree(transaction, &odb, cid_tree)?.entries() {
+            let commit_oid = String::from_utf8_lossy(entry.filename).into_owned();
             if commit_oid.is_empty() || seen.contains(&commit_oid) {
                 continue;
             }
             let is_new = parent_cid_tree
                 .as_ref()
-                .and_then(|pt| pt.get_name(&commit_oid))
-                .map_or(true, |e| e.id() != entry.id());
+                .and_then(|pt| pt.entry(entry.filename))
+                .is_none_or(|e| e.oid != entry.oid);
             if !is_new {
                 continue;
             }
-            let time = commit.time();
+            let Ok(parsed) = commit.parsed() else {
+                continue;
+            };
             seen.insert(commit_oid.clone());
             revs.push(Revision {
                 commit_oid,
-                author: commit.author().email().unwrap_or("").to_string(),
-                timestamp: time.seconds().to_string(),
+                author: parsed
+                    .author()
+                    .map(|a| String::from_utf8_lossy(a.email).into_owned())
+                    .unwrap_or_default(),
+                timestamp: parsed
+                    .committer()
+                    .map(|t| t.seconds().to_string())
+                    .unwrap_or_default(),
             });
         }
     }

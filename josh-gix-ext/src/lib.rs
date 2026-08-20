@@ -195,6 +195,33 @@ pub fn write_commit(
     Ok(git2_oid(&id))
 }
 
+/// Serialize a new commit whose author and committer are taken from `base`, and write it to
+/// `out`. Only those two fields carry over -- any extra headers of `base` are dropped.
+pub fn write_commit_with_signatures_of(
+    out: &impl gix_object::Write,
+    base: &CommitData,
+    tree: git2::Oid,
+    parents: &[git2::Oid],
+    message: &str,
+) -> anyhow::Result<git2::Oid> {
+    let parsed = base.parsed()?;
+    let commit = gix_object::Commit {
+        tree: gix_oid(tree),
+        parents: parents.iter().map(|p| gix_oid(*p)).collect(),
+        author: parsed.author()?.into(),
+        committer: parsed.committer()?.into(),
+        encoding: None,
+        message: message.into(),
+        extra_headers: vec![],
+    };
+    let mut buffer = Vec::with_capacity(commit.size() as usize);
+    gix_object::WriteTo::write_to(&commit, &mut buffer)?;
+    let id = out
+        .write_buf(gix_object::Kind::Commit, &buffer)
+        .map_err(|e| anyhow::anyhow!("write_commit: {e}"))?;
+    Ok(git2_oid(&id))
+}
+
 fn gix_signature(sig: &git2::Signature<'_>) -> anyhow::Result<gix_actor::Signature> {
     let when = sig.when();
     Ok(gix_actor::Signature {
@@ -628,6 +655,19 @@ mod tests {
                     message,
                     parent_ids.len()
                 );
+
+                // The signature-copying variant reproduces the same commit when the
+                // signatures it copies are the ones git2 was given.
+                let base = CommitData::read(&Git2Odb(&odb), want).unwrap();
+                let copied = write_commit_with_signatures_of(
+                    &Git2Odb(&odb),
+                    &base,
+                    *tree,
+                    &parent_ids,
+                    message,
+                )
+                .unwrap();
+                assert_eq!(want, copied, "signature-copying writer diverged");
             }
         }
     }
