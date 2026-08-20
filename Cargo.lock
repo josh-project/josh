@@ -1826,6 +1826,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "bb3790fd8981cba7949f1ba924ef865d902df731627bc5998d14164063892fce"
 dependencies = [
  "gix-actor",
+ "gix-attributes",
  "gix-commitgraph",
  "gix-config",
  "gix-date",
@@ -1833,6 +1834,7 @@ dependencies = [
  "gix-discover",
  "gix-error",
  "gix-features",
+ "gix-filter",
  "gix-fs",
  "gix-glob",
  "gix-hash",
@@ -1842,6 +1844,7 @@ dependencies = [
  "gix-odb",
  "gix-pack",
  "gix-path",
+ "gix-pathspec",
  "gix-protocol",
  "gix-ref",
  "gix-refspec",
@@ -1855,6 +1858,7 @@ dependencies = [
  "gix-url",
  "gix-utils",
  "gix-validate",
+ "gix-worktree",
  "gix-worktree-stream",
  "gix-zlib",
  "nonempty",
@@ -2539,6 +2543,7 @@ checksum = "31eb8e675122e83585e461fe28f68ff8c5ed55b49017b697e7e76423ff973424"
 dependencies = [
  "bstr",
  "gix-attributes",
+ "gix-features",
  "gix-fs",
  "gix-glob",
  "gix-hash",
@@ -3400,6 +3405,7 @@ dependencies = [
  "criterion",
  "git-version",
  "git2",
+ "gix",
  "gix-actor",
  "gix-config",
  "gix-hash",
