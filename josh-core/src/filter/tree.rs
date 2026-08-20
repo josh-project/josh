@@ -129,10 +129,7 @@ fn regex_replace_inner(
 
 /// The raw bytes of the blob `oid`, or `None` when the object is missing or not a blob --
 /// `find_blob`'s tolerance, in facade currency.
-pub(crate) fn blob_bytes<'a>(
-    odb: &'a josh_memodb::Odb,
-    oid: git2::Oid,
-) -> Option<josh_memodb::Bytes<'a>> {
+pub fn blob_bytes<'a>(odb: &'a josh_memodb::Odb, oid: git2::Oid) -> Option<josh_memodb::Bytes<'a>> {
     match odb.read(oid) {
         Ok((gix_object::Kind::Blob, bytes)) => Some(bytes),
         _ => None,
@@ -267,14 +264,20 @@ fn lookup_entry<'a>(
 /// whole filter arm. Lookups walk the entries lazily and allocate nothing, which suits the
 /// sites that probe a handful of paths in one tree (a path descent, the workspace files of a
 /// commit); [`ParsedTree`] is the counterpart for iterating every entry.
-pub(crate) struct TreeReader<'a> {
+pub struct TreeReader<'a> {
     bytes: cache::TreeBytes<'a>,
 }
 
 impl TreeReader<'_> {
+    /// Every entry, in stored tree order. Malformed entries are skipped.
+    pub fn entries(&self) -> impl Iterator<Item = gix_object::tree::EntryRef<'_>> {
+        gix_object::TreeRefIter::from_bytes(&self.bytes, gix_hash::Kind::Sha1)
+            .filter_map(Result::ok)
+    }
+
     /// Entry by name irrespective of kind, first occurrence winning -- tree entry order is
     /// not necessarily canonical, and a name is unique in a valid tree.
-    pub(crate) fn entry(&self, name: &[u8]) -> Option<gix_object::tree::EntryRef<'_>> {
+    pub fn entry(&self, name: &[u8]) -> Option<gix_object::tree::EntryRef<'_>> {
         gix_object::TreeRefIter::from_bytes(&self.bytes, gix_hash::Kind::Sha1)
             .filter_map(Result::ok)
             .find(|entry| entry.filename == name)
@@ -282,7 +285,7 @@ impl TreeReader<'_> {
 }
 
 /// Read the tree `oid`, erroring when the object is missing or not a tree.
-pub(crate) fn read_tree<'a>(
+pub fn read_tree<'a>(
     transaction: &cache::Transaction,
     odb: &'a josh_memodb::Odb,
     oid: git2::Oid,
@@ -339,7 +342,7 @@ fn path_components(path: &Path) -> Option<Vec<&[u8]>> {
 /// intermediate entry; the final entry may be any kind (gitlinks included). Per level the
 /// bytes come from `read_tree_bytes` (memory zero-copy / TreeCache), so unflushed trees
 /// resolve.
-pub(crate) fn get_path_entry(
+pub fn get_path_entry(
     transaction: &cache::Transaction,
     odb: &josh_memodb::Odb,
     root: git2::Oid,
@@ -354,7 +357,7 @@ pub(crate) fn get_path_entry(
 
 /// [`get_path_entry`] resolving the first component against a caller-held parse -- the hoist
 /// for multi-probe sites, which pay one root parse for N descents.
-pub(crate) fn get_path_entry_at(
+pub fn get_path_entry_at(
     transaction: &cache::Transaction,
     odb: &josh_memodb::Odb,
     root: &TreeReader,
