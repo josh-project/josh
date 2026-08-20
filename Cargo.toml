@@ -51,7 +51,7 @@ log = "0.4.33"
 mime = "0.3"
 form_urlencoded = "1.2.2"
 futures = "0.3.33"
-gix = { version = "0.86.0", default-features = false, features = ["sha1"] }
+gix = { version = "0.86.0", default-features = false, features = ["sha1", "parallel"] }
 gix-actor = "^0.41"
 gix-features = { version = "0.49", features = ["progress"] }
 gix-hash = { version = "^0.26", features = ["sha1"] }
