@@ -1,6 +1,6 @@
 # git2 -> gix port: status
 
-Last updated: 2026-08-20 (post-3.2z). See `PLAN.md` in this directory for the full phased plan.
+Last updated: 2026-08-20 (post-3.3a). See `PLAN.md` in this directory for the full phased plan.
 
 ## Landed on master (one commit per step, each suite-green and bench-validated)
 
@@ -49,6 +49,10 @@ Last updated: 2026-08-20 (post-3.2z). See `PLAN.md` in this directory for the fu
 
 | (follow-up) | b54cfb59 | Bench correctness gates, which 3.2z broke in seven of the twelve benches (`cargo bench` is not part of `josh compose run`, so the suite was green while the benches would not start). Gates that only need a filtered commit's tree read it through the transaction's object source; gates that feed filtered objects to a deliberately *independent* git2 reference model -- `expected_tree`, `count_history`, `unapply`'s first-parent chase -- flush instead, so the model keeps checking josh's output against git rather than against josh's own object layer | n/a (untimed setup) |
 
+| (cleanup) | f258b518 | The dead mempack path: josh-filter's `--pack` added a libgit2 mempack backend to the repository odb, but writes go to the memory store, so it captured nothing and `packwriter()` would have panicked had it -- flag, `JOSH_BENCH_MEMPACK` bench hook and `starlark_mempack.t` (which passed only because the mempack was empty) all go. Plus `housekeeping::get_info` and `tree::compose_fast`, callerless workspace-wide and both reading through the repository handle | n/a |
+
+| 3.3a | df5d49bc | The non-object reads join the Transaction API ahead of the flag day, each documented with the gix call that will implement it so 3.3 changes internals rather than call sites: `head`, `rev_parse`, `expand_ref_name`, `upstream_ref`, `config_string`, `signature`, `path`. `Head` carries the ref HEAD resolves to (`HEAD` itself when detached, so it is always the ref to update), that ref's unpeeled target for a CAS guard, and the commit -- peeled through the transaction's objects, so a HEAD it just moved resolves. `Transaction::repo` becomes `git2_repo` and states its contract: the porcelain josh has not moved to gix (worktree and index operations, FETCH_HEAD's multi-entry semantics, notes, DWIM), never the objects the transaction holds. josh-changes, josh-graphql, josh-templates, josh-link, josh-compose and josh-proxy are off the handle entirely; 11 PORT markers cleared. What remains is josh-cli porcelain, josh-core internals the flag day rewrites, and tests | n/a (no object path touched) |
+
 Phase 1.2 is complete: no `treebuilder` use remains in `josh-core/src/filter/tree.rs`.
 
 Phase 1.3 (commit/blob creation) required no work: every commit write already goes through
@@ -96,7 +100,8 @@ josh-compose's ephemeral reads — the prysk orchestrator itself). So 3.2 contin
    Lesson for the remaining steps: `josh compose run` does not build the benches, so run
    `cargo bench -- --test` over all of them before calling a step done (the trigram bench
    rejects `--test`; run it with `--quick`).
-5. **3.3 flag day**: Transaction opens `gix::ThreadSafeRepository` (isolated), refs via
+5. **3.3 flag day** (3.3a is landed, so the leaf crates no longer see the handle's type):
+   Transaction opens `gix::ThreadSafeRepository` (isolated), refs via
    gix-ref (parity contract pinned in the 2.1 method comments + unit tests). Facade disk
    side flips to `repo.objects` — pre-seed the empty tree then (gix does not virtualize it;
    keep the seed out of flush snapshots). From 2.6: josh-proxy `TmpGitNamespace::cleanup`
