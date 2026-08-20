@@ -9,6 +9,9 @@ query ListOpenPRs($owner: String!, $name: String!, $first: Int!, $after: String)
         baseRefOid
         headRefName
         headRefOid
+        updatedAt
+        comments { totalCount }
+        reviews { totalCount }
         url
         author { __typename login }
         commits(last: 1) {

@@ -286,9 +286,10 @@ pub fn delete_change(
         "outbox/comments/F",
         "gh",
         "gh_ids",
+        "gh_vote_ids",
+        "gh_cache",
         "votes",
         "outbox/votes",
-        "gh_vote_ids",
     ] {
         let path = std::path::Path::new(prefix).join(&encoded);
         if matches!(
