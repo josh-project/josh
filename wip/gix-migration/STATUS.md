@@ -1,6 +1,6 @@
 # git2 -> gix port: status
 
-Last updated: 2026-08-18 (post-3.2a). See `PLAN.md` in this directory for the full phased plan.
+Last updated: 2026-08-19 (post-3.2b). See `PLAN.md` in this directory for the full phased plan.
 
 ## Landed on master (one commit per step, each suite-green and bench-validated)
 
@@ -29,6 +29,8 @@ Last updated: 2026-08-18 (post-3.2a). See `PLAN.md` in this directory for the fu
 
 | 3.2a | b71c2fc7 | Memory store authoritative behind a gix-typed facade: `MemOdb` re-keyed to `BTreeMap<ObjectId, (Kind, Arc<[u8]>)>` (memcmp order identical to `git2::Oid`, so snapshot order and pack names are unchanged; pack.rs's kind-conversion block deletes) with direct `write`/`write_with_id`/`get`/`header`/`contains`; new `josh_memodb::Odb` facade (`Transaction::odb()`) implementing gix `Find`/`FindHeader`/`Exists`/`Write` — memory-first zero-copy `Arc` reads, git2 disk fallback — routed through every josh-core/josh-filter hot path: `write_tree_now`/`rewrite_commit`/roots-blobs/pathstree+regex blobs (writes), `CommitData::read`, `read_parent_ids`/`read_tree_id` (now facade-taking; 2 josh-graphql callers updated), `RevWalk`/`RangeWalk` (generic over the gix traits, per-walk scratch buffer), `read_tree_bytes` (mem hits bypass TreeCache — no double-buffering), cache exists-probes, persist `as_tree` (grows an object-sink param; staging flush via `write_buf_with_known_id`). The libgit2 backend STAYS REGISTERED as a view over the same store, so unported git2 reads/writes are byte-identical; unregistering deferred (see next steps). Facade writes gated exactly like `git_odb__freshen`: skip on memory or runtime-alternate hit (the store mirrors alternates via the new `Transaction::add_disk_alternate`, all six proxy/templates sites switched — two of them, `filter_to_namespace`'s clone-path transaction and housekeeping's overlay, were initially missed and churned 3 pack pins: caught by the suite, root-caused by local pack-content diff, mirror-resident input trees), never probing the repo's own disk (fresh writes stay zero-I/O). `StagingOdb` loses its dormant read-through (pure staging map); new `Git2Odb` adapter bridges bare git2 odbs (walker tests, distributed.rs's `as_tree` — distributed.rs otherwise untouched). Deliberate divergences (suite-invisible): duplicate writes no longer utime-freshen alternate loose objects; unchanged-tree debug asserts and re-buffered disk objects behave as before. New unit tests: facade visible-before-flush/durable-after, freshen-parity write gate (alternate skip + main-disk re-buffer), git2↔facade one-store interop | vs pre-gix: `ultrawide_pin_hook` **-18 to -67%**, `widetree_glob` **-11 to -69%**, `deephistory_subdir` **-28 to -29%**, `deephistory_rev` **-24 to -25%**, `deephistory_glob_literal` **-25%**, glob_incremental **-24 to -47%** (`incremental/prefix/10000` +39-53% is a pre-existing elevation: 3.1's validation shows the same ~7.1ms/+51%, 3.2a measures at-or-below it), sparse/distributed **-17 to -23%**, `deephistory_prefix_flush` **-19 to -20%**, `ultrawide_pin` **-9.5%**, `refs_filter_update` **-2 to -6%**; vs pre-3.2a: `unapply_extend` flat (the O(push-length) gate), `unapply_new_branch` **+3 to +6%** (settled rerun confirms; scales with the discover walk — candidate cause the one extra memcpy per disk-resident commit read imposed by the generic `Find` buffer contract; accepted against the walk-wide wins, revisit with 1.5's deferred lazy early-exit walks) |
 
+| 3.2b | 1ef7cbd9 | josh-core's typed-read tail onto the facade: `Rewrite` goes oid-based (the 1.2c "one find_tree at the tail" deferral) — the `git2::Tree<'a>` slot becomes a plain oid, the lifetime and manual Clone delete, hard rename `tree()` → `tree_id()`; every `with_tree(find_tree(..))` tail and `from_commit_data`'s per-commit `find_tree` delete, the old tree validation surviving as ONE `read_header` probe after `apply_to_commit2`'s memo-gated commit read — correctness, not hygiene: without it a partial apply over partially unreadable input (the `/filters/refresh` overlay transaction registers no mirror alternate) buffers an `Op::Prefix` tree before the walk aborts and churns caching.t's pack pins (caught by the suite, root-caused by local pack-content diff). filter/mod.rs, history.rs, link.rs, housekeeping.rs read trees/commits/blobs via the facade: multi-probe sites share hoisted `TreeReader`s (one owned tree read per site, entries looked up lazily via `TreeRefIter` so a probe allocates nothing; `ParsedTree` stays for the sites that iterate every entry) at the Workspace/Stored/Starlark arms incl. per-parent (the eager read is also what makes an unreadable tree an error rather than an `Op::Empty` fold),, Link's roots.retain, the Message template closure (lazily, key-less templates read nothing), extract_submodule_commits; `get_filter` collapses to one descent, WORKSPACES keying unchanged); `get_path_entry` normalizes paths (`.`/`//` fold away, absolute and `..` paths miss); `:message` is identity on a bare tree (like the other history-only filters, matching `invert(Message) -> Nop`) while a commit it cannot read or parse is an error instead of an empty message. No libgit2 algorithm ports kept: summaries come from gix `message_summary` (`CommitData::summary -> Option<String>`; rejection texts change shape only for multi-line/whitespace-heavy subjects, and the unpinned rejecting-merge text now prints bare strings instead of `Some(..)`), blob text reads as "" iff missing/NUL-containing/non-UTF-8, `::file` copies carry the source entry's raw mode (the byte-preservation contract; filtered oids shift only for fsck-invalid legacy modes under `::file=`). New josh-gix-ext `walk_tree_preorder` (stored-order preorder -- load-bearing, it becomes the parent order of link merge commits -- with the containing directory's path per callback, no prune action and no trailing-slash roots: both were unused git2 shapes) and `CommitData` message accessors (leading-newline trim pinned). josh-memodb: header-based `Odb::try_kind` (empty tree virtualized — kind probes never port to `contains`). unapply machinery, tree.rs rims (pathstree/regex_replace/invert_paths/compose/populate/original_path/repopulated_tree/diff_paths), compute_warnings all oid-currency; downstack threads the rebuilt base tree directly (the :2373/:2381 fresh-commit read-backs delete). NOT ported (PORT markers, 3.2z gated): six libgit2 graph/merge sites (merge_base_octopus, graph_descendant_of ×3, merge_commits ×2/cached_merge_trees), Op::Index's josh-search bridge, starlark repo escape, housekeeping/lib.rs tag-peels, persist `from_tree`, retained `tree::insert`/`tree::empty` wrappers, dead `get_info`/`compose_fast`. Leaf edits ahead of their own steps: josh-graphql (local find_tree bridges), josh-proxy compute_warnings, josh-cli/josh-link `find_link_files` over `Git2Odb`. Divergence register in `3.2b-design.md`, all entries suite-invisible after the probe fix (verified: three full-suite runs incl. one after the de-parity rework) | vs pre-gix: `widetree_glob` **-10 to -78%**, `ultrawide_pin_hook` **-23 to -67%**, cold `deephistory_glob` **-19 to -49%**, `deephistory_{subdir,rev}` **-26 to -34%**, sparse **-11 to -18%**, distributed **-12 to -15%**, `prefix_flush` **-23 to -25%**; vs pre-3.2b: `unapply_extend` **-5 to -9%**, `unapply_new_branch` **-6 to -7%** (both gates hold, the 3.2a +3-6% regression recovered); warm-incremental glob **+4 to +13%** and `refs_filter_update` **+2 to +5%** (candidate cause the restored per-commit tree probe; these cases swing ±20% run-to-run — `incremental/prefix/10000`'s pristine-vs-diff delta is ~+5% on top of the pre-existing machine-dependent elevation), `ultrawide_filter_parse` unstable on pristine too (300-660ms) — accepted |
+
 Phase 1.2 is complete: no `treebuilder` use remains in `josh-core/src/filter/tree.rs`.
 
 Phase 1.3 (commit/blob creation) required no work: every commit write already goes through
@@ -53,25 +55,31 @@ write); blob writes are plain odb writes that memodb intercepts.
 
 ## Next steps
 
-Phase 2 is complete (2.6 audit clean). Phase 3: 3.1 (flusher packs) and 3.2a (authoritative
-store + facade) are landed. Plan amendment from the 3.2 research (five-agent sweep, docs in
-`.agents/work/gix-port/3.2-research-*.md` + `3.2-design.md`): PLAN's one-commit 3.2
-("unregister the backend") is not landable — ~50+ git2 typed-object reads across six crates
-still observe unflushed memory objects through the registered backend (filter/mod.rs's
-`find_tree(fresh_oid)` tails feeding `Rewrite`, libgit2-internal merge/graph compute,
-graphql's `find_commit(apply_to_commit(..))`, proxy/cli `-o merge`, josh-changes
-read-modify-write chains, persist `from_tree2`, josh-compose's ephemeral reads — the prysk
-orchestrator itself). So 3.2 continues as:
+Phase 2 is complete (2.6 audit clean). Phase 3: 3.1 (flusher packs), 3.2a (authoritative
+store + facade) and 3.2b (josh-core typed-read tail, docs in
+`.agents/work/gix-port/3.2b-research-*.md` + `3.2b-design.md`) are landed. Plan amendment
+from the 3.2 research (five-agent sweep, docs in `.agents/work/gix-port/3.2-research-*.md` +
+`3.2-design.md`): PLAN's one-commit 3.2 ("unregister the backend") is not landable — the
+remaining git2 typed-object reads across the leaf crates still observe unflushed memory
+objects through the registered backend (graphql's `find_commit(apply_to_commit(..))`,
+proxy/cli `-o merge`, josh-changes read-modify-write chains, persist `from_tree2`,
+josh-compose's ephemeral reads — the prysk orchestrator itself). So 3.2 continues as:
 
-1. **3.2b..e** Port the typed-read/write consumers crate by crate onto the facade
+1. **3.2c..e** Port the remaining typed-read/write consumers crate by crate onto the facade
    (pulled-forward flag-day work; blocker inventory in `3.2-research-memodb.md` §7):
-   filter/mod.rs + history.rs `git2::Tree` tail; josh-graphql; josh-proxy + josh-changes +
-   josh-link (their writes move to the facade here); persist `from_tree` + josh-search;
-   josh-compose; `cache/distributed.rs` onto a facade over its own store (also the 2.1 plan
-   gap: its own repo below the cache stack).
+   josh-graphql; josh-proxy + josh-changes + josh-link (their writes move to the facade
+   here); persist `from_tree` + josh-search; josh-compose; `cache/distributed.rs` onto a
+   facade over its own store (also the 2.1 plan gap: its own repo below the cache stack).
 2. **3.2z** Unregister both backends, delete `odb_backend.rs`, drop git2/libgit2-sys from
-   josh-memodb (error type + `objects_dir(&Path)`). Gated on all of 3.2b..e; any missed site
-   fails loudly (NotFound on a josh-written oid).
+   josh-memodb (error type + `objects_dir(&Path)`). Gated on all of 3.2c..e AND on resolving
+   the six PORT-marked libgit2 graph/merge compute sites from 3.2b (history.rs
+   merge_base_octopus/graph_descendant_of/merge_commits, filter/mod.rs graph_descendant_of
+   ×2 + cached_merge_trees) — flush-before-compute, cache-backed reimplementation
+   (`is_ancestor_of`/`parents_share_root`), or gix-merge, decided in its own step; their
+   `write_tree_to` calls also keep the backend's write trampoline load-bearing until then.
+   The retained `tree::insert`/`tree::empty` wrappers and persist `from_tree` must be
+   facade-backed or gone before unregistration. Any missed site fails loudly (NotFound on a
+   josh-written oid).
 3. **3.3 flag day**: Transaction opens `gix::ThreadSafeRepository` (isolated), refs via
    gix-ref (parity contract pinned in the 2.1 method comments + unit tests). Facade disk
    side flips to `repo.objects` — pre-seed the empty tree then (gix does not virtualize it;
@@ -91,7 +99,9 @@ discover_filter_candidates' filtered-refs loop has matched nothing since introdu
 `--pack` flag and `JOSH_BENCH_MEMPACK` (ultrawide_pin*.rs) are dead already — the registered
 mem backend receives all writes, the mempack captures nothing (and `packwriter()` would
 panic if it did); `tests/experimental/starlark_mempack.t` passes only via that emptiness.
-Remove flag + env var + .t together in their own cleanup commit. Also: josh-templates'
+Remove flag + env var + .t together in their own cleanup commit. Dead code found in 3.2b,
+delete together in their own cleanup commit: `housekeeping::get_info` and
+`tree::compose_fast` (zero callers workspace-wide, PORT-marked in place). Also: josh-templates'
 GraphQLHelper and proxy `serve_render_template` open sibling transactions to read the
 caller's possibly-unflushed objects with no flush ordering (works by luck today) — fix when
 porting those crates (3.2b..e).
