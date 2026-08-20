@@ -24,6 +24,7 @@ pub mod submodules;
 pub mod trailers;
 
 pub use josh_gix_ext as objects;
+pub use josh_memodb as memodb;
 
 #[derive(
     Clone, Hash, PartialEq, Eq, Copy, PartialOrd, Ord, Debug, serde::Serialize, serde::Deserialize,
