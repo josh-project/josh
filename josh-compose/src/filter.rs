@@ -17,8 +17,6 @@ pub fn compute_ws_tree(
     filter_spec: &str,
     source_commit: git2::Oid,
 ) -> anyhow::Result<(git2::Oid, String)> {
-    let repo = transaction.repo();
-
     let full_filter = format!(":SQUASH{filter_spec}");
 
     let filterobj = josh_core::filter::parse(&full_filter)
@@ -27,10 +25,10 @@ pub fn compute_ws_tree(
     let filtered_commit = josh_core::filter_commit(transaction, filterobj, source_commit)
         .context("failed to apply filter")?;
 
-    let ws_tree = repo
-        .find_commit(filtered_commit)
+    let odb = transaction.odb()?;
+    let ws_tree = josh_core::objects::CommitData::read(&odb, filtered_commit)
         .context("filtered result is not a commit")?
-        .tree_id();
+        .tree_id()?;
 
     let safe_name = josh_core::filter::as_tree(transaction, filterobj)
         .context("failed to compute filter id")?

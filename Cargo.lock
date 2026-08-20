@@ -3603,6 +3603,7 @@ dependencies = [
  "gix-hash",
  "gix-object",
  "josh-core",
+ "josh-gix-ext",
  "josh-test-support",
  "rand 0.10.2",
  "tempfile",

@@ -445,20 +445,12 @@ impl Revision {
 
         let x = filter::apply(&transaction, self.filter, Rewrite::from_tree(tree))?;
 
-        // PORT: josh-search takes a git2::Tree, so these reads stay on the repo handle.
-        let filtered_tree = transaction.repo().find_tree(x.tree_id())?;
         // The trigram index is experimental; without it every file is a candidate and
         // search_matches does all the filtering, so results are identical, just slower.
         let candidates = if filter::experimental_features_enabled() {
             let ifilterobj = filter::parse(":SQUASH:INDEX")?;
             let index_tree = filter::apply(&transaction, ifilterobj, x.clone())?;
-            let index_tree = transaction.repo().find_tree(index_tree.tree_id())?;
-            josh_search::search_candidates(
-                transaction.repo(),
-                &index_tree,
-                &filtered_tree,
-                &string,
-            )?
+            josh_search::search_candidates(&odb, index_tree.tree_id(), x.tree_id(), &string)?
         } else {
             let mut scan = vec![];
             objects::walk_tree_preorder(&odb, x.tree_id(), &mut |parent, entry| {
@@ -473,8 +465,7 @@ impl Revision {
             })?;
             scan
         };
-        let results =
-            josh_search::search_matches(transaction.repo(), &filtered_tree, &string, &candidates)?;
+        let results = josh_search::search_matches(&odb, x.tree_id(), &string, &candidates)?;
 
         let mut r = vec![];
         for m in results {

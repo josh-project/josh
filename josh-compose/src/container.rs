@@ -1,6 +1,9 @@
 use std::collections::HashSet;
 use std::path::Path;
 
+use josh_core::cache;
+use josh_core::memodb;
+
 use josh_compose_backend::{Mount, RunArgs, Runtime, SidecarArgs, SidecarHandle};
 
 use crate::OutputMode;
@@ -42,11 +45,12 @@ fn resolve_passthrough(
 /// start, or readiness timeout — is a hard error surfaced by the runtime; there is
 /// no soft-skip path.
 fn start_sidecar(
-    repo: &git2::Repository,
+    transaction: &cache::Transaction,
+    odb: &memodb::Odb,
     spec: &SidecarSpec,
     runtime: &dyn Runtime,
 ) -> anyhow::Result<SidecarHandle> {
-    let env_key = image::ensure_image(repo, spec.image, runtime)?;
+    let env_key = image::ensure_image(transaction, odb, spec.image, runtime)?;
 
     let passthrough_env = resolve_passthrough(&spec.name, &spec.passthrough)?;
 
@@ -72,13 +76,14 @@ fn start_sidecar(
 /// `attempted` tracks ws_trees already visited in this invocation to avoid redundant
 /// re-runs; the output cache may also short-circuit re-runs across invocations.
 pub fn run_container(
-    repo: &git2::Repository,
+    transaction: &cache::Transaction,
+    odb: &memodb::Odb,
     ws_tree: git2::Oid,
     attempted: &mut HashSet<git2::Oid>,
     extract_to_workdir: bool,
     runtime: &dyn Runtime,
 ) -> anyhow::Result<()> {
-    let workspace_meta = meta::read_meta(repo, ws_tree)?;
+    let workspace_meta = meta::read_meta(transaction, odb, ws_tree)?;
 
     // Cache check: skip only if a previous successful run is recorded AND its
     // output volume is still present (when one is expected). Mirrors
@@ -108,7 +113,7 @@ pub fn run_container(
     eprintln!("[{}] Running ({})", workspace_meta.label, ws_tree);
 
     // Run all dependencies, collecting failures so sibling jobs still get a chance to run.
-    let input_entries = meta::read_blob_entries(repo, ws_tree, "inputs");
+    let input_entries = meta::read_blob_entries(transaction, odb, ws_tree, "inputs");
     let mut dep_volumes: Vec<(String, String, bool)> = vec![];
     let mut dep_errors: Vec<String> = vec![];
     for (dep_name, dep_sha) in &input_entries {
@@ -119,11 +124,18 @@ pub fn run_container(
                 continue;
             }
         };
-        if let Err(e) = run_container(repo, dep_tree, attempted, extract_to_workdir, runtime) {
+        if let Err(e) = run_container(
+            transaction,
+            odb,
+            dep_tree,
+            attempted,
+            extract_to_workdir,
+            runtime,
+        ) {
             dep_errors.push(format!("dependency {dep_name} failed: {e}"));
             continue;
         }
-        let dep_meta = meta::read_meta(repo, dep_tree)?;
+        let dep_meta = meta::read_meta(transaction, odb, dep_tree)?;
         if dep_meta.output == OutputMode::None {
             continue;
         }
@@ -151,7 +163,7 @@ pub fn run_container(
     };
 
     // Resolve the environment (cache-or-build).
-    let image_name = image::ensure_image(repo, image_oid, runtime)?;
+    let image_name = image::ensure_image(transaction, odb, image_oid, runtime)?;
 
     let mut cache_volume: Option<String> = None;
     if let Some(cache_name) = &workspace_meta.cache {
@@ -161,7 +173,7 @@ pub fn run_container(
     }
 
     // Read env vars from env/ subtree
-    let mut env_vars = meta::read_blob_entries(repo, ws_tree, "env");
+    let mut env_vars = meta::read_blob_entries(transaction, odb, ws_tree, "env");
 
     // Start any declared sidecars and inject their addresses into the main container's env.
     // Any sidecar failure (missing creds, start error, readiness timeout) is fatal: tear
@@ -170,7 +182,7 @@ pub fn run_container(
     let mut started_sidecars: Vec<SidecarHandle> = vec![];
     if !workspace_meta.sidecars.is_empty() {
         for spec in &workspace_meta.sidecars {
-            match start_sidecar(repo, spec, runtime) {
+            match start_sidecar(transaction, odb, spec, runtime) {
                 Ok(handle) => {
                     for (k, v) in &spec.inject {
                         env_vars.push((
@@ -202,7 +214,7 @@ pub fn run_container(
 
     // Create an ephemeral scratch artifact seeded with the worktree contents. The
     // runtime owns its naming and ownership; we just hold the opaque name.
-    let worktree_tar = crate::archive::tree_to_tar(repo, worktree_oid)?;
+    let worktree_tar = crate::archive::tree_to_tar(transaction, odb, worktree_oid)?;
     let snapshot_vol = runtime.create_scratch_artifact(&worktree_tar)?;
 
     let snapshot_vol_clone = snapshot_vol.clone();

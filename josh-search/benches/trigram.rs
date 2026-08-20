@@ -278,13 +278,13 @@ fn recover_chain(repo: &git2::Repository, n_files: usize) -> anyhow::Result<Vec<
 /// End-to-end search exactly as `josh-filter --search` performs it: candidate selection over
 /// the index tree, then exact matching over the source tree.
 fn search(
-    repo: &git2::Repository,
-    index_tree: &git2::Tree,
-    source_tree: &git2::Tree,
+    src: &dyn josh_search::Objects,
+    index_tree: git2::Oid,
+    source_tree: git2::Oid,
     needle: &str,
 ) -> anyhow::Result<(Vec<String>, Vec<(String, Vec<(usize, String)>)>)> {
-    let candidates = josh_search::search_candidates(repo, index_tree, source_tree, needle)?;
-    let matches = josh_search::search_matches(repo, source_tree, needle, &candidates)?;
+    let candidates = josh_search::search_candidates(src, index_tree, source_tree, needle)?;
+    let matches = josh_search::search_matches(src, source_tree, needle, &candidates)?;
     Ok((candidates, matches))
 }
 
@@ -336,17 +336,16 @@ impl TrigramBench {
             let repo = transaction.repo();
             let tip_tree = repo.find_commit(tip)?.tree()?;
             let total_bytes = tree_content_bytes(repo, &tip_tree)?;
+            let odb = transaction.odb()?;
 
-            // Cold-build the tip index, then flush: `trigram_search` opens fresh repository
-            // handles per directory, and those cannot see objects still sitting in this
-            // transaction's in-memory odb.
-            let index_tree = josh_search::trigram_index(
-                repo,
+            // Cold-build the tip index, then flush: the timed groups reopen the repository and
+            // read these index trees back, so they must be on disk by then.
+            let index_tree_oid = josh_search::trigram_index(
+                &odb,
                 &transaction.trigram_index_cache(tip),
                 &mut josh_search::Indexer::default(),
-                tip_tree.clone(),
+                tip_tree.id(),
             )?;
-            let index_tree_oid = index_tree.id();
             transaction.flush_mem_odb()?;
 
             // Gate: the rare needle is found in exactly its planted file, with a tight
@@ -354,7 +353,7 @@ impl TrigramBench {
             // degenerated and the search numbers would be meaningless. (The bound is kept at
             // the pre-rework value of 5; the exact index should always produce exactly 1.)
             let rare_path = path_for(n_files / 2).to_string_lossy().into_owned();
-            let (candidates, matches) = search(repo, &index_tree, &tip_tree, NEEDLE_RARE)?;
+            let (candidates, matches) = search(&odb, index_tree_oid, tip_tree.id(), NEEDLE_RARE)?;
             anyhow::ensure!(
                 matches.len() == 1 && matches[0].0 == rare_path,
                 "rare needle not found in exactly its planted file {rare_path}: {matches:?}"
@@ -367,13 +366,13 @@ impl TrigramBench {
 
             // Gate: the common needle is found in every planted file, the absent one nowhere.
             let common_count = n_files.div_ceil(COMMON_EVERY);
-            let (_, matches) = search(repo, &index_tree, &tip_tree, NEEDLE_COMMON)?;
+            let (_, matches) = search(&odb, index_tree_oid, tip_tree.id(), NEEDLE_COMMON)?;
             anyhow::ensure!(
                 matches.len() == common_count,
                 "common needle found in {} files, expected {common_count}",
                 matches.len()
             );
-            let (_, matches) = search(repo, &index_tree, &tip_tree, NEEDLE_ABSENT)?;
+            let (_, matches) = search(&odb, index_tree_oid, tip_tree.id(), NEEDLE_ABSENT)?;
             anyhow::ensure!(
                 matches.is_empty(),
                 "absent needle found in {} files",
@@ -387,6 +386,7 @@ impl TrigramBench {
             let transaction = context.open()?;
             let repo = transaction.repo();
             let root_tree = repo.find_commit(chain[0])?.tree()?;
+            let odb = transaction.odb()?;
             // One indexer state for the whole chain, matching how josh keeps one per
             // transaction. Collect the per-commit (source tree, index tree) pairs on the way:
             // the history search group iterates them.
@@ -394,23 +394,20 @@ impl TrigramBench {
             let mut chain_indexes = vec![(
                 root_tree.id(),
                 josh_search::trigram_index(
-                    repo,
+                    &odb,
                     &transaction.trigram_index_cache(chain[0]),
                     &mut indexer,
-                    root_tree,
-                )?
-                .id(),
+                    root_tree.id(),
+                )?,
             )];
             for &oid in &chain[1..] {
-                let tree = repo.find_commit(oid)?.tree()?;
-                let tree_oid = tree.id();
+                let tree_oid = repo.find_commit(oid)?.tree_id();
                 let index_oid = josh_search::trigram_index(
-                    repo,
+                    &odb,
                     &transaction.trigram_index_cache(oid),
                     &mut indexer,
-                    tree,
-                )?
-                .id();
+                    tree_oid,
+                )?;
                 chain_indexes.push((tree_oid, index_oid));
             }
             let root_index_oid = chain_indexes.first().expect("chain is never empty").1;
@@ -462,20 +459,17 @@ fn trigram_benches(c: &mut Criterion) {
                 josh_core::reset_caches().expect("reset caches");
                 let transaction = bench.context.open().expect("open transaction");
                 let repo = transaction.repo();
-                let tip_tree = repo
-                    .find_commit(case.tip())
-                    .expect("find tip")
-                    .tree()
-                    .expect("tip tree");
+                let tip_tree = repo.find_commit(case.tip()).expect("find tip").tree_id();
+                let odb = transaction.odb().expect("odb");
 
                 let mut indexer = josh_search::Indexer::default();
 
                 runner.run(|| {
                     josh_search::trigram_index(
-                        repo,
+                        &odb,
                         &transaction.trigram_index_cache(case.tip()),
                         &mut indexer,
-                        tip_tree.clone(),
+                        tip_tree,
                     )
                     .expect("index tree")
                 });
@@ -501,13 +495,13 @@ fn trigram_benches(c: &mut Criterion) {
                 let root_tree = repo
                     .find_commit(case.chain[0])
                     .expect("find root")
-                    .tree()
-                    .expect("root tree");
+                    .tree_id();
+                let odb = transaction.odb().expect("odb");
                 // One indexer state across the warm root and the whole chain, matching how
                 // josh keeps one per transaction.
                 let mut indexer = josh_search::Indexer::default();
                 josh_search::trigram_index(
-                    repo,
+                    &odb,
                     &transaction.trigram_index_cache(case.chain[0]),
                     &mut indexer,
                     root_tree,
@@ -516,13 +510,9 @@ fn trigram_benches(c: &mut Criterion) {
 
                 runner.run(|| {
                     for &oid in &case.chain[1..] {
-                        let tree = repo
-                            .find_commit(oid)
-                            .expect("find churn commit")
-                            .tree()
-                            .expect("churn tree");
+                        let tree = repo.find_commit(oid).expect("find churn commit").tree_id();
                         josh_search::trigram_index(
-                            repo,
+                            &odb,
                             &transaction.trigram_index_cache(oid),
                             &mut indexer,
                             tree,
@@ -553,16 +543,12 @@ fn trigram_benches(c: &mut Criterion) {
                     josh_core::reset_caches().expect("reset caches");
                     let transaction = bench.context.open().expect("open transaction");
                     let repo = transaction.repo();
-                    let index_tree = repo
-                        .find_tree(case.index_tree_oid)
-                        .expect("find prebuilt index tree");
-                    let source_tree = repo
-                        .find_commit(case.tip())
-                        .expect("find tip")
-                        .tree()
-                        .expect("tip tree");
+                    let source_tree = repo.find_commit(case.tip()).expect("find tip").tree_id();
+                    let odb = transaction.odb().expect("odb");
 
-                    runner.run(|| search(repo, &index_tree, &source_tree, needle).expect("search"));
+                    runner.run(|| {
+                        search(&odb, case.index_tree_oid, source_tree, needle).expect("search")
+                    });
                 });
             });
         }
@@ -586,15 +572,13 @@ fn trigram_benches(c: &mut Criterion) {
                 b.iter_with_setup_wrapper(|runner| {
                     josh_core::reset_caches().expect("reset caches");
                     let transaction = bench.context.open().expect("open transaction");
-                    let repo = transaction.repo();
+                    let odb = transaction.odb().expect("odb");
 
                     runner.run(|| {
                         let mut hits = 0;
                         for (tree_oid, index_oid) in &case.chain_indexes {
-                            let source = repo.find_tree(*tree_oid).expect("find source tree");
-                            let index = repo.find_tree(*index_oid).expect("find index tree");
                             let (_, matches) =
-                                search(repo, &index, &source, needle).expect("search");
+                                search(&odb, *index_oid, *tree_oid, needle).expect("search");
                             hits += matches.len();
                         }
                         hits

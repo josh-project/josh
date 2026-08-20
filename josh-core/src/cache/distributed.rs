@@ -2,6 +2,7 @@ use super::CACHE_VERSION;
 use super::backend::{CacheBackend, HistoryGraphHint};
 use crate::filter;
 use crate::filter::Filter;
+use crate::objects;
 use std::collections::HashMap;
 
 // Only flush shards after they gained enough new entries. Mid-run flushes enqueue their pack
@@ -67,18 +68,23 @@ impl DistributedCacheBackend {
         })
     }
 
-    fn tree_id(&self, repo: &git2::Repository, filter: Filter) -> anyhow::Result<git2::Oid> {
+    /// The object store of this backend's own repository, with its buffered objects in front.
+    fn odb<'a>(&self, repo: &'a git2::Repository) -> anyhow::Result<josh_memodb::Odb<'a>> {
+        Ok(josh_memodb::Odb::new(self.mem_odb.clone(), repo.odb()?))
+    }
+
+    fn tree_id(&self, odb: &josh_memodb::Odb, filter: Filter) -> anyhow::Result<git2::Oid> {
         if let Some(oid) = self.tree_ids.lock().unwrap().get(&filter) {
             return Ok(*oid);
         }
-        let odb = repo.odb()?;
-        let oid = josh_filter::persist::as_tree(repo, &josh_gix_ext::Git2Odb(&odb), filter)?;
+        let oid = josh_filter::persist::as_tree(odb, filter)?;
         self.tree_ids.lock().unwrap().insert(filter, oid);
         Ok(oid)
     }
 
     pub fn flush(&self, force: bool) -> anyhow::Result<()> {
         let repo = self.repo.lock().unwrap();
+        let odb = self.odb(&repo)?;
 
         let mut guard = self.new_entries.lock().unwrap();
         let mut pending = self.pending_refs.lock().unwrap();
@@ -89,8 +95,29 @@ impl DistributedCacheBackend {
             if m.is_empty() || !(force || m.len() >= FLUSH_AFTER) {
                 continue;
             }
-            let rp = ref_path(self.tree_id(&repo, *filter)?, *shard);
-            let mut builder = git2::build::TreeUpdateBuilder::new();
+            let rp = ref_path(self.tree_id(&odb, *filter)?, *shard);
+
+            // Base the update on the newest unpublished commit for this ref when one exists:
+            // basing on the published tip would drop the entries of earlier unpublished
+            // batches.
+            let base = if let Some(oid) = pending.get(&rp) {
+                Some(*oid)
+            } else if let Ok(r) = repo.revparse_single(&rp) {
+                // PORT: resolves a ref -- stays on git2 until flag day.
+                Some(r.peel_to_commit()?.id())
+            } else {
+                None
+            };
+
+            let mut buf = Vec::new();
+            let root = match base {
+                Some(commit) => {
+                    let tree = objects::CommitData::read(&odb, commit)?.tree_id()?;
+                    gix_object::FindExt::find_tree(&odb, &objects::gix_oid(tree), &mut buf)?.into()
+                }
+                None => gix_object::Tree::default(),
+            };
+            let mut editor = gix_object::tree::Editor::new(root, &odb, gix_hash::Kind::Sha1);
 
             // Each entry is a gitlink: the tree entry stores the target oid directly, and git
             // never requires a gitlink target to be present, so no blob objects are needed and
@@ -99,40 +126,30 @@ impl DistributedCacheBackend {
             // in tree entries -- so it is encoded as a blob entry pointing at the empty blob;
             // the entry mode disambiguates on read.
             for (from, to) in &mut *m {
-                if *to == git2::Oid::ZERO_SHA1 {
-                    let blob = repo.blob(&[])?;
-                    builder.upsert(fanout(*from), blob, git2::FileMode::Blob.into());
+                let (kind, target) = if *to == git2::Oid::ZERO_SHA1 {
+                    (
+                        gix_object::tree::EntryKind::Blob,
+                        objects::write_blob(&odb, &[])?,
+                    )
                 } else {
-                    builder.upsert(fanout(*from), *to, git2::FileMode::Commit.into());
-                }
+                    (gix_object::tree::EntryKind::Commit, *to)
+                };
+                editor.upsert(fanout(*from), kind, objects::gix_oid(target))?;
             }
 
-            // Base the update on the newest unpublished commit for this ref when one exists:
-            // basing on the published tip would drop the entries of earlier unpublished
-            // batches.
-            let base = if let Some(oid) = pending.get(&rp) {
-                Some(repo.find_commit(*oid)?)
-            } else if let Ok(r) = repo.revparse_single(&rp) {
-                Some(r.peel_to_commit()?)
-            } else {
-                None
-            };
-            let tree = match &base {
-                Some(commit) => commit.tree()?,
-                None => repo.find_tree(crate::filter::tree::empty_id())?,
-            };
-            let updated = builder.create_updated(&repo, &tree)?;
+            let updated = editor.write(|tree| {
+                gix_object::Write::write(&odb, tree)
+                    .map_err(|e| anyhow::anyhow!("write cache tree: {e}"))
+            })?;
 
             let signature = crate::git::josh_commit_signature()?;
-            let parent_refs = base.iter().collect::<Vec<_>>();
-
-            let commit = repo.commit(
-                None,
+            let commit = objects::write_commit(
+                &odb,
+                objects::git2_oid(&updated),
+                base.as_slice(),
                 &signature,
                 &signature,
                 "cache",
-                &repo.find_tree(updated)?,
-                &parent_refs,
             )?;
             log::info!("CACHE flush {} {}", m.len(), rp);
             m.clear();
@@ -218,11 +235,9 @@ fn ref_path(filter_tree_id: git2::Oid, shard: u64) -> String {
 // rewrites subtrees that grow with the accumulated shard. A single 2-hex level goes quadratic on
 // dense shards for exactly that reason, while a third level only adds one more tree write per
 // entry without making any subtree meaningfully smaller.
-fn fanout(commit: git2::Oid) -> std::path::PathBuf {
+fn fanout(commit: git2::Oid) -> [gix_object::bstr::BString; 3] {
     let commit = commit.to_string();
-    std::path::Path::new(&commit[..2])
-        .join(&commit[2..5])
-        .join(&commit[5..])
+    [commit[..2].into(), commit[2..5].into(), commit[5..].into()]
 }
 
 impl CacheBackend for DistributedCacheBackend {
@@ -256,34 +271,42 @@ impl CacheBackend for DistributedCacheBackend {
 
         std::mem::drop(guard);
 
-        let rp = ref_path(self.tree_id(&repo, filter)?, shard);
+        let odb = self.odb(&repo)?;
+        let rp = ref_path(self.tree_id(&odb, filter)?, shard);
         // Flushed-but-unpublished entries live in a pending commit (see `flush`), not behind
         // the ref yet; prefer it so in-process reads keep seeing everything ever flushed.
         let pending = self.pending_refs.lock().unwrap();
         let tree = if let Some(oid) = pending.get(&rp) {
-            repo.find_commit(*oid)?.tree()?
+            objects::CommitData::read(&odb, *oid)?.tree_id()?
         } else if let Ok(r) = repo.revparse_single(&rp) {
-            r.peel_to_tree()?
+            // PORT: resolves a ref -- stays on git2 until flag day.
+            r.peel_to_tree()?.id()
         } else {
             return Ok(None);
         };
         std::mem::drop(pending);
 
-        if let Ok(e) = tree.get_path(&fanout(from)) {
-            log::debug!(
-                "DistributedCacheBackend: HIT {:?} {}",
-                from,
-                filter::spec(filter)
-            );
-            // Gitlink entries carry the target oid directly; any other mode is the empty-blob
-            // encoding of `Oid::ZERO_SHA1` (see `flush`).
-            if e.filemode() == i32::from(git2::FileMode::Commit) {
-                return Ok(Some(e.id()));
-            }
-            return Ok(Some(git2::Oid::ZERO_SHA1));
-        } else {
+        let mut buf = Vec::new();
+        let root = gix_object::FindExt::find_tree_iter(&odb, &objects::gix_oid(tree), &mut buf)?;
+        let mut entry_buf = Vec::new();
+        let entry = root
+            .lookup_entry(&odb, &mut entry_buf, fanout(from))
+            .map_err(|e| anyhow::anyhow!("cache lookup: {e}"))?;
+        let Some(e) = entry else {
             return Ok(None);
         };
+
+        log::debug!(
+            "DistributedCacheBackend: HIT {:?} {}",
+            from,
+            filter::spec(filter)
+        );
+        // Gitlink entries carry the target oid directly; any other mode is the empty-blob
+        // encoding of `Oid::ZERO_SHA1` (see `flush`).
+        if e.mode.kind() == gix_object::tree::EntryKind::Commit {
+            return Ok(Some(objects::git2_oid(&e.oid)));
+        }
+        Ok(Some(git2::Oid::ZERO_SHA1))
     }
 
     fn write(

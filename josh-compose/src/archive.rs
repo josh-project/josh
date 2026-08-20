@@ -1,41 +1,45 @@
 use anyhow::Context;
+use josh_core::cache;
+use josh_core::filter::tree;
+use josh_core::memodb;
 
-/// Produce a tar archive (as bytes) from a git tree, using git2 to walk the tree.
-/// Works with in-memory objects (e.g. mempack backend) as well as on-disk objects.
-pub fn tree_to_tar(repo: &git2::Repository, tree_oid: git2::Oid) -> anyhow::Result<Vec<u8>> {
+/// Produce a tar archive (as bytes) from a git tree.
+pub fn tree_to_tar(
+    transaction: &cache::Transaction,
+    odb: &memodb::Odb,
+    tree_oid: git2::Oid,
+) -> anyhow::Result<Vec<u8>> {
     let mut buf = Vec::new();
     {
         let mut builder = tar::Builder::new(&mut buf);
-        let tree = repo
-            .find_tree(tree_oid)
-            .with_context(|| format!("tree not found: {tree_oid}"))?;
-        append_tree(repo, &tree, "", &mut builder)?;
+        append_tree(transaction, odb, tree_oid, "", &mut builder)?;
         builder.finish()?;
     }
     Ok(buf)
 }
 
 fn append_tree(
-    repo: &git2::Repository,
-    tree: &git2::Tree,
+    transaction: &cache::Transaction,
+    odb: &memodb::Odb,
+    tree_oid: git2::Oid,
     prefix: &str,
     builder: &mut tar::Builder<impl std::io::Write>,
 ) -> anyhow::Result<()> {
-    for entry in tree {
-        let name = entry.name().unwrap_or("");
+    let reader = tree::read_tree(transaction, odb, tree_oid)?;
+    for entry in reader.entries() {
+        let name = String::from_utf8_lossy(entry.filename);
         let path = if prefix.is_empty() {
             name.to_string()
         } else {
             format!("{prefix}/{name}")
         };
+        let id = josh_core::objects::git2_oid(entry.oid);
 
-        let filemode = entry.filemode();
-
-        if filemode == 0o120000 {
-            // Symlink: stored as blob, content is the link target
-            let blob = repo.find_blob(entry.id())?;
+        if entry.mode.is_link() {
+            let content = tree::blob_bytes(odb, id)
+                .with_context(|| format!("symlink target not found: {path}"))?;
             let target =
-                std::str::from_utf8(blob.content()).context("symlink target is not valid UTF-8")?;
+                std::str::from_utf8(&content).context("symlink target is not valid UTF-8")?;
             let mut header = tar::Header::new_gnu();
             header.set_entry_type(tar::EntryType::Symlink);
             header.set_path(&path)?;
@@ -43,7 +47,7 @@ fn append_tree(
             header.set_size(0);
             header.set_cksum();
             builder.append(&header, std::io::empty())?;
-        } else if let Some(git2::ObjectType::Tree) = entry.kind() {
+        } else if entry.mode.is_tree() {
             let mut header = tar::Header::new_gnu();
             header.set_entry_type(tar::EntryType::Directory);
             header.set_path(format!("{path}/"))?;
@@ -52,18 +56,21 @@ fn append_tree(
             header.set_cksum();
             builder.append(&header, std::io::empty())?;
 
-            let subtree = repo.find_tree(entry.id())?;
-            append_tree(repo, &subtree, &path, builder)?;
-        } else if let Some(git2::ObjectType::Blob) = entry.kind() {
-            let blob = repo.find_blob(entry.id())?;
-            let is_exec = filemode & 0o111 != 0;
+            append_tree(transaction, odb, id, &path, builder)?;
+        } else if entry.mode.is_blob() {
+            let content =
+                tree::blob_bytes(odb, id).with_context(|| format!("blob not found: {path}"))?;
             let mut header = tar::Header::new_gnu();
             header.set_entry_type(tar::EntryType::Regular);
             header.set_path(&path)?;
-            header.set_mode(if is_exec { 0o755 } else { 0o644 });
-            header.set_size(blob.content().len() as u64);
+            header.set_mode(if entry.mode.is_executable() {
+                0o755
+            } else {
+                0o644
+            });
+            header.set_size(content.len() as u64);
             header.set_cksum();
-            builder.append(&header, blob.content())?;
+            builder.append(&header, &content[..])?;
         }
         // Skip other types (submodules etc.)
     }
