@@ -1,6 +1,6 @@
 # git2 -> gix port: status
 
-Last updated: 2026-08-20 (post-3.2f). See `PLAN.md` in this directory for the full phased plan.
+Last updated: 2026-08-20 (post-3.2g). See `PLAN.md` in this directory for the full phased plan.
 
 ## Landed on master (one commit per step, each suite-green and bench-validated)
 
@@ -39,6 +39,8 @@ Last updated: 2026-08-20 (post-3.2f). See `PLAN.md` in this directory for the fu
 
 | 3.2f | 9a30f031 | The remaining typed-read consumers: filter persistence, josh-search, josh-compose and the distributed cache backend. `persist::from_tree` reads through an object source instead of a repository handle (its git2 tree/blob walk becomes small `PersistedTree`/`Blob` readers over `TreeRefIter`), and `as_tree` takes only the store it writes to. josh-search is oid-in, oid-out over a `Find + Exists + Write` trait object, which retires the `find_tree` bridges its callers kept in josh-core (`Op::Index`), josh-graphql and josh-cli, and their PORT markers; the pinned index oid in its tests holds, so index trees are byte-identical. josh-compose threads the transaction facade through workspace metadata, image contexts and tar archives. `cache/distributed.rs` gets a facade over its own store (the 2.1 plan gap): shard trees are built with `gix_object::tree::Editor` in one pass, entries are read with `TreeRefIter::lookup_entry`, and the shard commits go through `write_commit` -- ref names and shard contents are unchanged, so a published cache stays readable. PORT-marked residue added: the two `revparse_single` shard-ref lookups | n/a (josh-core hot paths untouched) |
 
+| 3.2g | f75c5d73 | Reachability queries onto the object source, resolving four of the six PORT-marked graph/merge sites that gate 3.2z. New `josh-gix-ext/src/graph.rs`: `is_descendant_of` and `merge_base_octopus` over any `gix_object::Find`, both computing merge bases with gix-revision (new workspace dep, `merge_base` feature only) -- the reason these calls sat on the repo handle is that they must see a transaction's not-yet-written filtered commits, which the facade gives them directly. Inputs are existence-checked first: gix reports a missing commit as unrelated history, libgit2 errored, and an error is the honest answer. Callers moved off `transaction.repo()`: `unapply_filter`'s orphan check and merge-parent pick, the `:SQUASH` lineage check, `downstack`'s base check, josh-filter's fast-forward check. Tests pin the contract: chains, merges, unrelated roots, self, missing object. Left for the next step: the two libgit2 merge computes (`merge_commits` ours/theirs in `unapply_filter`, `merge_trees` in `cached_merge_trees`), which need gix-merge and carry conflict/rename-detection surface | `unapply` -1.8 to -0.7% (`unapply_new_branch`), `unapply_extend` within noise |
+
 Phase 1.2 is complete: no `treebuilder` use remains in `josh-core/src/filter/tree.rs`.
 
 Phase 1.3 (commit/blob creation) required no work: every commit write already goes through
@@ -76,23 +78,25 @@ josh-compose's ephemeral reads — the prysk orchestrator itself). So 3.2 contin
 1. **3.2f is landed**, so the typed-read/write consumer sweep is done: persist, josh-search,
    josh-compose and `cache/distributed.rs` all read and write through a facade. What remains
    on git2 outside the PORT-marked graph/merge sites is refs and rev-parse.
-2. **3.2z** Unregister both backends, delete `odb_backend.rs`, drop git2/libgit2-sys from
-   josh-memodb (error type + `objects_dir(&Path)`). Gated on all of 3.2f.. AND on resolving
-   the six PORT-marked libgit2 graph/merge compute sites from 3.2b (history.rs
-   merge_base_octopus/graph_descendant_of/merge_commits, filter/mod.rs graph_descendant_of
-   ×2 + cached_merge_trees) — flush-before-compute, cache-backed reimplementation
-   (`is_ancestor_of`/`parents_share_root`), or gix-merge, decided in its own step; their
-   `write_tree_to` calls also keep the backend's write trampoline load-bearing until then.
+2. **3.2g is landed**: the four graph-compute sites now answer from the object source
+   (`objects::is_descendant_of`, `objects::merge_base_octopus`).
+3. **3.2h** The two remaining merge computes: `unapply_filter`'s `merge_commits` pair (ours
+   then theirs favor) and `cached_merge_trees`' `merge_trees`. Both also `write_tree_to`,
+   which keeps the backend's write trampoline load-bearing until they move. gix-merge is the
+   counterpart; the surface to settle is conflict resolution (libgit2's file-favor vs
+   `ResolveWith`) and rename detection, so expect prysk churn on merge-push tests.
+4. **3.2z** Unregister both backends, delete `odb_backend.rs`, drop git2/libgit2-sys from
+   josh-memodb (error type + `objects_dir(&Path)`). Gated on 3.2h.
    The retained `tree::insert`/`tree::empty` wrappers and persist `from_tree` must be
    facade-backed or gone before unregistration. Any missed site fails loudly (NotFound on a
    josh-written oid).
-3. **3.3 flag day**: Transaction opens `gix::ThreadSafeRepository` (isolated), refs via
+5. **3.3 flag day**: Transaction opens `gix::ThreadSafeRepository` (isolated), refs via
    gix-ref (parity contract pinned in the 2.1 method comments + unit tests). Facade disk
    side flips to `repo.objects` — pre-seed the empty tree then (gix does not virtualize it;
    keep the seed out of flush snapshots). From 2.6: josh-proxy `TmpGitNamespace::cleanup`
    removes namespace refs via `fs::remove_dir_all` behind both git2 and the ref API --
    verify gix's loose-ref/packed-refs view tolerates it at flag day.
-4. **Phase 4** Port bench setup, flip `josh_core::Oid` inner type, delete josh-memodb FFI
+6. **Phase 4** Port bench setup, flip `josh_core::Oid` inner type, delete josh-memodb FFI
    remnants, remove git2/libgit2-sys workspace-wide (`cargo tree -i git2` empty).
 
 Deferred from 1.5 (evaluate separately): lazy early-exit walks for
