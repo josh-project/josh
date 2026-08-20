@@ -45,6 +45,22 @@ pub fn is_descendant_of(
     Ok(bases.is_some_and(|bases| bases.iter().any(|base| *base == ancestor)))
 }
 
+/// The best common ancestor of `a` and `b`, erroring when they share no history. With
+/// several equally good candidates the choice among them is arbitrary.
+pub fn merge_base(
+    objects: &impl gix_object::Find,
+    a: git2::Oid,
+    b: git2::Oid,
+) -> anyhow::Result<git2::Oid> {
+    ensure_commit(objects, a)?;
+    ensure_commit(objects, b)?;
+    let mut graph = gix_revision::Graph::new(objects, None);
+    gix_revision::merge_base(gix_oid(a), &[gix_oid(b)], &mut graph)
+        .map_err(|e| anyhow::anyhow!("merge_base: {e}"))?
+        .map(|bases| git2_oid(bases.first()))
+        .ok_or_else(|| anyhow::anyhow!("{a} and {b} share no history"))
+}
+
 /// The best common ancestor of every commit in `commits`, or `None` when they do not all
 /// share history.
 pub fn merge_base_octopus(
@@ -170,6 +186,23 @@ mod tests {
             merge_base_octopus(&objects, &[c, b, unrelated]).unwrap(),
             None
         );
+    }
+
+    #[test]
+    fn merge_base_is_the_join_of_two_lineages() {
+        let t = TestRepo::new();
+        let root = t.commit(1000, &[]);
+        let a = t.commit(1001, &[root]);
+        let b = t.commit(1002, &[root]);
+        let odb = t.repo.odb().unwrap();
+        let objects = crate::Git2Odb(&odb);
+
+        assert_eq!(merge_base(&objects, a, b).unwrap(), root);
+        assert_eq!(merge_base(&objects, a, root).unwrap(), root);
+        assert_eq!(merge_base(&objects, a, a).unwrap(), a);
+
+        let unrelated = t.commit(1003, &[]);
+        assert!(merge_base(&objects, a, unrelated).is_err());
     }
 
     #[test]

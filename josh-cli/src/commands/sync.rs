@@ -400,8 +400,14 @@ impl GithubSyncCtx<'_> {
             let base = match parse_changes_target(&pr.head_ref_name)
                 .and_then(|t| self.target_branch_shas.get(&t))
             {
-                Some(tip) => self.repo.merge_base(*tip, pr_head.id())?,
-                None => self.repo.merge_base(target.id(), pr_head.id())?,
+                Some(tip) => {
+                    josh_core::objects::merge_base(&self.transaction.odb()?, *tip, pr_head.id())?
+                }
+                None => josh_core::objects::merge_base(
+                    &self.transaction.odb()?,
+                    target.id(),
+                    pr_head.id(),
+                )?,
             };
             change.set_base(base);
             change

@@ -254,47 +254,45 @@ fn upstream_change_ids(
 /// Cherry-pick `commits` (oldest first) on top of `tip`, in memory.
 /// Bails out on conflicts without writing any refs.
 fn restack_commits(
-    repo: &git2::Repository,
+    transaction: &josh_core::cache::Transaction,
     tip: git2::Oid,
     commits: &[git2::Oid],
 ) -> anyhow::Result<(git2::Oid, usize)> {
-    let mut acc = repo.find_commit(tip)?;
+    use josh_core::objects::CommitData;
+
+    let odb = transaction.odb()?;
+    let mut acc = CommitData::read(&odb, tip)?;
     let mut kept = 0usize;
 
     for &oid in commits {
-        let commit = repo.find_commit(oid)?;
+        let commit = CommitData::read(&odb, oid)?;
         let parent = commit
-            .parent(0)
+            .first_parent_id()
             .with_context(|| format!("cannot restack root commit {}", short_oid(oid)))?;
+        let parent_tree = CommitData::read(&odb, parent)?.tree_id()?;
 
-        let mut index = repo.merge_trees(&parent.tree()?, &acc.tree()?, &commit.tree()?, None)?;
-
-        if index.has_conflicts() {
-            anyhow::bail!(
-                "conflict while restacking change commit {} onto upstream; resolve manually",
-                short_oid(oid)
-            );
-        }
-
-        let tree_oid = index.write_tree_to(repo)?;
-        if tree_oid == acc.tree_id() {
+        let tree_oid =
+            josh_core::objects::merge_trees(&odb, parent_tree, acc.tree_id()?, commit.tree_id()?)
+                .with_context(|| {
+                format!(
+                    "conflict while restacking change commit {} onto upstream; resolve manually",
+                    short_oid(oid)
+                )
+            })?;
+        if tree_oid == acc.tree_id()? {
             // The change became empty on top of the new base (e.g. its content
             // already landed upstream without a matching Change-Id).
             continue;
         }
 
-        // PORT: the rebased tree comes out of a libgit2 index merge, so this commit
-        // stays on the repository handle with it.
-        let tree = repo.find_tree(tree_oid)?;
-        let new_oid = repo.commit(
-            None,
-            &commit.author(),
-            &commit.committer(),
-            commit.message().unwrap_or_default(),
-            &tree,
-            &[&acc],
+        let new_oid = josh_core::objects::write_commit_with_signatures_of(
+            &odb,
+            &commit,
+            tree_oid,
+            &[acc.id()],
+            std::str::from_utf8(commit.message_raw()?).unwrap_or_default(),
         )?;
-        acc = repo.find_commit(new_oid)?;
+        acc = CommitData::read(&odb, new_oid)?;
         kept += 1;
     }
 
@@ -351,7 +349,7 @@ pub fn integrate(
         return Ok(IntegrateReport::UpToDate);
     }
 
-    let merge_base = repo.merge_base(old, new)?;
+    let merge_base = josh_core::objects::merge_base(&transaction.odb()?, old, new)?;
 
     // Upstream is already contained in the local branch: nothing to integrate.
     if merge_base == new {
@@ -401,7 +399,7 @@ pub fn integrate(
         if remaining.is_empty() {
             (new, IntegrateReport::Rewound { branch, skipped })
         } else {
-            let (tip, kept) = restack_commits(repo, new, &remaining)?;
+            let (tip, kept) = restack_commits(transaction, new, &remaining)?;
             (
                 tip,
                 IntegrateReport::Restacked {

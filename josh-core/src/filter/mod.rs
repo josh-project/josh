@@ -2556,14 +2556,7 @@ fn cached_merge_trees(
     if let Some(hit) = transaction.get_merge_trees(key) {
         return Ok(hit);
     }
-    // PORT: libgit2-internal merge compute -- the find_tree bridges read and
-    // `write_tree_to` writes possibly-unflushed objects through the registered backend.
-    let repo = transaction.repo();
-    let tree_a = repo.find_tree(a)?;
-    let tree_b = repo.find_tree(b)?;
-    let tree_c = repo.find_tree(c)?;
-    let mut index = repo.merge_trees(&tree_a, &tree_b, &tree_c, None)?;
-    let oid = index.write_tree_to(repo)?;
+    let oid = objects::merge_trees(&transaction.odb()?, a, b, c)?;
     transaction.insert_merge_trees(key, oid);
     Ok(oid)
 }

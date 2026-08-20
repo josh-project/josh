@@ -448,15 +448,15 @@ pub fn process_repo_update(repo_update: RepoUpdate) -> anyhow::Result<String> {
         let oid_to_push = if push_options.merge {
             if let Some(base_commit_id) = transaction_mirror.resolve_ref(&original_target_ref)? {
                 let signature = josh_core::git::josh_commit_signature()?;
-                // PORT: libgit2-internal merge compute over possibly-unflushed commits.
-                let backward_commit = transaction.repo().find_commit(backward_new_oid)?;
-                let base_commit = transaction.repo().find_commit(base_commit_id)?;
-                let merged_tree = transaction
-                    .repo()
-                    .merge_commits(&base_commit, &backward_commit, None)?
-                    .write_tree_to(transaction.repo())?;
+                let odb = transaction.odb()?;
+                let merged_tree = josh_core::objects::merge_commits(
+                    &odb,
+                    base_commit_id,
+                    backward_new_oid,
+                    None,
+                )?;
                 josh_core::objects::write_commit(
-                    &transaction.odb()?,
+                    &odb,
                     merged_tree,
                     &[base_commit_id, backward_new_oid],
                     &signature,
