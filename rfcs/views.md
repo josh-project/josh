@@ -65,9 +65,10 @@ Example: with ref `refs/heads/main` and locator `:/views/foo`, the view is defin
 
 Properties and constraints:
 
-- **Locators are restricted to path-selecting filters** (subdirectory chains, essentially): no
-  stored filters, no views, nothing that itself requires resolution. This keeps view resolution a
-  single non-recursive step and structurally preserves the no-cycles guarantee.
+- **Locators are restricted to chains of `:/` subdirectory ops only**: no stored filters, no
+  views, no `:exclude`, meta or history ops — nothing that itself requires resolution or touches
+  anything beyond path selection. This keeps view resolution a single non-recursive step and
+  structurally preserves the no-cycles guarantee.
 - **Globality survives.** Resolution still reads one ref (the unfiltered tip of `main`) regardless
   of which branch is being fetched. What changes is that view history is interleaved with the
   branch's history (`git log -- views/foo/` instead of a dedicated ref log) — an acceptable trade
@@ -87,6 +88,11 @@ serve views defined in protected branches matching some pattern. Which filtered 
 monorepo exist then becomes a reviewed, access-controlled artifact — a capability the current
 design cannot express.
 
+Views do not change the default exposure on their own: the proxy already serves arbitrary filter
+specs (`repo.git:/.git`) unless the deployment restricts them, so view allow-listing only has
+teeth if raw filter specs are restricted alongside. The search path is name resolution, not an
+ACL; the ACL is which refs match the protected pattern.
+
 ### Storage: `view.josh` text, not the serialized filter representation
 
 The ref's commit contains a `view.josh` file holding the filter in flang syntax. It does **not**
@@ -105,12 +111,24 @@ Rationale:
   normalize that away.
 - **Legible history.** `git log -p <view-ref>` shows meaningful text diffs of the view's evolution.
 - **Free escape hatch.** Power users can inspect or edit a view with nothing but git. A manually
-  pushed invalid `view.josh` fails exactly like an invalid `workspace.josh` does today. The
-  `josh view` command validates on write, so the normal path never hits parse errors.
+  pushed invalid `view.josh` fails exactly like an invalid `workspace.josh` does today: it
+  resolves to the empty filter, yielding an empty result rather than an error. The `josh view`
+  command validates on write, so the normal path never hits parse errors.
 
 Nothing is lost for caching: filter identity attaches to the parsed, resolved, interned filter, not
 to the bytes. Two texts differing only in whitespace or comments resolve to the same interned
 filter and share cache — the correct equivalence.
+
+Resolution reuses the stored-filter parse and legalization path with one deliberate deviation: its
+static invertibility gate — a stored filter with no static inverse is replaced by the empty filter
+— is skipped for `view.josh` itself. `:rev` has no static inverse by design (it is reversed
+per-commit during push) and migration points are `:rev` arms, so the gate would empty every view
+that carries one. The gate still applies to stored filters referenced from the body. The matching
+failure split is a choice, not a constraint: for in-tree filter files, silent empty is forced (a
+broken file in one commit must not abort the history sweep); for `view.josh` — a single read at
+the view ref tip — a loud resolution error would be possible. Matching the established behavior
+keeps one failure model; write-side validation in `josh view` is where invalid views are actually
+caught.
 
 Since flang already supports `:~(...)` meta options, `#` comments, and newline composition, the
 entire view — body, policy flags, migration points, commentary — fits in the one `view.josh` file.
@@ -123,8 +141,9 @@ A view *denotes* a filter; it is not an op in the filter language. Two structura
 1. **Referential transparency.** A filter is a pure function of its input — `:/sub` means the
    same thing forever, which is what makes interning, caching, and the optimizer sound. A view
    resolves against a mutable ref. Making view lookup a first-class op would put external mutable
-   state inside the algebra. (`LazyRef` in `:squash` flirts with this, but those are resolved once
-   at invocation and frozen.)
+   state inside the algebra. (`LazyRef` in `:rev(...)` and `:_=` flirts with this: it can name a
+   ref, but the name is resolved once at invocation, before filtering, and frozen into the
+   interned filter.)
 2. **Policy placement.** A view carries evaluation pragmas — `:~(...)` history flags, migration
    points — that only make sense governing a whole filtering run. An op can appear nested anywhere
    in a composition; "what does `history=linear` mean three levels deep inside a compose" is a
@@ -151,6 +170,13 @@ closed.
 The default view created by `josh view create --workspace <root>` has a body equivalent to the
 current workspace semantics: select the workspace root and compose it with the stored filter
 `<root>/workspace.josh` read from the tree being filtered.
+
+"Equivalent" is meant exactly: the expansion reproduces today's `get_workspace` — the stored
+filter composed with the root, plus the `<root>/workspace.josh` file itself mapped into the
+filtered output — including the established failure semantics for the in-tree file: a missing or
+invalid filter file resolves to the empty filter for that commit, silently, because per-commit
+content must not abort the history sweep. Byte-identical output under the template is what makes
+the migration claim (below) testable.
 
 The key property this preserves: **the filter body still co-evolves atomically with code.** The
 view ref points at an in-tree stored filter, so day-to-day filter edits are ordinary source
@@ -179,6 +205,14 @@ per-branch `workspace.josh` semantics. The body can still vary per commit via th
 delegation — branches can evolve *what is in* the workspace; they cannot disagree about what the
 view fundamentally *is* (its root, compat flags, migration points).
 
+A consequence worth stating plainly: because the view ref resolves from the upstream's current
+state, editing a view body without a `:rev` guard rewrites the filtered history of *past* commits.
+That is the intended semantics for policy changes — tightening an exclude to scrub content,
+flipping a compat flag — and is precisely what frozen in-tree definitions cannot do. Structural
+changes (root moves, semantics flips) must be fenced with a migration point instead. Correctness
+of view edits is the view owner's responsibility, enforced by review on the view ref, with
+`josh view modify` recording the boundary by default (see Implementation order).
+
 Migration points compose correctly with branching by construction: ancestry-based `:rev` matching
 (`<=sha`) does not care about branch names, so a migration point applies to exactly the commits
 descended from (or preceding) it, uniformly across every branch containing them.
@@ -198,6 +232,12 @@ the equation `:workspace=a` ≡ `:/a` + stored filter from `a/workspace.josh` (c
 root) is already how the docs explain workspaces, so replacing the op with `Op::Stored` is a
 hash-preserving refactor. `:workspace=` may survive beyond that as parse-level sugar during a
 deprecation period.
+
+Workspace redirects — a `workspace.josh` whose body is `:workspace=other`, today resolved
+per-commit from tree content with exclude-based recursion protection — migrate to a `:rev` arm in
+the target view: an explicit, reviewable boundary commit replaces tree-content-keyed switching,
+and the recursion protection becomes unnecessary because the indirection is gone. The workflow
+change is that recording the move becomes a view-ref update rather than an ordinary code push.
 
 ### URL syntax
 
@@ -224,7 +264,8 @@ Rationale:
   whereas an `@`-based spelling would put two `@`s with different meanings a few characters apart.
 - The known cost: visual adjacency to argument-`=` — `:=foo` could scan as a malformed `:cmd=arg`.
   Mitigated by the leading-position-only rule; `:` immediately followed by `=` occurs nowhere else
-  in the language.
+  in the language. The nearest neighbor is `:_=<base>` (downstack), one character away — the
+  leading-position-only rule is also what keeps those two distinguishable.
 - The string `:=foo` already lands in the proxy's existing `filter_spec` capture (`[:!].*`), so the
   proxy URL regex is unchanged; the "leading position, at most one" rule lives in the flang-side
   grammar. That restrictedness encodes "a view is not a filter" in the syntax itself.
@@ -247,8 +288,10 @@ Short names resolve via a configurable DWIM search path whose entries generalize
 (ref, locator-template) pairs — default: `refs/josh/views/<name>`, then `refs/heads/views/<name>`;
 a deployment can add e.g. `refs/heads/main` + `:/views/<name>` so that `repo.git:=foo.git` finds
 `views/foo/view.josh` on `main` with no URL syntax at all. "Where views live" is thereby a
-search-path question, which is where it belongs. Fully-qualified `refs/...` names are accepted
-verbatim; ambiguity is an error, never a silent pick.
+search-path question, which is where it belongs. The path is ordered and first match wins — the
+same rule as git's own ref DWIM — so later entries act as fallbacks, never as ties.
+Fully-qualified `refs/...` names are accepted verbatim; if a fully-qualified name ever matches
+more than one existing ref, that ambiguity is an error, never a silent pick.
 
 Flang-free URLs for monorepo consumers are a deployment-layer concern, not core syntax: a proxy
 alias map (`frontend.git` → `monorepo.git:=frontend`) provides vanity naming, deprecation
@@ -277,6 +320,10 @@ construction, so filtered trees are byte-identical and no history diverges.
 
 1. View resolution: ref lookup, DWIM search path, `view.josh` parsing, `:=name` URL element.
 2. `josh view` command surface: create (orphan branch setup, workspace template), modify, list.
+   View refs are written unfiltered — the command pushes the view ref directly, not through the
+   filter-reversing push path. `modify` pins a migration point at the upstream tip in the same
+   ref commit as a body change by default (with an opt-out), so the common structural-change case
+   is atomic by construction.
 3. Workspace import tooling. Workspaces and views coexist from here on.
 4. *(future, after the migration period)* Deprecate `Op::Workspace` and unify it into
    `Op::Stored` — a hash-preserving refactor that shrinks the op algebra.
@@ -285,7 +332,8 @@ construction, so filtered trees are byte-identical and no history diverges.
 
 - Exact DWIM search path defaults and its deployment configuration syntax.
 - Whether josh ever auto-writes migration points to view refs on push (e.g. when a push changes
-  the stored filter's location), or ref updates stay explicit-only. Leaning explicit-only first.
+  the stored filter's location), beyond the `josh view modify` default above, or ref updates stay
+  explicit-only. Leaning explicit-only beyond the CLI default.
 - Duration of the coexistence period and the deprecation timeline for `Op::Workspace` /
   `:workspace=` syntax.
 
