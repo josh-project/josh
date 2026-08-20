@@ -622,20 +622,12 @@ pub fn unapply_filter(
                     // If our assumption was correct and all conflicts were in filtered files,
                     // both resulting trees will be the same and we can pick the result to proceed.
 
-                    // PORT: libgit2-internal merge compute -- the find_commit bridges and
-                    // `write_tree_to` move possibly-unflushed objects through the
-                    // registered backend.
-                    let parent0 = transaction.repo().find_commit(original_parents[0].id())?;
-                    let parent1 = transaction.repo().find_commit(original_parents[1].id())?;
-
-                    let mut mergeopts = git2::MergeOptions::new();
-                    mergeopts.file_favor(git2::FileFavor::Ours);
-
-                    let mut merged_index =
-                        transaction
-                            .repo()
-                            .merge_commits(&parent0, &parent1, Some(&mergeopts))?;
-                    let base_tree = merged_index.write_tree_to(transaction.repo())?;
+                    let base_tree = objects::merge_commits(
+                        &odb,
+                        original_parents[0].id(),
+                        original_parents[1].id(),
+                        Some(objects::merge::Favor::Ours),
+                    )?;
                     // The base is a merge of both original parents; resolve any `:rev(...)` cutoff
                     // against the first parent (mirrors the descendant-pick preference above).
                     let tid_ours = filter::unapply(
@@ -646,13 +638,12 @@ pub fn unapply_filter(
                         Some((module_commit.id(), original_parents[0].id())),
                     )?;
 
-                    mergeopts.file_favor(git2::FileFavor::Theirs);
-
-                    let mut merged_index =
-                        transaction
-                            .repo()
-                            .merge_commits(&parent0, &parent1, Some(&mergeopts))?;
-                    let base_tree = merged_index.write_tree_to(transaction.repo())?;
+                    let base_tree = objects::merge_commits(
+                        &odb,
+                        original_parents[0].id(),
+                        original_parents[1].id(),
+                        Some(objects::merge::Favor::Theirs),
+                    )?;
                     let tid_theirs = filter::unapply(
                         transaction,
                         filter,

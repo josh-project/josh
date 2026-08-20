@@ -188,19 +188,17 @@ fn prepare_push(
                 "--merge requires --base=<ref> or an existing destination ref"
             ));
         }
-        let base_commit = repo.find_commit(original_target)?;
-        let backward_commit = repo.find_commit(unfiltered_oid)?;
-        let merged_tree = repo
-            .merge_commits(&base_commit, &backward_commit, None)?
-            .write_tree_to(repo)?;
+        let odb = transaction.odb()?;
+        let merged_tree =
+            josh_core::objects::merge_commits(&odb, original_target, unfiltered_oid, None)?;
         let signature = josh_core::git::josh_commit_signature()?;
-        repo.commit(
-            None,
+        josh_core::objects::write_commit(
+            &odb,
+            merged_tree,
+            &[original_target, unfiltered_oid],
             &signature,
             &signature,
             &format!("Merge from {}", josh_core::filter::pretty(filter, 0)),
-            &repo.find_tree(merged_tree)?,
-            &[&base_commit, &backward_commit],
         )?
     } else {
         unfiltered_oid

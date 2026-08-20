@@ -1,0 +1,317 @@
+//! Three-way merges over an object source, so the merge reads and writes the same objects as
+//! the rest of a transaction -- including the trees it has not written out yet.
+//!
+//! josh merges bare trees: there is no worktree to read from, no attributes to consult and no
+//! external merge drivers to run, so the platforms below are the empty configuration of each.
+
+use crate::{git2_oid, gix_oid};
+
+/// Which side wins a conflicting hunk.
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+pub enum Favor {
+    Ours,
+    Theirs,
+}
+
+/// The scratch state a merge needs. Cheap to build and not worth caching: the merges josh
+/// runs are per-push, not per-commit.
+struct Platforms {
+    diff: gix_diff::blob::Platform,
+    blob: gix_merge::blob::Platform,
+}
+
+fn attributes() -> gix_worktree::Stack {
+    // No worktree root and no id mappings, so every attribute lookup misses and nothing
+    // touches the filesystem.
+    gix_worktree::Stack::new(
+        std::path::PathBuf::new(),
+        gix_worktree::stack::State::AttributesStack(gix_worktree::stack::state::Attributes::new(
+            Default::default(),
+            None,
+            gix_worktree::stack::state::attributes::Source::IdMapping,
+            Default::default(),
+        )),
+        gix_glob::pattern::Case::Sensitive,
+        Vec::new(),
+        Vec::new(),
+    )
+}
+
+fn platforms() -> Platforms {
+    let filter = || gix_filter::Pipeline::new(Default::default(), Default::default());
+    Platforms {
+        diff: gix_diff::blob::Platform::new(
+            Default::default(),
+            gix_diff::blob::Pipeline::new(
+                Default::default(),
+                filter(),
+                Vec::new(),
+                Default::default(),
+            ),
+            gix_diff::blob::pipeline::Mode::ToGit,
+            attributes(),
+        ),
+        blob: gix_merge::blob::Platform::new(
+            gix_merge::blob::Pipeline::new(Default::default(), filter(), Default::default()),
+            gix_merge::blob::pipeline::Mode::ToGit,
+            attributes(),
+            Vec::new(),
+            Default::default(),
+        ),
+    }
+}
+
+fn options(favor: Option<Favor>) -> gix_merge::tree::Options {
+    use gix_merge::blob::builtin_driver::{binary, text};
+    let (conflict, binary_conflict) = match favor {
+        None => (
+            text::Conflict::Keep {
+                style: Default::default(),
+                marker_size: text::Conflict::DEFAULT_MARKER_SIZE
+                    .try_into()
+                    .expect("non-zero"),
+            },
+            None,
+        ),
+        Some(Favor::Ours) => (
+            text::Conflict::ResolveWithOurs,
+            Some(binary::ResolveWith::Ours),
+        ),
+        Some(Favor::Theirs) => (
+            text::Conflict::ResolveWithTheirs,
+            Some(binary::ResolveWith::Theirs),
+        ),
+    };
+    gix_merge::tree::Options {
+        rewrites: Some(Default::default()),
+        blob_merge: gix_merge::blob::platform::merge::Options {
+            is_virtual_ancestor: false,
+            resolve_binary_with: binary_conflict,
+            text: text::Options {
+                diff_algorithm: gix_diff::blob::Algorithm::Histogram,
+                conflict,
+            },
+        },
+        blob_merge_command_ctx: Default::default(),
+        fail_on_conflict: None,
+        marker_size_multiplier: 0,
+        symlink_conflicts: None,
+        tree_conflicts: None,
+    }
+}
+
+/// Turn a merge result into the tree it produced, erroring on anything git would call a
+/// conflict. A side preference resolves conflicting content, so what remains unresolved are
+/// the conflicts no side preference can decide (a path deleted on one side and modified on
+/// the other, say).
+fn write_result(
+    objects: &impl gix_object::Write,
+    mut outcome: gix_merge::tree::Outcome<'_>,
+    labels: (git2::Oid, git2::Oid),
+) -> anyhow::Result<git2::Oid> {
+    let unresolved = gix_merge::tree::TreatAsUnresolved::default();
+    if outcome.has_unresolved_conflicts(unresolved) {
+        let paths: Vec<_> = outcome
+            .conflicts
+            .iter()
+            .filter(|c| c.is_unresolved(unresolved))
+            .map(|c| c.ours.location().to_string())
+            .collect();
+        return Err(anyhow::anyhow!(
+            "merge of {} and {} conflicts in {}",
+            labels.0,
+            labels.1,
+            paths.join(", ")
+        ));
+    }
+    let id = outcome
+        .tree
+        .write(|tree| gix_object::Write::write(objects, tree))
+        .map_err(|e| anyhow::anyhow!("writing merge result: {e}"))?;
+    Ok(git2_oid(&id))
+}
+
+/// Merge `ours` and `theirs` against their common ancestor `base`, all trees.
+pub fn merge_trees(
+    objects: &(impl gix_object::FindObjectOrHeader + gix_object::Write),
+    base: git2::Oid,
+    ours: git2::Oid,
+    theirs: git2::Oid,
+) -> anyhow::Result<git2::Oid> {
+    let mut platforms = platforms();
+    let outcome = gix_merge::tree(
+        &gix_oid(base),
+        &gix_oid(ours),
+        &gix_oid(theirs),
+        gix_merge::blob::builtin_driver::text::Labels::default(),
+        objects,
+        |buf| gix_object::Write::write_buf(objects, gix_object::Kind::Blob, buf),
+        &mut gix_diff::tree::State::default(),
+        &mut platforms.diff,
+        &mut platforms.blob,
+        options(None),
+    )?;
+    write_result(objects, outcome, (ours, theirs))
+}
+
+/// Merge two commits, finding their merge base the way git does -- several equally good bases
+/// are merged into a virtual one first. A `favor` decides conflicting hunks, leaving only the
+/// conflicts no side preference can resolve.
+pub fn merge_commits(
+    objects: &(impl gix_object::FindObjectOrHeader + gix_object::Write),
+    ours: git2::Oid,
+    theirs: git2::Oid,
+    favor: Option<Favor>,
+) -> anyhow::Result<git2::Oid> {
+    let mut platforms = platforms();
+    let mut graph = gix_revwalk::Graph::new(objects, None);
+    let outcome = gix_merge::commit(
+        gix_oid(ours),
+        gix_oid(theirs),
+        gix_merge::blob::builtin_driver::text::Labels::default(),
+        &mut graph,
+        &mut platforms.diff,
+        &mut platforms.blob,
+        objects,
+        &mut |id| id.to_string(),
+        gix_merge::commit::Options {
+            allow_missing_merge_base: true,
+            use_first_merge_base: false,
+            tree_merge: options(favor),
+        },
+    )?;
+    write_result(objects, outcome.tree_merge, (ours, theirs))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    struct TestRepo {
+        _dir: tempfile::TempDir,
+        repo: git2::Repository,
+    }
+
+    impl TestRepo {
+        fn new() -> Self {
+            let dir = tempfile::tempdir().unwrap();
+            let repo = git2::Repository::init_bare(dir.path()).unwrap();
+            TestRepo { _dir: dir, repo }
+        }
+
+        fn tree(&self, files: &[(&str, &str)]) -> git2::Oid {
+            let mut builder = self.repo.treebuilder(None).unwrap();
+            for (name, content) in files {
+                let blob = self.repo.blob(content.as_bytes()).unwrap();
+                builder.insert(name, blob, 0o100644).unwrap();
+            }
+            builder.write().unwrap()
+        }
+
+        fn commit(&self, tree: git2::Oid, parents: &[git2::Oid]) -> git2::Oid {
+            let sig = git2::Signature::new("Test", "test@example.com", &git2::Time::new(1000, 0))
+                .unwrap();
+            let tree = self.repo.find_tree(tree).unwrap();
+            let parents: Vec<_> = parents
+                .iter()
+                .map(|&p| self.repo.find_commit(p).unwrap())
+                .collect();
+            let parent_refs: Vec<&git2::Commit> = parents.iter().collect();
+            self.repo
+                .commit(None, &sig, &sig, "c", &tree, &parent_refs)
+                .unwrap()
+        }
+
+        fn file(&self, tree: git2::Oid, name: &str) -> String {
+            let entry = self
+                .repo
+                .find_tree(tree)
+                .unwrap()
+                .get_name(name)
+                .unwrap_or_else(|| panic!("{name} not in tree"))
+                .id();
+            String::from_utf8(self.repo.find_blob(entry).unwrap().content().to_vec()).unwrap()
+        }
+    }
+
+    /// Edits on different lines of one file merge into a single file holding both, and each
+    /// side's other changes carry over.
+    #[test]
+    fn non_overlapping_edits_merge_cleanly() {
+        let t = TestRepo::new();
+        let base = t.tree(&[("a", "1\n2\n3\n"), ("b", "keep\n")]);
+        let ours = t.tree(&[("a", "one\n2\n3\n"), ("b", "keep\n"), ("new", "ours\n")]);
+        let theirs = t.tree(&[("a", "1\n2\nthree\n"), ("b", "keep\n")]);
+        let odb = t.repo.odb().unwrap();
+        let objects = crate::Git2Odb(&odb);
+
+        let merged = merge_trees(&objects, base, ours, theirs).unwrap();
+
+        assert_eq!(t.file(merged, "a"), "one\n2\nthree\n");
+        assert_eq!(t.file(merged, "b"), "keep\n");
+        assert_eq!(t.file(merged, "new"), "ours\n");
+    }
+
+    #[test]
+    fn overlapping_edits_conflict() {
+        let t = TestRepo::new();
+        let base = t.tree(&[("a", "1\n")]);
+        let ours = t.tree(&[("a", "ours\n")]);
+        let theirs = t.tree(&[("a", "theirs\n")]);
+        let odb = t.repo.odb().unwrap();
+        let objects = crate::Git2Odb(&odb);
+
+        let err = merge_trees(&objects, base, ours, theirs)
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("conflicts in a"), "{err}");
+    }
+
+    #[test]
+    fn a_favor_decides_conflicting_content() {
+        let t = TestRepo::new();
+        let base = t.commit(t.tree(&[("a", "1\n")]), &[]);
+        let ours = t.commit(t.tree(&[("a", "ours\n")]), &[base]);
+        let theirs = t.commit(t.tree(&[("a", "theirs\n")]), &[base]);
+        let odb = t.repo.odb().unwrap();
+        let objects = crate::Git2Odb(&odb);
+
+        let merged = merge_commits(&objects, ours, theirs, Some(Favor::Ours)).unwrap();
+        assert_eq!(t.file(merged, "a"), "ours\n");
+
+        let merged = merge_commits(&objects, ours, theirs, Some(Favor::Theirs)).unwrap();
+        assert_eq!(t.file(merged, "a"), "theirs\n");
+    }
+
+    /// The conflicts josh reports are the ones no side preference can decide, which is what
+    /// makes a favored merge fail at all.
+    #[test]
+    fn a_favor_cannot_decide_delete_against_modify() {
+        let t = TestRepo::new();
+        let base = t.commit(t.tree(&[("a", "1\n"), ("b", "1\n")]), &[]);
+        let ours = t.commit(t.tree(&[("b", "1\n")]), &[base]);
+        let theirs = t.commit(t.tree(&[("a", "modified\n"), ("b", "1\n")]), &[base]);
+        let odb = t.repo.odb().unwrap();
+        let objects = crate::Git2Odb(&odb);
+
+        let err = merge_commits(&objects, ours, theirs, Some(Favor::Ours))
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("conflicts in a"), "{err}");
+    }
+
+    #[test]
+    fn commits_merge_across_their_common_ancestor() {
+        let t = TestRepo::new();
+        let base = t.commit(t.tree(&[("a", "1\n"), ("b", "1\n")]), &[]);
+        let ours = t.commit(t.tree(&[("a", "2\n"), ("b", "1\n")]), &[base]);
+        let ours = t.commit(t.tree(&[("a", "3\n"), ("b", "1\n")]), &[ours]);
+        let theirs = t.commit(t.tree(&[("a", "1\n"), ("b", "2\n")]), &[base]);
+        let odb = t.repo.odb().unwrap();
+        let objects = crate::Git2Odb(&odb);
+
+        let merged = merge_commits(&objects, ours, theirs, Some(Favor::Ours)).unwrap();
+        assert_eq!(t.file(merged, "a"), "3\n");
+        assert_eq!(t.file(merged, "b"), "2\n");
+    }
+}
