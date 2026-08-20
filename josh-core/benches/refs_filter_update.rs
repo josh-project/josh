@@ -130,6 +130,9 @@ impl RefsBench {
             let transaction = context.open()?;
             let case = cases.first().expect("at least one case");
             let filtered = josh_core::filter_commit(&transaction, filter, case.head)?;
+            // The gate reads the filtered result through the repository handle, which only
+            // sees what is on disk.
+            transaction.flush_mem_odb()?;
             let repo = transaction.repo();
             let filtered_tree = repo.find_commit(filtered)?.tree()?.id();
             let raw_subdir_tree = repo

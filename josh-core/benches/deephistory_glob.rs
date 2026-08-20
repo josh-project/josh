@@ -175,6 +175,9 @@ impl GlobBench {
             for pattern in [PATTERN_RECURSIVE, PATTERN_PREFIX, PATTERN_LITERAL] {
                 let filter = Filter::new().pattern(pattern).expect("valid glob");
                 let filtered = josh_core::filter_commit(&transaction, filter, case.head)?;
+                // The gate compares against an independent git2 reference model, which only
+                // sees what is on disk.
+                transaction.flush_mem_odb()?;
                 let got = repo.find_commit(filtered)?.tree_id();
                 let (want, kept) = expected_tree(repo, case.head, &glob_pred(pattern))?;
                 anyhow::ensure!(
@@ -469,7 +472,12 @@ fn deephistory_glob(c: &mut Criterion) {
                 .expect("probe commit");
             let filtered =
                 josh_core::filter_commit(&transaction, filter, probe).expect("filter probe");
-            let got = transaction.repo().find_commit(filtered).unwrap().tree_id();
+            // The filtered commit is still buffered, so read it through the transaction's
+            // object source.
+            let got = josh_core::objects::CommitData::read(&transaction.odb().unwrap(), filtered)
+                .unwrap()
+                .tree_id()
+                .unwrap();
             let (want, _) =
                 expected_tree(transaction.repo(), probe, &glob_pred(pattern)).expect("expected");
             assert_eq!(

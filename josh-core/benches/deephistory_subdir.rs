@@ -121,6 +121,9 @@ impl SubdirBench {
             let transaction = context.open()?;
             let case = cases.first().expect("at least one case");
             let filtered = josh_core::filter_commit(&transaction, filter, case.head)?;
+            // The gate reads the filtered result through the repository handle, which only
+            // sees what is on disk.
+            transaction.flush_mem_odb()?;
             let repo = transaction.repo();
             let filtered_tree = repo.find_commit(filtered)?.tree()?.id();
             let raw_subdir_tree = repo
@@ -304,7 +307,13 @@ fn deephistory_rev(c: &mut Criterion) {
         let rev_head = josh_core::filter_commit(&transaction, rev_filter, case.head).expect("rev");
         let sub_head =
             josh_core::filter_commit(&transaction, bench.filter, case.head).expect("subdir");
-        let tree_of = |oid| transaction.repo().find_commit(oid).unwrap().tree_id();
+        // Both heads are freshly filtered, so read them through the transaction's objects.
+        let tree_of = |oid| {
+            josh_core::objects::CommitData::read(&transaction.odb().unwrap(), oid)
+                .unwrap()
+                .tree_id()
+                .unwrap()
+        };
         assert_eq!(
             tree_of(rev_head),
             tree_of(sub_head),

@@ -147,6 +147,9 @@ impl GlobBench {
                     .pattern(PATTERN_RECURSIVE)
                     .expect("valid glob");
                 let filtered = josh_core::filter_commit(&transaction, filter, case.head)?;
+                // The gate compares against an independent git2 reference model, which only
+                // sees what is on disk.
+                transaction.flush_mem_odb()?;
                 let got = repo.find_commit(filtered)?.tree_id();
                 let (want, kept) = expected_tree(repo, case.head, &|p| p.ends_with(".rs"))?;
                 anyhow::ensure!(kept > 0, "recursive gate kept no blobs -- would be a no-op");
@@ -162,6 +165,7 @@ impl GlobBench {
                 // (valid only absent dot-components).
                 let filter = Filter::new().pattern(PATTERN_PREFIX).expect("valid glob");
                 let filtered = josh_core::filter_commit(&transaction, filter, case.head)?;
+                transaction.flush_mem_odb()?;
                 let got_tree = repo.find_commit(filtered)?.tree()?;
                 anyhow::ensure!(
                     got_tree.len() == 1,
@@ -180,6 +184,7 @@ impl GlobBench {
                 // Sparse pattern: keeps exactly the N_SPARSE planted `.toml` blobs.
                 let filter = Filter::new().pattern(PATTERN_SPARSE).expect("valid glob");
                 let filtered = josh_core::filter_commit(&transaction, filter, case.head)?;
+                transaction.flush_mem_odb()?;
                 let got = repo.find_commit(filtered)?.tree_id();
                 let (want, kept) = expected_tree(repo, case.head, &|p| p.ends_with(".toml"))?;
                 anyhow::ensure!(
