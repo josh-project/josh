@@ -123,6 +123,7 @@ pub fn discover_filter_candidates(transaction: &cache::Transaction) -> anyhow::R
     let trace_s = span!(Level::TRACE, "discover_filter_candidates");
     let _e = trace_s.enter();
 
+    let odb = repo.odb()?;
     transaction.for_each_ref_prefixed("refs/josh/upstream/", |name, target| {
         if !name.ends_with(".git/HEAD") {
             return Ok(());
@@ -139,12 +140,12 @@ pub fn discover_filter_candidates(transaction: &cache::Transaction) -> anyhow::R
             .or_insert_with(|| (git2::Oid::ZERO_SHA1, BTreeSet::new()));
 
         if known_f.0 != target {
+            // PORT: mirror-resident fetched target, and `peel` tolerates annotated tags --
+            // stays on git2 until flag day.
             let tree = repo
                 .find_object(target, None)?
                 .peel(git2::ObjectType::Tree)?;
-            let hs = find_all_workspaces_and_subdirectories(
-                tree.as_tree().ok_or_else(|| anyhow!("not a tree"))?,
-            )?;
+            let hs = find_all_workspaces_and_subdirectories(&objects::Git2Odb(&odb), tree.id())?;
             known_f.0 = target;
             for i in hs {
                 known_f.1.insert(i);
@@ -170,28 +171,31 @@ pub fn discover_filter_candidates(transaction: &cache::Transaction) -> anyhow::R
 }
 
 pub fn find_all_workspaces_and_subdirectories(
-    tree: &git2::Tree,
+    src: &impl gix_object::Find,
+    tree: git2::Oid,
 ) -> anyhow::Result<std::collections::HashSet<String>> {
     let _trace_s = span!(Level::TRACE, "find_all_workspaces_and_subdirectories");
     let mut hs = std::collections::HashSet::new();
-    tree.walk(git2::TreeWalkMode::PreOrder, |root, entry| {
+    objects::walk_tree_preorder(src, tree, &mut |root, entry| {
         if root.is_empty() {
-            return 0;
+            return Ok(());
         }
 
-        if entry.name().ok() == Some("workspace.josh") {
-            hs.insert(format!(":workspace={}", root.trim_matches('/')));
+        if &entry.filename[..] == b"workspace.josh" {
+            hs.insert(format!(":workspace={}", root));
         }
-        let v = format!("::{}/", root.trim_matches('/'));
+        let v = format!("::{}/", root);
         if v.chars().filter(|x| *x == '/').count() < 3 {
             hs.insert(v);
         }
 
-        0
+        Ok(())
     })?;
     Ok(hs)
 }
 
+// PORT: dead code, zero callers workspace-wide; reads filtered commits through the repo
+// handle.
 pub fn get_info(
     transaction: &cache::Transaction,
     filter: filter::Filter,

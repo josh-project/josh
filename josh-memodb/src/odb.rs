@@ -86,6 +86,21 @@ impl<'repo> Odb<'repo> {
         self.mem.contains(&josh_gix_ext::gix_oid(oid)) || self.disk.exists(oid)
     }
 
+    /// Kind of `oid`, or `None` if the object does not exist. Never decompresses. The disk
+    /// fallback resolves the empty tree even when it is stored nowhere, so probes on
+    /// possibly-empty trees belong here and never on [`contains`](Odb::contains).
+    pub fn try_kind(&self, oid: git2::Oid) -> Result<Option<Kind>, git2::Error> {
+        if let Some((kind, _)) = self.mem.header(&josh_gix_ext::gix_oid(oid)) {
+            return Ok(Some(kind));
+        }
+        let (_, kind) = match self.disk.read_header(oid) {
+            Ok(h) => h,
+            Err(e) if e.code() == git2::ErrorCode::NotFound => return Ok(None),
+            Err(e) => return Err(e),
+        };
+        Ok(josh_gix_ext::gix_kind(kind))
+    }
+
     /// Hash and buffer an object in the memory store, returning its content id. The buffer is
     /// skipped when the object is already in memory or in a runtime alternate: proxy overlays
     /// must never buffer mirror objects, or flushed packs would gain duplicates and change
@@ -286,6 +301,29 @@ mod tests {
         assert_eq!(oid, on_disk);
         assert!(store.contains(&josh_gix_ext::gix_oid(oid)));
         assert!(matches!(odb.read(oid).unwrap().1, Bytes::Mem(_)));
+    }
+
+    /// The empty tree reads as an existing tree through `try_kind` even when it is absent
+    /// from memory AND disk, while `contains` reports it absent -- kind probes on
+    /// possibly-empty trees rely on exactly this.
+    #[test]
+    fn try_kind_virtualizes_empty_tree() {
+        let dir = tempfile::tempdir().unwrap();
+        let repo = git2::Repository::init(dir.path()).unwrap();
+        let store = MemOdb::new(None, crate::pack::objects_dir(&repo));
+        store.register(&repo);
+        let odb = facade(&store, &repo);
+
+        let empty_tree = git2::Oid::from_str("4b825dc642cb6eb9a060e54bf8d69288fbee4904").unwrap();
+        assert!(!store.contains(&josh_gix_ext::gix_oid(empty_tree)));
+        assert_eq!(odb.try_kind(empty_tree).unwrap(), Some(Kind::Tree));
+        assert!(!odb.contains(empty_tree));
+
+        // A genuinely absent object is None; a buffered object reports its memory kind.
+        let absent = git2::Oid::from_str("0123456789012345678901234567890123456789").unwrap();
+        assert_eq!(odb.try_kind(absent).unwrap(), None);
+        let blob = odb.write(Kind::Blob, b"probe");
+        assert_eq!(odb.try_kind(blob).unwrap(), Some(Kind::Blob));
     }
 
     /// git2-side writes (through the registered backend) and facade reads share one store.
