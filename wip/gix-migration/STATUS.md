@@ -1,6 +1,6 @@
 # git2 -> gix port: status
 
-Last updated: 2026-08-20 (post-3.2h). See `PLAN.md` in this directory for the full phased plan.
+Last updated: 2026-08-20 (post-3.2z). See `PLAN.md` in this directory for the full phased plan.
 
 ## Landed on master (one commit per step, each suite-green and bench-validated)
 
@@ -43,6 +43,12 @@ Last updated: 2026-08-20 (post-3.2h). See `PLAN.md` in this directory for the fu
 
 | 3.2h | 8d897d0d | Merges onto the object source, closing the last of the six PORT-marked graph/merge sites. New `josh-gix-ext/src/merge.rs` runs gix-merge (new workspace dep, pulling gix-diff/filter/worktree/glob/command/revwalk in with it) over a `FindObjectOrHeader + Write` source: `merge_trees` for a plain 3-way tree merge, `merge_commits` for two commits including git's recursive merge-base handling (several equally good bases are merged into a virtual one). josh merges bare trees, so both platforms are the empty configuration -- no worktree roots, no attribute stack, no external drivers; rename detection stays on, matching libgit2's `GIT_MERGE_FIND_RENAMES` default. A merge errors on anything git calls unresolved (`TreatAsUnresolved::default()`), which reproduces libgit2's conflicted-index-then-`write_tree_to`-error path; the optional side preference maps libgit2's file-favor, so forced content resolutions are not conflicts but a delete-vs-modify still is. Ported: `unapply_filter`'s ours/theirs merge pair, `cached_merge_trees`, the `-o merge` push path in josh-proxy and josh-cli, `josh pull`'s restack (its cherry-picked commits now go through `write_commit_with_signatures_of`), and -- via a new `graph::merge_base` -- the last two libgit2 graph calls in josh-cli. No libgit2 graph or merge compute remains outside the allowlisted `git.rs` worktree/index paths. Tests pin the contract: a clean line-level merge, a conflict, a side preference deciding one, and a delete-vs-modify it cannot | `unapply` flat (all six cases p > 0.05) |
 
+| 3.2i | 7f7bb8fc | The last object consumers, so 3.2z could be a pure deletion. josh-starlark was the blocker: its `Tree` value held a raw `*const git2::Repository` and is evaluated against the *filtered* tree, which only exists in memory -- it now holds a `*const dyn gix_object::Find` (same raw-pointer contract, lifetime erased in one place) and its lookups are three new josh-gix-ext helpers, `read_tree_entries`, `path_entry` and `blob_text`, which also replace josh-search's private copies. Also ported: josh-templates' template and query blob reads, josh-github-changes' id/vote blob *writes*, PR head commits, the Gerrit dependency check, and the commit reads behind `josh changes list/show/deps`, `josh pull` and `josh sync`. What stays on the repository handle reads only on-disk objects: rev-parse and peeling, the worktree checkout, `git.rs`'s index snapshot, and `josh changes show`'s per-file line stats (libgit2 patch machinery over a commit behind a ref, PORT-marked rather than pulling gix-diff line counting into this step) | n/a (josh-core hot paths untouched) |
+
+| 3.2z | 34068316 | **The libgit2 ODB backend is retired.** `odb_backend.rs` is deleted -- `register` replaced a repository's whole ODB with a hand-built `git_odb_backend` reached through `extern "C"` trampolines, getting at the raw pointer by casting into git2's private `Repository` newtype, a cast that had to be re-verified on every git2 upgrade -- along with `MemOdb::register` and both call sites. josh-memodb no longer depends on libgit2-sys (`cargo tree -i libgit2-sys` reaches it only through git2); it keeps `git2` itself, since the facade's disk side stays a `git2::Odb` until 3.3. Three production paths were still reading josh-produced objects through the repository handle and failed loudly, exactly as predicted: the worktree `checkout_tree` in `josh changes pull` and the rev-parse of the refs `josh-filter --reverse` has just written (both flush first now), and `filter_commit`'s peel -- whose PORT comment claimed "oid comes from refs", false for a *chained* filter, where the input is the previous step's fresh commit, and for `josh link update`; it is now `objects::peel_to_commit` over the object source, unwrapping annotated tags as before. Store tests wrote via `repo.blob()` relying on backend routing and now write to the store directly; five tree tests read their results back through the facade | `deephistory_prefix_flush` flat. `unapply_extend` +162/+195/+34%, `unapply_new_branch` +1.4 to +5.8% -- NOT a code regression: the bench's simulated pushed chain is built with git2, so it used to land in the store and now lands on disk. Forcing the same on-disk placement at the parent commit (backend still registered) reproduces it larger, at +395/+535/+182%, which also makes the new numbers the faithful ones -- a real push arrives through receive-pack and hits disk before josh unapplies it |
+
+| (follow-up) | b54cfb59 | Bench correctness gates, which 3.2z broke in seven of the twelve benches (`cargo bench` is not part of `josh compose run`, so the suite was green while the benches would not start). Gates that only need a filtered commit's tree read it through the transaction's object source; gates that feed filtered objects to a deliberately *independent* git2 reference model -- `expected_tree`, `count_history`, `unapply`'s first-parent chase -- flush instead, so the model keeps checking josh's output against git rather than against josh's own object layer | n/a (untimed setup) |
+
 Phase 1.2 is complete: no `treebuilder` use remains in `josh-core/src/filter/tree.rs`.
 
 Phase 1.3 (commit/blob creation) required no work: every commit write already goes through
@@ -84,10 +90,12 @@ josh-compose's ephemeral reads — the prysk orchestrator itself). So 3.2 contin
    (`objects::is_descendant_of`, `objects::merge_base_octopus`).
 3. **3.2h is landed**: merges run over the object source, so nothing outside the allowlisted
    `git.rs` worktree/index paths computes graphs or merges through libgit2 any more.
-4. **3.2z** Unregister both backends, delete `odb_backend.rs`, drop git2/libgit2-sys from
-   josh-memodb (error type + `objects_dir(&Path)`). Its gates are cleared; what remains on
-   the repo handle is refs, rev-parse and HEAD, none of which the backend serves. Any missed
-   site fails loudly (NotFound on a josh-written oid).
+4. **3.2i and 3.2z are landed**: the backend is gone. What still reaches the repository
+   handle only ever reads on-disk objects -- refs, rev-parse, HEAD, the worktree checkout,
+   `git.rs`'s index snapshot and `josh changes show`'s line stats.
+   Lesson for the remaining steps: `josh compose run` does not build the benches, so run
+   `cargo bench -- --test` over all of them before calling a step done (the trigram bench
+   rejects `--test`; run it with `--quick`).
 5. **3.3 flag day**: Transaction opens `gix::ThreadSafeRepository` (isolated), refs via
    gix-ref (parity contract pinned in the 2.1 method comments + unit tests). Facade disk
    side flips to `repo.objects` — pre-seed the empty tree then (gix does not virtualize it;
