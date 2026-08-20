@@ -378,43 +378,41 @@ fn run_filter(args: Vec<String>) -> anyhow::Result<i32> {
         // PORT: rev-parse stays on the git2 handle until flag day (gix rev_parse then).
         let commit = repo.revparse_single(&input_ref)?.peel_to_commit()?;
 
-        let tree = repo
-            .find_commit(josh_core::filter_commit(
-                &transaction,
-                filterobj,
-                commit.id(),
-            )?)?
-            .tree()?;
+        let odb = transaction.odb()?;
+        let tree = josh_core::objects::CommitData::read(
+            &odb,
+            josh_core::filter_commit(&transaction, filterobj, commit.id())?,
+        )?
+        .tree_id()?;
 
-        /* let start = std::time::Instant::now(); */
         // The trigram index is experimental; without it every file is a candidate and
         // search_matches does all the filtering, so results are identical, just slower.
         let candidates = if josh_core::filter::experimental_features_enabled() {
             let ifilterobj = filterobj.chain(josh_core::filter::parse(":SQUASH:INDEX")?);
             let index_commit = josh_core::filter_commit(&transaction, ifilterobj, commit.id())?;
-            let index_tree = repo.find_commit(index_commit)?.tree()?;
-            josh_search::search_candidates(&repo, &index_tree, &tree, searchstring)?
+            let index_tree = josh_core::objects::CommitData::read(&odb, index_commit)?.tree_id()?;
+            josh_search::search_candidates(&odb, index_tree, tree, searchstring)?
         } else {
             let mut scan = vec![];
-            tree.walk(git2::TreeWalkMode::PreOrder, |root, entry| {
-                if entry.kind() == Some(git2::ObjectType::Blob)
-                    && let Ok(name) = entry.name()
+            josh_core::objects::walk_tree_preorder(&odb, tree, &mut |parent, entry| {
+                if !entry.mode.is_tree()
+                    && !entry.mode.is_commit()
+                    && let Ok(name) = std::str::from_utf8(entry.filename)
                 {
-                    scan.push(format!("{}{}", root, name));
+                    let separator = if parent.is_empty() { "" } else { "/" };
+                    scan.push(format!("{}{}{}", parent, separator, name));
                 }
-                0
+                Ok(())
             })?;
             scan
         };
-        let matches = josh_search::search_matches(&repo, &tree, searchstring, &candidates)?;
-        /* let duration = start.elapsed(); */
+        let matches = josh_search::search_matches(&odb, tree, searchstring, &candidates)?;
 
         for r in matches {
             for l in r.1 {
                 println!("{}:{}: {}", r.0, l.0, l.1);
             }
         }
-        /* eprintln!("\n Search took {:?}", duration); */
     }
 
     if reverse {

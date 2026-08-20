@@ -1,5 +1,8 @@
 use std::collections::HashSet;
 
+use josh_core::cache;
+use josh_core::memodb;
+
 use josh_compose_backend::ArtifactBackend;
 
 use crate::OutputMode;
@@ -18,7 +21,8 @@ use crate::naming;
 /// early-return path in `container::run_container`. When `ignore_cache` is true, every
 /// image a fresh-cache run would build is reported.
 pub fn collect_image_oids(
-    repo: &git2::Repository,
+    transaction: &cache::Transaction,
+    odb: &memodb::Odb,
     ws_tree: git2::Oid,
     ignore_cache: bool,
     runtime: &dyn ArtifactBackend,
@@ -27,7 +31,8 @@ pub fn collect_image_oids(
     let mut image_seen: HashSet<git2::Oid> = HashSet::new();
     let mut ws_seen: HashSet<git2::Oid> = HashSet::new();
     walk_workspace(
-        repo,
+        transaction,
+        odb,
         ws_tree,
         ignore_cache,
         runtime,
@@ -47,19 +52,29 @@ pub fn collect_image_oids(
 /// present is pruned from the walk. When true, every job a fresh-cache run would
 /// touch is reported.
 pub fn collect_job_hashes(
-    repo: &git2::Repository,
+    transaction: &cache::Transaction,
+    odb: &memodb::Odb,
     ws_tree: git2::Oid,
     ignore_cache: bool,
     runtime: &dyn ArtifactBackend,
 ) -> anyhow::Result<Vec<git2::Oid>> {
     let mut out: Vec<git2::Oid> = vec![];
     let mut ws_seen: HashSet<git2::Oid> = HashSet::new();
-    walk_workspace_jobs(repo, ws_tree, ignore_cache, runtime, &mut out, &mut ws_seen)?;
+    walk_workspace_jobs(
+        transaction,
+        odb,
+        ws_tree,
+        ignore_cache,
+        runtime,
+        &mut out,
+        &mut ws_seen,
+    )?;
     Ok(out)
 }
 
 fn walk_workspace(
-    repo: &git2::Repository,
+    transaction: &cache::Transaction,
+    odb: &memodb::Odb,
     ws_tree: git2::Oid,
     ignore_cache: bool,
     runtime: &dyn ArtifactBackend,
@@ -71,7 +86,7 @@ fn walk_workspace(
         return Ok(());
     }
 
-    let workspace_meta = meta::read_meta(repo, ws_tree)?;
+    let workspace_meta = meta::read_meta(transaction, odb, ws_tree)?;
 
     if !ignore_cache && workspace_is_skippable(ws_tree, &workspace_meta, runtime)? {
         eprintln!(
@@ -81,11 +96,12 @@ fn walk_workspace(
         return Ok(());
     }
 
-    for (dep_name, dep_sha) in meta::read_blob_entries(repo, ws_tree, "inputs") {
+    for (dep_name, dep_sha) in meta::read_blob_entries(transaction, odb, ws_tree, "inputs") {
         let dep_tree = git2::Oid::from_str(dep_sha.trim())
             .map_err(|_| anyhow::anyhow!("dependency {dep_name}: invalid tree SHA {dep_sha:?}"))?;
         walk_workspace(
-            repo,
+            transaction,
+            odb,
             dep_tree,
             ignore_cache,
             runtime,
@@ -96,17 +112,18 @@ fn walk_workspace(
     }
 
     if let Some(image_oid) = workspace_meta.image {
-        collect_image_with_bases(repo, image_oid, out, image_seen)?;
+        collect_image_with_bases(transaction, odb, image_oid, out, image_seen)?;
     }
     for spec in &workspace_meta.sidecars {
-        collect_image_with_bases(repo, spec.image, out, image_seen)?;
+        collect_image_with_bases(transaction, odb, spec.image, out, image_seen)?;
     }
 
     Ok(())
 }
 
 fn walk_workspace_jobs(
-    repo: &git2::Repository,
+    transaction: &cache::Transaction,
+    odb: &memodb::Odb,
     ws_tree: git2::Oid,
     ignore_cache: bool,
     runtime: &dyn ArtifactBackend,
@@ -117,16 +134,24 @@ fn walk_workspace_jobs(
         return Ok(());
     }
 
-    let workspace_meta = meta::read_meta(repo, ws_tree)?;
+    let workspace_meta = meta::read_meta(transaction, odb, ws_tree)?;
 
     if !ignore_cache && workspace_is_skippable(ws_tree, &workspace_meta, runtime)? {
         return Ok(());
     }
 
-    for (dep_name, dep_sha) in meta::read_blob_entries(repo, ws_tree, "inputs") {
+    for (dep_name, dep_sha) in meta::read_blob_entries(transaction, odb, ws_tree, "inputs") {
         let dep_tree = git2::Oid::from_str(dep_sha.trim())
             .map_err(|_| anyhow::anyhow!("dependency {dep_name}: invalid tree SHA {dep_sha:?}"))?;
-        walk_workspace_jobs(repo, dep_tree, ignore_cache, runtime, out, ws_seen)?;
+        walk_workspace_jobs(
+            transaction,
+            odb,
+            dep_tree,
+            ignore_cache,
+            runtime,
+            out,
+            ws_seen,
+        )?;
     }
 
     out.push(ws_tree);
@@ -158,7 +183,8 @@ fn workspace_is_skippable(
 /// (post-order traversal). This ensures a base image's OID always appears before any
 /// image that uses it as a base — the ordering `collect_image_oids` guarantees.
 fn collect_image_with_bases(
-    repo: &git2::Repository,
+    transaction: &cache::Transaction,
+    odb: &memodb::Odb,
     image_oid: git2::Oid,
     out: &mut Vec<git2::Oid>,
     image_seen: &mut HashSet<git2::Oid>,
@@ -167,10 +193,10 @@ fn collect_image_with_bases(
         return Ok(());
     }
 
-    for (base_name, base_sha) in meta::read_blob_entries(repo, image_oid, "bases") {
+    for (base_name, base_sha) in meta::read_blob_entries(transaction, odb, image_oid, "bases") {
         let base_oid = git2::Oid::from_str(base_sha.trim())
             .map_err(|_| anyhow::anyhow!("invalid base SHA for {base_name}: {base_sha:?}"))?;
-        collect_image_with_bases(repo, base_oid, out, image_seen)?;
+        collect_image_with_bases(transaction, odb, base_oid, out, image_seen)?;
     }
 
     if image_seen.insert(image_oid) {

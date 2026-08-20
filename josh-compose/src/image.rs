@@ -1,6 +1,10 @@
 use anyhow::Context;
 
 use josh_compose_backend::{EnvRecipe, EnvironmentBackend};
+use josh_core::cache;
+use josh_core::filter::tree;
+use josh_core::memodb;
+use josh_core::objects;
 
 use crate::meta;
 use crate::naming;
@@ -8,7 +12,8 @@ use crate::naming;
 /// Ensure the environment for the given build tree exists, building it if needed.
 /// Returns the environment key (image name).
 pub fn ensure_image(
-    repo: &git2::Repository,
+    transaction: &cache::Transaction,
+    odb: &memodb::Odb,
     build_tree: git2::Oid,
     runtime: &dyn EnvironmentBackend,
 ) -> anyhow::Result<String> {
@@ -25,25 +30,24 @@ pub fn ensure_image(
 
     // Build each base environment and pass its key as a build arg so the
     // Containerfile can reference it (e.g. ARG my_base; FROM $my_base).
-    let base_entries = meta::read_blob_entries(repo, build_tree, "bases");
+    let base_entries = meta::read_blob_entries(transaction, odb, build_tree, "bases");
     for (base_name, base_sha) in &base_entries {
         let base_oid = git2::Oid::from_str(base_sha.trim())
             .with_context(|| format!("invalid base SHA for {base_name}: {base_sha}"))?;
-        let base_env = ensure_image(repo, base_oid, runtime)?;
+        let base_env = ensure_image(transaction, odb, base_oid, runtime)?;
         build_args.push((base_name.clone(), base_env));
     }
 
-    for (k, v) in meta::read_blob_entries(repo, build_tree, "args") {
+    for (k, v) in meta::read_blob_entries(transaction, odb, build_tree, "args") {
         build_args.push((k, v));
     }
 
-    let tree = repo.find_tree(build_tree)?;
-    let context_entry = tree
-        .get_path(std::path::Path::new("context"))
+    let context_entry = tree::read_tree(transaction, odb, build_tree)?
+        .entry(b"context")
+        .map(|e| objects::git2_oid(e.oid))
         .context("workspace image tree missing 'context' subtree")?;
-    let context_oid = context_entry.id();
 
-    let context = crate::archive::tree_to_tar(repo, context_oid)?;
+    let context = crate::archive::tree_to_tar(transaction, odb, context_entry)?;
 
     runtime.prepare_env(
         &image_name,

@@ -84,21 +84,20 @@ fn distinct_trigrams(content: &str) -> BTreeSet<[u8; 3]> {
         .collect()
 }
 
-/// Read the blob at `name` in `tree` as text, or "" if it is absent, binary or not UTF-8.
-fn get_blob(repo: &git2::Repository, tree: &git2::Tree, name: &str) -> String {
-    let Some(entry) = tree.get_name(name) else {
+/// Read the blob `oid` as text, or "" if it is absent, contains a NUL byte, or is not UTF-8.
+fn read_blob_text(src: &dyn Objects, oid: gix_hash::ObjectId) -> String {
+    let mut buffer = Vec::new();
+    let Ok(Some(data)) = src.try_find(&oid, &mut buffer) else {
         return "".to_owned();
     };
-
-    let Ok(blob) = repo.find_blob(entry.id()) else {
+    if data.kind != gix_object::Kind::Blob {
         return "".to_owned();
-    };
-
-    if blob.is_binary() {
+    }
+    if buffer.contains(&0) {
         return "".to_owned();
     }
 
-    let Ok(content) = std::str::from_utf8(blob.content()) else {
+    let Ok(content) = std::str::from_utf8(&buffer) else {
         return "".to_owned();
     };
 
@@ -140,10 +139,14 @@ pub struct Indexer {
     overlay_memo: HashMap<Vec<gix_hash::ObjectId>, gix_hash::ObjectId>,
 }
 
-/// One [`trigram_index`] call: the persistent [`Indexer`] state plus the per-call repository,
-/// cache and root bookkeeping.
+/// What an index run needs from the object database.
+pub trait Objects: gix_object::Find + gix_object::Exists + gix_object::Write {}
+impl<T: gix_object::Find + gix_object::Exists + gix_object::Write> Objects for T {}
+
+/// One [`trigram_index`] call: the persistent [`Indexer`] state plus the per-call object
+/// source, cache and root bookkeeping.
 struct Run<'a> {
-    repo: &'a git2::Repository,
+    src: &'a dyn Objects,
     cache: &'a dyn IndexCache,
     ix: &'a mut Indexer,
     /// `(source tree, index)` pairs of this call, memoized by [`flush`](Run::flush) only after
@@ -151,7 +154,7 @@ struct Run<'a> {
     roots: Vec<(git2::Oid, gix_hash::ObjectId)>,
 }
 
-impl<'a> Run<'a> {
+impl Run<'_> {
     /// Serialize `entries` as a tree into `pending` and return its hash. Entries are sorted
     /// into git's canonical order (directories compare with a trailing `/`), which differs
     /// from plain name order for the mixed blob/tree entries index trees contain.
@@ -186,9 +189,12 @@ impl<'a> Run<'a> {
         let tree = if let Some((_, data)) = self.ix.pending.get(&oid) {
             gix_object::TreeRef::from_bytes(data, gix_hash::Kind::Sha1)?.into_owned()
         } else {
-            let odb = self.repo.odb()?;
-            let obj = odb.read(to_git2(oid))?;
-            gix_object::TreeRef::from_bytes(obj.data(), gix_hash::Kind::Sha1)?.into_owned()
+            let mut buffer = Vec::new();
+            self.src
+                .try_find(&oid, &mut buffer)
+                .map_err(|e| anyhow::anyhow!("read tree {}: {}", oid, e))?
+                .ok_or_else(|| anyhow::anyhow!("object {} not found", oid))?;
+            gix_object::TreeRef::from_bytes(&buffer, gix_hash::Kind::Sha1)?.into_owned()
         };
         let tree = std::sync::Arc::new(tree);
         self.ix.trees.insert(oid, tree.clone());
@@ -352,37 +358,34 @@ impl<'a> Run<'a> {
     /// The index of a directory: the overlay of its children's wrapped indexes, memoized per
     /// source tree oid. The root is not special — incrementality is just this memo hitting on
     /// unchanged subtrees.
-    fn index_tree(&mut self, tree: &git2::Tree) -> anyhow::Result<gix_hash::ObjectId> {
-        if let Some(id) = self.ix.tree_memo.get(&tree.id()) {
+    fn index_tree_oid(&mut self, tree_oid: git2::Oid) -> anyhow::Result<gix_hash::ObjectId> {
+        let tree = self.read_tree(to_gix(tree_oid))?;
+        if let Some(id) = self.ix.tree_memo.get(&tree_oid) {
             return Ok(*id);
         }
-        if let Some(cached) = self.cache.get_index(tree.id()) {
+        if let Some(cached) = self.cache.get_index(tree_oid) {
             let id = to_gix(cached);
-            self.ix.tree_memo.insert(tree.id(), id);
+            self.ix.tree_memo.insert(tree_oid, id);
             return Ok(id);
         }
 
-        let mut wrapped = Vec::with_capacity(tree.len());
-        for entry in tree.iter() {
-            let name = entry.name()?.to_owned();
-            match entry.kind() {
-                Some(git2::ObjectType::Blob) => {
-                    let content = get_blob(self.repo, tree, &name);
-                    wrapped.push(self.index_blob(entry.id(), &name, &content));
-                }
-                Some(git2::ObjectType::Tree) => {
-                    let child_tree = self.repo.find_tree(entry.id())?;
-                    let child = self.index_tree(&child_tree)?;
-                    wrapped.push(self.wrap(&name, child)?);
-                }
-                // Submodules etc. are not indexed.
-                _ => {}
-            };
+        let mut wrapped = Vec::with_capacity(tree.entries.len());
+        for entry in tree.entries.clone() {
+            let name = std::str::from_utf8(&entry.filename)?.to_owned();
+            let child_oid = to_git2(entry.oid);
+            if entry.mode.is_tree() {
+                let child = self.index_tree_oid(child_oid)?;
+                wrapped.push(self.wrap(&name, child)?);
+            } else if !entry.mode.is_commit() {
+                let content = read_blob_text(self.src, entry.oid);
+                wrapped.push(self.index_blob(child_oid, &name, &content));
+            }
+            // Submodules etc. are not indexed.
         }
         let index = self.overlay_many(wrapped)?;
 
-        self.ix.tree_memo.insert(tree.id(), index);
-        self.roots.push((tree.id(), index));
+        self.ix.tree_memo.insert(tree_oid, index);
+        self.roots.push((tree_oid, index));
         Ok(index)
     }
 
@@ -393,16 +396,16 @@ impl<'a> Run<'a> {
         if self.roots.is_empty() {
             return Ok(());
         }
-        let odb = self.repo.odb()?;
-
         // Index leaves are the empty blob, and an empty directory's index is the empty tree;
         // neither lives in `pending`, so make sure both exist before anything references them.
         for (kind, id) in [
-            (git2::ObjectType::Blob, empty_blob()),
-            (git2::ObjectType::Tree, empty_tree()),
+            (gix_object::Kind::Blob, empty_blob()),
+            (gix_object::Kind::Tree, empty_tree()),
         ] {
-            if !odb.exists(to_git2(id)) {
-                odb.write(kind, &[])?;
+            if !self.src.exists(&id) {
+                self.src
+                    .write_buf(kind, &[])
+                    .map_err(|e| anyhow::anyhow!("write index object: {}", e))?;
             }
         }
 
@@ -423,12 +426,10 @@ impl<'a> Run<'a> {
                     stack.push(entry.oid.to_owned());
                 }
             }
-            let git2_kind = match kind {
-                gix_object::Kind::Tree => git2::ObjectType::Tree,
-                _ => git2::ObjectType::Blob,
-            };
-            if !odb.exists(to_git2(id)) {
-                odb.write(git2_kind, data)?;
+            if !self.src.exists(&id) {
+                self.src
+                    .write_buf(*kind, data)
+                    .map_err(|e| anyhow::anyhow!("write index object: {}", e))?;
             }
             written.push(id);
         }
@@ -443,21 +444,21 @@ impl<'a> Run<'a> {
     }
 }
 
-pub fn trigram_index<'a>(
-    repo: &'a git2::Repository,
+pub fn trigram_index(
+    src: &dyn Objects,
     cache: &dyn IndexCache,
     indexer: &mut Indexer,
-    tree: git2::Tree<'a>,
-) -> anyhow::Result<git2::Tree<'a>> {
+    tree: git2::Oid,
+) -> anyhow::Result<git2::Oid> {
     let mut run = Run {
-        repo,
+        src,
         cache,
         ix: indexer,
         roots: Vec::new(),
     };
-    let index = run.index_tree(&tree)?;
+    let index = run.index_tree_oid(tree)?;
     run.flush()?;
-    Ok(repo.find_tree(to_git2(index))?)
+    Ok(to_git2(index))
 }
 
 /// Exact candidate files for `searchstring`: files containing every trigram of the query.
@@ -465,26 +466,26 @@ pub fn trigram_index<'a>(
 /// Queries shorter than three bytes (or without any valid-UTF-8 window) have no trigrams; every
 /// file of `source_tree` is a candidate then, and [`search_matches`] does the filtering.
 pub fn search_candidates(
-    repo: &git2::Repository,
-    index_tree: &git2::Tree,
-    source_tree: &git2::Tree,
+    src: &dyn Objects,
+    index_tree: git2::Oid,
+    source_tree: git2::Oid,
     searchstring: &str,
 ) -> anyhow::Result<Vec<String>> {
     let trigrams = distinct_trigrams(searchstring);
 
     let mut results = vec![];
     if trigrams.is_empty() {
-        collect_paths(repo, source_tree.id(), "", &mut results)?;
+        collect_paths(src, source_tree, "", &mut results)?;
         return Ok(results);
     }
 
     let mut roots = vec![];
     for t in &trigrams {
         let path = format!("{:02x}/{:02x}/{:02x}", t[0], t[1], t[2]);
-        match index_tree.get_path(std::path::Path::new(&path)) {
-            Ok(entry) => roots.push(entry.id()),
+        match path_entry(src, index_tree, std::path::Path::new(&path))? {
+            Some(oid) => roots.push(oid),
             // A trigram absent from the index cannot occur in any file.
-            Err(_) => return Ok(vec![]),
+            None => return Ok(vec![]),
         }
     }
     roots.sort();
@@ -497,7 +498,7 @@ pub fn search_candidates(
     if roots.len() > MAX_INTERSECT {
         let mut sized = roots
             .iter()
-            .map(|&oid| anyhow::Ok((repo.find_tree(oid)?.len(), oid)))
+            .map(|&oid| anyhow::Ok((read_tree_entries(src, oid)?.len(), oid)))
             .collect::<Result<Vec<_>, _>>()?;
         sized.sort();
         roots = sized
@@ -507,13 +508,13 @@ pub fn search_candidates(
             .collect();
     }
 
-    intersect_walk(repo, &roots, "", &mut results)?;
+    intersect_walk(src, &roots, "", &mut results)?;
     Ok(results)
 }
 
 /// Emit every file path present in ALL of the mirror trees `roots`.
 fn intersect_walk(
-    repo: &git2::Repository,
+    src: &dyn Objects,
     roots: &[git2::Oid],
     prefix: &str,
     out: &mut Vec<String>,
@@ -521,54 +522,86 @@ fn intersect_walk(
     // Content addressing fast path: identical mirrors (trigrams with the same file set)
     // intersect to themselves.
     if roots.iter().all(|oid| *oid == roots[0]) {
-        return collect_paths(repo, roots[0], prefix, out);
+        return collect_paths(src, roots[0], prefix, out);
     }
 
     let trees = roots
         .iter()
-        .map(|oid| repo.find_tree(*oid))
-        .collect::<Result<Vec<_>, _>>()?;
+        .map(|oid| read_tree_entries(src, *oid))
+        .collect::<anyhow::Result<Vec<_>>>()?;
     let smallest = trees
         .iter()
         .min_by_key(|t| t.len())
         .expect("roots is never empty");
 
-    'entry: for entry in smallest.iter() {
-        let name = entry.name()?;
+    'entry: for entry in smallest {
+        let name = std::str::from_utf8(&entry.filename)?;
 
         let mut child_roots = Vec::with_capacity(trees.len());
         for tree in &trees {
-            match tree.get_name(name) {
-                Some(other) if other.kind() == entry.kind() => child_roots.push(other.id()),
+            match tree.iter().find(|e| e.filename == entry.filename) {
+                Some(other) if other.mode.is_tree() == entry.mode.is_tree() => {
+                    child_roots.push(to_git2(other.oid))
+                }
                 _ => continue 'entry,
             }
         }
 
         let path = join_path(prefix, name);
-        match entry.kind() {
-            Some(git2::ObjectType::Tree) => intersect_walk(repo, &child_roots, &path, out)?,
-            Some(git2::ObjectType::Blob) => out.push(path),
-            _ => {}
+        if entry.mode.is_tree() {
+            intersect_walk(src, &child_roots, &path, out)?;
+        } else if !entry.mode.is_commit() {
+            out.push(path);
         }
     }
     Ok(())
 }
 
+/// The entries of the tree `oid`, owned so several trees can be walked side by side.
+fn read_tree_entries(
+    src: &dyn Objects,
+    oid: git2::Oid,
+) -> anyhow::Result<Vec<gix_object::tree::Entry>> {
+    let mut buffer = Vec::new();
+    let data = src
+        .try_find(&to_gix(oid), &mut buffer)
+        .map_err(|e| anyhow::anyhow!("read tree {}: {}", oid, e))?
+        .ok_or_else(|| anyhow::anyhow!("object {} not found", oid))?;
+    if data.kind != gix_object::Kind::Tree {
+        return Err(anyhow::anyhow!("object {} is not a tree", oid));
+    }
+    Ok(
+        gix_object::TreeRef::from_bytes(&buffer, gix_hash::Kind::Sha1)?
+            .into_owned()
+            .entries,
+    )
+}
+
 /// Emit every blob path under `oid` (a tree), prefixed with `prefix`.
 fn collect_paths(
-    repo: &git2::Repository,
+    src: &dyn Objects,
     oid: git2::Oid,
     prefix: &str,
     out: &mut Vec<String>,
 ) -> anyhow::Result<()> {
-    let tree = repo.find_tree(oid)?;
-    for entry in tree.iter() {
-        let name = entry.name()?;
+    let mut buffer = Vec::new();
+    let Some(data) = src
+        .try_find(&to_gix(oid), &mut buffer)
+        .map_err(|e| anyhow::anyhow!("read tree {}: {}", oid, e))?
+    else {
+        return Ok(());
+    };
+    if data.kind != gix_object::Kind::Tree {
+        return Ok(());
+    }
+    let tree = gix_object::TreeRef::from_bytes(&buffer, gix_hash::Kind::Sha1)?.into_owned();
+    for entry in tree.entries {
+        let name = std::str::from_utf8(&entry.filename)?;
         let path = join_path(prefix, name);
-        match entry.kind() {
-            Some(git2::ObjectType::Tree) => collect_paths(repo, entry.id(), &path, out)?,
-            Some(git2::ObjectType::Blob) => out.push(path),
-            _ => {}
+        if entry.mode.is_tree() {
+            collect_paths(src, to_git2(entry.oid), &path, out)?;
+        } else if !entry.mode.is_commit() {
+            out.push(path);
         }
     }
     Ok(())
@@ -585,15 +618,15 @@ fn join_path(prefix: &str, name: &str) -> String {
 type SearchMatchesResult = Vec<(String, Vec<(usize, String)>)>;
 
 pub fn search_matches(
-    repo: &git2::Repository,
-    tree: &git2::Tree,
+    src: &dyn Objects,
+    tree: git2::Oid,
     searchstring: &str,
     candidates: &Vec<String>,
 ) -> anyhow::Result<SearchMatchesResult> {
     let mut results = vec![];
 
     for c in candidates {
-        let b = get_blob_path(repo, tree, std::path::Path::new(&c));
+        let b = get_blob_path(src, tree, std::path::Path::new(&c));
 
         let mut bresults = vec![];
 
@@ -611,25 +644,44 @@ pub fn search_matches(
     Ok(results)
 }
 
-/// Like [`get_blob`], but for a (possibly nested) path instead of a root entry name.
-fn get_blob_path(repo: &git2::Repository, tree: &git2::Tree, path: &std::path::Path) -> String {
-    let Ok(entry) = tree.get_path(path) else {
-        return "".to_owned();
-    };
-
-    let Ok(blob) = repo.find_blob(entry.id()) else {
-        return "".to_owned();
-    };
-
-    if blob.is_binary() {
-        return "".to_owned();
+/// Like [`read_blob_text`], but for a path inside `tree`.
+fn get_blob_path(src: &dyn Objects, tree: git2::Oid, path: &std::path::Path) -> String {
+    match path_entry(src, tree, path) {
+        Ok(Some(oid)) => read_blob_text(src, to_gix(oid)),
+        _ => "".to_owned(),
     }
+}
 
-    let Ok(content) = std::str::from_utf8(blob.content()) else {
-        return "".to_owned();
-    };
-
-    content.to_owned()
+/// The oid at `path` inside `tree`, or `None` when any component is missing or not a tree.
+fn path_entry(
+    src: &dyn Objects,
+    tree: git2::Oid,
+    path: &std::path::Path,
+) -> anyhow::Result<Option<git2::Oid>> {
+    let mut current = tree;
+    let mut components = path.components().peekable();
+    while let Some(component) = components.next() {
+        let mut buffer = Vec::new();
+        let Some(data) = src
+            .try_find(&to_gix(current), &mut buffer)
+            .map_err(|e| anyhow::anyhow!("read tree {}: {}", current, e))?
+        else {
+            return Ok(None);
+        };
+        if data.kind != gix_object::Kind::Tree {
+            return Ok(None);
+        }
+        let parsed = gix_object::TreeRef::from_bytes(&buffer, gix_hash::Kind::Sha1)?;
+        let name = std::os::unix::ffi::OsStrExt::as_bytes(component.as_os_str());
+        let Some(entry) = parsed.entries.iter().find(|e| e.filename == name) else {
+            return Ok(None);
+        };
+        current = to_git2(entry.oid.to_owned());
+        if components.peek().is_some() && !entry.mode.is_tree() {
+            return Ok(None);
+        }
+    }
+    Ok(Some(current))
 }
 
 #[cfg(test)]
@@ -682,6 +734,11 @@ mod tests {
         (tmp, repo)
     }
 
+    /// Object access over a test repository's odb.
+    fn objects(repo: &git2::Repository) -> josh_gix_ext::Git2Odb<'_> {
+        josh_gix_ext::Git2Odb(Box::leak(Box::new(repo.odb().unwrap())))
+    }
+
     fn commit_tree<'a>(repo: &'a git2::Repository, files: &[(&str, &str)]) -> git2::Tree<'a> {
         let mut builder = git2::build::TreeUpdateBuilder::new();
         for (path, content) in files {
@@ -709,44 +766,51 @@ mod tests {
             ],
         );
 
-        let index = trigram_index(&repo, &cache, &mut Indexer::default(), tree.clone()).unwrap();
+        let index =
+            trigram_index(&objects(&repo), &cache, &mut Indexer::default(), tree.id()).unwrap();
 
         // The index format is pinned: cached indexes of older josh versions stay valid only as
         // long as this oid does not change.
         assert_eq!(
-            index.id().to_string(),
+            index.to_string(),
             "169f9d05072eb25e1f1e90b4f7f11f6cfc2d3222"
         );
 
         // "Tes" folds to "tes", which lives at 74/65/73 in the hex spine.
         assert!(
-            index
-                .get_path(std::path::Path::new("74/65/73/sub1/file1"))
-                .is_ok()
+            path_entry(
+                &objects(&repo),
+                index,
+                std::path::Path::new("74/65/73/sub1/file1")
+            )
+            .unwrap()
+            .is_some()
         );
 
-        let candidates = search_candidates(&repo, &index, &tree, "document").unwrap();
+        let candidates = search_candidates(&objects(&repo), index, tree.id(), "document").unwrap();
         assert_eq!(candidates, vec!["sub1/file1", "sub1/file2"]);
 
         // Trigrams are case-folded, so candidates are a case-insensitive superset ("Test" in
         // file1 makes it a candidate for "test") while match verification stays byte-exact.
-        let candidates = search_candidates(&repo, &index, &tree, "test").unwrap();
+        let candidates = search_candidates(&objects(&repo), index, tree.id(), "test").unwrap();
         assert_eq!(candidates, vec!["sub1/file1"]);
-        let matches = search_matches(&repo, &tree, "test", &candidates).unwrap();
+        let matches = search_matches(&objects(&repo), tree.id(), "test", &candidates).unwrap();
         assert!(matches.is_empty());
 
-        let candidates = search_candidates(&repo, &index, &tree, "missingword").unwrap();
+        let candidates =
+            search_candidates(&objects(&repo), index, tree.id(), "missingword").unwrap();
         assert!(candidates.is_empty());
 
         // Short query: every file is a candidate.
-        let candidates = search_candidates(&repo, &index, &tree, "e").unwrap();
+        let candidates = search_candidates(&objects(&repo), index, tree.id(), "e").unwrap();
         assert_eq!(candidates.len(), 3);
 
         // Indexing is deterministic and memoization-independent: a cold rebuild of the same
         // tree yields the same oid.
         let cold = MapCache::default();
-        let index2 = trigram_index(&repo, &cold, &mut Indexer::default(), tree).unwrap();
-        assert_eq!(index.id(), index2.id());
+        let index2 =
+            trigram_index(&objects(&repo), &cold, &mut Indexer::default(), tree.id()).unwrap();
+        assert_eq!(index, index2);
     }
 
     #[test]
@@ -766,7 +830,7 @@ mod tests {
                 ("sub2/mod", "alpha beta gamma"),
             ],
         );
-        trigram_index(&repo, &cache, &mut indexer, tree_a).unwrap();
+        trigram_index(&objects(&repo), &cache, &mut indexer, tree_a.id()).unwrap();
 
         // One file modified, one removed (its unique trigrams must vanish from the spine), one
         // added in a fresh directory.
@@ -778,7 +842,7 @@ mod tests {
                 ("sub3/new", "fresh addition here"),
             ],
         );
-        let index_b = trigram_index(&repo, &cache, &mut indexer, tree_b.clone()).unwrap();
+        let index_b = trigram_index(&objects(&repo), &cache, &mut indexer, tree_b.id()).unwrap();
 
         // Every subtree is memoized, including the fresh one — incrementality has no special
         // path that could skip it.
@@ -788,15 +852,15 @@ mod tests {
         // Warm (incremental) and cold-built indexes agree bit for bit.
         let cold = MapCache::default();
         let index_b_cold =
-            trigram_index(&repo, &cold, &mut Indexer::default(), tree_b.clone()).unwrap();
-        assert_eq!(index_b.id(), index_b_cold.id());
+            trigram_index(&objects(&repo), &cold, &mut Indexer::default(), tree_b.id()).unwrap();
+        assert_eq!(index_b, index_b_cold);
 
         // The incremental index searches correctly.
-        let hits = search_candidates(&repo, &index_b, &tree_b, "delta").unwrap();
+        let hits = search_candidates(&objects(&repo), index_b, tree_b.id(), "delta").unwrap();
         assert_eq!(hits, vec!["sub2/mod"]);
-        let hits = search_candidates(&repo, &index_b, &tree_b, "zebra").unwrap();
+        let hits = search_candidates(&objects(&repo), index_b, tree_b.id(), "zebra").unwrap();
         assert!(hits.is_empty());
-        let hits = search_candidates(&repo, &index_b, &tree_b, "addition").unwrap();
+        let hits = search_candidates(&objects(&repo), index_b, tree_b.id(), "addition").unwrap();
         assert_eq!(hits, vec!["sub3/new"]);
     }
 }

@@ -9,6 +9,10 @@ use std::path::Path;
 
 use crate::OutputMode;
 use josh_compose_backend::NetworkPolicy;
+use josh_core::cache;
+use josh_core::filter::tree;
+use josh_core::memodb;
+use josh_core::objects;
 
 /// Specification for a sidecar service that runs alongside a workspace step.
 ///
@@ -49,47 +53,54 @@ pub struct WorkspaceMeta {
 }
 
 /// Read a blob from a git tree at the given path. Returns None if not found.
-pub fn read_blob(repo: &git2::Repository, tree_oid: git2::Oid, path: &str) -> Option<String> {
-    let tree = repo.find_tree(tree_oid).ok()?;
-    let entry = tree.get_path(Path::new(path)).ok()?;
-    let blob = repo.find_blob(entry.id()).ok()?;
-    let content = std::str::from_utf8(blob.content()).ok()?.trim().to_string();
-    Some(content)
+pub fn read_blob(
+    transaction: &cache::Transaction,
+    odb: &memodb::Odb,
+    tree_oid: git2::Oid,
+    path: &str,
+) -> Option<String> {
+    let entry = tree::get_path_entry(transaction, odb, tree_oid, Path::new(path)).ok()??;
+    let content = tree::blob_bytes(odb, objects::git2_oid(&entry.oid))?;
+    Some(std::str::from_utf8(&content).ok()?.trim().to_string())
 }
 
 /// Read all entries from a subtree at `prefix`. Returns (name, oid) pairs.
 pub fn read_tree_entries(
-    repo: &git2::Repository,
+    transaction: &cache::Transaction,
+    odb: &memodb::Odb,
     tree_oid: git2::Oid,
     prefix: &str,
 ) -> Vec<(String, git2::Oid)> {
-    let Ok(tree) = repo.find_tree(tree_oid) else {
+    let Ok(Some(entry)) = tree::get_path_entry(transaction, odb, tree_oid, Path::new(prefix))
+    else {
         return vec![];
     };
-    let Ok(entry) = tree.get_path(Path::new(prefix)) else {
-        return vec![];
-    };
-    let Ok(subtree) = repo.find_tree(entry.id()) else {
+    let Ok(subtree) = tree::read_tree(transaction, odb, objects::git2_oid(&entry.oid)) else {
         return vec![];
     };
     subtree
-        .iter()
-        .map(|e| (e.name().unwrap_or("").to_string(), e.id()))
+        .entries()
+        .map(|e| {
+            (
+                String::from_utf8_lossy(e.filename).into_owned(),
+                objects::git2_oid(e.oid),
+            )
+        })
         .collect()
 }
 
 /// Read all blob entries from a subtree and return (name, content) pairs.
 pub fn read_blob_entries(
-    repo: &git2::Repository,
+    transaction: &cache::Transaction,
+    odb: &memodb::Odb,
     tree_oid: git2::Oid,
     prefix: &str,
 ) -> Vec<(String, String)> {
-    read_tree_entries(repo, tree_oid, prefix)
+    read_tree_entries(transaction, odb, tree_oid, prefix)
         .into_iter()
         .filter_map(|(name, oid)| {
-            let blob = repo.find_blob(oid).ok()?;
-            let content = std::str::from_utf8(blob.content()).ok()?.trim().to_string();
-            Some((name, content))
+            let content = tree::blob_bytes(odb, oid)?;
+            Some((name, std::str::from_utf8(&content).ok()?.trim().to_string()))
         })
         .collect()
 }
@@ -100,29 +111,33 @@ pub fn read_blob_entries(
 /// optionally `worktree` (falling back to `run` for backward compatibility) from the
 /// tree. Returns `None` for `image` and `worktree` when the workspace is
 /// orchestrator-only (no image to build and no files to mount).
-pub fn read_meta(repo: &git2::Repository, ws_tree: git2::Oid) -> anyhow::Result<WorkspaceMeta> {
-    let label = read_blob(repo, ws_tree, "label")
+pub fn read_meta(
+    transaction: &cache::Transaction,
+    odb: &memodb::Odb,
+    ws_tree: git2::Oid,
+) -> anyhow::Result<WorkspaceMeta> {
+    let label = read_blob(transaction, odb, ws_tree, "label")
         .filter(|s| !s.is_empty())
         .unwrap_or_else(|| ws_tree.to_string());
 
-    let output = match read_blob(repo, ws_tree, "output").as_deref() {
+    let output = match read_blob(transaction, odb, ws_tree, "output").as_deref() {
         Some("none") => OutputMode::None,
         Some("workdir") => OutputMode::Workdir,
         _ => OutputMode::Keep,
     };
 
-    let cmd = read_blob(repo, ws_tree, "cmd")
+    let cmd = read_blob(transaction, odb, ws_tree, "cmd")
         .filter(|s| !s.is_empty())
         .unwrap_or_else(|| "bash run.sh".to_string());
 
-    let cache = read_blob(repo, ws_tree, "cache").filter(|s| !s.is_empty());
+    let cache = read_blob(transaction, odb, ws_tree, "cache").filter(|s| !s.is_empty());
 
-    let network = match read_blob(repo, ws_tree, "network").as_deref() {
+    let network = match read_blob(transaction, odb, ws_tree, "network").as_deref() {
         Some("host") => NetworkPolicy::Host,
         _ => NetworkPolicy::None,
     };
 
-    let image = read_blob(repo, ws_tree, "image")
+    let image = read_blob(transaction, odb, ws_tree, "image")
         .filter(|s| !s.is_empty())
         .map(|sha| {
             git2::Oid::from_str(&sha)
@@ -130,16 +145,15 @@ pub fn read_meta(repo: &git2::Repository, ws_tree: git2::Oid) -> anyhow::Result<
         })
         .transpose()?;
 
-    let tree = repo.find_tree(ws_tree)?;
+    let tree = tree::read_tree(transaction, odb, ws_tree)?;
     // Prefer "worktree"; fall back to "run" for backward compatibility with
     // workspaces authored before the rename.
     let worktree = tree
-        .get_path(Path::new("worktree"))
-        .map(|e| e.id())
-        .or_else(|_| tree.get_path(Path::new("run")).map(|e| e.id()))
-        .ok();
+        .entry(b"worktree")
+        .or_else(|| tree.entry(b"run"))
+        .map(|e| objects::git2_oid(e.oid));
 
-    let sidecars = read_sidecars(repo, ws_tree)?;
+    let sidecars = read_sidecars(transaction, odb, ws_tree)?;
 
     Ok(WorkspaceMeta {
         label,
@@ -154,19 +168,20 @@ pub fn read_meta(repo: &git2::Repository, ws_tree: git2::Oid) -> anyhow::Result<
 }
 
 pub fn read_sidecars(
-    repo: &git2::Repository,
+    transaction: &cache::Transaction,
+    odb: &memodb::Odb,
     ws_tree: git2::Oid,
 ) -> anyhow::Result<Vec<SidecarSpec>> {
     let mut out = vec![];
-    for (name, content) in read_blob_entries(repo, ws_tree, "sidecars") {
+    for (name, content) in read_blob_entries(transaction, odb, ws_tree, "sidecars") {
         let sidecar_tree = git2::Oid::from_str(content.trim())
             .map_err(|_| anyhow::anyhow!("sidecar {name}: invalid tree SHA {content:?}"))?;
-        let image_sha = read_blob(repo, sidecar_tree, "image")
+        let image_sha = read_blob(transaction, odb, sidecar_tree, "image")
             .filter(|s| !s.is_empty())
             .ok_or_else(|| anyhow::anyhow!("sidecar {name}: missing image"))?;
         let image = git2::Oid::from_str(&image_sha)
             .map_err(|_| anyhow::anyhow!("sidecar {name}: invalid image SHA {image_sha:?}"))?;
-        let port_str = read_blob(repo, sidecar_tree, "port")
+        let port_str = read_blob(transaction, odb, sidecar_tree, "port")
             .filter(|s| !s.is_empty())
             .ok_or_else(|| anyhow::anyhow!("sidecar {name}: missing port"))?;
         let port: u16 = port_str
@@ -175,9 +190,9 @@ pub fn read_sidecars(
         out.push(SidecarSpec {
             name,
             image,
-            env: read_blob_entries(repo, sidecar_tree, "env"),
-            passthrough: read_blob_entries(repo, sidecar_tree, "passthrough"),
-            inject: read_blob_entries(repo, sidecar_tree, "inject"),
+            env: read_blob_entries(transaction, odb, sidecar_tree, "env"),
+            passthrough: read_blob_entries(transaction, odb, sidecar_tree, "passthrough"),
+            inject: read_blob_entries(transaction, odb, sidecar_tree, "inject"),
             port,
         });
     }

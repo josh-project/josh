@@ -24,13 +24,11 @@ pub mod text;
 pub mod tree;
 
 pub fn as_tree(transaction: &cache::Transaction, filter: Filter) -> anyhow::Result<git2::Oid> {
-    josh_filter::persist::as_tree(transaction.repo(), &transaction.odb()?, filter)
+    josh_filter::persist::as_tree(&transaction.odb()?, filter)
 }
 
-// PORT: persist::from_tree reads possibly-unflushed filter trees through the registered
-// libgit2 backend; it must move to the facade before the backend can be unregistered.
 pub fn from_tree(transaction: &cache::Transaction, tree_oid: git2::Oid) -> anyhow::Result<Filter> {
-    josh_filter::persist::from_tree(transaction.repo(), tree_oid)
+    josh_filter::persist::from_tree(&transaction.odb()?, tree_oid)
 }
 
 static WORKSPACES: LazyLock<std::sync::Mutex<std::collections::HashMap<git2::Oid, Filter>>> =
@@ -1579,18 +1577,13 @@ fn apply_impl(
         }
         Op::Index => {
             let index_cache = transaction.trigram_index_cache(x.commit);
-            // PORT: josh_search::trigram_index takes a git2::Tree; the bridge read
-            // resolves fresh filtered trees through the registered backend.
-            let input_tree = transaction.repo().find_tree(x.tree_id())?;
-            Ok(x.with_tree(
-                josh_search::trigram_index(
-                    transaction.repo(),
-                    &index_cache,
-                    &mut transaction.trigram_indexer(),
-                    input_tree,
-                )?
-                .id(),
-            ))
+            let tree = x.tree_id();
+            Ok(x.with_tree(josh_search::trigram_index(
+                odb,
+                &index_cache,
+                &mut transaction.trigram_indexer(),
+                tree,
+            )?))
         }
 
         Op::Invert => {
@@ -2785,10 +2778,11 @@ mod tests {
 
         // Serialize to tree
         let odb = repo.odb().unwrap();
-        let tree_oid = as_tree(&repo, &objects::Git2Odb(&odb), meta_filter).unwrap();
+        let objects = objects::Git2Odb(&odb);
+        let tree_oid = as_tree(&objects, meta_filter).unwrap();
 
         // Deserialize from tree
-        let deserialized_filter = from_tree(&repo, tree_oid).unwrap();
+        let deserialized_filter = from_tree(&objects, tree_oid).unwrap();
 
         // Verify the specs match
         let original_spec = spec(meta_filter);

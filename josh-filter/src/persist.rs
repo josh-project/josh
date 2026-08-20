@@ -100,17 +100,17 @@ struct InMemoryBuilder<'a> {
     /// Present when building for persistence (`as_tree`): used to resolve the object kind of
     /// `InsertContent::Oid` so the object can be referenced as a tree entry with the correct
     /// mode. Absent when computing `Filter::id`, which must stay repository-independent.
-    repo: Option<&'a git2::Repository>,
+    src: Option<&'a dyn gix_object::FindHeader>,
     /// Persist-time tree id per node, filled by `build_persist`. Diverges from `Filter::id`
     /// only for nodes whose subtree contains an unresolved insert OID.
     persist_ids: HashMap<Filter, gix_hash::ObjectId>,
 }
 
 impl<'a> InMemoryBuilder<'a> {
-    fn new(repo: Option<&'a git2::Repository>) -> Self {
+    fn new(src: Option<&'a dyn gix_object::FindHeader>) -> Self {
         Self {
             staging: josh_gix_ext::StagingOdb::new(),
-            repo,
+            src,
             persist_ids: HashMap::new(),
         }
     }
@@ -397,17 +397,18 @@ impl<'a> InMemoryBuilder<'a> {
                     // In persist mode (repo present), resolve the object kind and reference
                     // the object as an actual tree entry ("o") with the matching mode, so it
                     // is reachable from the filter tree in normal git terms and gets
-                    // transferred along with it. Without a repo (`Filter::id`), the kind is
-                    // unknown and the entry mode would be a guess, so the OID is hashed as a
-                    // string; that form is never persisted (`as_tree` always has a repo).
+                    // transferred along with it. Without an object source (`Filter::id`), the
+                    // kind is unknown and the entry mode would be a guess, so the OID is hashed
+                    // as a string; that form is never persisted (`as_tree` always has one).
                     InsertContent::Oid(oid) => {
-                        if let Some(repo) = self.repo {
-                            let object = repo
-                                .find_object(*oid, None)
-                                .with_context(|| format!("insert: object {} not found", oid))?;
-                            let mode = match object.kind() {
-                                Some(git2::ObjectType::Blob) => gix_object::tree::EntryKind::Blob,
-                                Some(git2::ObjectType::Tree) => gix_object::tree::EntryKind::Tree,
+                        if let Some(src) = self.src {
+                            let kind = src
+                                .try_header(&josh_gix_ext::gix_oid(*oid))
+                                .map_err(|e| anyhow!("insert: object {}: {}", oid, e))?
+                                .map(|header| header.kind);
+                            let mode = match kind {
+                                Some(gix_object::Kind::Blob) => gix_object::tree::EntryKind::Blob,
+                                Some(gix_object::Kind::Tree) => gix_object::tree::EntryKind::Tree,
                                 _ => {
                                     return Err(anyhow!(
                                         "insert: {} is neither a blob nor a tree",
@@ -647,13 +648,12 @@ impl<'a> InMemoryBuilder<'a> {
 }
 
 pub fn as_tree(
-    repo: &git2::Repository,
-    out: &(impl gix_object::Exists + gix_object::Write),
+    out: &(impl gix_object::FindHeader + gix_object::Exists + gix_object::Write),
     filter: Filter,
 ) -> anyhow::Result<git2::Oid> {
     let filter = crate::opt::optimize(filter);
 
-    let mut builder = InMemoryBuilder::new(Some(repo));
+    let mut builder = InMemoryBuilder::new(Some(out));
     let root_oid = builder.build_persist(out, filter)?;
     let root_oid = git2::Oid::from_bytes(root_oid.as_bytes())?;
 
@@ -663,12 +663,104 @@ pub fn as_tree(
     Ok(root_oid)
 }
 
-pub fn from_tree(repo: &git2::Repository, tree_oid: git2::Oid) -> anyhow::Result<Filter> {
-    Ok(to_filter(from_tree2(repo, tree_oid)?))
+/// One entry of a persisted filter tree.
+struct PersistedEntry {
+    name: BString,
+    oid: gix_hash::ObjectId,
+    is_tree: bool,
 }
 
-fn from_tree2(repo: &git2::Repository, tree_oid: git2::Oid) -> anyhow::Result<Op> {
-    let tree = repo.find_tree(tree_oid)?;
+impl PersistedEntry {
+    fn id(&self) -> gix_hash::ObjectId {
+        self.oid
+    }
+
+    fn name(&self) -> anyhow::Result<&str> {
+        Ok(std::str::from_utf8(&self.name)?)
+    }
+}
+
+/// A persisted filter tree, read in full so nested reads can nest.
+struct PersistedTree {
+    oid: gix_hash::ObjectId,
+    entries: Vec<PersistedEntry>,
+}
+
+impl PersistedTree {
+    fn read(src: &impl gix_object::Find, oid: gix_hash::ObjectId) -> anyhow::Result<PersistedTree> {
+        let mut buffer = Vec::new();
+        let kind = src
+            .try_find(&oid, &mut buffer)
+            .map_err(|e| anyhow!("read tree {}: {}", oid, e))?
+            .ok_or_else(|| anyhow!("object {} not found", oid))?
+            .kind;
+        if kind != gix_object::Kind::Tree {
+            return Err(anyhow!("object {} is not a tree", oid));
+        }
+        let tree = gix_object::TreeRef::from_bytes(&buffer, gix_hash::Kind::Sha1)?;
+        Ok(PersistedTree {
+            oid,
+            entries: tree
+                .entries
+                .iter()
+                .map(|e| PersistedEntry {
+                    name: e.filename.into(),
+                    oid: e.oid.to_owned(),
+                    is_tree: e.mode.is_tree(),
+                })
+                .collect(),
+        })
+    }
+
+    fn id(&self) -> gix_hash::ObjectId {
+        self.oid
+    }
+
+    fn len(&self) -> usize {
+        self.entries.len()
+    }
+
+    fn is_empty(&self) -> bool {
+        self.entries.is_empty()
+    }
+
+    fn get(&self, index: usize) -> Option<&PersistedEntry> {
+        self.entries.get(index)
+    }
+
+    fn get_name(&self, name: &str) -> Option<&PersistedEntry> {
+        self.entries.iter().find(|e| e.name == name)
+    }
+}
+
+/// A persisted blob.
+struct Blob(Vec<u8>);
+
+impl Blob {
+    fn read(src: &impl gix_object::Find, oid: gix_hash::ObjectId) -> anyhow::Result<Blob> {
+        let mut buffer = Vec::new();
+        let kind = src
+            .try_find(&oid, &mut buffer)
+            .map_err(|e| anyhow!("read blob {}: {}", oid, e))?
+            .ok_or_else(|| anyhow!("object {} not found", oid))?
+            .kind;
+        if kind != gix_object::Kind::Blob {
+            return Err(anyhow!("object {} is not a blob", oid));
+        }
+        Ok(Blob(buffer))
+    }
+
+    fn content(&self) -> &[u8] {
+        &self.0
+    }
+}
+
+pub fn from_tree(src: &impl gix_object::Find, tree_oid: git2::Oid) -> anyhow::Result<Filter> {
+    Ok(to_filter(from_tree2(src, josh_gix_ext::gix_oid(tree_oid))?))
+}
+
+fn from_tree2(src: &impl gix_object::Find, tree_oid: gix_hash::ObjectId) -> anyhow::Result<Op> {
+    let tree = PersistedTree::read(src, tree_oid)?;
 
     // Assume there's only one entry and get it directly
     let entry = tree.get(0).context("Empty tree")?;
@@ -676,25 +768,25 @@ fn from_tree2(repo: &git2::Repository, tree_oid: git2::Oid) -> anyhow::Result<Op
 
     match name {
         "nop" => {
-            let _ = repo.find_blob(entry.id())?;
+            let _ = Blob::read(src, entry.id())?;
             Ok(Op::Nop)
         }
         "empty" => {
-            let _ = repo.find_blob(entry.id())?;
+            let _ = Blob::read(src, entry.id())?;
             Ok(Op::Empty)
         }
         "paths" => {
-            let _ = repo.find_blob(entry.id())?;
+            let _ = Blob::read(src, entry.id())?;
             Ok(Op::Paths)
         }
         "export" => {
-            let _ = repo.find_blob(entry.id())?;
+            let _ = Blob::read(src, entry.id())?;
             Ok(Op::Export)
         }
         "link" => {
-            let inner = repo.find_tree(entry.id())?;
+            let inner = PersistedTree::read(src, entry.id())?;
             let mode_blob =
-                repo.find_blob(inner.get_name("0").context("link: missing mode")?.id())?;
+                Blob::read(src, inner.get_name("0").context("link: missing mode")?.id())?;
             let mode_str = std::str::from_utf8(mode_blob.content())?;
             let mode = if mode_str.is_empty() {
                 None
@@ -704,31 +796,33 @@ fn from_tree2(repo: &git2::Repository, tree_oid: git2::Oid) -> anyhow::Result<Op
             Ok(Op::Link(mode))
         }
         "adapt" => {
-            let inner = repo.find_tree(entry.id())?;
-            let mode_blob =
-                repo.find_blob(inner.get_name("0").context("adapt: missing mode")?.id())?;
+            let inner = PersistedTree::read(src, entry.id())?;
+            let mode_blob = Blob::read(
+                src,
+                inner.get_name("0").context("adapt: missing mode")?.id(),
+            )?;
             Ok(Op::Adapt(
                 std::str::from_utf8(mode_blob.content())?.to_string(),
             ))
         }
         "unlink" => {
-            let _ = repo.find_blob(entry.id())?;
+            let _ = Blob::read(src, entry.id())?;
             Ok(Op::Unlink)
         }
         "invert" => {
-            let _ = repo.find_blob(entry.id())?;
+            let _ = Blob::read(src, entry.id())?;
             Ok(Op::Invert)
         }
         "index" => {
-            let _ = repo.find_blob(entry.id())?;
+            let _ = Blob::read(src, entry.id())?;
             Ok(Op::Index)
         }
         "fold" => {
-            let _ = repo.find_blob(entry.id())?;
+            let _ = Blob::read(src, entry.id())?;
             Ok(Op::Fold)
         }
         "prune" => {
-            let blob = repo.find_blob(entry.id())?;
+            let blob = Blob::read(src, entry.id())?;
             let content = std::str::from_utf8(blob.content())?;
             if content == "trivial-merge" {
                 Ok(Op::Prune)
@@ -737,27 +831,36 @@ fn from_tree2(repo: &git2::Repository, tree_oid: git2::Oid) -> anyhow::Result<Op
             }
         }
         "hook" => {
-            let inner = repo.find_tree(entry.id())?;
-            let hook_blob =
-                repo.find_blob(inner.get_name("0").context("hook: missing hook name")?.id())?;
+            let inner = PersistedTree::read(src, entry.id())?;
+            let hook_blob = Blob::read(
+                src,
+                inner.get_name("0").context("hook: missing hook name")?.id(),
+            )?;
             let hook_name = std::str::from_utf8(hook_blob.content())?.to_string();
             Ok(Op::Hook(hook_name))
         }
         "author" => {
-            let inner = repo.find_tree(entry.id())?;
-            let name_blob =
-                repo.find_blob(inner.get_name("0").context("author: missing name")?.id())?;
-            let email_blob =
-                repo.find_blob(inner.get_name("1").context("author: missing email")?.id())?;
+            let inner = PersistedTree::read(src, entry.id())?;
+            let name_blob = Blob::read(
+                src,
+                inner.get_name("0").context("author: missing name")?.id(),
+            )?;
+            let email_blob = Blob::read(
+                src,
+                inner.get_name("1").context("author: missing email")?.id(),
+            )?;
             let name = std::str::from_utf8(name_blob.content())?.to_string();
             let email = std::str::from_utf8(email_blob.content())?.to_string();
             Ok(Op::Author(name, email))
         }
         "committer" => {
-            let inner = repo.find_tree(entry.id())?;
-            let name_blob =
-                repo.find_blob(inner.get_name("0").context("committer: missing name")?.id())?;
-            let email_blob = repo.find_blob(
+            let inner = PersistedTree::read(src, entry.id())?;
+            let name_blob = Blob::read(
+                src,
+                inner.get_name("0").context("committer: missing name")?.id(),
+            )?;
+            let email_blob = Blob::read(
+                src,
                 inner
                     .get_name("1")
                     .context("committer: missing email")?
@@ -768,51 +871,64 @@ fn from_tree2(repo: &git2::Repository, tree_oid: git2::Oid) -> anyhow::Result<Op
             Ok(Op::Committer(name, email))
         }
         "message" => {
-            let inner = repo.find_tree(entry.id())?;
-            let fmt_blob = repo.find_blob(
+            let inner = PersistedTree::read(src, entry.id())?;
+            let fmt_blob = Blob::read(
+                src,
                 inner
                     .get_name("0")
                     .context("message: missing fmt string")?
                     .id(),
             )?;
-            let regex_blob =
-                repo.find_blob(inner.get_name("1").context("message: missing regex")?.id())?;
+            let regex_blob = Blob::read(
+                src,
+                inner.get_name("1").context("message: missing regex")?.id(),
+            )?;
             let fmt = std::str::from_utf8(fmt_blob.content())?.to_string();
             let regex_str = std::str::from_utf8(regex_blob.content())?;
             let regex = regex::Regex::new(regex_str).context("invalid regex")?;
             Ok(Op::Message(fmt, Regex(regex)))
         }
         "subdir" => {
-            let inner = repo.find_tree(entry.id())?;
-            let path_blob =
-                repo.find_blob(inner.get_name("0").context("subdir: missing path")?.id())?;
+            let inner = PersistedTree::read(src, entry.id())?;
+            let path_blob = Blob::read(
+                src,
+                inner.get_name("0").context("subdir: missing path")?.id(),
+            )?;
             let path = std::str::from_utf8(path_blob.content())?;
             Ok(Op::Subdir(std::path::PathBuf::from(path)))
         }
         "prefix" => {
-            let inner = repo.find_tree(entry.id())?;
-            let path_blob =
-                repo.find_blob(inner.get_name("0").context("prefix: missing path")?.id())?;
+            let inner = PersistedTree::read(src, entry.id())?;
+            let path_blob = Blob::read(
+                src,
+                inner.get_name("0").context("prefix: missing path")?.id(),
+            )?;
             let path = std::str::from_utf8(path_blob.content())?;
             Ok(Op::Prefix(std::path::PathBuf::from(path)))
         }
         "insert" => {
-            let inner = repo.find_tree(entry.id())?;
-            let path_blob =
-                repo.find_blob(inner.get_name("0").context("insert: missing path")?.id())?;
+            let inner = PersistedTree::read(src, entry.id())?;
+            let path_blob = Blob::read(
+                src,
+                inner.get_name("0").context("insert: missing path")?.id(),
+            )?;
             let path = std::str::from_utf8(path_blob.content())?;
             // An "o" entry references the inserted object directly (the kind is re-derived
             // from the repository when the filter is applied or persisted again).
             if let Some(obj_entry) = inner.get_name("o") {
                 return Ok(Op::Insert(
                     std::path::PathBuf::from(path),
-                    InsertContent::Oid(obj_entry.id()),
+                    InsertContent::Oid(josh_gix_ext::git2_oid(&obj_entry.id())),
                 ));
             }
-            let kind_blob =
-                repo.find_blob(inner.get_name("1").context("insert: missing kind")?.id())?;
-            let value_blob =
-                repo.find_blob(inner.get_name("2").context("insert: missing value")?.id())?;
+            let kind_blob = Blob::read(
+                src,
+                inner.get_name("1").context("insert: missing kind")?.id(),
+            )?;
+            let value_blob = Blob::read(
+                src,
+                inner.get_name("2").context("insert: missing value")?.id(),
+            )?;
             let kind = std::str::from_utf8(kind_blob.content())?;
             let value = std::str::from_utf8(value_blob.content())?;
             let content = match kind {
@@ -822,14 +938,16 @@ fn from_tree2(repo: &git2::Repository, tree_oid: git2::Oid) -> anyhow::Result<Op
             Ok(Op::Insert(std::path::PathBuf::from(path), content))
         }
         "file" => {
-            let inner = repo.find_tree(entry.id())?;
-            let dest_blob = repo.find_blob(
+            let inner = PersistedTree::read(src, entry.id())?;
+            let dest_blob = Blob::read(
+                src,
                 inner
                     .get_name("0")
                     .context("file: missing destination path")?
                     .id(),
             )?;
-            let source_blob = repo.find_blob(
+            let source_blob = Blob::read(
+                src,
                 inner
                     .get_name("1")
                     .context("file: missing source path")?
@@ -843,15 +961,18 @@ fn from_tree2(repo: &git2::Repository, tree_oid: git2::Oid) -> anyhow::Result<Op
             ))
         }
         "embed" => {
-            let inner = repo.find_tree(entry.id())?;
-            let path_blob =
-                repo.find_blob(inner.get_name("0").context("embed: missing path")?.id())?;
+            let inner = PersistedTree::read(src, entry.id())?;
+            let path_blob = Blob::read(
+                src,
+                inner.get_name("0").context("embed: missing path")?.id(),
+            )?;
             let path = std::str::from_utf8(path_blob.content())?;
             Ok(Op::Embed(std::path::PathBuf::from(path)))
         }
         "pattern" => {
-            let inner = repo.find_tree(entry.id())?;
-            let pattern_blob = repo.find_blob(
+            let inner = PersistedTree::read(src, entry.id())?;
+            let pattern_blob = Blob::read(
+                src,
                 inner
                     .get_name("0")
                     .context("pattern: missing pattern")?
@@ -860,118 +981,134 @@ fn from_tree2(repo: &git2::Repository, tree_oid: git2::Oid) -> anyhow::Result<Op
             Op::pattern(std::str::from_utf8(pattern_blob.content())?)
         }
         "workspace" => {
-            let inner = repo.find_tree(entry.id())?;
-            let path_blob =
-                repo.find_blob(inner.get_name("0").context("workspace: missing path")?.id())?;
+            let inner = PersistedTree::read(src, entry.id())?;
+            let path_blob = Blob::read(
+                src,
+                inner.get_name("0").context("workspace: missing path")?.id(),
+            )?;
             let path = std::str::from_utf8(path_blob.content())?;
             Ok(Op::Workspace(std::path::PathBuf::from(path)))
         }
         "stored" => {
-            let inner = repo.find_tree(entry.id())?;
-            let path_blob =
-                repo.find_blob(inner.get_name("0").context("stored: missing path")?.id())?;
+            let inner = PersistedTree::read(src, entry.id())?;
+            let path_blob = Blob::read(
+                src,
+                inner.get_name("0").context("stored: missing path")?.id(),
+            )?;
             let path = std::str::from_utf8(path_blob.content())?;
             Ok(Op::Stored(std::path::PathBuf::from(path)))
         }
         "starlark" => {
-            let inner = repo.find_tree(entry.id())?;
+            let inner = PersistedTree::read(src, entry.id())?;
             let path_tree = inner.get_name("0").context("starlark: missing path")?;
-            let path_blob = repo.find_blob(
-                repo.find_tree(path_tree.id())?
+            let path_blob = Blob::read(
+                src,
+                PersistedTree::read(src, path_tree.id())?
                     .get_name("0")
                     .context("starlark: missing path blob")?
                     .id(),
             )?;
             let path = std::str::from_utf8(path_blob.content())?;
-            let filter_tree = repo.find_tree(
+            let filter_tree = PersistedTree::read(
+                src,
                 inner
                     .get_name("1")
                     .context("starlark: missing filter")?
                     .id(),
             )?;
-            let filter = from_tree2(repo, filter_tree.id())?;
+            let filter = from_tree2(src, filter_tree.id())?;
             Ok(Op::Starlark(
                 std::path::PathBuf::from(path),
                 to_filter(filter),
             ))
         }
         "treederef" => {
-            let inner = repo.find_tree(entry.id())?;
-            let path_blob =
-                repo.find_blob(inner.get_name("0").context("treederef: missing path")?.id())?;
+            let inner = PersistedTree::read(src, entry.id())?;
+            let path_blob = Blob::read(
+                src,
+                inner.get_name("0").context("treederef: missing path")?.id(),
+            )?;
             let path = std::str::from_utf8(path_blob.content())?;
             Ok(Op::ObjectDeref(std::path::PathBuf::from(path)))
         }
         "treeref" => {
-            let inner = repo.find_tree(entry.id())?;
-            let path_blob =
-                repo.find_blob(inner.get_name("0").context("treeref: missing path")?.id())?;
+            let inner = PersistedTree::read(src, entry.id())?;
+            let path_blob = Blob::read(
+                src,
+                inner.get_name("0").context("treeref: missing path")?.id(),
+            )?;
             let path = std::str::from_utf8(path_blob.content())?;
             Ok(Op::ObjectRef(std::path::PathBuf::from(path)))
         }
         "treeid" => {
-            let inner = repo.find_tree(entry.id())?;
+            let inner = PersistedTree::read(src, entry.id())?;
             let path_tree = inner.get_name("0").context("treeid: missing path")?;
-            let path_blob = repo.find_blob(
-                repo.find_tree(path_tree.id())?
+            let path_blob = Blob::read(
+                src,
+                PersistedTree::read(src, path_tree.id())?
                     .get_name("0")
                     .context("treeid: missing path blob")?
                     .id(),
             )?;
             let path = std::str::from_utf8(path_blob.content())?;
-            let filter_tree =
-                repo.find_tree(inner.get_name("1").context("treeid: missing filter")?.id())?;
-            let filter = from_tree2(repo, filter_tree.id())?;
+            let filter_tree = PersistedTree::read(
+                src,
+                inner.get_name("1").context("treeid: missing filter")?.id(),
+            )?;
+            let filter = from_tree2(src, filter_tree.id())?;
             Ok(Op::TreeId(
                 std::path::PathBuf::from(path),
                 to_filter(filter),
             ))
         }
         "compose" => {
-            let compose_tree = repo.find_tree(entry.id())?;
+            let compose_tree = PersistedTree::read(src, entry.id())?;
             let mut filters = Vec::new();
             for i in 0..compose_tree.len() {
                 let compose_entry = compose_tree.get(i).context("compose: missing entry")?;
-                let filter_tree = repo.find_tree(compose_entry.id())?;
-                let filter = from_tree2(repo, filter_tree.id())?;
+                let filter_tree = PersistedTree::read(src, compose_entry.id())?;
+                let filter = from_tree2(src, filter_tree.id())?;
                 filters.push(to_filter(filter));
             }
             Ok(Op::Compose(filters))
         }
         "subtract" => {
-            let subtract_tree = repo.find_tree(entry.id())?;
+            let subtract_tree = PersistedTree::read(src, entry.id())?;
             if subtract_tree.len() == 2 {
-                let a_tree = repo.find_tree(
+                let a_tree = PersistedTree::read(
+                    src,
                     subtract_tree
                         .get_name("0")
                         .context("subtract: missing 0")?
                         .id(),
                 )?;
-                let b_tree = repo.find_tree(
+                let b_tree = PersistedTree::read(
+                    src,
                     subtract_tree
                         .get_name("1")
                         .context("subtract: missing 1")?
                         .id(),
                 )?;
-                let a = from_tree2(repo, a_tree.id())?;
-                let b = from_tree2(repo, b_tree.id())?;
+                let a = from_tree2(src, a_tree.id())?;
+                let b = from_tree2(src, b_tree.id())?;
                 Ok(Op::Subtract(to_filter(a), to_filter(b)))
             } else {
                 Err(anyhow!("subtract: expected 2 entries"))
             }
         }
         "chain" => {
-            let chain_tree = repo.find_tree(entry.id())?;
+            let chain_tree = PersistedTree::read(src, entry.id())?;
             if !chain_tree.is_empty() {
                 let mut filters = vec![];
                 for i in 0..chain_tree.len() {
-                    let filter_tree = repo.find_tree(
+                    let filter_tree = PersistedTree::read(
+                        src,
                         chain_tree
                             .get_name(&i.to_string())
                             .with_context(|| format!("chain: missing {}", i))?
                             .id(),
                     )?;
-                    let filter = from_tree2(repo, filter_tree.id())?;
+                    let filter = from_tree2(src, filter_tree.id())?;
                     filters.push(to_filter(filter));
                 }
                 Ok(Op::Chain(filters))
@@ -980,53 +1117,61 @@ fn from_tree2(repo: &git2::Repository, tree_oid: git2::Oid) -> anyhow::Result<Op
             }
         }
         "exclude" => {
-            let exclude_tree = repo.find_tree(entry.id())?;
+            let exclude_tree = PersistedTree::read(src, entry.id())?;
             if exclude_tree.len() == 1 {
-                let filter_tree = repo.find_tree(
+                let filter_tree = PersistedTree::read(
+                    src,
                     exclude_tree
                         .get_name("0")
                         .context("exclude: missing 0")?
                         .id(),
                 )?;
-                let filter = from_tree2(repo, filter_tree.id())?;
+                let filter = from_tree2(src, filter_tree.id())?;
                 Ok(Op::Exclude(to_filter(filter)))
             } else {
                 Err(anyhow!("exclude: expected 1 entry"))
             }
         }
         "select" => {
-            let select_tree = repo.find_tree(entry.id())?;
+            let select_tree = PersistedTree::read(src, entry.id())?;
             if select_tree.len() == 1 {
-                let filter_tree =
-                    repo.find_tree(select_tree.get_name("0").context("select: missing 0")?.id())?;
-                let filter = from_tree2(repo, filter_tree.id())?;
+                let filter_tree = PersistedTree::read(
+                    src,
+                    select_tree.get_name("0").context("select: missing 0")?.id(),
+                )?;
+                let filter = from_tree2(src, filter_tree.id())?;
                 Ok(Op::Select(to_filter(filter)))
             } else {
                 Err(anyhow!("select: expected 1 entry"))
             }
         }
         "pin" => {
-            let pin_tree = repo.find_tree(entry.id())?;
+            let pin_tree = PersistedTree::read(src, entry.id())?;
             if pin_tree.len() == 1 {
-                let filter_tree =
-                    repo.find_tree(pin_tree.get_name("0").context("pin: missing 0")?.id())?;
-                let filter = from_tree2(repo, filter_tree.id())?;
+                let filter_tree = PersistedTree::read(
+                    src,
+                    pin_tree.get_name("0").context("pin: missing 0")?.id(),
+                )?;
+                let filter = from_tree2(src, filter_tree.id())?;
                 Ok(Op::Pin(to_filter(filter)))
             } else {
                 Err(anyhow!("pin: expected 1 entry"))
             }
         }
         "rev" => {
-            let rev_tree = repo.find_tree(entry.id())?;
+            let rev_tree = PersistedTree::read(src, entry.id())?;
             let mut filters = Vec::new();
             for i in 0..rev_tree.len() {
                 let rev_entry = rev_tree
                     .get_name(&i.to_string())
                     .context("rev: missing entry")?;
-                let inner_tree = repo.find_tree(rev_entry.id())?;
-                let key_blob =
-                    repo.find_blob(inner_tree.get_name("o").context("rev: missing key")?.id())?;
-                let filter_tree = repo.find_tree(
+                let inner_tree = PersistedTree::read(src, rev_entry.id())?;
+                let key_blob = Blob::read(
+                    src,
+                    inner_tree.get_name("o").context("rev: missing key")?.id(),
+                )?;
+                let filter_tree = PersistedTree::read(
+                    src,
                     inner_tree
                         .get_name("f")
                         .context("rev: missing filter")?
@@ -1051,77 +1196,81 @@ fn from_tree2(repo: &git2::Repository, tree_oid: git2::Oid) -> anyhow::Result<Op
                     ));
                 };
 
-                let filter = from_tree2(repo, filter_tree.id())?;
+                let filter = from_tree2(src, filter_tree.id())?;
                 filters.push((match_op, lazy_ref, to_filter(filter)));
             }
             Ok(Op::Rev(filters))
         }
         "unapply" => {
-            let concat_tree = repo.find_tree(entry.id())?;
+            let concat_tree = PersistedTree::read(src, entry.id())?;
             let unapply_entry = concat_tree.get(0).context("concat: missing entry")?;
-            let inner_tree = repo.find_tree(unapply_entry.id())?;
-            let key_blob = repo.find_blob(
+            let inner_tree = PersistedTree::read(src, unapply_entry.id())?;
+            let key_blob = Blob::read(
+                src,
                 inner_tree
                     .get_name("o")
                     .context("concat: missing key")?
                     .id(),
             )?;
-            let filter_tree = repo.find_tree(
+            let filter_tree = PersistedTree::read(
+                src,
                 inner_tree
                     .get_name("f")
                     .context("concat: missing filter")?
                     .id(),
             )?;
             let key = std::str::from_utf8(key_blob.content())?;
-            let filter = from_tree2(repo, filter_tree.id())?;
+            let filter = from_tree2(src, filter_tree.id())?;
             Ok(Op::Unapply(LazyRef::parse(&key)?, to_filter(filter)))
         }
         "squash" => {
             // blob -> Squash(None), tree -> Squash(Some(...))
-            if let Some(kind) = entry.kind()
-                && kind == git2::ObjectType::Blob
-            {
-                let _ = repo.find_blob(entry.id())?;
+            if !entry.is_tree {
+                let _ = Blob::read(src, entry.id())?;
                 return Ok(Op::Squash(None));
             }
-            let squash_tree = repo.find_tree(entry.id())?;
+            let squash_tree = PersistedTree::read(src, entry.id())?;
             let mut filters = std::collections::BTreeMap::new();
             for i in 0..squash_tree.len() {
                 let squash_entry = squash_tree.get(i).context("squash: missing entry")?;
-                let inner_tree = repo.find_tree(squash_entry.id())?;
-                let key_blob = repo.find_blob(
+                let inner_tree = PersistedTree::read(src, squash_entry.id())?;
+                let key_blob = Blob::read(
+                    src,
                     inner_tree
                         .get_name("o")
                         .context("squash: missing key")?
                         .id(),
                 )?;
-                let filter_tree = repo.find_tree(
+                let filter_tree = PersistedTree::read(
+                    src,
                     inner_tree
                         .get_name("f")
                         .context("squash: missing filter")?
                         .id(),
                 )?;
                 let key = std::str::from_utf8(key_blob.content())?;
-                let filter = from_tree2(repo, filter_tree.id())?;
+                let filter = from_tree2(src, filter_tree.id())?;
                 filters.insert(LazyRef::parse(&key)?, to_filter(filter));
             }
             Ok(Op::Squash(Some(filters)))
         }
         "regex_replace" => {
-            let regex_replace_tree = repo.find_tree(entry.id())?;
+            let regex_replace_tree = PersistedTree::read(src, entry.id())?;
             let mut replacements = Vec::new();
             for i in 0..regex_replace_tree.len() {
                 let regex_entry = regex_replace_tree
                     .get(i)
                     .context("regex_replace: missing entry")?;
-                let inner_tree = repo.find_tree(regex_entry.id())?;
-                let regex_blob = repo.find_blob(
+                let inner_tree = PersistedTree::read(src, regex_entry.id())?;
+                let regex_blob = Blob::read(
+                    src,
                     inner_tree
                         .get_name("p")
                         .context("regex_replace: missing pattern")?
                         .id(),
                 )?;
-                let replacement_blob = repo.find_blob(
+                let replacement_blob = Blob::read(
+                    src,
                     inner_tree
                         .get_name("r")
                         .context("regex_replace: missing replacement")?
@@ -1135,8 +1284,9 @@ fn from_tree2(repo: &git2::Repository, tree_oid: git2::Oid) -> anyhow::Result<Op
             Ok(Op::RegexReplace(replacements))
         }
         "downstack" => {
-            let inner = repo.find_tree(entry.id())?;
-            let key_blob = repo.find_blob(
+            let inner = PersistedTree::read(src, entry.id())?;
+            let key_blob = Blob::read(
+                src,
                 inner
                     .get_name("0")
                     .context("downstack: missing base ref")?
@@ -1146,8 +1296,9 @@ fn from_tree2(repo: &git2::Repository, tree_oid: git2::Oid) -> anyhow::Result<Op
             Ok(Op::Downstack(LazyRef::parse(key)?))
         }
         "meta" => {
-            let meta_tree = repo.find_tree(entry.id())?;
-            let filter_tree = repo.find_tree(
+            let meta_tree = PersistedTree::read(src, entry.id())?;
+            let filter_tree = PersistedTree::read(
+                src,
                 meta_tree
                     .get_name("0")
                     .context("meta: missing filter tree")?
@@ -1166,13 +1317,13 @@ fn from_tree2(repo: &git2::Repository, tree_oid: git2::Oid) -> anyhow::Result<Op
                 }
 
                 // The entry should be a blob with the value as content
-                let value_blob = repo.find_blob(meta_entry.id())?;
+                let value_blob = Blob::read(src, meta_entry.id())?;
                 let value = std::str::from_utf8(value_blob.content())?.to_string();
                 meta.insert(meta_key.to_string(), value);
             }
 
             // Deserialize filter
-            let filter = from_tree2(repo, filter_tree.id())?;
+            let filter = from_tree2(src, filter_tree.id())?;
             Ok(Op::Meta(meta, to_filter(filter)))
         }
         _ => Err(anyhow!("Unknown tree structure")),
