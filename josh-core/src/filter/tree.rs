@@ -894,22 +894,6 @@ pub fn insert_oid(
     insert_oid(odb, full_tree, parent, subtree, 0o0040000)
 }
 
-// PORT: retained pub API for the leaf crates (josh-proxy, josh-changes, josh-link,
-// josh-cq); its `Git2Odb` reads and writes resolve through the registered backend, so it
-// must be facade-backed or gone before the backend can be unregistered (the writes would
-// otherwise land loose on disk).
-pub fn insert<'a>(
-    repo: &'a git2::Repository,
-    full_tree: &git2::Tree,
-    path: &Path,
-    oid: git2::Oid,
-    mode: i32,
-) -> anyhow::Result<git2::Tree<'a>> {
-    let odb = repo.odb()?;
-    let result = insert_oid(&objects::Git2Odb(&odb), full_tree.id(), path, oid, mode)?;
-    Ok(repo.find_tree(result)?)
-}
-
 /// Kind of `oid`, or `None` when the object is missing (the zero oid included) or the
 /// header unreadable -- both read as an ordinary miss.
 fn kind_of(src: &impl gix_object::FindHeader, oid: git2::Oid) -> Option<gix_object::Kind> {
@@ -1339,13 +1323,6 @@ pub fn empty_id() -> git2::Oid {
     git2::Oid::from_str("4b825dc642cb6eb9a060e54bf8d69288fbee4904").unwrap()
 }
 
-// PORT: retained pub API for the leaf crates (in-core callers compare against
-// `empty_id()` instead); the lookup resolves through the registered backend's disk
-// fallback, which virtualizes the empty tree.
-pub fn empty(repo: &git2::Repository) -> git2::Tree<'_> {
-    repo.find_tree(empty_id()).unwrap()
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1548,16 +1525,13 @@ mod tests {
         let out = remove_pred(&t, &mut String::new(), input, &|_, isblob| isblob, key).unwrap();
         assert_eq!(out, input, ".git in input passes through verbatim");
 
-        let base = t.repo().find_tree(input).unwrap();
-        let inserted = insert(t.repo(), &base, Path::new("sub/.git"), blob, 0o100644).unwrap();
+        let odb = t.odb().unwrap();
+        let inserted = insert_oid(&odb, input, Path::new("sub/.git"), blob, 0o100644).unwrap();
         assert_eq!(
-            t.repo()
-                .find_tree(inserted.id())
+            get_path_entry(&t, &odb, inserted, Path::new("sub/.git"))
                 .unwrap()
-                .get_path(Path::new("sub/.git"))
-                .unwrap()
-                .id(),
-            blob,
+                .map(|e| objects::git2_oid(&e.oid)),
+            Some(blob),
             "inserted names are written as given"
         );
     }
