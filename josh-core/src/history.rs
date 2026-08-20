@@ -458,13 +458,8 @@ pub fn unapply_filter(
         }
 
         let mut filtered_parent_ids: Vec<_> = module_commit.parent_ids().collect();
-        // PORT: libgit2 graph compute over filtered (possibly unflushed) commits,
-        // served by the registered backend.
         let has_new_orphan = filtered_parent_ids.len() > 1
-            && transaction
-                .repo()
-                .merge_base_octopus(&filtered_parent_ids)
-                .is_err();
+            && objects::merge_base_octopus(&odb, &filtered_parent_ids)?.is_none();
 
         if has_new_orphan {
             match orphans_mode {
@@ -603,11 +598,12 @@ pub fn unapply_filter(
                 for i in 0..parent_count {
                     // If one of the parents is a descendant of the target branch and the other is
                     // not, pick the tree of the one that is a descendant.
-                    // PORT: libgit2 graph compute, served by the registered backend.
                     if (original_parents[i].id() == original_target)
-                        || transaction
-                            .repo()
-                            .graph_descendant_of(original_parents[i].id(), original_target)?
+                        || objects::is_descendant_of(
+                            &odb,
+                            original_parents[i].id(),
+                            original_target,
+                        )?
                     {
                         tid = new_trees[i];
                         break;

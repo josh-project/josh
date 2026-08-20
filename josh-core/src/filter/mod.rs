@@ -2358,9 +2358,7 @@ fn per_rev_filter(
                 .iter()
                 .filter(|x| **x != git2::Oid::ZERO_SHA1 && **x != target_id)
             {
-                // PORT: libgit2 graph compute over filtered (possibly unflushed)
-                // commits, served by the registered backend.
-                if !transaction.repo().graph_descendant_of(target_id, *id)? {
+                if !objects::is_descendant_of(&transaction.odb()?, target_id, *id)? {
                     return Err(anyhow!(
                         "cannot squash {}: its filtered parents {} and {} do not descend \
                          from one another. `:SQUASH` can only preserve a single lineage",
@@ -2411,12 +2409,7 @@ pub fn downstack(
     change_oid: git2::Oid,
     base_oid: git2::Oid,
 ) -> anyhow::Result<git2::Oid> {
-    // PORT: libgit2 graph compute over possibly-unflushed commits, served by the
-    // registered backend.
-    if !transaction
-        .repo()
-        .graph_descendant_of(change_oid, base_oid)?
-    {
+    if !objects::is_descendant_of(&transaction.odb()?, change_oid, base_oid)? {
         return Err(anyhow!(
             "change {} is not a descendant of base {}",
             change_oid,
