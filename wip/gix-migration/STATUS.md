@@ -1,6 +1,6 @@
 # git2 -> gix port: status
 
-Last updated: 2026-08-20 (post-3.2e). See `PLAN.md` in this directory for the full phased plan.
+Last updated: 2026-08-20 (post-3.2f). See `PLAN.md` in this directory for the full phased plan.
 
 ## Landed on master (one commit per step, each suite-green and bench-validated)
 
@@ -37,6 +37,8 @@ Last updated: 2026-08-20 (post-3.2e). See `PLAN.md` in this directory for the fu
 
 | 3.2e | fce31c2c | josh-changes and josh-cq onto the facade -- the last of the pulled-forward write work. Every changes-ref write (comments, votes, diff/PR data, the anchor and synthetic-merge commits, Gerrit chain rewrites, outbox cleanups) builds its blobs, trees and commits through the facade, as do the reads and the four history walks behind them; single-entry `treebuilder` uses become `insert_oid` on the empty tree (same bytes). `commit_change_meta` takes a `CommitData` (the custom `change-id` header now comes from the parsed commit), rippling into two josh-cli callers. New josh-gix-ext `write_commit_with_signatures_of` for commits carrying another commit's author/committer (`create_synthetic_merge_commit`, Gerrit rewrites), covered by the same oid-parity test as `write_commit`. **The typed `tree::insert`/`tree::empty` wrappers are deleted** -- PORT-marked since 3.2b, now callerless (`distributed.rs` calls `find_tree(empty_id())` directly). PORT-marked residue added: josh-cli's rebase/cherry-pick commits, which sit on the libgit2 index merges that produce their trees | n/a (josh-core hot paths untouched) |
 
+| 3.2f | 9a30f031 | The remaining typed-read consumers: filter persistence, josh-search, josh-compose and the distributed cache backend. `persist::from_tree` reads through an object source instead of a repository handle (its git2 tree/blob walk becomes small `PersistedTree`/`Blob` readers over `TreeRefIter`), and `as_tree` takes only the store it writes to. josh-search is oid-in, oid-out over a `Find + Exists + Write` trait object, which retires the `find_tree` bridges its callers kept in josh-core (`Op::Index`), josh-graphql and josh-cli, and their PORT markers; the pinned index oid in its tests holds, so index trees are byte-identical. josh-compose threads the transaction facade through workspace metadata, image contexts and tar archives. `cache/distributed.rs` gets a facade over its own store (the 2.1 plan gap): shard trees are built with `gix_object::tree::Editor` in one pass, entries are read with `TreeRefIter::lookup_entry`, and the shard commits go through `write_commit` -- ref names and shard contents are unchanged, so a published cache stays readable. PORT-marked residue added: the two `revparse_single` shard-ref lookups | n/a (josh-core hot paths untouched) |
+
 Phase 1.2 is complete: no `treebuilder` use remains in `josh-core/src/filter/tree.rs`.
 
 Phase 1.3 (commit/blob creation) required no work: every commit write already goes through
@@ -71,10 +73,9 @@ objects through the registered backend (graphql's `find_commit(apply_to_commit(.
 proxy/cli `-o merge`, josh-changes read-modify-write chains, persist `from_tree2`,
 josh-compose's ephemeral reads — the prysk orchestrator itself). So 3.2 continues as:
 
-1. **3.2f..** Port the remaining typed-read/write consumers crate by crate onto the facade
-   (pulled-forward flag-day work; blocker inventory in `3.2-research-memodb.md` §7):
-   persist `from_tree` + josh-search; josh-compose; `cache/distributed.rs` onto a facade
-   over its own store (also the 2.1 plan gap: its own repo below the cache stack).
+1. **3.2f is landed**, so the typed-read/write consumer sweep is done: persist, josh-search,
+   josh-compose and `cache/distributed.rs` all read and write through a facade. What remains
+   on git2 outside the PORT-marked graph/merge sites is refs and rev-parse.
 2. **3.2z** Unregister both backends, delete `odb_backend.rs`, drop git2/libgit2-sys from
    josh-memodb (error type + `objects_dir(&Path)`). Gated on all of 3.2f.. AND on resolving
    the six PORT-marked libgit2 graph/merge compute sites from 3.2b (history.rs
