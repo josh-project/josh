@@ -246,7 +246,6 @@ pub fn resolve_change(
     head: git2::Oid,
     spec: &str,
 ) -> anyhow::Result<Change> {
-    let repo = transaction.repo();
     let odb = transaction.odb()?;
     // Try as a full OID first.
     if let Ok(oid) = git2::Oid::from_str(spec) {
@@ -255,14 +254,14 @@ pub fn resolve_change(
         }
     }
 
-    // Try as a revparse (branch, tag, short SHA).
-    // PORT: rev-parse stays on the git2 handle until flag day (gix rev_parse then).
-    if let Ok(obj) = repo.revparse_single(spec) {
-        if let Ok(commit) = obj.peel_to_commit()
-            && let Ok(commit) = objects::CommitData::read(&odb, commit.id())
-        {
-            return Ok(Change::from_commit(&commit));
-        }
+    // Try as a revparse (branch, tag, short SHA). An error -- a spec that looks
+    // like a too-short oid prefix, say -- only means this is not a revision; the
+    // spec may still name a change-id, so fall through to the walk below.
+    if let Some(oid) = transaction.rev_parse(spec).ok().flatten()
+        && let Ok(oid) = objects::peel_to_commit(&odb, oid)
+        && let Ok(commit) = objects::CommitData::read(&odb, oid)
+    {
+        return Ok(Change::from_commit(&commit));
     }
 
     // Walk from head to find a commit with matching Change-Id.

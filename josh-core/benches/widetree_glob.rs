@@ -139,7 +139,7 @@ impl GlobBench {
         // runs.
         {
             let transaction = context.open()?;
-            let repo = transaction.repo();
+            let repo = transaction.git2_repo();
             for case in &cases {
                 // Recursive pattern: keeps exactly the `.rs` blobs everywhere (string predicate is
                 // exact -- see the no-dot-component invariant above).

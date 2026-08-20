@@ -68,7 +68,6 @@ fn write_vote_inner(
     scope: &ChangesRef,
     path_prefix: &str,
 ) -> anyhow::Result<String> {
-    let repo = transaction.repo();
     let change_id = change
         .id()
         .ok_or_else(|| anyhow::anyhow!("commit {} has no Change-Id", change.commit()))?;
@@ -90,7 +89,11 @@ fn write_vote_inner(
 
     let user = match author {
         Some(name) => name.to_string(),
-        None => repo.signature()?.email().unwrap_or("unknown").to_string(),
+        None => transaction
+            .signature()?
+            .email()
+            .unwrap_or("unknown")
+            .to_string(),
     };
 
     let path = std::path::Path::new(path_prefix)
@@ -118,7 +121,7 @@ fn write_vote_inner(
             let time = parse_timestamp(timestamp);
             git2::Signature::new(name, &email, &time)?
         }
-        None => repo.signature()?,
+        None => transaction.signature()?,
     };
     let msg = format!("update {}\n", ref_name);
     let new_oid = objects::write_commit(&odb, tree, prev_commit.as_slice(), &sig, &sig, &msg)?;
@@ -138,7 +141,6 @@ pub fn read_vote(
     user: Option<&str>,
     scope: &ChangesRef,
 ) -> anyhow::Result<Option<VoteData>> {
-    let repo = transaction.repo();
     let odb = transaction.odb()?;
     let tree = match transaction.resolve_ref(&scope.ref_name())? {
         Some(oid) => objects::CommitData::read(&odb, oid)?.tree_id()?,
@@ -147,7 +149,11 @@ pub fn read_vote(
 
     let user = match user {
         Some(name) => name.to_string(),
-        None => repo.signature()?.email().unwrap_or("unknown").to_string(),
+        None => transaction
+            .signature()?
+            .email()
+            .unwrap_or("unknown")
+            .to_string(),
     };
 
     let path = std::path::Path::new("votes")
@@ -237,7 +243,6 @@ pub fn delete_outbox_votes(
         return Ok(0);
     }
 
-    let repo = transaction.repo();
     let odb = transaction.odb()?;
     let encoded = encode_change_id_path(change_id);
     let ref_name = scope.ref_name();
@@ -265,7 +270,7 @@ pub fn delete_outbox_votes(
         return Ok(0);
     }
 
-    let sig = repo.signature()?;
+    let sig = transaction.signature()?;
     let msg = format!("delete outbox votes on {}\n", ref_name);
     let new_oid = objects::write_commit(&odb, tree, &[prev_commit], &sig, &sig, &msg)?;
     transaction.update_ref(&ref_name, Expected::At(prev_commit), new_oid, &msg)?;

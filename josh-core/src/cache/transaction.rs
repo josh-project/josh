@@ -15,6 +15,33 @@ pub trait FilterHook {
     ) -> anyhow::Result<crate::filter::Filter>;
 }
 
+/// Where a repository's HEAD points, as [`Transaction::head`] reports it.
+pub struct Head {
+    /// The ref HEAD resolves to: a fully qualified `refs/heads/...` on a branch, and `HEAD`
+    /// itself when detached. Either way, this is the ref to update to move HEAD.
+    pub reference: String,
+    /// The unpeeled target of [`Head::reference`], for guarding an update against it.
+    pub target: git2::Oid,
+    /// The commit HEAD resolves to, annotated tags peeled.
+    pub commit: git2::Oid,
+}
+
+impl Head {
+    /// The branch HEAD is on, fully qualified; `None` when HEAD is detached.
+    pub fn branch(&self) -> Option<&str> {
+        self.reference
+            .starts_with("refs/heads/")
+            .then_some(&*self.reference)
+    }
+
+    /// [`Head::branch`] without its `refs/heads/` prefix, for the places that show it to a
+    /// user or match it against a remote's branch names.
+    pub fn short_branch(&self) -> Option<&str> {
+        self.branch()
+            .map(|name| name.strip_prefix("refs/heads/").unwrap_or(name))
+    }
+}
+
 /// What [`Transaction::update_ref`] requires the ref to currently be before it is
 /// repointed at the new target.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -264,7 +291,12 @@ impl Transaction {
         context.open()
     }
 
-    pub fn repo(&self) -> &git2::Repository {
+    /// The libgit2 handle on this repository, for the porcelain josh has not moved to gix:
+    /// worktree and index operations, `FETCH_HEAD`'s multi-entry semantics, notes, and
+    /// git's DWIM name resolution. It must never read or write objects josh produces --
+    /// those live in this transaction's store until it flushes, and this handle cannot see
+    /// them (use [`Transaction::odb`]).
+    pub fn git2_repo(&self) -> &git2::Repository {
         &self.repo
     }
 
@@ -360,6 +392,90 @@ impl Transaction {
             Err(e) if e.code() == git2::ErrorCode::NotFound => Ok(None),
             Err(e) => Err(e.into()),
         }
+    }
+
+    /// The repository's git directory, for the callers that build paths beside it or hand
+    /// it to a `git` subprocess.
+    pub fn path(&self) -> &std::path::Path {
+        self.repo.path()
+    }
+
+    /// Where HEAD points. Errors when HEAD is unborn (a repository whose HEAD names a
+    /// branch that does not exist yet) or detached at an object that is not a commit;
+    /// annotated tags are peeled. The commit is resolved through the transaction's objects,
+    /// so a HEAD moved to a commit this transaction produced resolves. (gix mapping:
+    /// `Repository::head()` + `head_id()`.)
+    pub fn head(&self) -> anyhow::Result<Head> {
+        let head = self.repo.head()?;
+        let reference = if head.is_branch() {
+            head.name()
+                .map_err(|e| anyhow!("HEAD ref name is not valid UTF-8: {}", e))?
+                .to_string()
+        } else {
+            "HEAD".to_string()
+        };
+        let target = head
+            .target()
+            .ok_or_else(|| anyhow!("HEAD does not point at an object"))?;
+        Ok(Head {
+            reference,
+            target,
+            commit: crate::objects::peel_to_commit(&self.odb()?, target)?,
+        })
+    }
+
+    /// Resolve a user-supplied revision -- a ref name, a short or full oid, or rev syntax
+    /// like `master~2` -- to the object it names, unpeeled. `Ok(None)` when it resolves to
+    /// nothing, which covers both a malformed spec and one naming something absent: a
+    /// revision a user typed is input, not a contract. (gix mapping: `rev_parse_single`.)
+    pub fn rev_parse(&self, spec: &str) -> anyhow::Result<Option<git2::Oid>> {
+        match self.repo.revparse_single(spec) {
+            Ok(object) => Ok(Some(object.id())),
+            Err(e) if e.code() == git2::ErrorCode::NotFound => Ok(None),
+            Err(e) if e.code() == git2::ErrorCode::InvalidSpec => Ok(None),
+            Err(e) => Err(e.into()),
+        }
+    }
+
+    /// The fully qualified name of the ref a short name refers to, resolved the way git
+    /// resolves an argument that could name several things (`master` ->
+    /// `refs/heads/master`). `Ok(None)` when no ref matches. (gix mapping:
+    /// `find_reference` with a partial name.)
+    pub fn expand_ref_name(&self, short_name: &str) -> anyhow::Result<Option<String>> {
+        match self.repo.resolve_reference_from_short_name(short_name) {
+            Ok(reference) => Ok(reference.name().ok().map(|name| name.to_string())),
+            Err(e) if e.code() == git2::ErrorCode::NotFound => Ok(None),
+            Err(e) if e.code() == git2::ErrorCode::InvalidSpec => Ok(None),
+            Err(e) => Err(e.into()),
+        }
+    }
+
+    /// The remote-tracking ref that `branch_ref` is configured to track, from
+    /// `branch.<name>.remote` and `branch.<name>.merge`. `Ok(None)` when the branch has no
+    /// upstream configured. (gix mapping: `branch_remote_tracking_ref_name`.)
+    pub fn upstream_ref(&self, branch_ref: &str) -> anyhow::Result<Option<String>> {
+        match self.repo.branch_upstream_name(branch_ref) {
+            Ok(buf) => Ok(buf.as_str().ok().map(|name| name.to_string())),
+            Err(e) if e.code() == git2::ErrorCode::NotFound => Ok(None),
+            Err(e) => Err(e.into()),
+        }
+    }
+
+    /// A string value from the repository's configuration, `None` when the key is unset.
+    /// (gix mapping: `config_snapshot().string()`.)
+    pub fn config_string(&self, key: &str) -> anyhow::Result<Option<String>> {
+        match self.repo.config()?.get_string(key) {
+            Ok(value) => Ok(Some(value)),
+            Err(e) if e.code() == git2::ErrorCode::NotFound => Ok(None),
+            Err(e) => Err(e.into()),
+        }
+    }
+
+    /// The identity to record as author and committer, from the repository's configuration
+    /// with the usual environment overrides. Errors when no identity is configured.
+    /// (gix mapping: `committer()`.)
+    pub fn signature(&self) -> anyhow::Result<git2::Signature<'static>> {
+        Ok(self.repo.signature()?)
     }
 
     /// Create or update the direct ref `refname` to point at `target`, guarded by
@@ -885,7 +1001,7 @@ mod tests {
     }
 
     fn commit(transaction: &Transaction, msg: &str) -> git2::Oid {
-        let repo = transaction.repo();
+        let repo = transaction.git2_repo();
         let tree = repo
             .find_tree(repo.treebuilder(None).unwrap().write().unwrap())
             .unwrap();
@@ -907,7 +1023,7 @@ mod tests {
             .update_ref("refs/heads/main", Expected::Any, oid, "test")
             .unwrap();
         transaction
-            .repo()
+            .git2_repo()
             .reference_symbolic("refs/josh/sym", "refs/heads/main", true, "test")
             .unwrap();
 
@@ -922,7 +1038,7 @@ mod tests {
     fn resolve_ref_dangling_symref_is_none() {
         let (_dir, transaction) = test_transaction();
         transaction
-            .repo()
+            .git2_repo()
             .reference_symbolic("refs/josh/dangling", "refs/heads/missing", true, "test")
             .unwrap();
         assert_eq!(transaction.resolve_ref("refs/josh/dangling").unwrap(), None);
@@ -1059,7 +1175,7 @@ mod tests {
             .update_ref("refs/josh-x/c", Expected::Any, oid, "test")
             .unwrap();
         transaction
-            .repo()
+            .git2_repo()
             .reference_symbolic("refs/josh/aa", "refs/josh/a", true, "test")
             .unwrap();
 
@@ -1281,7 +1397,12 @@ mod tests {
             .delete_ref("refs/josh/sym", Expected::Any)
             .unwrap();
         // The symref entry is gone; the branch it pointed at survives.
-        assert!(transaction.repo().find_reference("refs/josh/sym").is_err());
+        assert!(
+            transaction
+                .git2_repo()
+                .find_reference("refs/josh/sym")
+                .is_err()
+        );
         assert_eq!(
             transaction.resolve_ref("refs/heads/main").unwrap(),
             Some(oid)

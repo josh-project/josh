@@ -7,16 +7,13 @@ fn resolve_input_ref(
     transaction: &josh_core::cache::Transaction,
     input_ref: &str,
 ) -> anyhow::Result<(String, git2::Oid)> {
-    let repo = transaction.repo();
-    let oid = josh_core::git::resolve_snapshot_input(repo, input_ref)?;
+    let oid = josh_core::git::resolve_snapshot_input(transaction, input_ref)?;
     let ref_string = if input_ref == "+" || input_ref == "." {
         oid.to_string()
     } else if git2::Oid::from_str(input_ref).is_ok() {
         input_ref.to_string()
-    // PORT: DWIM short-name resolution stays on the git2 handle until flag day (gix
-    // partial-name find_reference then).
-    } else if let Ok(reference) = repo.resolve_reference_from_short_name(input_ref) {
-        reference.name().unwrap().to_string()
+    } else if let Some(name) = transaction.expand_ref_name(input_ref)? {
+        name
     } else {
         oid.to_string()
     };
@@ -200,7 +197,7 @@ fn run_filter(args: Vec<String>) -> anyhow::Result<i32> {
         .open()?;
 
     let repo_for_hook = git2::Repository::open_ext(
-        transaction.repo().path(),
+        transaction.path(),
         git2::RepositoryOpenFlags::NO_SEARCH,
         &[] as &[&std::ffi::OsStr],
     )?;
@@ -209,7 +206,7 @@ fn run_filter(args: Vec<String>) -> anyhow::Result<i32> {
     };
     transaction = transaction.with_filter_hook(std::sync::Arc::new(hook));
 
-    let repo = transaction.repo();
+    let repo = transaction.git2_repo();
 
     // If the filter spec doesn't contain a colon and it's not from a file,
     // treat it as a SHA and read from tree
@@ -304,17 +301,17 @@ fn run_filter(args: Vec<String>) -> anyhow::Result<i32> {
     });
 
     if args.get_flag("discover") {
-        // PORT: rev-parse stays on the git2 handle until flag day (gix rev_parse then).
-        let r = repo.revparse_single(&input_ref)?;
-        let hs = josh_core::housekeeping::find_all_workspaces_and_subdirectories(
-            &transaction.odb()?,
-            r.peel_to_tree()?.id(),
-        )?;
+        let odb = transaction.odb()?;
+        let head = transaction
+            .rev_parse(&input_ref)?
+            .ok_or_else(|| anyhow!("no such revision: {}", input_ref))?;
+        let tree = josh_core::objects::CommitData::read(&odb, head)?.tree_id()?;
+        let hs = josh_core::housekeeping::find_all_workspaces_and_subdirectories(&odb, tree)?;
         for i in hs {
             let (mut updated_refs, _) = josh_core::filter_refs(
                 &transaction,
                 josh_core::filter::parse(&i)?,
-                &[(input_ref.to_string(), r.id())],
+                &[(input_ref.to_string(), head)],
             );
             updated_refs[0].0 = "refs/JOSH_TMP".to_string();
             josh_core::update_refs(&transaction, updated_refs);
@@ -351,13 +348,14 @@ fn run_filter(args: Vec<String>) -> anyhow::Result<i32> {
     josh_core::update_refs(&transaction, updated_refs.clone());
 
     if let Some(searchstring) = args.get_one::<String>("search") {
-        // PORT: rev-parse stays on the git2 handle until flag day (gix rev_parse then).
-        let commit = repo.revparse_single(&input_ref)?.peel_to_commit()?;
+        let commit = transaction
+            .rev_parse(&input_ref)?
+            .ok_or_else(|| anyhow!("no such revision: {}", input_ref))?;
 
         let odb = transaction.odb()?;
         let tree = josh_core::objects::CommitData::read(
             &odb,
-            josh_core::filter_commit(&transaction, filterobj, commit.id())?,
+            josh_core::filter_commit(&transaction, filterobj, commit)?,
         )?
         .tree_id()?;
 
@@ -365,7 +363,7 @@ fn run_filter(args: Vec<String>) -> anyhow::Result<i32> {
         // search_matches does all the filtering, so results are identical, just slower.
         let candidates = if josh_core::filter::experimental_features_enabled() {
             let ifilterobj = filterobj.chain(josh_core::filter::parse(":SQUASH:INDEX")?);
-            let index_commit = josh_core::filter_commit(&transaction, ifilterobj, commit.id())?;
+            let index_commit = josh_core::filter_commit(&transaction, ifilterobj, commit)?;
             let index_tree = josh_core::objects::CommitData::read(&odb, index_commit)?.tree_id()?;
             josh_search::search_candidates(&odb, index_tree, tree, searchstring)?
         } else {
@@ -396,10 +394,14 @@ fn run_filter(args: Vec<String>) -> anyhow::Result<i32> {
         // rev-parse reads them through the repository handle, which only sees disk.
         transaction.flush_mem_odb()?;
 
-        // PORT: rev-parse stays on the git2 handle until flag day (gix rev_parse then).
-        let new = repo.revparse_single(target).unwrap().id();
-        let old = repo.revparse_single("JOSH_TMP").unwrap().id();
-        let unfiltered_old = repo.revparse_single(&input_ref).unwrap().id();
+        let rev = |spec: &str| -> anyhow::Result<git2::Oid> {
+            transaction
+                .rev_parse(spec)?
+                .ok_or_else(|| anyhow!("no such revision: {}", spec))
+        };
+        let new = rev(target)?;
+        let old = rev("JOSH_TMP")?;
+        let unfiltered_old = rev(&input_ref)?;
 
         let ret = match josh_core::history::unapply_filter(
             &transaction,

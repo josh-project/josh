@@ -85,7 +85,7 @@ fn handle_link_add(
     args: &LinkAddArgs,
     transaction: &josh_core::cache::Transaction,
 ) -> anyhow::Result<()> {
-    let repo = transaction.repo();
+    let repo = transaction.git2_repo();
 
     // Validate the path (should not be empty and should be a valid path)
     if args.path.is_empty() {
@@ -98,13 +98,7 @@ fn handle_link_add(
     // Get the target branch (default to "HEAD" if not provided)
     let target = args.target.as_deref().unwrap_or("HEAD");
 
-    // Get the current HEAD commit
-    // PORT: symbolic-HEAD read is not expressible via resolve_ref; move to a
-    // Transaction helper at flag day (gix head_name()).
-    let head_ref = repo.head().context("Failed to get HEAD")?;
-    let head_commit = head_ref
-        .peel_to_commit()
-        .context("Failed to get HEAD commit")?;
+    let head_commit = transaction.head().context("Failed to get HEAD")?.commit;
 
     let mode = josh_core::filter::LinkMode::parse(&args.mode)
         .with_context(|| format!("Invalid link mode: '{}'", args.mode))?;
@@ -119,7 +113,7 @@ fn handle_link_add(
         josh_core::filter::invert(filter_obj)
             .with_context(|| format!("Filter '{}' has no inverse", filter))?,
     );
-    let export_oid = josh_core::filter_commit(transaction, combined_filter, head_commit.id())
+    let export_oid = josh_core::filter_commit(transaction, combined_filter, head_commit)
         .context("Failed to apply export filter")?;
 
     // If the export filter found no local content, fall back to fetching the remote.
@@ -162,10 +156,10 @@ fn handle_link_add(
         args.filter.as_deref(),
         target,
         initial_oid,
-        head_commit.tree_id(),
+        josh_core::objects::CommitData::read(&transaction.odb()?, head_commit)?.tree_id()?,
         mode,
     )?
-    .into_commit(transaction, head_commit.id(), &signature)?;
+    .into_commit(transaction, head_commit, &signature)?;
 
     // Create the fixed branch name
     let branch_name = "refs/heads/josh-link";
@@ -193,15 +187,9 @@ fn handle_link_fetch(
     args: &LinkFetchArgs,
     transaction: &josh_core::cache::Transaction,
 ) -> anyhow::Result<()> {
-    let repo = transaction.repo();
+    let repo = transaction.git2_repo();
 
-    // PORT: symbolic-HEAD read is not expressible via resolve_ref; move to a
-    // Transaction helper at flag day (gix head_name()).
-    let head_commit = repo
-        .head()
-        .context("Failed to get HEAD")?
-        .peel_to_commit()
-        .context("Failed to get HEAD commit")?;
+    let head_commit = transaction.head().context("Failed to get HEAD")?.commit;
 
     let commit_oid = if let Some(filter_str) = &args.filter {
         let filter = josh_core::filter::parse(filter_str)
@@ -210,10 +198,10 @@ fn handle_link_fetch(
             josh_core::filter::invert(filter)
                 .with_context(|| format!("Filter '{}' has no inverse", filter_str))?,
         );
-        josh_core::filter_commit(transaction, roundtrip, head_commit.id())
+        josh_core::filter_commit(transaction, roundtrip, head_commit)
             .context("Failed to apply filter")?
     } else {
-        head_commit.id()
+        head_commit
     };
 
     let link_refs = josh_link::collect_all_link_refs(transaction, commit_oid)
@@ -276,15 +264,12 @@ fn handle_link_update(
     args: &LinkUpdateArgs,
     transaction: &josh_core::cache::Transaction,
 ) -> anyhow::Result<()> {
-    let repo = transaction.repo();
+    let repo = transaction.git2_repo();
 
-    // PORT: symbolic-HEAD read is not expressible via resolve_ref; move to a
-    // Transaction helper at flag day (gix head_name()).
-    let head_ref = repo.head().context("Failed to get HEAD")?;
-    let head_commit = head_ref
-        .peel_to_commit()
-        .context("Failed to get HEAD commit")?;
-    let head_tree = head_commit.tree().context("Failed to get HEAD tree")?;
+    let head_commit = transaction.head().context("Failed to get HEAD")?.commit;
+    let head_tree = josh_core::objects::CommitData::read(&transaction.odb()?, head_commit)?
+        .tree_id()
+        .context("Failed to get HEAD tree")?;
 
     let link_files = if let Some(filter_str) = &args.filter {
         let filter = josh_core::filter::parse(filter_str)
@@ -293,7 +278,7 @@ fn handle_link_update(
             josh_core::filter::invert(filter)
                 .with_context(|| format!("Filter '{}' has no inverse", filter_str))?,
         );
-        let filtered_oid = josh_core::filter_commit(transaction, roundtrip, head_commit.id())
+        let filtered_oid = josh_core::filter_commit(transaction, roundtrip, head_commit)
             .context("Failed to apply filter")?;
         if filtered_oid == git2::Oid::ZERO_SHA1 {
             vec![]
@@ -307,7 +292,7 @@ fn handle_link_update(
                 .context("Failed to find link files in filtered tree")?
         }
     } else {
-        josh_core::link::find_link_files(&transaction.odb()?, head_tree.id())
+        josh_core::link::find_link_files(&transaction.odb()?, head_tree)
             .context("Failed to find link files")?
     };
 
@@ -349,7 +334,7 @@ fn handle_link_update(
 
     let signature = make_signature(transaction)?;
     let Some(result) =
-        josh_link::update_links(transaction, head_commit.id(), links_to_update, &signature)?
+        josh_link::update_links(transaction, head_commit, links_to_update, &signature)?
     else {
         eprintln!("All {} link file(s) already up to date", link_files.len());
         return Ok(());
@@ -375,17 +360,11 @@ fn handle_link_push(
     args: &LinkPushArgs,
     transaction: &josh_core::cache::Transaction,
 ) -> anyhow::Result<()> {
-    let repo = transaction.repo();
-
     // Get current HEAD commit
-    // PORT: symbolic-HEAD read is not expressible via resolve_ref; move to a
-    // Transaction helper at flag day (gix head_name()).
-    let head_commit = repo
-        .head()
-        .context("Failed to get HEAD")?
-        .peel_to_commit()
-        .context("Failed to get HEAD commit")?;
-    let head_tree = head_commit.tree().context("Failed to get HEAD tree")?;
+    let head_commit = transaction.head().context("Failed to get HEAD")?.commit;
+    let head_tree = josh_core::objects::CommitData::read(&transaction.odb()?, head_commit)?
+        .tree_id()
+        .context("Failed to get HEAD tree")?;
 
     // Normalize path: strip slash(es)
     let normalized_path = args.path.trim_matches('/');
@@ -394,7 +373,7 @@ fn handle_link_push(
     }
 
     // Find the .link.josh file at the given path
-    let link_files = josh_core::link::find_link_files(&transaction.odb()?, head_tree.id())
+    let link_files = josh_core::link::find_link_files(&transaction.odb()?, head_tree)
         .context("Failed to find link files")?;
 
     let link_path = std::path::PathBuf::from(normalized_path);
@@ -415,7 +394,7 @@ fn handle_link_push(
     let combined_filter = path_filter.chain(josh_core::filter::invert(*link_file)?);
 
     // Apply the filter to get the commit suitable for pushing
-    let exported_commit = josh_core::filter_commit(transaction, combined_filter, head_commit.id())
+    let exported_commit = josh_core::filter_commit(transaction, combined_filter, head_commit)
         .context("Failed to apply export filter")?;
 
     if exported_commit == git2::Oid::ZERO_SHA1 {

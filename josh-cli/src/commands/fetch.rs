@@ -25,7 +25,7 @@ pub fn handle_fetch(
     transaction: &josh_core::cache::Transaction,
     distributed_cache: bool,
 ) -> anyhow::Result<Vec<RefUpdate>> {
-    let repo = transaction.repo();
+    let repo = transaction.git2_repo();
     let repo_path = normalize_repo_path(repo.path());
 
     let config = read_remote_config(&repo_path, &args.remote)

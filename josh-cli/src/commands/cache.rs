@@ -57,8 +57,7 @@ pub fn handle_cache(args: &CacheArgs, transaction: &Transaction) -> anyhow::Resu
 }
 
 fn handle_cache_build(args: &CacheBuildArgs, transaction: &Transaction) -> anyhow::Result<()> {
-    let repo = transaction.repo();
-    let repo_path = normalize_repo_path(repo.path());
+    let repo_path = normalize_repo_path(transaction.path());
 
     let default_branch = remote_ops::resolve_default_branch(transaction, &args.remote)?;
 
@@ -220,8 +219,7 @@ fn handle_cache_build(args: &CacheBuildArgs, transaction: &Transaction) -> anyho
 }
 
 fn handle_cache_push(args: &CachePushArgs, transaction: &Transaction) -> anyhow::Result<()> {
-    let repo = transaction.repo();
-    let repo_path = normalize_repo_path(repo.path());
+    let repo_path = normalize_repo_path(transaction.path());
 
     let config = read_remote_config(&repo_path, &args.remote)
         .with_context(|| format!("Failed to read remote config for '{}'", args.remote))?;
@@ -303,8 +301,7 @@ pub fn fetch_remote_cache(
 }
 
 fn handle_cache_fetch(args: &CacheFetchArgs, transaction: &Transaction) -> anyhow::Result<()> {
-    let repo = transaction.repo();
-    let repo_path = normalize_repo_path(repo.path());
+    let repo_path = normalize_repo_path(transaction.path());
 
     let config = read_remote_config(&repo_path, &args.remote)
         .with_context(|| format!("Failed to read remote config for '{}'", args.remote))?;

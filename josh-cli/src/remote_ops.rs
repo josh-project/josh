@@ -53,7 +53,7 @@ pub fn resolve_default_branch(
     // expressible via resolve_ref; stays on the git2 handle until flag day (gix
     // try_find_reference then).
     transaction
-        .repo()
+        .git2_repo()
         .find_reference(&head_symref)
         .ok()
         .and_then(|r| r.symbolic_target().ok().flatten().map(|s| s.to_string()))

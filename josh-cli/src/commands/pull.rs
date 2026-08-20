@@ -203,10 +203,9 @@ fn resolve_upstream_ref(
 ) -> anyhow::Result<String> {
     let expected_prefix = format!("refs/remotes/{}/", remote);
 
-    // PORT: config-based upstream resolution stays on the git2 handle until flag day
-    // (gix branch_remote_tracking_ref_name then).
-    if let Ok(upstream_buf) = transaction.repo().branch_upstream_name(branch_ref) {
-        if let Ok(upstream) = upstream_buf.as_str() {
+    if let Some(upstream) = transaction.upstream_ref(branch_ref)? {
+        {
+            let upstream = upstream.as_str();
             if !upstream.starts_with(&expected_prefix) {
                 return Err(anyhow::anyhow!(
                     "the current branch tracks '{}', which does not belong to remote '{}'",
@@ -232,7 +231,7 @@ fn upstream_change_ids(
     tip: git2::Oid,
     base: git2::Oid,
 ) -> anyhow::Result<std::collections::HashSet<String>> {
-    let repo = transaction.repo();
+    let repo = transaction.git2_repo();
     let odb = transaction.odb()?;
     let mut ids = std::collections::HashSet::new();
     let mut walk = repo.revwalk()?;
@@ -311,17 +310,12 @@ pub fn integrate(
     transaction: &josh_core::cache::Transaction,
     remote: &str,
 ) -> anyhow::Result<IntegrateReport> {
-    let repo = transaction.repo();
+    let repo = transaction.git2_repo();
 
-    // PORT: symbolic-HEAD read is not expressible via resolve_ref; move to a
-    // Transaction helper at flag day (gix head_name()).
-    let head = repo.head().context("Failed to resolve HEAD")?;
-    if !head.is_branch() {
-        anyhow::bail!("HEAD is detached; cannot integrate pull");
-    }
+    let head = transaction.head().context("Failed to resolve HEAD")?;
     let branch_ref = head
-        .name()
-        .map_err(|_| anyhow::anyhow!("HEAD ref name is not valid UTF-8"))?
+        .branch()
+        .ok_or_else(|| anyhow::anyhow!("HEAD is detached; cannot integrate pull"))?
         .to_string();
     let branch = branch_ref
         .strip_prefix("refs/heads/")
@@ -332,18 +326,12 @@ pub fn integrate(
     let new = transaction
         .resolve_ref(&upstream_refname)?
         .ok_or_else(|| anyhow::anyhow!("failed to resolve upstream ref '{}'", upstream_refname))?;
-    let new = repo
-        .find_object(new, None)?
-        .peel_to_commit()
-        .with_context(|| format!("failed to resolve upstream ref '{}'", upstream_refname))?
-        .id();
-    let old = head
-        .peel_to_commit()
-        .context("failed to resolve HEAD commit")?
-        .id();
+    let new = josh_core::objects::peel_to_commit(&transaction.odb()?, new)
+        .with_context(|| format!("failed to resolve upstream ref '{}'", upstream_refname))?;
+    let old = head.commit;
     // The ref's stored target, which the CAS guard on the write below compares against;
     // differs from the peeled `old` only if the branch points at an annotated tag.
-    let old_target = head.target().context("HEAD branch has no direct target")?;
+    let old_target = head.target;
 
     if old == new {
         return Ok(IntegrateReport::UpToDate);
@@ -436,7 +424,7 @@ pub fn integrate(
 /// Stash uncommitted changes to tracked files so the worktree update in
 /// `integrate` cannot conflict with them. Returns true if a stash was created.
 fn autostash_push(transaction: &josh_core::cache::Transaction) -> anyhow::Result<bool> {
-    let repo = transaction.repo();
+    let repo = transaction.git2_repo();
     let mut opts = git2::StatusOptions::new();
     opts.include_untracked(false);
     if repo.statuses(Some(&mut opts))?.is_empty() {

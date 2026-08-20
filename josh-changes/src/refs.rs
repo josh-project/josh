@@ -257,19 +257,14 @@ impl ChangesRef {
 
 /// Read HEAD and return the current branch shorthand. Errors on a
 /// detached HEAD with a message asking the caller to pass an explicit branch.
-// PORT: symbolic-HEAD read is not expressible via resolve_ref; move to a
-// Transaction helper at flag day (gix head_name()).
 pub fn head_branch(transaction: &josh_core::cache::Transaction) -> anyhow::Result<String> {
     let head = transaction
-        .repo()
         .head()
         .map_err(|e| anyhow!("failed to read HEAD: {}", e))?;
-    if !head.is_branch() {
-        return Err(anyhow!(
-            "HEAD is detached -- pass --branch to select a target branch explicitly"
-        ));
-    }
-    Ok(head.shorthand()?.to_string())
+    let branch = head.short_branch().ok_or_else(|| {
+        anyhow!("HEAD is detached -- pass --branch to select a target branch explicitly")
+    })?;
+    Ok(branch.to_string())
 }
 
 /// Return every changes ref that currently exists, as `ChangesRef` values.

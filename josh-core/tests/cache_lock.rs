@@ -32,7 +32,7 @@ fn sled_lock_follows_transaction_lifetime() {
     // holds the exclusive lock on the cache directory. Scoped so the git borrows of `transaction`
     // end before it is dropped below.
     {
-        let git = transaction.repo();
+        let git = transaction.git2_repo();
         let sig = git2::Signature::new("t", "t@example.com", &git2::Time::new(0, 0)).unwrap();
         let tree = git
             .find_tree(git.treebuilder(None).unwrap().write().unwrap())

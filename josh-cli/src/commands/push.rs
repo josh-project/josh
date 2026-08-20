@@ -110,8 +110,6 @@ fn prepare_push(
     gerrit_mode: GerritMode,
     dry_run: bool,
 ) -> anyhow::Result<PreparedPush> {
-    let repo = transaction.repo();
-
     let (local_ref, remote_ref) = if let Some(colon_pos) = refspec.find(':') {
         let local = &refspec[..colon_pos];
         let remote = &refspec[colon_pos + 1..];
@@ -124,12 +122,11 @@ fn prepare_push(
         .strip_prefix("refs/heads/")
         .unwrap_or(&remote_ref);
 
-    // PORT: DWIM short-name resolution stays on the git2 handle until flag day (gix
-    // partial-name find_reference then).
-    let local_commit = repo
-        .resolve_reference_from_short_name(&local_ref)
-        .with_context(|| format!("Failed to resolve local ref '{}'", local_ref))?
-        .target()
+    let local_ref_name = transaction
+        .expand_ref_name(&local_ref)?
+        .with_context(|| format!("Failed to resolve local ref '{}'", local_ref))?;
+    let local_commit = transaction
+        .resolve_ref(&local_ref_name)?
         .context("Failed to get target of local ref")?;
 
     let dest_remote_ref = format!("refs/josh/remotes/{}/{}", remote_name, remote_ref);
@@ -499,7 +496,7 @@ fn orchestrate_push(
     push_mode: PushMode,
     transaction: &josh_core::cache::Transaction,
 ) -> anyhow::Result<()> {
-    let repo = transaction.repo();
+    let repo = transaction.git2_repo();
     let repo_path = normalize_repo_path(repo.path());
 
     let remote_name = remote.unwrap_or("origin");
@@ -520,11 +517,9 @@ fn orchestrate_push(
     let push_target = push_url.as_deref().unwrap_or(&url);
 
     let refspecs = if refspecs_arg.is_empty() {
-        // PORT: symbolic-HEAD read is not expressible via resolve_ref; move to a
-        // Transaction helper at flag day (gix head_name()).
-        let head = repo.head().context("Failed to get HEAD")?;
+        let head = transaction.head().context("Failed to get HEAD")?;
         let current_branch = head
-            .shorthand()
+            .short_branch()
             .context("Failed to get current branch name")?;
         vec![current_branch.to_string()]
     } else {
@@ -626,9 +621,7 @@ pub fn handle_publish(
     args: &PublishArgs,
     transaction: &josh_core::cache::Transaction,
 ) -> anyhow::Result<()> {
-    let repo = transaction.repo();
-    let config = repo.config().context("Failed to get git config")?;
-    let push_mode = PushMode::Publish(config.get_string("user.email").unwrap_or_default());
+    let push_mode = PushMode::Publish(transaction.config_string("user.email")?.unwrap_or_default());
 
     orchestrate_push(
         args.remote.as_deref(),

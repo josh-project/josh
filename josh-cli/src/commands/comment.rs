@@ -55,10 +55,7 @@ pub fn handle_comment(
     args: &CommentArgs,
     transaction: &josh_core::cache::Transaction,
 ) -> anyhow::Result<()> {
-    let repo = transaction.repo();
-    // PORT: symbolic-HEAD read is not expressible via resolve_ref; move to a
-    // Transaction helper at flag day (gix head_name()).
-    let head = repo.head()?.peel_to_commit()?.id();
+    let head = transaction.head()?.commit;
 
     let (short_file, short_location) = args
         .location

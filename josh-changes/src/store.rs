@@ -55,7 +55,6 @@ pub fn write_changes_tree(
     timestamp: Option<&str>,
     scope: &ChangesRef,
 ) -> anyhow::Result<()> {
-    let repo = transaction.repo();
     let odb = transaction.odb()?;
     let ref_name = scope.ref_name();
     let prev_commit = transaction.resolve_ref(&ref_name)?;
@@ -79,7 +78,7 @@ pub fn write_changes_tree(
             let time = parse_timestamp(timestamp);
             git2::Signature::new(name, &email, &time)?
         }
-        None => josh_core::git::user_signature(repo)?,
+        None => josh_core::git::user_signature(transaction)?,
     };
     let msg = format!("update {}\n", ref_name);
     let new_oid = objects::write_commit(&odb, tree, prev_commit.as_slice(), &sig, &sig, &msg)?;
@@ -125,7 +124,6 @@ pub fn store_diff_data(
     change: &Change,
     scope: &ChangesRef,
 ) -> anyhow::Result<()> {
-    let repo = transaction.repo();
     let odb = transaction.odb()?;
     let change_id = change
         .id()
@@ -162,7 +160,7 @@ pub fn store_diff_data(
 
     let tree = tree::insert_oid(&odb, base_tree, &path, tree_oid, 0o0040000)?;
 
-    let sig = repo.signature()?;
+    let sig = transaction.signature()?;
 
     let anchor_sig = git2::Signature::new("JOSH", "josh@josh-project.dev", &git2::Time::new(0, 0))?;
     let anchor_oid = objects::write_commit(
@@ -196,7 +194,6 @@ pub fn store_pr_data<T: serde::Serialize>(
     scope: &ChangesRef,
 ) -> anyhow::Result<()> {
     let json = serde_json::to_string(data)?;
-    let repo = transaction.repo();
     let odb = transaction.odb()?;
     let blob_oid = objects::write_blob(&odb, json.as_bytes())?;
 
@@ -225,7 +222,7 @@ pub fn store_pr_data<T: serde::Serialize>(
 
     let tree = tree::insert_oid(&odb, base_tree, &path, tree_oid, 0o0040000)?;
 
-    let sig = repo.signature()?;
+    let sig = transaction.signature()?;
     let msg = format!("update {}\n", ref_name);
     let new_oid = objects::write_commit(&odb, tree, prev_tip.as_slice(), &sig, &sig, &msg)?;
     transaction.update_ref(
@@ -274,7 +271,6 @@ pub fn delete_change(
     change_id: &str,
     scope: &ChangesRef,
 ) -> anyhow::Result<()> {
-    let repo = transaction.repo();
     let odb = transaction.odb()?;
     let encoded = encode_change_id_path(change_id);
 
@@ -306,7 +302,7 @@ pub fn delete_change(
         }
     }
 
-    let sig = repo.signature()?;
+    let sig = transaction.signature()?;
     let msg = format!("update {}\n", ref_name);
     let new_oid = objects::write_commit(&odb, tree, &[prev_commit], &sig, &sig, &msg)?;
     transaction.update_ref(&ref_name, Expected::At(prev_commit), new_oid, &msg)?;

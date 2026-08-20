@@ -11,9 +11,10 @@ use std::path::PathBuf;
 /// - A raw SHA hex string: resolves the object and peels to its commit.
 /// - Anything else: treated as a ref name.
 pub fn resolve_snapshot_input(
-    repo: &git2::Repository,
+    transaction: &crate::cache::Transaction,
     input_ref: &str,
 ) -> anyhow::Result<git2::Oid> {
+    let repo = transaction.git2_repo();
     if input_ref == "+" || input_ref == "." {
         let mut index = repo.index()?;
         let tree_oid = if input_ref == "+" {
@@ -85,8 +86,10 @@ fn parse_git_env_date(s: &str) -> Option<git2::Time> {
 /// Like `repo.signature()` but honors `GIT_COMMITTER_*` / `GIT_AUTHOR_*` env vars
 /// the way `git` itself does. git2's `Repository::signature` ignores the date
 /// env vars, which breaks reproducibility in tests.
-pub fn user_signature(repo: &git2::Repository) -> anyhow::Result<git2::Signature<'static>> {
-    let default = repo.signature()?;
+pub fn user_signature(
+    transaction: &crate::cache::Transaction,
+) -> anyhow::Result<git2::Signature<'static>> {
+    let default = transaction.signature()?;
     let name = std::env::var("GIT_COMMITTER_NAME")
         .or_else(|_| std::env::var("GIT_AUTHOR_NAME"))
         .ok();

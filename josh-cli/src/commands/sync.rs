@@ -30,16 +30,14 @@ pub fn handle_sync(
     args: &SyncArgs,
     transaction: &josh_core::cache::Transaction,
 ) -> anyhow::Result<()> {
-    let repo = transaction.repo();
+    let repo = transaction.git2_repo();
 
-    // PORT: symbolic-HEAD read is not expressible via resolve_ref; move to a
-    // Transaction helper at flag day (gix head_name()).
-    let head = repo.head()?.peel_to_commit()?;
-    let branch = repo.head()?.shorthand().ok().map(|s| s.to_string());
+    let head = transaction.head()?;
+    let branch = head.short_branch().map(|s| s.to_string());
 
     let base_oid = if let Some(b) = &branch {
         match transaction.resolve_ref(&format!("refs/remotes/origin/{}", b))? {
-            Some(oid) => repo.find_object(oid, None)?.peel_to_commit()?.id(),
+            Some(oid) => josh_core::objects::peel_to_commit(&transaction.odb()?, oid)?,
             None => git2::Oid::ZERO_SHA1,
         }
     } else {
@@ -61,7 +59,7 @@ pub fn handle_sync(
             sync_remote(args, transaction, repo, remote)
         }
         josh_changes::ChangesRef::Local { branch } => {
-            sync_local(args, transaction, branch, head.id(), base_oid)
+            sync_local(args, transaction, branch, head.commit, base_oid)
         }
     }
 }

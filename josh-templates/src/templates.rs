@@ -129,9 +129,8 @@ pub fn render(
     query_and_params: &str,
     split_odb: bool,
 ) -> anyhow::Result<Option<(String, std::collections::BTreeMap<String, String>)>> {
-    let repo_path = transaction.repo().path();
+    let repo_path = transaction.path();
     let overlay_path = transaction
-        .repo()
         .path()
         .parent()
         .ok_or(anyhow!("parent"))?
@@ -177,7 +176,6 @@ pub fn render(
                 if let Ok(to) = TransactionContext::new(&overlay_path, cache.clone()).open() {
                     to.add_disk_alternate(
                         transaction
-                            .repo()
                             .path()
                             .parent()
                             .ok_or(anyhow!("parent"))?
@@ -218,13 +216,12 @@ pub fn render(
 
     let repo_path = if split_odb {
         transaction
-            .repo()
             .path()
             .parent()
             .ok_or(anyhow!("parent"))?
             .to_owned()
     } else {
-        transaction.repo().path().to_owned()
+        transaction.path().to_owned()
     };
 
     let mut handlebars = handlebars::Handlebars::new();

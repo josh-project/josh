@@ -98,7 +98,7 @@ impl UnapplyBench {
         let mut cases = vec![];
         {
             let transaction = context.open()?;
-            let repo = transaction.repo();
+            let repo = transaction.git2_repo();
             for &n_commits in HISTORY_SIZES {
                 let head = repo.refname_to_id(&format!("refs/heads/case_{n_commits}"))?;
                 let filtered_head = josh_core::filter_commit(&transaction, filter, head)?;
@@ -264,7 +264,7 @@ fn unapply_extend(c: &mut Criterion) {
     {
         let case = bench.cases.first().expect("at least one case");
         let transaction = bench.context.open().expect("open transaction");
-        let tip = extend_filtered(transaction.repo(), case.filtered_head, usize::MAX)
+        let tip = extend_filtered(transaction.git2_repo(), case.filtered_head, usize::MAX)
             .expect("extend filtered");
         let unapplied = unapply_filter(
             &transaction,
@@ -295,7 +295,7 @@ fn unapply_extend(c: &mut Criterion) {
                 || {
                     let transaction = bench.context.open().expect("open transaction");
                     let tip = extend_filtered(
-                        transaction.repo(),
+                        transaction.git2_repo(),
                         case.filtered_head,
                         salt.fetch_add(1, Ordering::Relaxed),
                     )

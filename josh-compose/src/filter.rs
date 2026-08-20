@@ -2,8 +2,11 @@ use anyhow::Context;
 
 /// Resolve an input ref to a commit OID.
 /// Delegates to josh_core::git::resolve_snapshot_input.
-pub fn resolve_input(repo: &git2::Repository, input_ref: &str) -> anyhow::Result<git2::Oid> {
-    josh_core::git::resolve_snapshot_input(repo, input_ref)
+pub fn resolve_input(
+    transaction: &josh_core::cache::Transaction,
+    input_ref: &str,
+) -> anyhow::Result<git2::Oid> {
+    josh_core::git::resolve_snapshot_input(transaction, input_ref)
         .with_context(|| format!("failed to resolve input ref: {input_ref:?}"))
 }
 

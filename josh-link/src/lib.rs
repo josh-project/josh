@@ -110,10 +110,7 @@ pub fn make_signature(
         )
         .context("Failed to create signature")
     } else {
-        let sig = transaction
-            .repo()
-            .signature()
-            .context("Failed to get signature")?;
+        let sig = transaction.signature().context("Failed to get signature")?;
         Ok(sig.to_owned())
     }
 }

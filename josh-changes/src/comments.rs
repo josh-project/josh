@@ -494,7 +494,6 @@ pub fn delete_outbox_comments(
     if content_hashes.is_empty() {
         return Ok(0);
     }
-    let repo = transaction.repo();
     let odb = transaction.odb()?;
     let want: std::collections::HashSet<&str> = content_hashes.iter().map(|s| s.as_str()).collect();
 
@@ -546,7 +545,7 @@ pub fn delete_outbox_comments(
         }
     }
 
-    let sig = repo.signature()?;
+    let sig = transaction.signature()?;
     let msg = format!("cleanup posted outbox comments on {}\n", ref_name);
     let new_oid = objects::write_commit(&odb, tree, &[prev_commit], &sig, &sig, &msg)?;
     transaction.update_ref(&ref_name, Expected::At(prev_commit), new_oid, &msg)?;
