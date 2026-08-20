@@ -118,7 +118,7 @@ regex_parsed!(
  * expensive to build from scratch using heuristics.
  */
 pub fn discover_filter_candidates(transaction: &cache::Transaction) -> anyhow::Result<()> {
-    let repo = transaction.repo();
+    let repo = transaction.git2_repo();
     let mut known_filters = KNOWN_FILTERS.lock().unwrap();
     let trace_s = span!(Level::TRACE, "discover_filter_candidates");
     let _e = trace_s.enter();

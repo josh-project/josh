@@ -182,7 +182,7 @@ pub fn handle_show(
     println!();
     // PORT: the per-file line stats come out of libgit2's patch machinery; the change
     // commit is behind a ref, so it is on disk.
-    let repo = transaction.repo();
+    let repo = transaction.git2_repo();
     let files = file_stats(repo, &repo.find_commit(change.commit())?)?;
     let total_adds: usize = files.iter().map(|f| f.adds).sum();
     let total_dels: usize = files.iter().map(|f| f.dels).sum();

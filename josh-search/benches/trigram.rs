@@ -333,7 +333,7 @@ impl TrigramBench {
 
             josh_core::reset_caches()?;
             let transaction = context.open()?;
-            let repo = transaction.repo();
+            let repo = transaction.git2_repo();
             let tip_tree = repo.find_commit(tip)?.tree()?;
             let total_bytes = tree_content_bytes(repo, &tip_tree)?;
             let odb = transaction.odb()?;
@@ -384,7 +384,7 @@ impl TrigramBench {
             // have changed the index. This is the property the planned rework must preserve.
             josh_core::reset_caches()?;
             let transaction = context.open()?;
-            let repo = transaction.repo();
+            let repo = transaction.git2_repo();
             let root_tree = repo.find_commit(chain[0])?.tree()?;
             let odb = transaction.odb()?;
             // One indexer state for the whole chain, matching how josh keeps one per
@@ -458,7 +458,7 @@ fn trigram_benches(c: &mut Criterion) {
             b.iter_with_setup_wrapper(|runner| {
                 josh_core::reset_caches().expect("reset caches");
                 let transaction = bench.context.open().expect("open transaction");
-                let repo = transaction.repo();
+                let repo = transaction.git2_repo();
                 let tip_tree = repo.find_commit(case.tip()).expect("find tip").tree_id();
                 let odb = transaction.odb().expect("odb");
 
@@ -491,7 +491,7 @@ fn trigram_benches(c: &mut Criterion) {
             b.iter_with_setup_wrapper(|runner| {
                 josh_core::reset_caches().expect("reset caches");
                 let transaction = bench.context.open().expect("open transaction");
-                let repo = transaction.repo();
+                let repo = transaction.git2_repo();
                 let root_tree = repo
                     .find_commit(case.chain[0])
                     .expect("find root")
@@ -542,7 +542,7 @@ fn trigram_benches(c: &mut Criterion) {
                 b.iter_with_setup_wrapper(|runner| {
                     josh_core::reset_caches().expect("reset caches");
                     let transaction = bench.context.open().expect("open transaction");
-                    let repo = transaction.repo();
+                    let repo = transaction.git2_repo();
                     let source_tree = repo.find_commit(case.tip()).expect("find tip").tree_id();
                     let odb = transaction.odb().expect("odb");
 

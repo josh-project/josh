@@ -38,7 +38,7 @@ pub fn handle_track(
     mode: &str,
     transaction: &josh_core::cache::Transaction,
 ) -> anyhow::Result<String> {
-    let repo = transaction.repo();
+    let repo = transaction.git2_repo();
 
     let refs = crate::remote::list_refs(url)?;
 
@@ -54,17 +54,7 @@ pub fn handle_track(
         .context("Failed to peel FETCH_HEAD to commit")?
         .id();
 
-    // PORT: symbolic-HEAD read is not expressible via resolve_ref; move to a
-    // Transaction helper at flag day (gix head_name()).
-    let head_ref = repo.head().context("Failed to get HEAD")?;
-    let head_refname = head_ref
-        .name()
-        .context("HEAD ref name is not valid UTF-8")?
-        .to_string();
-    let head_target = head_ref.target().context("HEAD does not point at an oid")?;
-    let head_commit = head_ref
-        .peel_to_commit()
-        .context("Failed to peel HEAD to commit")?;
+    let head = transaction.head().context("Failed to get HEAD")?;
 
     let signature = make_signature(transaction)?;
 
@@ -79,7 +69,7 @@ pub fn handle_track(
         None,
         "HEAD",
         fetched_commit,
-        head_commit.tree_id(),
+        josh_core::objects::CommitData::read(&transaction.odb()?, head.commit)?.tree_id()?,
         link_mode,
     )?
     .into_tree_oid();
@@ -112,7 +102,7 @@ pub fn handle_track(
     let final_commit = josh_core::objects::write_commit(
         &odb,
         final_tree,
-        &[head_commit.id()],
+        &[head.commit],
         &signature,
         &signature,
         &format!("Track remote: {}", id),
@@ -121,8 +111,8 @@ pub fn handle_track(
 
     transaction
         .update_ref(
-            &head_refname,
-            josh_core::cache::Expected::At(head_target),
+            &head.reference,
+            josh_core::cache::Expected::At(head.target),
             final_commit,
             "josh-cq track",
         )

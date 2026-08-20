@@ -336,14 +336,8 @@ pub fn process_repo_update(repo_update: RepoUpdate) -> anyhow::Result<String> {
         let transaction = transaction_ctx.open()?;
         let transaction_mirror = transaction_mirror_ctx.open()?;
 
-        transaction.add_disk_alternate(
-            transaction_mirror
-                .repo()
-                .path()
-                .join("objects")
-                .to_str()
-                .unwrap(),
-        )?;
+        transaction
+            .add_disk_alternate(transaction_mirror.path().join("objects").to_str().unwrap())?;
 
         let old = git2::Oid::from_str(old)?;
         let author = push_options.author.as_deref().unwrap_or("");
@@ -565,7 +559,6 @@ pub fn push_head_url(
     display_name: &str,
     force: bool,
 ) -> anyhow::Result<(String, i32)> {
-    let repo = transaction.repo();
     let push_temp_ref = format!("refs/{}", &namespace);
     let push_refspec = format!("{}:{}", &push_temp_ref, &refname);
 
@@ -584,8 +577,12 @@ pub fn push_head_url(
     )?;
     // Flush before the external `git push` below reads these objects from disk.
     transaction.flush_mem_odb()?;
-    let (stdout, stderr, status) =
-        run_git_with_auth(repo.path(), &cmd, remote_auth, Some(alternate.to_owned()))?;
+    let (stdout, stderr, status) = run_git_with_auth(
+        transaction.path(),
+        &cmd,
+        remote_auth,
+        Some(alternate.to_owned()),
+    )?;
     transaction.delete_ref(&push_temp_ref, josh_core::cache::Expected::Any)?;
 
     tracing::debug!(

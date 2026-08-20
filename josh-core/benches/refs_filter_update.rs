@@ -133,7 +133,7 @@ impl RefsBench {
             // The gate reads the filtered result through the repository handle, which only
             // sees what is on disk.
             transaction.flush_mem_odb()?;
-            let repo = transaction.repo();
+            let repo = transaction.git2_repo();
             let filtered_tree = repo.find_commit(filtered)?.tree()?.id();
             let raw_subdir_tree = repo
                 .find_commit(case.head)?

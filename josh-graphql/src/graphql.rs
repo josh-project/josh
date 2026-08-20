@@ -1052,7 +1052,7 @@ impl Repository {
         let transaction_mirror = context.transaction_mirror.lock().unwrap();
         let commit_id = {
             let oid = if let Ok(id) = git2::Oid::from_str(&at) {
-                Some((id, transaction_mirror.repo().odb()?.exists(id)))
+                Some((id, transaction_mirror.odb()?.contains(id)))
             } else {
                 None
             };
@@ -1071,8 +1071,9 @@ impl Repository {
             if let Some((oid, _)) = oid {
                 oid
             } else {
-                // PORT: rev-parse stays on the git2 handle until flag day (gix rev_parse then).
-                transaction_mirror.repo().revparse_single(&rev)?.id()
+                transaction_mirror
+                    .rev_parse(&rev)?
+                    .ok_or_else(|| anyhow::anyhow!("no such revision: {}", rev))?
             }
         };
 

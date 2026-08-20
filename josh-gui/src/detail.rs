@@ -307,7 +307,7 @@ pub fn DetailView(sha: String, scope: josh_changes::ChangesRef, mut page: Signal
 pub fn load_detail(sha: &str, scope: &josh_changes::ChangesRef) -> anyhow::Result<DetailData> {
     let transaction = crate::common::open_transaction()?;
     let oid = git2::Oid::from_str(sha)?;
-    let repo = transaction.repo();
+    let repo = transaction.git2_repo();
     let commit = repo.find_commit(oid)?;
 
     let msg = commit.message().unwrap_or("");

@@ -161,7 +161,7 @@ impl GlobBench {
         {
             let transaction = context.open()?;
             let case = cases.first().expect("at least one case");
-            let repo = transaction.repo();
+            let repo = transaction.git2_repo();
 
             // The tripwire only means something if the dotfiles actually exist in the raw tree.
             let raw_tree = repo.find_commit(case.head)?.tree()?;
@@ -478,8 +478,8 @@ fn deephistory_glob(c: &mut Criterion) {
                 .unwrap()
                 .tree_id()
                 .unwrap();
-            let (want, _) =
-                expected_tree(transaction.repo(), probe, &glob_pred(pattern)).expect("expected");
+            let (want, _) = expected_tree(transaction.git2_repo(), probe, &glob_pred(pattern))
+                .expect("expected");
             assert_eq!(
                 got, want,
                 "incremental `::{pattern}` diverged from the independent expectation"

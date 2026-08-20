@@ -150,19 +150,13 @@ pub fn run(
     transaction_overlay
         .add_disk_alternate(repo_path.join("mirror").join("objects").to_str().unwrap())?;
 
-    let mirror_object_count: ParsedCommandResult<CountObjectsOutput> = run_command(
-        transaction_mirror.repo().path(),
-        &["git", "count-objects", "-v"],
-    )
-    .into();
+    let mirror_object_count: ParsedCommandResult<CountObjectsOutput> =
+        run_command(transaction_mirror.path(), &["git", "count-objects", "-v"]).into();
 
     trace_object_count!(mirror_object_count, "mirror");
 
-    let overlay_object_count: ParsedCommandResult<CountObjectsOutput> = run_command(
-        transaction_overlay.repo().path(),
-        &["git", "count-objects", "-v"],
-    )
-    .into();
+    let overlay_object_count: ParsedCommandResult<CountObjectsOutput> =
+        run_command(transaction_overlay.path(), &["git", "count-objects", "-v"]).into();
 
     trace_object_count!(overlay_object_count, "overlay");
 
@@ -177,7 +171,7 @@ pub fn run(
     if do_gc {
         trace_command_result!(
             run_command(
-                transaction_mirror.repo().path(),
+                transaction_mirror.path(),
                 &[
                     "git",
                     "repack",
@@ -194,7 +188,7 @@ pub fn run(
 
         trace_command_result!(
             run_command(
-                transaction_mirror.repo().path(),
+                transaction_mirror.path(),
                 &["git", "multi-pack-index", "write", "--bitmap"]
             ),
             "mirror",
@@ -203,7 +197,7 @@ pub fn run(
 
         trace_command_result!(
             run_command(
-                transaction_overlay.repo().path(),
+                transaction_overlay.path(),
                 &[
                     "git",
                     "repack",
@@ -221,18 +215,15 @@ pub fn run(
 
         trace_command_result!(
             run_command(
-                transaction_overlay.repo().path(),
+                transaction_overlay.path(),
                 &["git", "multi-pack-index", "write", "--bitmap"]
             ),
             "overlay",
             "multi_pack_index"
         );
 
-        let final_object_count: ParsedCommandResult<CountObjectsOutput> = run_command(
-            transaction_mirror.repo().path(),
-            &["git", "count-objects", "-v"],
-        )
-        .into();
+        let final_object_count: ParsedCommandResult<CountObjectsOutput> =
+            run_command(transaction_mirror.path(), &["git", "count-objects", "-v"]).into();
 
         trace_object_count!(final_object_count, "mirror");
     }

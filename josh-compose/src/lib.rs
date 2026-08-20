@@ -52,9 +52,7 @@ pub fn run(
     }
 
     let filter_spec = opts.filter_spec.trim().to_string();
-    let repo = transaction.repo();
-
-    let source_commit = filter::resolve_input(repo, &opts.input_ref)?;
+    let source_commit = filter::resolve_input(transaction, &opts.input_ref)?;
 
     let (ws_tree, _safe_name) = filter::compute_ws_tree(transaction, &filter_spec, source_commit)?;
 
@@ -92,9 +90,7 @@ pub fn plan_images(
     josh_filter::check_experimental_features_enabled("josh compose images")?;
 
     let filter_spec = opts.filter_spec.trim().to_string();
-    let repo = transaction.repo();
-
-    let source_commit = filter::resolve_input(repo, &opts.input_ref)?;
+    let source_commit = filter::resolve_input(transaction, &opts.input_ref)?;
 
     let (ws_tree, _safe_name) = filter::compute_ws_tree(transaction, &filter_spec, source_commit)?;
 
@@ -118,9 +114,7 @@ pub fn plan_jobs(
     josh_filter::check_experimental_features_enabled("josh compose jobs")?;
 
     let filter_spec = opts.filter_spec.trim().to_string();
-    let repo = transaction.repo();
-
-    let source_commit = filter::resolve_input(repo, &opts.input_ref)?;
+    let source_commit = filter::resolve_input(transaction, &opts.input_ref)?;
 
     let (ws_tree, _safe_name) = filter::compute_ws_tree(transaction, &filter_spec, source_commit)?;
 

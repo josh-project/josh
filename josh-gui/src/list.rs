@@ -315,7 +315,7 @@ pub fn load_rows(scope: &josh_changes::ChangesRef) -> anyhow::Result<ListData> {
     let mut dependencies: HashMap<String, Vec<String>> = HashMap::new();
 
     for change in &changes {
-        let commit = transaction.repo().find_commit(change.commit())?;
+        let commit = transaction.git2_repo().find_commit(change.commit())?;
         let subject = commit
             .message()
             .unwrap_or("")

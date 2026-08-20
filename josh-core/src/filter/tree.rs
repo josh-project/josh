@@ -1742,7 +1742,7 @@ mod tests {
             assert!(!cp.fallback, "`{pattern}` must not need the fallback");
             let got =
                 remove_pattern(&t, input, &cp, key, CompiledPattern::initial_state()).unwrap();
-            let want = ground_truth_tree(t.repo(), input, pattern);
+            let want = ground_truth_tree(t.git2_repo(), input, pattern);
             assert_eq!(
                 got, want,
                 "`{pattern}` diverged from full-path glob matching"
@@ -1819,7 +1819,7 @@ mod tests {
             key,
         )
         .unwrap();
-        let want = ground_truth_tree(t.repo(), input, "a/*.txt");
+        let want = ground_truth_tree(t.git2_repo(), input, "a/*.txt");
         assert_eq!(out, want, "b/f.txt must not be kept via the a/ cache entry");
     }
 

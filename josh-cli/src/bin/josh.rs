@@ -374,7 +374,7 @@ fn handle_clone(
     transaction: &josh_core::cache::Transaction,
     distributed_cache: bool,
 ) -> anyhow::Result<()> {
-    let repo = transaction.repo();
+    let repo = transaction.git2_repo();
 
     // Create FetchArgs from CloneArgs
     let fetch_args = FetchArgs {
@@ -455,7 +455,7 @@ fn handle_remote(
 ) -> anyhow::Result<()> {
     match &args.command {
         RemoteCommand::Add(add_args) => {
-            let repo_path = normalize_repo_path(transaction.repo().path());
+            let repo_path = normalize_repo_path(transaction.path());
             handle_remote_add_repo(add_args, &repo_path)
         }
     }
@@ -542,8 +542,7 @@ fn handle_filter(
     args: &FilterArgs,
     transaction: &josh_core::cache::Transaction,
 ) -> anyhow::Result<()> {
-    let repo = transaction.repo();
-    let repo_path = normalize_repo_path(repo.path());
+    let repo_path = normalize_repo_path(transaction.path());
 
     let config = read_remote_config(&repo_path, &args.remote)
         .with_context(|| format!("Failed to read remote config for '{}'", args.remote))?;
