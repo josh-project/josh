@@ -411,6 +411,10 @@ pub fn integrate(
         }
     };
 
+    // The checkout below reads the restacked commits through the repository handle, which only
+    // sees what is on disk.
+    transaction.flush_mem_odb()?;
+
     // Update the worktree first (safe: refuses to clobber conflicting local
     // modifications), only then move the branch ref.
     let new_tip_commit = repo.find_commit(new_tip)?;

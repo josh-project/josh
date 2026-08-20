@@ -1,20 +1,16 @@
-//! Custom libgit2 object-database backends for josh.
+//! josh's object store.
 //!
-//! [`OdbBackend`] is a safe Rust trait that [`odb_backend::register`] lifts into a
-//! `git_odb_backend` registered on a repository, so the usual `repo.blob()` / treebuilder /
-//! commit calls route through it with no call-site changes. [`MemOdb`] is the concrete backend
-//! josh uses: a per-operation in-memory store that buffers filtered objects and flushes them to a
-//! packfile at transaction and external-git boundaries.
+//! [`MemOdb`] is a per-operation in-memory store that buffers the objects josh produces and
+//! flushes them to a packfile at transaction and external-git boundaries. [`Odb`] is the facade
+//! every reader and writer goes through: memory first, then the repository's objects on disk.
 
 mod flusher;
 pub mod hash;
 pub mod mem_odb;
 pub mod odb;
-mod odb_backend;
 pub mod pack;
 
 pub use hash::PassthroughHasher;
 pub use mem_odb::MemOdb;
 pub use odb::{Bytes, Odb};
-pub use odb_backend::{OdbBackend, register};
 pub use pack::objects_dir;

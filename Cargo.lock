@@ -3652,7 +3652,6 @@ dependencies = [
  "gix-pack",
  "gix-zlib",
  "josh-gix-ext",
- "libgit2-sys",
  "log",
  "tempfile",
 ]
