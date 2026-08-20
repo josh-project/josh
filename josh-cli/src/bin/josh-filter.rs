@@ -2,7 +2,6 @@
 
 use anyhow::{Context, anyhow};
 use std::fs::read_to_string;
-use std::io::Write;
 
 fn resolve_input_ref(
     transaction: &josh_core::cache::Transaction,
@@ -102,12 +101,6 @@ fn make_app() -> clap::Command {
                 .action(clap::ArgAction::SetTrue)
                 .help("Enables distributed cache")
                 .long("distributed-cache"),
-        )
-        .arg(
-            clap::Arg::new("pack")
-                .action(clap::ArgAction::SetTrue)
-                .help("Write a packfile instead of loose objects")
-                .long("pack"),
         )
         .arg(clap::Arg::new("query").long("query").short('q'))
         .arg(
@@ -304,26 +297,9 @@ fn run_filter(args: Vec<String>) -> anyhow::Result<i32> {
         return Ok(0);
     }
 
-    let odb = repo.odb()?;
-    let mp = if args.get_flag("pack") {
-        let mempack = odb.add_new_mempack_backend(1000)?;
-        Some(mempack)
-    } else {
-        None
-    };
-
     let finish = defer::defer(|| {
         if args.get_flag("cache-stats") {
             josh_core::cache::sled_print_stats().expect("failed to collect cache stats");
-        }
-        if let Some(mempack) = mp {
-            let mut buf = git2::Buf::new();
-            mempack.dump(repo, &mut buf).unwrap();
-            if buf.len() > 32 {
-                let mut w = odb.packwriter().unwrap();
-                w.write_all(&buf).unwrap();
-                w.commit().unwrap();
-            }
         }
     });
 
