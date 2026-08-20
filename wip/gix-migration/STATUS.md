@@ -1,6 +1,6 @@
 # git2 -> gix port: status
 
-Last updated: 2026-08-20 (post-3.2d). See `PLAN.md` in this directory for the full phased plan.
+Last updated: 2026-08-20 (post-3.2e). See `PLAN.md` in this directory for the full phased plan.
 
 ## Landed on master (one commit per step, each suite-green and bench-validated)
 
@@ -34,6 +34,8 @@ Last updated: 2026-08-20 (post-3.2d). See `PLAN.md` in this directory for the fu
 | 3.2c | b371ca83 | josh-graphql onto the facade: every commit field (author/summary/message/date/parents/diff/warnings/hash and the two mutation probes) reads `CommitData`, path lookups and blob reads go through `tree::get_path_entry`/`blob_bytes`, `linecount` and the Markers meta-tree reads follow, and the search candidate scan uses `walk_tree_preorder`. Two paths got cheaper rather than merely ported: `history` follows the filtered commit's first-parent chain so a windowed query reads only the commits it returns (a full revwalk drain before), and `find_paths` descends exactly as far as `depth` allows (a whole-tree walk with post-filtering before) -- identical result sets, verified query by query. josh-core opens the API leaf crates need: `josh_memodb` re-export plus `tree::{read_tree, TreeReader (+ lazy entries()), get_path_entry, blob_bytes}`. PORT-marked residue: the two `find_tree` bridges feeding josh-search (its own step) and the user-syntax rev-parse. Validation beyond the suite: an old-vs-new A/B over 17 graphql queries on a live proxy came back byte-identical except two error texts (libgit2 strings -> `no such path: X`/`not a directory: X`; unpinned). That A/B also exposed a coverage hole -- `history`, `summary`, `message`, `authorEmail`, `parents`, `warnings` and `search` had NO prysk coverage -- closed by the new `graphql_fields.t` (47 cases: history windows/offset/past-the-end, filtered history, commit metadata, depth-limited listings, and the missing-path/not-a-directory errors) | n/a (josh-core hot paths untouched; graphql is request-path code) |
 
 | 3.2d | 4a64a0d1 | josh-proxy and josh-link writes onto the facade -- the first step to move object *writes*, which until now reached the store only through the registered backend's write trampoline. New josh-gix-ext `write_commit` (gix `Commit` serialization; signatures carry the git2 seconds+offset) and `write_blob`; `tree::insert_oid` opened for leaf crates. Ported: josh-link's link-add and link-update commits, blob writes and tree inserts, plus its link-file reads and history walk (`git2::Revwalk` -> `objects::RevWalk`); josh-proxy's `refs/josh/meta` marker path (blob + tree insert + commit) and the push-path commit tree read. Commit-write byte-identity is pinned by a unit test asserting equal oids against libgit2 across signatures, +/-/zero timezone offsets, unicode names, empty and newline-free messages, and 0/1/2 parents -- a formatting difference would renumber every published ref. `-o merge`'s libgit2 merge compute stays PORT-marked. Deferred to 3.2e: josh-changes (~95 sites) and josh-cq, whose port also retires the typed `tree::insert`/`tree::empty` wrappers | n/a (josh-core hot paths untouched) |
+
+| 3.2e | fce31c2c | josh-changes and josh-cq onto the facade -- the last of the pulled-forward write work. Every changes-ref write (comments, votes, diff/PR data, the anchor and synthetic-merge commits, Gerrit chain rewrites, outbox cleanups) builds its blobs, trees and commits through the facade, as do the reads and the four history walks behind them; single-entry `treebuilder` uses become `insert_oid` on the empty tree (same bytes). `commit_change_meta` takes a `CommitData` (the custom `change-id` header now comes from the parsed commit), rippling into two josh-cli callers. New josh-gix-ext `write_commit_with_signatures_of` for commits carrying another commit's author/committer (`create_synthetic_merge_commit`, Gerrit rewrites), covered by the same oid-parity test as `write_commit`. **The typed `tree::insert`/`tree::empty` wrappers are deleted** -- PORT-marked since 3.2b, now callerless (`distributed.rs` calls `find_tree(empty_id())` directly). PORT-marked residue added: josh-cli's rebase/cherry-pick commits, which sit on the libgit2 index merges that produce their trees | n/a (josh-core hot paths untouched) |
 
 Phase 1.2 is complete: no `treebuilder` use remains in `josh-core/src/filter/tree.rs`.
 
@@ -69,14 +71,12 @@ objects through the registered backend (graphql's `find_commit(apply_to_commit(.
 proxy/cli `-o merge`, josh-changes read-modify-write chains, persist `from_tree2`,
 josh-compose's ephemeral reads — the prysk orchestrator itself). So 3.2 continues as:
 
-1. **3.2e..** Port the remaining typed-read/write consumers crate by crate onto the facade
+1. **3.2f..** Port the remaining typed-read/write consumers crate by crate onto the facade
    (pulled-forward flag-day work; blocker inventory in `3.2-research-memodb.md` §7):
-   josh-changes + josh-cq (their writes move to the facade, retiring the typed
-   `tree::insert`/`tree::empty` wrappers); persist `from_tree` + josh-search; josh-compose;
-   `cache/distributed.rs` onto a facade over its own store (also the 2.1 plan gap: its own
-   repo below the cache stack).
+   persist `from_tree` + josh-search; josh-compose; `cache/distributed.rs` onto a facade
+   over its own store (also the 2.1 plan gap: its own repo below the cache stack).
 2. **3.2z** Unregister both backends, delete `odb_backend.rs`, drop git2/libgit2-sys from
-   josh-memodb (error type + `objects_dir(&Path)`). Gated on all of 3.2e.. AND on resolving
+   josh-memodb (error type + `objects_dir(&Path)`). Gated on all of 3.2f.. AND on resolving
    the six PORT-marked libgit2 graph/merge compute sites from 3.2b (history.rs
    merge_base_octopus/graph_descendant_of/merge_commits, filter/mod.rs graph_descendant_of
    ×2 + cached_merge_trees) — flush-before-compute, cache-backed reimplementation
