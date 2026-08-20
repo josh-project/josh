@@ -1,6 +1,6 @@
 # git2 -> gix port: status
 
-Last updated: 2026-08-20 (post-3.2g). See `PLAN.md` in this directory for the full phased plan.
+Last updated: 2026-08-20 (post-3.2h). See `PLAN.md` in this directory for the full phased plan.
 
 ## Landed on master (one commit per step, each suite-green and bench-validated)
 
@@ -41,6 +41,8 @@ Last updated: 2026-08-20 (post-3.2g). See `PLAN.md` in this directory for the fu
 
 | 3.2g | f75c5d73 | Reachability queries onto the object source, resolving four of the six PORT-marked graph/merge sites that gate 3.2z. New `josh-gix-ext/src/graph.rs`: `is_descendant_of` and `merge_base_octopus` over any `gix_object::Find`, both computing merge bases with gix-revision (new workspace dep, `merge_base` feature only) -- the reason these calls sat on the repo handle is that they must see a transaction's not-yet-written filtered commits, which the facade gives them directly. Inputs are existence-checked first: gix reports a missing commit as unrelated history, libgit2 errored, and an error is the honest answer. Callers moved off `transaction.repo()`: `unapply_filter`'s orphan check and merge-parent pick, the `:SQUASH` lineage check, `downstack`'s base check, josh-filter's fast-forward check. Tests pin the contract: chains, merges, unrelated roots, self, missing object. Left for the next step: the two libgit2 merge computes (`merge_commits` ours/theirs in `unapply_filter`, `merge_trees` in `cached_merge_trees`), which need gix-merge and carry conflict/rename-detection surface | `unapply` -1.8 to -0.7% (`unapply_new_branch`), `unapply_extend` within noise |
 
+| 3.2h | 8d897d0d | Merges onto the object source, closing the last of the six PORT-marked graph/merge sites. New `josh-gix-ext/src/merge.rs` runs gix-merge (new workspace dep, pulling gix-diff/filter/worktree/glob/command/revwalk in with it) over a `FindObjectOrHeader + Write` source: `merge_trees` for a plain 3-way tree merge, `merge_commits` for two commits including git's recursive merge-base handling (several equally good bases are merged into a virtual one). josh merges bare trees, so both platforms are the empty configuration -- no worktree roots, no attribute stack, no external drivers; rename detection stays on, matching libgit2's `GIT_MERGE_FIND_RENAMES` default. A merge errors on anything git calls unresolved (`TreatAsUnresolved::default()`), which reproduces libgit2's conflicted-index-then-`write_tree_to`-error path; the optional side preference maps libgit2's file-favor, so forced content resolutions are not conflicts but a delete-vs-modify still is. Ported: `unapply_filter`'s ours/theirs merge pair, `cached_merge_trees`, the `-o merge` push path in josh-proxy and josh-cli, `josh pull`'s restack (its cherry-picked commits now go through `write_commit_with_signatures_of`), and -- via a new `graph::merge_base` -- the last two libgit2 graph calls in josh-cli. No libgit2 graph or merge compute remains outside the allowlisted `git.rs` worktree/index paths. Tests pin the contract: a clean line-level merge, a conflict, a side preference deciding one, and a delete-vs-modify it cannot | `unapply` flat (all six cases p > 0.05) |
+
 Phase 1.2 is complete: no `treebuilder` use remains in `josh-core/src/filter/tree.rs`.
 
 Phase 1.3 (commit/blob creation) required no work: every commit write already goes through
@@ -80,16 +82,12 @@ josh-compose's ephemeral reads — the prysk orchestrator itself). So 3.2 contin
    on git2 outside the PORT-marked graph/merge sites is refs and rev-parse.
 2. **3.2g is landed**: the four graph-compute sites now answer from the object source
    (`objects::is_descendant_of`, `objects::merge_base_octopus`).
-3. **3.2h** The two remaining merge computes: `unapply_filter`'s `merge_commits` pair (ours
-   then theirs favor) and `cached_merge_trees`' `merge_trees`. Both also `write_tree_to`,
-   which keeps the backend's write trampoline load-bearing until they move. gix-merge is the
-   counterpart; the surface to settle is conflict resolution (libgit2's file-favor vs
-   `ResolveWith`) and rename detection, so expect prysk churn on merge-push tests.
+3. **3.2h is landed**: merges run over the object source, so nothing outside the allowlisted
+   `git.rs` worktree/index paths computes graphs or merges through libgit2 any more.
 4. **3.2z** Unregister both backends, delete `odb_backend.rs`, drop git2/libgit2-sys from
-   josh-memodb (error type + `objects_dir(&Path)`). Gated on 3.2h.
-   The retained `tree::insert`/`tree::empty` wrappers and persist `from_tree` must be
-   facade-backed or gone before unregistration. Any missed site fails loudly (NotFound on a
-   josh-written oid).
+   josh-memodb (error type + `objects_dir(&Path)`). Its gates are cleared; what remains on
+   the repo handle is refs, rev-parse and HEAD, none of which the backend serves. Any missed
+   site fails loudly (NotFound on a josh-written oid).
 5. **3.3 flag day**: Transaction opens `gix::ThreadSafeRepository` (isolated), refs via
    gix-ref (parity contract pinned in the 2.1 method comments + unit tests). Facade disk
    side flips to `repo.objects` — pre-seed the empty tree then (gix does not virtualize it;
