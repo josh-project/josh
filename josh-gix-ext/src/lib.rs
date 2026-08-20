@@ -71,6 +71,36 @@ pub fn hash_blob(data: &[u8]) -> git2::Oid {
     )
 }
 
+/// Follow `oid` to the commit it names, unwrapping annotated tags on the way. Errors when the
+/// object is missing or resolves to something that is not a commit.
+pub fn peel_to_commit(
+    src: &(impl gix_object::Find + ?Sized),
+    oid: git2::Oid,
+) -> anyhow::Result<git2::Oid> {
+    let mut current = gix_oid(oid);
+    let mut buffer = Vec::new();
+    loop {
+        let data = src
+            .try_find(&current, &mut buffer)
+            .map_err(|e| anyhow::anyhow!("peel {}: {}", current, e))?
+            .ok_or_else(|| anyhow::anyhow!("object {} not found", current))?;
+        match data.kind {
+            gix_object::Kind::Commit => return Ok(git2_oid(&current)),
+            gix_object::Kind::Tag => {
+                current = gix_object::TagRefIter::from_bytes(&buffer, gix_hash::Kind::Sha1)
+                    .target_id()?;
+            }
+            kind => {
+                return Err(anyhow::anyhow!(
+                    "object {} is not a commit but a {:?}",
+                    current,
+                    kind
+                ));
+            }
+        }
+    }
+}
+
 /// The entries of the tree `oid`, owned so several trees can be walked side by side.
 /// Errors when the object is missing or is not a tree.
 pub fn read_tree_entries(

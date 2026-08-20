@@ -6,8 +6,8 @@
 //!
 //! Packing itself runs on a background thread (see [`crate::flusher`]): the write path enqueues the
 //! work and keeps filtering, and a boundary flush blocks only until the pack is durable. The store's
-//! `Mutex` therefore guards concurrent access from the filter thread (writes/reads through the
-//! backend) and the flusher thread (which snapshots the buffered objects to pack them, then evicts
+//! `Mutex` therefore guards concurrent access from the filter thread (writes and reads through
+//! the facade) and the flusher thread (which snapshots the buffered objects to pack them, then evicts
 //! them); it is `Send + Sync` so its `Arc` can cross to the flusher.
 
 use std::collections::BTreeMap;
@@ -15,11 +15,8 @@ use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
-use git2::{ErrorClass, ErrorCode, ObjectType, Oid};
 use gix_hash::ObjectId;
 use gix_object::Kind;
-
-use crate::odb_backend::{self, OdbBackend};
 
 /// Object bytes are held behind an `Arc` so a flush can snapshot them without copying: the store
 /// must keep serving reads while the flusher packs (eviction only happens once the pack is
@@ -96,24 +93,12 @@ impl MemOdb {
 
     /// Whether `oid` exists in one of the registered alternates. `false` without filesystem
     /// I/O when no alternates are registered.
-    pub(crate) fn exists_in_alternates(&self, oid: Oid) -> bool {
+    pub(crate) fn exists_in_alternates(&self, oid: git2::Oid) -> bool {
         self.alternates
             .lock()
             .unwrap()
             .as_ref()
             .is_some_and(|odb| odb.exists(oid))
-    }
-
-    /// Replace `repo`'s object database with a backend that reads from / writes to this store,
-    /// delegating read-side misses to the original on-disk ODB (see [`odb_backend::register`]), so
-    /// writes land in memory and reads check memory first.
-    pub fn register(self: &Arc<Self>, repo: &git2::Repository) {
-        let _ = odb_backend::register(
-            repo,
-            MemBackend {
-                store: self.clone(),
-            },
-        );
     }
 
     /// Buffer `oid` and return whether the store has now exceeded its size limit, so the caller
@@ -243,88 +228,29 @@ impl MemOdb {
     }
 }
 
-/// The libgit2 backend handle for a [`MemOdb`]: a cheap [`Arc`] onto the store, registered on one
-/// repository by [`MemOdb::register`].
-struct MemBackend {
-    store: Arc<MemOdb>,
-}
-
-fn not_found() -> git2::Error {
-    // ErrorCode::NotFound signals a memory miss, which the backend trampolines resolve by reading
-    // through to the delegate on-disk ODB instead of treating it as a hard failure.
-    git2::Error::new(
-        ErrorCode::NotFound,
-        ErrorClass::Odb,
-        "not in in-memory store",
-    )
-}
-
-impl OdbBackend for MemBackend {
-    fn read_header(&self, oid: Oid) -> Result<(usize, ObjectType), git2::Error> {
-        self.store
-            .header(&josh_gix_ext::gix_oid(oid))
-            .map(|(kind, size)| (size as usize, josh_gix_ext::git2_kind(kind)))
-            .ok_or_else(not_found)
-    }
-
-    fn read(&self, oid: Oid) -> Result<(Vec<u8>, ObjectType), git2::Error> {
-        self.store
-            .get(&josh_gix_ext::gix_oid(oid))
-            .map(|(kind, data)| (data.to_vec(), josh_gix_ext::git2_kind(kind)))
-            .ok_or_else(not_found)
-    }
-
-    fn write(&mut self, oid: Oid, data: Vec<u8>, kind: ObjectType) -> Result<(), git2::Error> {
-        // No dedup gate here: `git_odb__freshen` runs before this trampoline and is the
-        // dedup for the git2 write path.
-        let Some(kind) = josh_gix_ext::gix_kind(kind) else {
-            return Err(git2::Error::new(
-                git2::ErrorCode::Invalid,
-                ErrorClass::Odb,
-                "not a writable object kind",
-            ));
-        };
-        let overflow = self
-            .store
-            .insert(josh_gix_ext::gix_oid(oid), kind, data.into());
-        if overflow {
-            self.store.enqueue_chunk();
-        }
-        Ok(())
-    }
-
-    fn exists(&self, oid: Oid) -> bool {
-        self.store.contains(&josh_gix_ext::gix_oid(oid))
-    }
-
-    fn exists_prefix(&self, _oid: Oid, _oid_len: usize) -> Option<Oid> {
-        // Abbreviated-OID lookup against the in-memory store is not implemented; full-OID lookups
-        // (the hot path) are unaffected, and prefix lookups fall through to the on-disk backends.
-        None
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    /// Objects written through a registered [`MemOdb`] are visible only in memory until flushed;
-    /// after a flush a fresh repository (no backend) must find them on disk.
+    /// Objects written to a [`MemOdb`] stay in memory until flushed; after a flush a fresh
+    /// repository must find them on disk.
     #[test]
     fn flush_writes_objects_to_disk() {
         let dir = tempfile::tempdir().unwrap();
         let repo = git2::Repository::init(dir.path()).unwrap();
 
         let store = MemOdb::new(None, crate::pack::objects_dir(&repo));
-        store.register(&repo);
 
-        let ids: Vec<Oid> = (0..4)
-            .map(|i| repo.blob(format!("in-memory blob {i}").as_bytes()).unwrap())
+        let ids: Vec<ObjectId> = (0..4)
+            .map(|i| store.write(Kind::Blob, format!("in-memory blob {i}").as_bytes()))
             .collect();
 
-        // Readable in-process before the flush, but only from memory.
         for id in &ids {
-            assert!(repo.odb().unwrap().exists(*id));
+            assert!(store.contains(id));
+            assert!(
+                !repo.odb().unwrap().exists(josh_gix_ext::git2_oid(id)),
+                "buffered object must not be on disk before the flush"
+            );
         }
 
         store.flush().unwrap();
@@ -332,7 +258,7 @@ mod tests {
         // A fresh repo with no backend can only see objects that made it to disk.
         let on_disk = git2::Repository::open(dir.path()).unwrap();
         for (i, id) in ids.iter().enumerate() {
-            let blob = on_disk.find_blob(*id).unwrap();
+            let blob = on_disk.find_blob(josh_gix_ext::git2_oid(id)).unwrap();
             assert_eq!(blob.content(), format!("in-memory blob {i}").as_bytes());
         }
 
@@ -365,8 +291,7 @@ mod tests {
         assert_ne!(wt_repo.path(), wt_repo.commondir());
 
         let store = MemOdb::new(None, crate::pack::objects_dir(&wt_repo));
-        store.register(&wt_repo);
-        let id = wt_repo.blob(b"worktree blob").unwrap();
+        let id = josh_gix_ext::git2_oid(&store.write(Kind::Blob, b"worktree blob"));
 
         // Must not fail on the (nonexistent) per-worktree objects/pack directory.
         store.flush().unwrap();
@@ -386,18 +311,17 @@ mod tests {
 
         // A 16-byte limit: each 100-byte blob overflows it, so every write enqueues a pack.
         let store = MemOdb::new(Some(16), crate::pack::objects_dir(&repo));
-        store.register(&repo);
 
         // The write overflowed and enqueued a background pack; it lands on the flusher thread, so
         // poll a fresh on-disk view until the object appears.
-        let id1 = repo.blob(&b"x".repeat(100)).unwrap();
+        let id1 = josh_gix_ext::git2_oid(&store.write(Kind::Blob, &b"x".repeat(100)));
         assert!(
             wait_on_disk(dir.path(), id1),
             "overflow pack never reached disk"
         );
 
         // A second object overflows again, enqueueing another pack.
-        let id2 = repo.blob(&b"y".repeat(100)).unwrap();
+        let id2 = josh_gix_ext::git2_oid(&store.write(Kind::Blob, &b"y".repeat(100)));
         assert!(
             wait_on_disk(dir.path(), id2),
             "second overflow pack never reached disk"
@@ -412,9 +336,8 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let repo = git2::Repository::init(dir.path()).unwrap();
         let store = MemOdb::new(None, crate::pack::objects_dir(&repo));
-        store.register(&repo);
 
-        repo.blob(b"some blob").unwrap();
+        store.write(Kind::Blob, b"some blob");
         store.flush().unwrap();
 
         let mut exts: Vec<String> = std::fs::read_dir(crate::pack::objects_dir(&repo).join("pack"))
@@ -431,7 +354,7 @@ mod tests {
 
     /// Poll a freshly-opened (backend-less) view of the repository until `id` is readable from disk,
     /// up to ~2s. Used to observe asynchronous background packs without racing the flusher thread.
-    fn wait_on_disk(repo_path: &std::path::Path, id: Oid) -> bool {
+    fn wait_on_disk(repo_path: &std::path::Path, id: git2::Oid) -> bool {
         for _ in 0..200 {
             if let Ok(repo) = git2::Repository::open(repo_path) {
                 if repo.find_blob(id).is_ok() {

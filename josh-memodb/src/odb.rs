@@ -235,14 +235,13 @@ mod tests {
         Odb::new(store.clone(), repo.odb().unwrap())
     }
 
-    /// A facade write is served from memory (zero-copy) and through the registered git2
-    /// backend, is invisible to a plain reopened repository until `flush`, and durable after.
+    /// A facade write is served from memory (zero-copy), is invisible to a plain reopened
+    /// repository until `flush`, and durable after.
     #[test]
     fn facade_write_visible_before_flush_durable_after() {
         let dir = tempfile::tempdir().unwrap();
         let repo = git2::Repository::init(dir.path()).unwrap();
         let store = MemOdb::new(None, crate::pack::objects_dir(&repo));
-        store.register(&repo);
 
         let odb = facade(&store, &repo);
         let oid = odb.write(Kind::Blob, b"facade blob");
@@ -252,8 +251,6 @@ mod tests {
         assert!(matches!(bytes, Bytes::Mem(_)));
         assert_eq!(&*bytes, b"facade blob");
         assert!(odb.contains(oid));
-        // The git2 side sees the same store through the registered backend view.
-        assert_eq!(repo.find_blob(oid).unwrap().content(), b"facade blob");
 
         // Not yet on disk.
         let fresh = git2::Repository::open(dir.path()).unwrap();
@@ -266,8 +263,7 @@ mod tests {
 
     /// The write gate: an object already in a registered runtime alternate is not buffered
     /// (so flushed packs never gain alternate duplicates), while an object merely on the
-    /// repository's own disk is buffered (the pack-time filter drops it again) — the same
-    /// objects the registered backend's freshen check lets through.
+    /// repository's own disk is buffered and the pack-time filter drops it again.
     #[test]
     fn facade_write_gate_matches_freshen() {
         let tmp = tempfile::tempdir().unwrap();
@@ -277,10 +273,9 @@ mod tests {
 
         let dir = tmp.path().join("overlay");
         let repo = git2::Repository::init(&dir).unwrap();
-        // A loose blob written before the store is registered, so it is main-disk-only.
+        // A loose blob, so it is main-disk-only.
         let on_disk = repo.blob(b"already on disk").unwrap();
         let store = MemOdb::new(None, crate::pack::objects_dir(&repo));
-        store.register(&repo);
         let alt = crate::pack::objects_dir(&mirror);
         repo.odb()
             .unwrap()
@@ -311,7 +306,6 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let repo = git2::Repository::init(dir.path()).unwrap();
         let store = MemOdb::new(None, crate::pack::objects_dir(&repo));
-        store.register(&repo);
         let odb = facade(&store, &repo);
 
         let empty_tree = git2::Oid::from_str("4b825dc642cb6eb9a060e54bf8d69288fbee4904").unwrap();
@@ -326,27 +320,24 @@ mod tests {
         assert_eq!(odb.try_kind(blob).unwrap(), Some(Kind::Blob));
     }
 
-    /// git2-side writes (through the registered backend) and facade reads share one store.
+    /// Buffered objects resolve through the gix trait surface, which is how every reader in
+    /// josh reaches them.
     #[test]
-    fn git2_write_visible_through_facade() {
+    fn buffered_objects_resolve_through_the_gix_traits() {
         let dir = tempfile::tempdir().unwrap();
         let repo = git2::Repository::init(dir.path()).unwrap();
         let store = MemOdb::new(None, crate::pack::objects_dir(&repo));
-        store.register(&repo);
-
-        let oid = repo.blob(b"git2 blob").unwrap();
         let odb = facade(&store, &repo);
-        assert!(store.contains(&josh_gix_ext::gix_oid(oid)));
-        assert!(matches!(odb.read(oid).unwrap().1, Bytes::Mem(_)));
 
-        // The gix trait surface resolves it too.
+        let oid = odb.write(Kind::Blob, b"facade blob");
+
         let mut buf = Vec::new();
         let data = odb
             .try_find(&josh_gix_ext::gix_oid(oid), &mut buf)
             .unwrap()
             .unwrap();
         assert_eq!(data.kind, Kind::Blob);
-        assert_eq!(data.data, b"git2 blob");
+        assert_eq!(data.data, b"facade blob");
         assert!(odb.exists(&josh_gix_ext::gix_oid(oid)));
     }
 }

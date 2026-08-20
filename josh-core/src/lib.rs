@@ -171,19 +171,16 @@ pub fn filter_commit(
     filterobj: filter::Filter,
     oid: git2::Oid,
 ) -> anyhow::Result<git2::Oid> {
-    let original_commit = {
-        // PORT: oid comes from refs and `peel_to_commit` tolerates annotated tags -- stays
-        // on git2 until flag day.
-        let obj = transaction.repo().find_object(oid, None)?;
-        obj.peel_to_commit()?
-    };
+    // A chained filter feeds the previous step's freshly built commit in here, so the peel
+    // has to see the transaction's buffered objects.
+    let original_commit = objects::peel_to_commit(&transaction.odb()?, oid)?;
 
     let filter_commit = if let Some(s) = transaction.get_ref(filterobj, oid) {
         s
     } else {
         tracing::trace!("apply_to_commit");
 
-        filter::apply_to_commit(filterobj, original_commit.id(), transaction)?
+        filter::apply_to_commit(filterobj, original_commit, transaction)?
     };
 
     transaction.insert_ref(filterobj, oid, filter_commit);

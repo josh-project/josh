@@ -57,7 +57,6 @@ impl DistributedCacheBackend {
     fn open(repo_path: impl AsRef<std::path::Path>, writable: bool) -> anyhow::Result<Self> {
         let repo = git2::Repository::open(repo_path.as_ref())?;
         let mem_odb = josh_memodb::MemOdb::new(None, josh_memodb::objects_dir(&repo));
-        mem_odb.register(&repo);
         Ok(Self {
             repo: std::sync::Mutex::new(repo),
             mem_odb,

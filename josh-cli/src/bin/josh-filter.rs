@@ -416,6 +416,10 @@ fn run_filter(args: Vec<String>) -> anyhow::Result<i32> {
     }
 
     if reverse {
+        // The refs just written point at filtered objects that are still buffered, and
+        // rev-parse reads them through the repository handle, which only sees disk.
+        transaction.flush_mem_odb()?;
+
         // PORT: rev-parse stays on the git2 handle until flag day (gix rev_parse then).
         let new = repo.revparse_single(target).unwrap().id();
         let old = repo.revparse_single("JOSH_TMP").unwrap().id();

@@ -1370,15 +1370,15 @@ mod tests {
         let out = remove_pred(&t, &mut String::new(), input, &|_, isblob| isblob, key).unwrap();
 
         assert_ne!(out, input, "dropping the gitlink must produce a new tree");
-        let out_tree = t.repo().find_tree(out).unwrap();
+        let out_tree = out_entries(&t, out);
         assert!(
-            out_tree.get_name("sub").is_none(),
+            out_entry(&out_tree, "sub").is_none(),
             "gitlink must be dropped"
         );
-        assert!(out_tree.get_name("keep.rs").is_some());
-        let link_entry = out_tree.get_name("link.rs").expect("symlink kept");
-        assert_eq!(link_entry.filemode(), 0o120000);
-        assert_eq!(link_entry.id(), link);
+        assert!(out_entry(&out_tree, "keep.rs").is_some());
+        let link_entry = out_entry(&out_tree, "link.rs").expect("symlink kept");
+        assert_eq!(link_entry.mode.value(), 0o120000);
+        assert_eq!(objects::git2_oid(&link_entry.oid), link);
     }
 
     // The predicate must see full slash-separated paths at every depth (truncate discipline of
@@ -1407,15 +1407,40 @@ mod tests {
         seen.sort();
         assert_eq!(seen, paths);
 
-        let out_tree = t.repo().find_tree(out).unwrap();
+        let odb = t.odb().unwrap();
         for kept in ["a/b/keep.rs", "a/keep.rs", "top.rs"] {
-            assert!(out_tree.get_path(Path::new(kept)).is_ok(), "{kept} kept");
+            assert!(
+                objects::path_entry(&odb, out, Path::new(kept))
+                    .unwrap()
+                    .is_some(),
+                "{kept} kept"
+            );
         }
-        assert!(out_tree.get_path(Path::new("a/b/drop.txt")).is_err());
+        assert!(
+            objects::path_entry(&odb, out, Path::new("a/b/drop.txt"))
+                .unwrap()
+                .is_none()
+        );
 
         let key2 = git2::Oid::from_str("3333333333333333333333333333333333333333").unwrap();
         let out2 = remove_pred(&t, &mut String::new(), input, &|_, _| true, key2).unwrap();
         assert_eq!(out2, input, "keep-everything must return the input oid");
+    }
+
+    /// Read a tree the code under test produced: its result lives in the transaction's store,
+    /// so it is read through the facade rather than the repository handle.
+    fn out_entries(t: &cache::Transaction, oid: git2::Oid) -> Vec<gix_object::tree::Entry> {
+        objects::read_tree_entries(&t.odb().unwrap(), oid).unwrap()
+    }
+
+    fn out_entry(
+        entries: &[gix_object::tree::Entry],
+        name: &str,
+    ) -> Option<gix_object::tree::Entry> {
+        entries
+            .iter()
+            .find(|e| e.filename == name.as_bytes())
+            .cloned()
     }
 
     // Write a raw (unvalidated) tree object straight into the odb. This can express fsck-invalid
@@ -1555,12 +1580,12 @@ mod tests {
         let selector = b.write().unwrap();
 
         let out = subtract(&t, unsorted, selector).unwrap();
-        let out_tree = t.repo().find_tree(out).unwrap();
+        let out_tree = out_entries(&t, out);
         assert!(
-            out_tree.get_name("z.rs").is_none(),
+            out_entry(&out_tree, "z.rs").is_none(),
             "subtract must find z.rs despite the non-canonical order"
         );
-        assert!(out_tree.get_name("a.rs").is_some());
+        assert!(out_entry(&out_tree, "a.rs").is_some());
 
         // Overlaying a new name onto the unsorted tree: existing entries keep their order,
         // the new entry lands after the last entry that canonically precedes it (here: at
@@ -1931,18 +1956,24 @@ mod tests {
         let t = open_transaction(&td);
         let out = subtract(&t, input1, input2).unwrap();
 
-        let out_tree = t.repo().find_tree(out).unwrap();
+        let out_tree = out_entries(&t, out);
         assert_eq!(
-            out_tree.get_name("legacy.rs").unwrap().filemode_raw(),
+            out_entry(&out_tree, "legacy.rs").unwrap().mode.value(),
             0o100664,
             "untouched entries must keep their raw mode, like the seeded treebuilder"
         );
-        let out_dir = t
-            .repo()
-            .find_tree(out_tree.get_name("dir").unwrap().id())
-            .unwrap();
-        assert!(out_dir.get_name("a.txt").is_none(), "matched path removed");
-        assert!(out_dir.get_name("b.txt").is_some(), "unmatched path kept");
+        let out_dir = out_entries(
+            &t,
+            objects::git2_oid(&out_entry(&out_tree, "dir").unwrap().oid),
+        );
+        assert!(
+            out_entry(&out_dir, "a.txt").is_none(),
+            "matched path removed"
+        );
+        assert!(
+            out_entry(&out_dir, "b.txt").is_some(),
+            "unmatched path kept"
+        );
     }
 
     // Overlay resolves blob collisions in favor of input1 and takes over input2-only entries
@@ -1963,14 +1994,21 @@ mod tests {
         let t = open_transaction(&td);
         let out = overlay(&t, input1, input2).unwrap();
 
-        let out_tree = t.repo().find_tree(out).unwrap();
-        let shared = out_tree.get_name("shared.rs").unwrap();
-        assert_eq!(shared.id(), ours, "input1 wins blob collisions");
+        let out_tree = out_entries(&t, out);
+        let shared = out_entry(&out_tree, "shared.rs").unwrap();
         assert_eq!(
-            shared.filemode_raw(),
+            objects::git2_oid(&shared.oid),
+            ours,
+            "input1 wins blob collisions"
+        );
+        assert_eq!(
+            shared.mode.value(),
             0o100664,
             "collision entries keep input1's raw mode"
         );
-        assert_eq!(out_tree.get_name("new.rs").unwrap().id(), theirs);
+        assert_eq!(
+            objects::git2_oid(&out_entry(&out_tree, "new.rs").unwrap().oid),
+            theirs
+        );
     }
 }

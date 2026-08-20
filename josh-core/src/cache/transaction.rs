@@ -216,7 +216,6 @@ impl Transaction {
         });
 
         let mem_odb = josh_memodb::MemOdb::new(mem_odb_limit, josh_memodb::objects_dir(&repo));
-        mem_odb.register(&repo);
 
         // Balanced in `Drop`; lets a locking backend (sled) hold its lock only while a
         // transaction is live.
