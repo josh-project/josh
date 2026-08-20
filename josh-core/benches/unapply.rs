@@ -102,6 +102,9 @@ impl UnapplyBench {
             for &n_commits in HISTORY_SIZES {
                 let head = repo.refname_to_id(&format!("refs/heads/case_{n_commits}"))?;
                 let filtered_head = josh_core::filter_commit(&transaction, filter, head)?;
+                // The first-parent chase below reads the filtered commits through the
+                // repository handle, which only sees what is on disk.
+                transaction.flush_mem_odb()?;
 
                 // First-parent chase to the middle of the filtered history.
                 let mut filtered_mid = filtered_head;

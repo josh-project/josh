@@ -195,9 +195,14 @@ impl PinBench {
             for case in cases.iter().filter(|c| c.size <= SANITY_GATE_MAX_SIZE) {
                 let per_path = josh_core::filter_commit(&transaction, filter_per_path, case.head)?;
                 let one_tree = josh_core::filter_commit(&transaction, filter_one_tree, case.head)?;
-                let per_path_tree = transaction.repo().find_commit(per_path)?.tree()?.id();
-                let one_tree_tree = transaction.repo().find_commit(one_tree)?.tree()?.id();
-                let raw_tree = transaction.repo().find_commit(case.head)?.tree()?.id();
+                // The filtered commits are still buffered, so read them through the
+                // transaction's object source.
+                let odb = transaction.odb()?;
+                let tree_of =
+                    |oid| josh_core::objects::CommitData::read(&odb, oid).and_then(|c| c.tree_id());
+                let per_path_tree = tree_of(per_path)?;
+                let one_tree_tree = tree_of(one_tree)?;
+                let raw_tree = tree_of(case.head)?;
                 anyhow::ensure!(
                     per_path_tree != raw_tree,
                     "pin had no visible effect for size {} -- benchmark would measure a no-op",
