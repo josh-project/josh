@@ -1239,20 +1239,6 @@ pub fn populate(
     Ok(result_tree)
 }
 
-// PORT: dead code, zero callers workspace-wide.
-pub fn compose_fast(
-    transaction: &cache::Transaction,
-    trees: Vec<git2::Oid>,
-) -> anyhow::Result<git2::Tree<'_>> {
-    let repo = transaction.repo();
-    let mut result = empty_id();
-    for tree in trees {
-        result = overlay(transaction, tree, result)?;
-    }
-
-    Ok(repo.find_tree(result)?)
-}
-
 pub fn compose(
     transaction: &cache::Transaction,
     trees: Vec<(&Filter, git2::Oid)>,

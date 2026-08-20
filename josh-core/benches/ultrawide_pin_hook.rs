@@ -520,27 +520,12 @@ fn ultrawide_pin_hook(c: &mut Criterion) {
                     // Timed: filter the case head. The transaction is returned so it is dropped
                     // untimed after the measured section.
                     |transaction| {
-                        // Optional: route object writes through an in-memory mempack backend to
-                        // measure the ODB write-path overhead. The odb is bound first so it
-                        // outlives the mempack. The mempack handle borrows the transaction, so it
-                        // is kept in this scope rather than returned.
-                        let mempack_odb = std::env::var_os("JOSH_BENCH_MEMPACK")
-                            .map(|_| transaction.repo().odb().expect("odb"));
-                        let _mempack = mempack_odb.as_ref().map(|odb| {
-                            odb.add_new_mempack_backend(1000)
-                                .expect("add mempack backend")
-                        });
-
                         let iter_span = tracing::info_span!(target: "bench", "iter").entered();
 
                         josh_core::filter_commit(&transaction, filter, case.head)
                             .expect("filter commit");
 
                         drop(iter_span);
-                        // Release the mempack borrows so the transaction can be handed back to the
-                        // harness and dropped untimed.
-                        drop(_mempack);
-                        drop(mempack_odb);
                         transaction
                     },
                     BatchSize::PerIteration,

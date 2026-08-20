@@ -194,67 +194,6 @@ pub fn find_all_workspaces_and_subdirectories(
     Ok(hs)
 }
 
-// PORT: dead code, zero callers workspace-wide; reads filtered commits through the repo
-// handle.
-pub fn get_info(
-    transaction: &cache::Transaction,
-    filter: filter::Filter,
-    headref: &str,
-) -> anyhow::Result<String> {
-    let _trace_s = span!(Level::TRACE, "get_info");
-
-    let refname = transaction.refname(headref);
-    let oid = transaction
-        .resolve_ref(&refname)?
-        .ok_or_else(|| anyhow!("missing ref: {}", refname))?;
-    let commit = transaction
-        .repo()
-        .find_object(oid, None)?
-        .peel_to_commit()?;
-
-    let mut meta = HashMap::new();
-    meta.insert("sha1".to_owned(), "".to_owned());
-    let filtered = filter::apply_to_commit(filter, commit.id(), transaction)?;
-
-    let parent_ids = |commit: &git2::Commit| {
-        commit
-            .parent_ids()
-            .map(|x| {
-                serde_json::json!({
-                    "commit": x.to_string(),
-                    "tree": transaction.repo().find_commit(x)
-                        .map(|c| { c.tree_id() })
-                        .unwrap_or_else(|_| git2::Oid::ZERO_SHA1)
-                        .to_string(),
-                })
-            })
-            .collect::<Vec<_>>()
-    };
-
-    let t = if let Ok(filtered) = transaction.repo().find_commit(filtered) {
-        serde_json::json!({
-            "commit": filtered.id().to_string(),
-            "tree": filtered.tree_id().to_string(),
-            "parents": parent_ids(&filtered),
-        })
-    } else {
-        serde_json::json!({
-            "commit": git2::Oid::ZERO_SHA1.to_string(),
-            "tree": git2::Oid::ZERO_SHA1.to_string(),
-            "parents": serde_json::json!([]),
-        })
-    };
-
-    let s = serde_json::json!({
-        "commit": commit.id().to_string(),
-        "tree": commit.tree_id().to_string(),
-        "parents": parent_ids(&commit),
-        "filtered": t,
-    });
-
-    Ok(serde_json::to_string(&s)?)
-}
-
 #[tracing::instrument(skip(transaction_mirror, transaction_overlay))]
 pub fn refresh_known_filters(
     transaction_mirror: &cache::Transaction,
