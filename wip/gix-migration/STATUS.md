@@ -152,13 +152,23 @@ writes, so the facade takes a fresh view exactly when one lands (3 rebuilds in t
 case). That took the regression from 10000% to ~300%.
 
 **The remaining cost is not the existence probes.** Memoizing them per transaction cut the
-probe count from 39906 to 408 per iteration and did not move the time at all, so what is left
-is the object reads themselves: gitoxide decompresses into the caller's buffer where libgit2
-handed back a pointer into its own cache, and josh re-reads the same trees across a filter
-run. The 64 MB `MemoryCappedHashmap` object cache on the handle did not help either -- worth
-checking whether it is actually consulted on the loose/pack path josh hits, and whether the
-per-iteration cost tracks tree re-reads. A profile of the current patch is the place to start;
-the earlier one (which found `load_one_index`) no longer applies.
+probe count from 39906 to 408 per iteration and did not move the time at all. What is left is
+the object reads, and there are far more of them than the group's premise implies: filtering
+one new commit against a warm cache reads **158354 objects, 113188 of them distinct** -- most
+of the repository -- because the walk does not prune. `walk2` visits ~1560 commits per call
+where it should stop at the first known ancestor, and `known()` -> `get2()` does consult the
+persistent cache, so the reason it does not prune is still open.
+
+**That re-walking is not the port's doing.** The same instrumentation on the libgit2 baseline
+reports exactly the same numbers -- 13 walk calls, 20307 commits visited. josh reads the whole
+repository per warm iteration today; gitoxide just charges more per read (it decompresses into
+the caller's buffer where libgit2 returned a pointer into its own cache, and the 64 MB
+`MemoryCappedHashmap` on the handle did not change that).
+
+So the incremental regression is the port paying a higher per-read price for reads josh should
+not be making. Fixing the pruning is worth doing on its own merits -- it would speed up the
+warm path several-fold on the current backend -- and it shrinks this step's exposure at the
+same time. That is the thread to pull before retrying the flip.
 
 ## Validation protocol (per step)
 
