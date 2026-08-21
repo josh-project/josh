@@ -149,5 +149,7 @@ async fn main() -> anyhow::Result<()> {
         }
     }
 
+    josh_core::memodb::flush_all();
+
     Ok(())
 }
