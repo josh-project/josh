@@ -54,14 +54,13 @@ async fn run_sync(
         .with_context(api_connection_hint)?;
 
     let prs = api.list_open_pull_requests(owner, repo_name).await?;
-    println!("Found {} open PRs on GitHub.", prs.len());
+    eprintln!("Found {} open PRs on GitHub.", prs.len());
 
     if prs.is_empty() {
         return Ok(());
     }
 
-    fetch_pr_objects(transaction, repo, owner, repo_name, &prs)?;
-    let target_branch_shas = fetch_target_branch_tips(transaction, repo, owner, repo_name, &prs)?;
+    let target_branch_shas = fetch_sync_objects(transaction, repo, owner, repo_name, &prs)?;
 
     let ctx = GithubSyncCtx {
         transaction,
@@ -73,7 +72,22 @@ async fn run_sync(
         target_branch_shas: &target_branch_shas,
     };
 
-    let stats = sync_open_prs(&ctx, &prs, policy).await;
+    // Only PRs whose fingerprint cache misses get their metadata fetched.
+    let mut stats = SyncStats::default();
+    let stale: Vec<&PrSummary> = prs
+        .iter()
+        .filter(|pr| {
+            let change_id = change_id_for_pr(pr, owner, repo_name);
+            let scope = remote_scope_for(remote_name, &target_branch_for_pr(pr));
+            let hit = policy.lookup(transaction, &change_id, &scope, pr);
+            if hit {
+                stats.track_cached(pr.number);
+            }
+            !hit
+        })
+        .collect();
+
+    sync_prs(&ctx, &stale, policy, &mut stats).await;
     stats.report();
 
     ctx.gc_closed_changes(&prs).await?;
@@ -87,52 +101,100 @@ async fn run_sync(
 
 #[derive(Default)]
 struct SyncStats {
-    comments: usize,
-    synced: usize,
-    skipped: usize,
-    cached: usize,
+    /// (PR number, comments synced) per fetched PR.
+    synced: Vec<(i64, usize)>,
+    /// (PR number, error) per PR that failed to sync.
+    skipped: Vec<(i64, String)>,
+    /// PR numbers served from the fingerprint cache.
+    cached: Vec<i64>,
+}
+
+/// "0 PRs skipped" / "1 PR skipped: #8" / "4 PRs skipped: #8, #9 and 2 more PRs".
+fn pr_count_list(prs: &[i64], noun: &str, suffix: &str) -> String {
+    let plural = |n: usize| if n == 1 { "" } else { "s" };
+    match prs.len() {
+        0 => format!("0 {}{}{}", noun, plural(0), suffix),
+        n => {
+            let shown = prs
+                .iter()
+                .take(2)
+                .map(|pr| format!("#{}", pr))
+                .collect::<Vec<_>>()
+                .join(", ");
+            let more = n - n.min(2);
+            if more == 0 {
+                format!("{} {}{}{}: {}", n, noun, plural(n), suffix, shown)
+            } else {
+                format!(
+                    "{} {}{}{}: {} and {} more {}{}",
+                    n,
+                    noun,
+                    plural(n),
+                    suffix,
+                    shown,
+                    more,
+                    noun,
+                    plural(more)
+                )
+            }
+        }
+    }
 }
 
 impl SyncStats {
-    /// Print the end-of-sync summary line.
+    /// Record a PR whose metadata was fetched and stored.
+    fn track_synced(&mut self, pr_number: i64, comments: usize) {
+        self.synced.push((pr_number, comments));
+    }
+
+    /// Record a PR that failed to sync, with the error.
+    fn track_skipped(&mut self, pr_number: i64, error: anyhow::Error) {
+        self.skipped.push((pr_number, error.to_string()));
+    }
+
+    /// Record a PR served from the fingerprint cache.
+    fn track_cached(&mut self, pr_number: i64) {
+        self.cached.push(pr_number);
+    }
+
+    /// Print the end-of-sync summary.
     fn report(&self) {
+        for (number, comments) in &self.synced {
+            println!("  PR #{}: synced {} comments", number, comments);
+        }
+        for (number, error) in &self.skipped {
+            eprintln!("  PR #{}: {} — skipped", number, error);
+        }
+        let total: usize = self.synced.iter().map(|(_, n)| n).sum();
+        let skipped: Vec<i64> = self.skipped.iter().map(|(n, _)| *n).collect();
         println!(
-            "Synced {} comments across {} PRs ({} skipped, {} cached).",
-            self.comments, self.synced, self.skipped, self.cached
+            "Synced {} comments across {} PRs ({}, {}).",
+            total,
+            self.synced.len(),
+            pr_count_list(&skipped, "PR", " skipped"),
+            pr_count_list(&self.cached, "change", " cached"),
         );
     }
 }
 
-/// Sync every open PR, consulting and updating the fingerprint cache per the
-/// given policy. Returns the accumulated counts.
-async fn sync_open_prs(
+/// Fetch and store metadata (local change, diff data, comments) for each
+/// given PR, accumulating counts into `stats`.
+async fn sync_prs(
     ctx: &GithubSyncCtx<'_>,
-    prs: &[PrSummary],
+    prs: &[&PrSummary],
     policy: &CachePolicy,
-) -> SyncStats {
-    let mut stats = SyncStats::default();
+    stats: &mut SyncStats,
+) {
     for pr in prs {
-        let change_id = change_id_for_pr(pr, ctx.owner, ctx.repo_name);
-        let remote_scope = remote_scope_for(ctx.remote_name, &target_branch_for_pr(pr));
-        if policy.lookup(ctx.transaction, &change_id, &remote_scope, pr) {
-            stats.cached += 1;
-            println!("  PR #{}: unchanged since last sync (cached)", pr.number);
-            continue;
-        }
-        match ctx.sync_single_pr(pr).await {
-            Ok(n) => {
-                stats.comments += n;
-                stats.synced += 1;
-                println!("  PR #{}: synced {} comments", pr.number, n);
-                policy.record(ctx.transaction, &change_id, &remote_scope, pr);
-            }
-            Err(e) => {
-                eprintln!("PR #{}: {} — skipping", pr.number, e);
-                stats.skipped += 1;
-            }
+        let result = match ctx.fetch_pr_meta(pr).await {
+            Ok(meta) => ctx.store_pr_meta(policy, pr, meta),
+            Err(e) => Err(e),
+        };
+        match result {
+            Ok(n) => stats.track_synced(pr.number, n),
+            Err(e) => stats.track_skipped(pr.number, e),
         }
     }
-    stats
 }
 
 /// Context for GitHub-backed sync phases.
@@ -147,28 +209,78 @@ struct GithubSyncCtx<'a> {
 }
 
 impl GithubSyncCtx<'_> {
-    /// Sync a single PR: build its local change, store diff data, and pull its
-    /// comments from GitHub. Returns the number of comments synced.
-    async fn sync_single_pr(&self, pr: &PrSummary) -> anyhow::Result<usize> {
+    /// Fetch one PR's metadata from GitHub: resolve its change identity and
+    /// base, then pull its comments. Performs no local writes; everything the
+    /// store phase needs is returned in the `PrMeta`.
+    async fn fetch_pr_meta(&self, pr: &PrSummary) -> anyhow::Result<PrMeta> {
         let (existing_change_id, _) =
             josh_core::trailers::parse_change_meta(&pr.head_commit_message);
 
         let head_oid =
             git2::Oid::from_str(&pr.head_oid).map_err(|e| anyhow!("bad head OID: {}", e))?;
-        let pr_head = self
-            .repo
+        self.repo
             .find_commit(head_oid)
             .map_err(|_| anyhow!("head commit {} not available from GitHub", pr.head_oid))?;
 
         let base_oid =
             git2::Oid::from_str(&pr.base_ref_oid).map_err(|e| anyhow!("bad base OID: {}", e))?;
-        let target = self
-            .repo
+        self.repo
             .find_commit(base_oid)
             .map_err(|_| anyhow!("base commit {} not available from GitHub", pr.base_ref_oid))?;
 
-        if let Some(ref cid) = existing_change_id {
-            println!("PR #{}: head commit has change-id '{}'", pr.number, cid);
+        // For stacked changes the base is the merge-base against the ultimate
+        // target branch's tip; otherwise the merge-base against the PR's
+        // immediate base. Only needed when the head carries a change-id;
+        // synthetic merges take the immediate base directly.
+        let change_base = if existing_change_id.is_some() {
+            let against = parse_changes_target(&pr.head_ref_name)
+                .and_then(|t| self.target_branch_shas.get(&t))
+                .copied()
+                .unwrap_or(base_oid);
+
+            Some(josh_core::objects::merge_base(
+                &self.transaction.odb()?,
+                against,
+                head_oid,
+            )?)
+        } else {
+            None
+        };
+
+        let pr_data = self
+            .api
+            .get_pr_comments(self.owner, self.repo_name, pr.number)
+            .await?;
+
+        Ok(PrMeta {
+            change_id: existing_change_id
+                .unwrap_or_else(|| change_id_for_pr(pr, self.owner, self.repo_name)),
+            remote_scope: remote_scope_for(self.remote_name, &target_branch_for_pr(pr)),
+            head: head_oid,
+            target: base_oid,
+            change_base,
+            pr_data,
+        })
+    }
+
+    /// Store one PR's fetched metadata locally: build its change (a synthetic
+    /// merge commit unless the head already carries a change-id), store diff
+    /// data and comments, and record the sync fingerprint. Contains every
+    /// write of the per-PR sync. Returns the number of comments synced.
+    fn store_pr_meta(
+        &self,
+        policy: &CachePolicy,
+        pr: &PrSummary,
+        meta: PrMeta,
+    ) -> anyhow::Result<usize> {
+        let change = if let Some(base) = meta.change_base {
+            println!(
+                "PR #{}: head commit has change-id '{}'",
+                pr.number, meta.change_id
+            );
+            let mut change = josh_changes::Change::new(self.transaction, meta.head)?;
+            change.set_base(base);
+            change
         } else {
             println!(
                 "PR #{}{}: creating synthetic merge commit",
@@ -179,46 +291,63 @@ impl GithubSyncCtx<'_> {
                     format!(" ({})", &pr.title)
                 }
             );
-        }
+            let mut message = pr.title.clone();
+            if !pr.body.is_empty() {
+                message.push_str("\n\n");
+                message.push_str(&pr.body);
+            }
+            message.push_str(&format!("\n\nChange-Id: {}\n", meta.change_id));
 
-        let target_branch = target_branch_for_pr(pr);
-        let remote_scope = remote_scope_for(self.remote_name, &target_branch);
-
-        let change = self.build_change_for_pr(
-            pr,
-            existing_change_id.is_some(),
-            &pr_head,
-            &target,
-            &remote_scope,
-        )?;
-
-        let Some(change_id) = change.id() else {
-            return Ok(0);
+            let merge_oid = josh_changes::create_synthetic_merge_commit(
+                self.transaction,
+                meta.head,
+                meta.target,
+                &message,
+            )?;
+            let mut change = josh_changes::Change::new(self.transaction, merge_oid)?;
+            change.set_base(meta.target);
+            change
         };
 
-        let pr_data = self
-            .api
-            .get_pr_comments(self.owner, self.repo_name, pr.number)
-            .await?;
-        let json = serde_json::to_string(&pr_data)?;
-        josh_changes::store_pr_data(self.transaction, change_id, &json, &remote_scope)?;
+        josh_changes::store_diff_data(self.transaction, &change, &meta.remote_scope)?;
 
-        let fetched = josh_github_changes::fetched_comments(&pr_data);
+        let json = serde_json::to_string(&meta.pr_data)?;
+        josh_changes::store_pr_data(self.transaction, &meta.change_id, &json, &meta.remote_scope)?;
+
+        let fetched = josh_github_changes::fetched_comments(&meta.pr_data);
         let written = josh_changes::store_fetched_comments(
             self.transaction,
             &change,
             &fetched,
-            &remote_scope,
+            &meta.remote_scope,
         )?;
         josh_github_changes::record_fetched_comments(
             self.transaction,
-            change_id,
+            &meta.change_id,
             &written,
-            &remote_scope,
+            &meta.remote_scope,
         )?;
+
+        policy.record(self.transaction, &meta.change_id, &meta.remote_scope, pr);
         Ok(written.len())
     }
+}
 
+/// One PR's metadata as fetched from GitHub, before any local writes.
+struct PrMeta {
+    /// Trailer change-id if the head commit has one, otherwise the synthetic
+    /// `{owner}/{repo}/pull/{N}` id.
+    change_id: String,
+    remote_scope: josh_changes::ChangesRef,
+    head: git2::Oid,
+    /// Immediate base commit of the PR.
+    target: git2::Oid,
+    /// Resolved change base for change-id'd heads; `None` for synthetic merges.
+    change_base: Option<git2::Oid>,
+    pr_data: josh_github_graphql::operations::pull_request::PrData,
+}
+
+impl GithubSyncCtx<'_> {
     /// Delete local changes whose PRs are no longer open on GitHub, after
     /// recording their final PR state. Returns the number of cleaned changes.
     async fn gc_closed_changes(&self, prs: &[PrSummary]) -> anyhow::Result<usize> {
@@ -360,58 +489,6 @@ impl GithubSyncCtx<'_> {
                 None
             }
         }
-    }
-
-    /// Build the local change for a PR: use the head commit directly when it
-    /// carries a change-id trailer, otherwise create a synthetic merge commit
-    /// with one. Stores the change's diff data under the given scope.
-    fn build_change_for_pr(
-        &self,
-        pr: &PrSummary,
-        has_change_id: bool,
-        pr_head: &git2::Commit,
-        target: &git2::Commit,
-        remote_scope: &josh_changes::ChangesRef,
-    ) -> anyhow::Result<josh_changes::Change> {
-        let change = if has_change_id {
-            let mut change = josh_changes::Change::new(self.transaction, pr_head.id())?;
-            let base = match parse_changes_target(&pr.head_ref_name)
-                .and_then(|t| self.target_branch_shas.get(&t))
-            {
-                Some(tip) => {
-                    josh_core::objects::merge_base(&self.transaction.odb()?, *tip, pr_head.id())?
-                }
-                None => josh_core::objects::merge_base(
-                    &self.transaction.odb()?,
-                    target.id(),
-                    pr_head.id(),
-                )?,
-            };
-            change.set_base(base);
-            change
-        } else {
-            let change_id = change_id_for_pr(pr, self.owner, self.repo_name);
-            let mut message = pr.title.clone();
-            if !pr.body.is_empty() {
-                message.push_str("\n\n");
-                message.push_str(&pr.body);
-            }
-            message.push_str(&format!("\n\nChange-Id: {}\n", change_id));
-
-            let merge_oid = josh_changes::create_synthetic_merge_commit(
-                self.transaction,
-                pr_head.id(),
-                target.id(),
-                &message,
-            )?;
-
-            let mut change = josh_changes::Change::new(self.transaction, merge_oid)?;
-            change.set_base(target.id());
-            change
-        };
-
-        josh_changes::store_diff_data(self.transaction, &change, remote_scope)?;
-        Ok(change)
     }
 
     /// Post local comments and votes that haven't been pushed to GitHub yet.
@@ -648,80 +725,56 @@ fn resolve_github_remote(
     josh_github_changes::repo::parse_owner_repo(&remote_config.url)
 }
 
-/// Fetch the head and base commits of all given PRs by SHA from GitHub.
-fn fetch_pr_objects(
-    transaction: &josh_core::cache::Transaction,
-    repo: &git2::Repository,
-    owner: &str,
-    repo_name: &str,
-    prs: &[PrSummary],
-) -> anyhow::Result<()> {
-    // Collect all unique OIDs: PR head commits + target branch tips.
-    let mut oids: Vec<&str> = Vec::new();
-    let mut seen: std::collections::HashSet<&str> = std::collections::HashSet::new();
-    for pr in prs {
-        if seen.insert(pr.head_oid.as_str()) {
-            oids.push(&pr.head_oid);
-        }
-        if seen.insert(pr.base_ref_oid.as_str()) {
-            oids.push(&pr.base_ref_oid);
-        }
-    }
-
-    if oids.is_empty() {
-        return Ok(());
-    }
-
-    let github_url = format!("https://github.com/{}/{}", owner, repo_name);
-    let mut fetch_args: Vec<&str> = Vec::with_capacity(3 + oids.len());
-    fetch_args.push("fetch");
-    fetch_args.push(&github_url);
-    fetch_args.push("--no-tags");
-    fetch_args.extend(oids);
-    transaction
-        .spawn_git(&fetch_args, &[])
-        .with_context(|| "Failed to fetch objects from GitHub")?;
-
-    // Refresh ODB so git2 sees the newly fetched objects.
-    repo.odb()?.refresh()?;
-    Ok(())
-}
-
-/// Fetch the tips of the target branches referenced by @changes/... head refs.
-/// Returns a map from target branch name to its fetched tip commit.
-fn fetch_target_branch_tips(
+fn fetch_sync_objects(
     transaction: &josh_core::cache::Transaction,
     repo: &git2::Repository,
     owner: &str,
     repo_name: &str,
     prs: &[PrSummary],
 ) -> anyhow::Result<std::collections::HashMap<String, git2::Oid>> {
+    const SCRATCH: &str = "refs/josh/sync-tips";
+
     let github_url = format!("https://github.com/{}/{}", owner, repo_name);
-    let mut tips = std::collections::HashMap::new();
-    let mut seen_targets = std::collections::HashSet::new();
+    let mut refspecs: Vec<String> = Vec::new();
+    let mut targets: Vec<String> = Vec::new();
+    let mut seen_oids: std::collections::HashSet<&str> = std::collections::HashSet::new();
+    let mut seen_targets: std::collections::HashSet<String> = std::collections::HashSet::new();
+
     for pr in prs {
-        let Some(target) = parse_changes_target(&pr.head_ref_name) else {
-            continue;
-        };
-        if !seen_targets.insert(target.clone()) {
-            continue;
+        for oid in [&pr.head_oid, &pr.base_ref_oid] {
+            if seen_oids.insert(oid.as_str()) {
+                refspecs.push(oid.clone());
+            }
         }
-        let refspec = format!("refs/heads/{}", target);
-        transaction
-            .spawn_git(&["fetch", &github_url, "--no-tags", &refspec], &[])
-            .with_context(|| format!("Failed to fetch target branch {}", target))?;
-        // PORT: FETCH_HEAD pseudo-ref read stays on the git2 handle until flag day
-        // (gix multi-entry FETCH_HEAD semantics still unresolved).
-        let oid = repo
-            .find_reference("FETCH_HEAD")
-            .context("Failed to find FETCH_HEAD after target branch fetch")?
-            .peel_to_commit()
-            .context("Failed to peel FETCH_HEAD to commit")?
-            .id();
+        if let Some(target) = parse_changes_target(&pr.head_ref_name)
+            && seen_targets.insert(target.clone())
+        {
+            refspecs.push(format!("+refs/heads/{0}:{SCRATCH}/{0}", target));
+            targets.push(target);
+        }
+    }
+
+    let mut fetch_args: Vec<&str> = Vec::with_capacity(3 + refspecs.len());
+    fetch_args.push("fetch");
+    fetch_args.push(&github_url);
+    fetch_args.push("--no-tags");
+    fetch_args.extend(refspecs.iter().map(String::as_str));
+    transaction
+        .spawn_git(&fetch_args, &[])
+        .with_context(|| "Failed to fetch objects from GitHub")?;
+
+    // Read the captured tips back out of the scratch refs, then remove them.
+    let mut tips = std::collections::HashMap::new();
+    for target in targets {
+        let ref_name = format!("{SCRATCH}/{target}");
+        let Some(oid) = transaction.resolve_ref(&ref_name)? else {
+            return Err(anyhow!("target branch {} missing after fetch", target));
+        };
+        transaction.delete_ref(&ref_name, josh_core::cache::Expected::Any)?;
         tips.insert(target, oid);
     }
-    if !tips.is_empty() {
-        repo.odb()?.refresh()?;
-    }
+
+    // Refresh ODB so git2 sees the newly fetched objects.
+    repo.odb()?.refresh()?;
     Ok(tips)
 }
