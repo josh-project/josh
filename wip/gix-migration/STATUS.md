@@ -158,13 +158,33 @@ a fresh view, is per-transaction, so a pack written by *another* transaction is 
 the cache guard finds its objects absent, and josh recomputes -- measured at 20014 reads and
 255ms per iteration, far worse than either.
 
-**What the next attempt needs**, then, is both halves: one store per context so indices load
-once per process, plus a process-wide pack generation so any transaction can tell that another
-has packed and take a fresh view exactly once. Two findings from this attempt are worth
-keeping either way, and are in the patch: the facade must be held for the transaction rather
-than rebuilt per `odb()` call, and `refresh_never` plus an explicit refresh beats gitoxide's
-default of rescanning the objects directory on every miss (josh probes for absent objects
-constantly, and the default cost 7.7s where the explicit one costs 4ms).
+**The store registry was built, and does not close the gap.** `3.3c-store-registry.rs` (kept
+beside the patch) holds one gitoxide store per objects directory for the whole process, with a
+pack generation so a reader that comes up empty can tell another transaction has packed. Every
+arrangement of it was measured on `deephistory_glob_incremental/recursive/1000`, against a
+libgit2 baseline of ~1.2ms:
+
+| arrangement | per iteration |
+|---|---|
+| store per transaction, refresh on write | 5.9ms |
+| shared store, reopened when a pack lands | 9.0ms |
+| shared store, reopened on a miss | 4.7ms |
+| shared store, gitoxide's incremental refresh | **3.8ms** |
+
+**A profile of the best one says why, and it is not fixable in the facade.** Of 500 samples in
+the timed `filter_commit`, 442 are in `Odb::contains` -> `exists_on_disk`: four probes costing
+~800us each. josh writes **a pack per transaction drop** (the profile's largest single stack,
+6454 samples, is `Transaction::drop` -> `MemOdb::flush`), so each transaction's first probe for
+an object packed by the previous one misses the shared store and makes gitoxide re-enumerate a
+directory holding hundreds of small packs. One pack per transaction means at least one
+re-enumeration per transaction, and it gets slower as packs accumulate. libgit2 absorbed this;
+gitoxide's store is built for packs that hold still.
+
+So the thing to change is the pack churn, not the facade: batch or defer packing so a
+short transaction does not leave a pack behind (loose objects for small writes, packing at a
+coarser boundary, or repacking periodically). That is worth doing on its own -- hundreds of
+single-commit packs are bad for any reader, and `git gc` has to clean them up -- and it is what
+makes the object side of the flag day affordable. Until then the odb stays on libgit2.
 
 ## Validation protocol (per step)
 
