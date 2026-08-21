@@ -1,6 +1,6 @@
 # git2 -> gix port: status
 
-Last updated: 2026-08-21 (post-3.3b). See `PLAN.md` in this directory for the full phased plan.
+Last updated: 2026-08-21 (post pack-lifetime). See `PLAN.md` in this directory for the full phased plan.
 
 ## Landed on master (one commit per step, each suite-green and bench-validated)
 
@@ -54,6 +54,8 @@ Last updated: 2026-08-21 (post-3.3b). See `PLAN.md` in this directory for the fu
 | 3.3a | df5d49bc | The non-object reads join the Transaction API ahead of the flag day, each documented with the gix call that will implement it so 3.3 changes internals rather than call sites: `head`, `rev_parse`, `expand_ref_name`, `upstream_ref`, `config_string`, `signature`, `path`. `Head` carries the ref HEAD resolves to (`HEAD` itself when detached, so it is always the ref to update), that ref's unpeeled target for a CAS guard, and the commit -- peeled through the transaction's objects, so a HEAD it just moved resolves. `Transaction::repo` becomes `git2_repo` and states its contract: the porcelain josh has not moved to gix (worktree and index operations, FETCH_HEAD's multi-entry semantics, notes, DWIM), never the objects the transaction holds. josh-changes, josh-graphql, josh-templates, josh-link, josh-compose and josh-proxy are off the handle entirely; 11 PORT markers cleared. What remains is josh-cli porcelain, josh-core internals the flag day rewrites, and tests | n/a (no object path touched) |
 
 | 3.3b | e37b6e3a | The gitoxide view of the repository joins the transaction, ready for the object and ref reads to move over. Held as a `ThreadSafeRepository` and handed out per call as a `gix::Repository`: a transaction crosses threads (josh-graphql requires `Send`) while the thread-local handle holds `Rc` snapshots of packed-refs and shallow state and does not -- which also means the workspace now builds gix with `parallel`, without which even the thread-safe handle is `Rc`-based. The context opens once and every transaction it opens shares that handle: per-transaction opening cost 5% of `refs_filter_update/100` (it reads configuration and resolves alternates), and sharing takes that back to nothing while keeping the pack indices the store discovers. A store that misses an object rescans its objects directory, so a pack another transaction just flushed is still found | `refs_filter_update` -0.1%/-0.8%, `deephistory_subdir` within noise (all p > 0.05 except a +0.5% on /1000) |
+
+| pack lifetime | 6d4e7fcb | **Pack building moves off transaction lifetime and onto the store.** `MemOdb` was built per transaction and packed on drop, so every transaction left a packfile behind however little it wrote. A process-wide registry (`josh_memodb::registry`) now hands out one store per resolved `<commondir>/objects` and a transaction attaches to it, so objects stay readable after it ends and the next transaction reads them from memory instead of from a pack the previous one was forced to write. A transaction packs only when it published: `update_ref` sets the flag, the drop barrier flushes then -- which keeps "refs never point at memory-only objects" at exactly the strength the unconditional flush gave it (bounded by the publishing transaction), where flushing *before* each ref write would put a pack behind every iteration of josh-changes'/josh-cq's write-a-commit-then-write-a-ref loops. `flush_mem_odb`, `git_command`/`spawn_git` and the overflow chunk are unchanged; new `josh_memodb::flush_all` at the end of each binary's `main` packs the rest (not a correctness requirement -- every cache hit is guarded by an odb existence probe, so a lost store recomputes rather than dangles). Forced by sharing: runtime alternates move from the store to the `Transaction` (`josh_memodb::Alternates`) because what an alternate makes reachable is a property of the repository handle, not the objects directory -- josh-templates registers the overlay as an alternate of a *mirror* transaction and the reverse elsewhere, and one write gate must not mix them; ephemeral transactions keep a private store chained to the registered one for reads (they must not contribute to a store outliving them, but what earlier transactions buffered used to be on disk and is now in memory), and an explicit flush drains the chain; the budget becomes per objects directory (tightest limit any attacher asked for, defaulting to the 128 MB josh-cli/josh-proxy ask for) so overflow chunking is how a long-lived process writes packs; `Inner` moves to `RwLock` and `pack_to_disk` takes a pack lock (the exit flush packs inline and would otherwise race the flusher). Suite: `push_stacked.t`'s overlay holds two packs where it held four (the coalescing, visible); every other pinned pack listing reproduces exactly. `destroy_test_env.sh` waits for josh-proxy to exit before listing -- it packs what it holds on the way out, and the listing was already racing anything in flight | **zero regressions across all 56 cases.** The warm path 3.3c was blocked on collapses to a flat ~235us regardless of history length (no pack written, none read back): `deephistory_glob_incremental/recursive` **-76/-88/-91%**, `/prefix` **-97/-97/-95%** vs pre-gix. Also vs pre-gix: `deephistory_prefix_flush` **-28%**, `deephistory_subdir` **-34 to -39%**, `deephistory_rev` **-31%**, `widetree_glob` **-15 to -78%**, `ultrawide_pin_hook` **-29 to -71%**, glob **-25 to -53%**, sparse **-18 to -24%**, distributed **-18 to -19%**, `ultrawide_filter_pin` -11%, `refs_filter_update` **-3.7 to -5.7%**, `ultrawide_filter_parse` no change. Vs the parent commit: `unapply_extend` **-30/-50/-67%** (3.2z's +162/+195/+34% recovered -- the chain josh itself produces stays in memory), `unapply_new_branch` **-4.9/-8.2/-8.0%** |
 
 | (tooling) | 8705d98e | The container test build renders cargo's diagnostics when it fails. It writes `--message-format=json` to a file and `set -e` exits before anything reads it, so a failure reached the run log as an exit code and nothing else -- which is how a full podman volume (`ld: final link failed: No space left on device`, 295 accumulated step-output volumes filling the VM's 200 GB) first read as a code error | n/a |
 
@@ -114,9 +116,12 @@ josh-compose's ephemeral reads — the prysk orchestrator itself). So 3.2 contin
    keep the seed out of flush snapshots). From 2.6: josh-proxy `TmpGitNamespace::cleanup`
    removes namespace refs via `fs::remove_dir_all` behind both git2 and the ref API --
    verify gix's loose-ref/packed-refs view tolerates it at flag day.
-6. **Pack lifetime** (prerequisite for the odb half of 3.3, and worth doing regardless):
-   move pack building off transaction drop and onto a store that outlives transactions. See
-   `.agents/work/pack-lifetime/NOTES.md`.
+6. **Pack lifetime is landed** (6d4e7fcb): stores are keyed by objects directory and outlive
+   transactions, and only a transaction that published a ref packs when it ends. The condition
+   3.3c needs -- packs that hold still instead of one per transaction -- now holds, so the next
+   move is to retry `3.3c-facade-on-gitoxide.patch` on top of it, with the store registry
+   (`3.3c-store-registry.rs`) for the gitoxide side. Design and measurements in
+   `.agents/work/pack-lifetime/{NOTES,design}.md`.
 7. **Phase 4** Port bench setup, flip `josh_core::Oid` inner type, delete josh-memodb FFI
    remnants, remove git2/libgit2-sys workspace-wide (`cargo tree -i git2` empty).
 
@@ -190,7 +195,12 @@ that outlives transactions, packing on its own schedule, is the fix -- worth doi
 merits, and the condition gitoxide's odb is built for. Design note, with the invariants that
 have to survive (refs never pointing at memory-only objects, deterministic pack names,
 ephemeral transactions, the memory budget, per-repository concurrency), is in
-`.agents/work/pack-lifetime/NOTES.md`. Until it lands, the odb stays on libgit2.
+`.agents/work/pack-lifetime/NOTES.md`.
+
+**That landed as 6d4e7fcb**, so the condition holds now: a warm filtering transaction writes no
+pack at all, and the incremental case that measured 3.8ms against libgit2's 1.2ms is down to a
+flat ~235us on libgit2. Retrying `3.3c-facade-on-gitoxide.patch` on top of it is the next step;
+until that is measured green, the odb stays on libgit2.
 
 ## Validation protocol (per step)
 
