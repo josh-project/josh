@@ -114,7 +114,10 @@ josh-compose's ephemeral reads — the prysk orchestrator itself). So 3.2 contin
    keep the seed out of flush snapshots). From 2.6: josh-proxy `TmpGitNamespace::cleanup`
    removes namespace refs via `fs::remove_dir_all` behind both git2 and the ref API --
    verify gix's loose-ref/packed-refs view tolerates it at flag day.
-6. **Phase 4** Port bench setup, flip `josh_core::Oid` inner type, delete josh-memodb FFI
+6. **Pack lifetime** (prerequisite for the odb half of 3.3, and worth doing regardless):
+   move pack building off transaction drop and onto a store that outlives transactions. See
+   `.agents/work/pack-lifetime/NOTES.md`.
+7. **Phase 4** Port bench setup, flip `josh_core::Oid` inner type, delete josh-memodb FFI
    remnants, remove git2/libgit2-sys workspace-wide (`cargo tree -i git2` empty).
 
 Deferred from 1.5 (evaluate separately): lazy early-exit walks for
@@ -180,11 +183,14 @@ directory holding hundreds of small packs. One pack per transaction means at lea
 re-enumeration per transaction, and it gets slower as packs accumulate. libgit2 absorbed this;
 gitoxide's store is built for packs that hold still.
 
-So the thing to change is the pack churn, not the facade: batch or defer packing so a
-short transaction does not leave a pack behind (loose objects for small writes, packing at a
-coarser boundary, or repacking periodically). That is worth doing on its own -- hundreds of
-single-commit packs are bad for any reader, and `git gc` has to clean them up -- and it is what
-makes the object side of the flag day affordable. Until then the odb stays on libgit2.
+So the thing to change is the pack churn, not the facade. **Pack building has to be decoupled
+from transaction lifetime and moved to the backend's**: `MemOdb` is built per transaction and
+packs on drop, so every transaction leaves a packfile behind however little it wrote. A store
+that outlives transactions, packing on its own schedule, is the fix -- worth doing on its own
+merits, and the condition gitoxide's odb is built for. Design note, with the invariants that
+have to survive (refs never pointing at memory-only objects, deterministic pack names,
+ephemeral transactions, the memory budget, per-repository concurrency), is in
+`.agents/work/pack-lifetime/NOTES.md`. Until it lands, the odb stays on libgit2.
 
 ## Validation protocol (per step)
 
