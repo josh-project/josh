@@ -277,7 +277,8 @@ fn pre_receive_hook() -> anyhow::Result<i32> {
     Ok(0)
 }
 
-fn main() {
+fn main() -> std::process::ExitCode {
+    let _flush_guard = josh_core::memodb::FlushGuard::new();
     // josh-proxy creates a symlink to itself as a git update hook.
     // When it gets called by git as that hook, the binary name will end
     // end in "/update" and this will not be a new server.
@@ -287,22 +288,20 @@ fn main() {
     if let [a0, a1, a2, a3, ..] = &std::env::args().collect::<Vec<_>>().as_slice()
         && a0.ends_with("/update")
     {
-        std::process::exit(update_hook(a1, a2, a3).unwrap_or(1));
+        return std::process::ExitCode::from(update_hook(a1, a2, a3).unwrap_or(1) as u8);
     }
 
     if let [a0, ..] = &std::env::args().collect::<Vec<_>>().as_slice()
         && a0.ends_with("/pre-receive")
     {
         eprintln!("josh-proxy: pre-receive hook");
-        let code = match pre_receive_hook() {
+        return std::process::ExitCode::from(match pre_receive_hook() {
             Ok(code) => code,
             Err(e) => {
                 eprintln!("josh-proxy: pre-receive hook failed: {}", e);
-                std::process::exit(1);
+                1
             }
-        };
-
-        std::process::exit(code);
+        } as u8);
     }
 
     let args = josh_proxy::cli::Args::parse();
@@ -323,5 +322,5 @@ fn main() {
             exit_code
         });
 
-    std::process::exit(exit_code);
+    std::process::ExitCode::from(exit_code as u8)
 }

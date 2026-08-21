@@ -7,9 +7,9 @@
 //!
 //! * [`enqueue_chunk`] hands the worker a store to pack and returns immediately. It is best-effort
 //!   (fire-and-forget), used from the write path when a store overflows its size limit.
-//! * [`drain`] hands the worker a store and blocks until it is packed and evicted, used at
-//!   transaction and external-git boundaries where the objects must be durable on disk before the
-//!   caller proceeds.
+//! * [`drain`] hands the worker a store and blocks until it is packed and evicted, used at the
+//!   boundaries where the objects must be durable on disk before the caller proceeds: an external
+//!   `git`, and the end of a transaction that published a ref.
 //!
 //! A single worker processes jobs FIFO, so a store's queued overflow chunks always complete before
 //! its drain — and no two packs are ever written from the same store concurrently. A job carries
@@ -52,12 +52,14 @@ impl Flusher {
                 while let Ok(job) = receiver.recv() {
                     match job {
                         Job::Chunk { store } => {
-                            if let Err(e) = store.pack_to_disk() {
-                                log::error!("background chunk flush failed: {e}");
-                            }
-                            // Cleared only now (after packing + eviction), so the write path does
-                            // not enqueue a fresh chunk until this store's size reflects the drain.
-                            store.clear_chunk_in_flight();
+                            let packed = match store.pack_to_disk() {
+                                Ok(()) => true,
+                                Err(e) => {
+                                    log::error!("background chunk flush failed: {e}");
+                                    false
+                                }
+                            };
+                            store.finish_chunk(packed);
                         }
                         Job::Drain { store, ack } => {
                             let _ = ack.send(store.pack_to_disk().map_err(|e| e.to_string()));

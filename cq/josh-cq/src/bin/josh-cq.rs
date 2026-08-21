@@ -119,6 +119,8 @@ async fn run_serve(args: ServeArgs, data_dir: Option<&std::path::Path>) -> anyho
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
+    let _flush_guard = josh_core::memodb::FlushGuard::new();
+
     let cli = Cli::parse();
 
     match cli.command {

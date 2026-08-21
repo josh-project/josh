@@ -258,20 +258,16 @@ Make sure all temporary namespace got removed
       |   |   `-- b2a5b9c65fae1d20c1b1fb777d1ea025456faa
       |   |-- info
       |   `-- pack
-      |       |-- pack-3a57e9cdc95400944f3e385ef9f2dd3e34214850.idx
-      |       |-- pack-3a57e9cdc95400944f3e385ef9f2dd3e34214850.pack
-      |       |-- pack-63a0eba9c29d8be4a080b31f7ae988c86dcf4f40.idx
-      |       |-- pack-63a0eba9c29d8be4a080b31f7ae988c86dcf4f40.pack
       |       |-- pack-73ff0b391af4bb8dff50f6070f8e6bd258d3d562.idx
       |       |-- pack-73ff0b391af4bb8dff50f6070f8e6bd258d3d562.pack
-      |       |-- pack-e56807bf90b581321239e94899e9a2bad8ea715c.idx
-      |       `-- pack-e56807bf90b581321239e94899e9a2bad8ea715c.pack
+      |       |-- pack-d678c97bc806ec389cf8d05321e018083799eab5.idx
+      |       `-- pack-d678c97bc806ec389cf8d05321e018083799eab5.pack
       `-- refs
           |-- heads
           |-- namespaces
           `-- tags
   
-  57 directories, 48 files
+  57 directories, 44 files
 
 $ cat ${TESTTMP}/josh-proxy.out
 $ cat ${TESTTMP}/josh-proxy.out | grep REPO_UPDATE

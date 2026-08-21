@@ -194,7 +194,8 @@ pub struct FilterArgs {
     pub remote: String,
 }
 
-fn main() {
+fn main() -> std::process::ExitCode {
+    let _flush_guard = josh_core::memodb::FlushGuard::new();
     env_logger::init();
     let cli = Cli::parse();
 
@@ -209,8 +210,9 @@ fn main() {
         for e in e.chain() {
             eprintln!("{e}");
         }
-
-        std::process::exit(1);
+        std::process::ExitCode::FAILURE
+    } else {
+        std::process::ExitCode::SUCCESS
     }
 }
 
