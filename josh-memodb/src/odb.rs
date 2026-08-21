@@ -3,22 +3,56 @@
 //!
 //! Implements the [`gix_object`] object-access traits (memory-first, disk fallback) plus
 //! inherent helpers in `git2::Oid` currency; memory hits hand out zero-copy `Arc` buffers.
-//! The `disk` side is deliberately `repo.odb()` after [`MemOdb::register`]: it starts with
-//! the registered memory backend and includes any runtime alternates added later (josh-proxy
-//! overlays add the mirror), so the facade and plain git2 calls resolve exactly the same
-//! objects. Write dedup goes through the store's own alternate mirror instead (see
-//! [`Odb::write`]) and never touches `disk`.
-//!
-//! Lock discipline: never call into `disk` while holding the store mutex — the git2 path
-//! locks `disk` first and the store second (inside the backend trampolines), so the facade
-//! always probes the store and the disk sequentially, holding at most one lock at a time.
+//! The `disk` side is `repo.odb()`, including any runtime alternates added to that repository
+//! handle (josh-proxy overlays add the mirror), so the facade and plain git2 calls resolve
+//! exactly the same objects. Write dedup goes through the caller's [`Alternates`] mirror
+//! instead (see [`Odb::write`]) and never touches `disk`.
 
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 use gix_hash::ObjectId;
 use gix_object::Kind;
 
 use crate::MemOdb;
+
+/// A mirror of the runtime alternates registered on a repository handle: an odb over ONLY the
+/// alternate object directories, no repository attached. The facade's write path probes it so
+/// alternate-resident objects (the proxy overlay's mirror) are never buffered — flushed packs
+/// must not contain duplicates of mirror objects, and the pack-time disk filter cannot see
+/// runtime alternates. Deliberately excludes the repository's own odb: locally-durable objects
+/// are dropped at pack time instead, and with no alternates registered the probe is a `None`
+/// check, no filesystem I/O.
+///
+/// Owned by the holder of the repository handle rather than by the store, because what an
+/// alternate makes reachable is a property of the handle: josh-templates registers the overlay
+/// as an alternate of a mirror repository and the reverse elsewhere, and a store shared by both
+/// must not mix them.
+#[derive(Default)]
+pub struct Alternates(Mutex<Option<git2::Odb<'static>>>);
+
+impl Alternates {
+    /// Record `path` (an objects directory) as a runtime alternate. Callers add the alternate to
+    /// their repository odb themselves (`git2::Odb::add_disk_alternate`); this mirror only feeds
+    /// the write-dedup probe.
+    pub fn add(&self, path: &str) -> Result<(), git2::Error> {
+        let mut alternates = self.0.lock().unwrap();
+        let odb = match alternates.as_mut() {
+            Some(odb) => odb,
+            None => alternates.insert(git2::Odb::new()?),
+        };
+        odb.add_disk_alternate(path)
+    }
+
+    /// Whether `oid` exists in one of the recorded alternates. `false` without filesystem I/O
+    /// when none are recorded.
+    fn contains(&self, oid: git2::Oid) -> bool {
+        self.0
+            .lock()
+            .unwrap()
+            .as_ref()
+            .is_some_and(|o| o.exists(oid))
+    }
+}
 
 /// Raw object bytes from a facade read: zero-copy shared buffer for memory hits, a libgit2
 /// odb object for disk hits. Derefs to the raw serialized object bytes either way.
@@ -42,11 +76,30 @@ impl std::ops::Deref for Bytes<'_> {
 pub struct Odb<'repo> {
     mem: Arc<MemOdb>,
     disk: git2::Odb<'repo>,
+    alternates: Option<&'repo Alternates>,
 }
 
 impl<'repo> Odb<'repo> {
+    /// A facade with no runtime alternates registered, for repositories that have none.
     pub fn new(mem: Arc<MemOdb>, disk: git2::Odb<'repo>) -> Self {
-        Odb { mem, disk }
+        Odb {
+            mem,
+            disk,
+            alternates: None,
+        }
+    }
+
+    /// A facade whose write gate skips objects reachable through `alternates` (see there).
+    pub fn with_alternates(
+        mem: Arc<MemOdb>,
+        disk: git2::Odb<'repo>,
+        alternates: &'repo Alternates,
+    ) -> Self {
+        Odb {
+            mem,
+            disk,
+            alternates: Some(alternates),
+        }
     }
 
     /// Read the raw bytes and kind of `oid`; memory hits are zero-copy. A missing object is an
@@ -104,11 +157,10 @@ impl<'repo> Odb<'repo> {
     /// Hash and buffer an object in the memory store, returning its content id. The buffer is
     /// skipped when the object is already in memory or in a runtime alternate: proxy overlays
     /// must never buffer mirror objects, or flushed packs would gain duplicates and change
-    /// names (the pack-time disk filter cannot see runtime alternates). The same rule governs
-    /// `git_odb__freshen` on the registered backend, so both write paths buffer the same
-    /// objects. The gate never probes the repository's own on-disk odb: objects already
-    /// durable there are buffered anyway and dropped at pack time, and a repository without
-    /// alternates writes with zero filesystem I/O.
+    /// names (the pack-time disk filter cannot see runtime alternates). The gate never probes
+    /// the repository's own on-disk odb: objects already durable there are buffered anyway and
+    /// dropped at pack time, and a repository without alternates writes with zero filesystem
+    /// I/O.
     pub fn write(&self, kind: Kind, data: &[u8]) -> git2::Oid {
         let id = gix_object::compute_hash(gix_hash::Kind::Sha1, kind, data)
             .expect("failed to compute hash");
@@ -118,7 +170,11 @@ impl<'repo> Odb<'repo> {
 
     /// [`Odb::write`] with a caller-computed content hash, trusted verbatim.
     fn write_with_id(&self, id: ObjectId, kind: Kind, data: &[u8]) {
-        if self.mem.contains(&id) || self.mem.exists_in_alternates(josh_gix_ext::git2_oid(&id)) {
+        if self.mem.contains(&id)
+            || self
+                .alternates
+                .is_some_and(|alts| alts.contains(josh_gix_ext::git2_oid(&id)))
+        {
             return;
         }
         self.mem.write_with_id(id, kind, data);
@@ -281,9 +337,10 @@ mod tests {
             .unwrap()
             .add_disk_alternate(alt.to_str().unwrap())
             .unwrap();
-        store.add_alternate(alt.to_str().unwrap()).unwrap();
+        let alternates = Alternates::default();
+        alternates.add(alt.to_str().unwrap()).unwrap();
 
-        let odb = facade(&store, &repo);
+        let odb = Odb::with_alternates(store.clone(), repo.odb().unwrap(), &alternates);
 
         // Alternate hit: skipped, still readable through the disk chain.
         let oid = odb.write(Kind::Blob, b"mirror blob");

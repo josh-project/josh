@@ -527,12 +527,16 @@ fn main() {
         args
     };
 
-    std::process::exit(if let Err(e) = run_filter(args) {
+    let code = if let Err(e) = run_filter(args) {
         eprintln!("ERROR: {}", e);
         1
     } else {
         0
-    })
+    };
+
+    josh_core::memodb::flush_all();
+
+    std::process::exit(code)
 }
 
 #[test]

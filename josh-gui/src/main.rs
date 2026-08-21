@@ -36,6 +36,8 @@ fn main() {
         )
         .with_context(scope)
         .launch(app);
+
+    josh_core::memodb::flush_all();
 }
 
 fn resolve_initial_scope(cli: &Cli) -> josh_changes::ChangesRef {

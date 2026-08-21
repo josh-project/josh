@@ -221,10 +221,18 @@ pub struct Transaction {
     /// transaction crosses threads (josh-graphql requires `Send`) while a `gix::Repository`
     /// holds `Rc` snapshots of packed-refs and shallow state and does not.
     gix_repo: std::sync::Arc<gix::ThreadSafeRepository>,
-    /// Per-transaction in-memory object store, flushed to a packfile when the transaction drops, at
-    /// an explicit boundary, or mid-transaction when it exceeds its size limit. Never shared with
-    /// another transaction.
+    /// The in-memory object store of this transaction's repository, shared with every other
+    /// transaction on the same objects directory and outliving them all, so packing is the
+    /// store's business rather than a transaction's (see [`josh_memodb::registry`]). An
+    /// ephemeral transaction gets a private store instead, reading through to the shared one.
     mem_odb: std::sync::Arc<josh_memodb::MemOdb>,
+    /// The runtime alternates of this transaction's repository handle, mirrored for the object
+    /// facade's write gate (see [`josh_memodb::Alternates`]).
+    alternates: josh_memodb::Alternates,
+    /// Set once this transaction has pointed a ref at something. Refs must never point at
+    /// objects only memory holds, so a transaction that published one packs the store when it
+    /// ends.
+    published: std::cell::Cell<bool>,
     mem_odb_limit: Option<usize>,
     ephemeral: bool,
     ref_prefix: Option<String>,
@@ -242,7 +250,11 @@ impl Drop for Transaction {
             return;
         }
 
-        if let Err(e) = self.mem_odb.flush() {
+        // Objects stay in the store for the next transaction; only a published ref obliges us to
+        // make them durable now.
+        if self.published.get()
+            && let Err(e) = self.mem_odb.flush()
+        {
             log::error!("failed to flush in-memory object store: {e}");
         }
     }
@@ -272,7 +284,15 @@ impl Transaction {
             git2::opts::strict_hash_verification(false);
         });
 
-        let mem_odb = josh_memodb::MemOdb::new(mem_odb_limit, josh_memodb::objects_dir(&repo));
+        // An ephemeral transaction must not contribute to a store that outlives it, so it
+        // buffers privately and reads through to the shared one.
+        let objects_dir = josh_memodb::objects_dir(&repo);
+        let shared = josh_memodb::registry::shared(mem_odb_limit, &objects_dir);
+        let mem_odb = if ephemeral {
+            josh_memodb::MemOdb::chained(mem_odb_limit, objects_dir, shared)
+        } else {
+            shared
+        };
 
         // Balanced in `Drop`; lets a locking backend (sled) hold its lock only while a
         // transaction is live.
@@ -303,6 +323,8 @@ impl Transaction {
             repo,
             gix_repo,
             mem_odb,
+            alternates: Default::default(),
+            published: std::cell::Cell::new(false),
             mem_odb_limit,
             ephemeral,
             ref_prefix: ref_prefix.map(|prefix| prefix.to_owned()),
@@ -343,17 +365,18 @@ impl Transaction {
     /// The transaction's object-database facade: memory store first, repository odb
     /// fallback (see [`josh_memodb::Odb`]).
     pub fn odb(&self) -> anyhow::Result<josh_memodb::Odb<'_>> {
-        Ok(josh_memodb::Odb::new(
+        Ok(josh_memodb::Odb::with_alternates(
             self.mem_odb.clone(),
             self.repo.odb()?,
+            &self.alternates,
         ))
     }
 
     /// Add `path` (an objects directory) as a runtime alternate of both the repository odb
-    /// and the memory store's write-dedup probe (see [`josh_memodb::Odb::write`]).
+    /// and this transaction's write-dedup probe (see [`josh_memodb::Odb::write`]).
     pub fn add_disk_alternate(&self, path: &str) -> anyhow::Result<()> {
         self.repo.odb()?.add_disk_alternate(path)?;
-        self.mem_odb.add_alternate(path)?;
+        self.alternates.add(path)?;
         Ok(())
     }
 
@@ -389,6 +412,9 @@ impl Transaction {
         Ok(Some(TreeBytes::Odb(obj)))
     }
 
+    /// Pack the repository's buffered objects and block until they are durable, so a reader that
+    /// only sees disk finds them. The store is shared, so this covers everything buffered for the
+    /// repository, not only what this transaction wrote.
     // TODO: remove and rework proxy git launch path to use spawn_git
     pub fn flush_mem_odb(&self) -> anyhow::Result<()> {
         self.mem_odb.flush()?;
@@ -546,6 +572,10 @@ impl Transaction {
                 self.repo.reference(refname, target, false, log_message)?;
             }
         }
+        // `target` may be an object only this transaction's store holds, so the drop barrier has
+        // to pack (see `published`). Packing here instead would put a pack behind every iteration
+        // of a write-a-commit-then-write-a-ref loop.
+        self.published.set(true);
         Ok(())
     }
 
@@ -1447,5 +1477,111 @@ mod tests {
             transaction.resolve_ref("refs/heads/main").unwrap(),
             Some(oid)
         );
+    }
+
+    /// A context the store-lifetime tests below open several transactions from in turn.
+    fn test_context() -> (tempfile::TempDir, TransactionContext) {
+        let dir = tempfile::tempdir().unwrap();
+        git2::Repository::init_bare(dir.path()).unwrap();
+        let context = TransactionContext::new(
+            dir.path(),
+            std::sync::Arc::new(crate::cache::CacheStack::new()),
+        );
+        (dir, context)
+    }
+
+    fn packs(dir: &std::path::Path) -> usize {
+        std::fs::read_dir(dir.join("objects").join("pack"))
+            .map(|entries| {
+                entries
+                    .filter(|e| {
+                        e.as_ref()
+                            .is_ok_and(|e| e.file_name().to_string_lossy().ends_with(".pack"))
+                    })
+                    .count()
+            })
+            .unwrap_or(0)
+    }
+
+    /// The store outlives the transaction that filled it: a transaction that publishes nothing
+    /// leaves no packfile behind, and the objects it produced are still there for the next
+    /// transaction to read.
+    #[test]
+    fn objects_outlive_a_transaction_that_published_nothing() {
+        let (dir, context) = test_context();
+
+        let oid = {
+            let transaction = context.open().unwrap();
+            transaction
+                .odb()
+                .unwrap()
+                .write(gix_object::Kind::Blob, b"unpublished")
+        };
+
+        assert_eq!(packs(dir.path()), 0, "nothing was published, nothing packs");
+
+        let transaction = context.open().unwrap();
+        let odb = transaction.odb().unwrap();
+        assert!(odb.contains(oid));
+        assert_eq!(&*odb.read(oid).unwrap().1, b"unpublished");
+    }
+
+    /// Pointing a ref at an object makes the store durable when the transaction ends, so a ref
+    /// never survives its transaction pointing at something only memory holds.
+    #[test]
+    fn publishing_a_ref_packs_the_store() {
+        let (dir, context) = test_context();
+
+        let oid = {
+            let transaction = context.open().unwrap();
+            let oid = transaction
+                .odb()
+                .unwrap()
+                .write(gix_object::Kind::Blob, b"published");
+            let head = commit(&transaction, "a");
+            transaction
+                .update_ref("refs/heads/main", Expected::Any, head, "test")
+                .unwrap();
+            oid
+        };
+
+        // A handle opened after the fact can only see what reached disk.
+        let on_disk = git2::Repository::open(dir.path()).unwrap();
+        assert_eq!(on_disk.find_blob(oid).unwrap().content(), b"published");
+    }
+
+    /// An ephemeral transaction discards what it writes, but still reads what the repository's
+    /// store holds in memory.
+    #[test]
+    fn ephemeral_reads_the_shared_store_and_discards_its_own() {
+        let (dir, context) = test_context();
+
+        let shared = {
+            let transaction = context.open().unwrap();
+            transaction
+                .odb()
+                .unwrap()
+                .write(gix_object::Kind::Blob, b"shared")
+        };
+
+        let own = {
+            let ephemeral = TransactionContext::new(
+                dir.path(),
+                std::sync::Arc::new(crate::cache::CacheStack::new()),
+            )
+            .ephemeral()
+            .open()
+            .unwrap();
+            let odb = ephemeral.odb().unwrap();
+            assert_eq!(&*odb.read(shared).unwrap().1, b"shared");
+            odb.write(gix_object::Kind::Blob, b"ephemeral")
+        };
+
+        // What the ephemeral transaction wrote is gone; what it read is still buffered.
+        let transaction = context.open().unwrap();
+        let odb = transaction.odb().unwrap();
+        assert!(odb.contains(shared));
+        assert!(!odb.contains(own));
+        assert_eq!(packs(dir.path()), 0);
     }
 }
