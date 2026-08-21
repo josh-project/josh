@@ -136,30 +136,29 @@ porting those crates (3.2b..e).
 
 ## Open question: the facade's disk side on gitoxide (3.3c, attempted and reverted)
 
-The attempt is kept as `.agents/work/gix-port/3.3c-facade-on-gix.patch`. It works -- suite
-green, 195 documents -- but `deephistory_glob_incremental` regresses **10x to 100x**, growing
-with history size, so it was not landed.
+The attempt is kept as `.agents/work/gix-port/3.3c-facade-on-gix.patch`. It is suite-green
+(195 documents) and now regresses only `deephistory_glob_incremental` -- the warm-cache path a
+proxy serves from -- by **+66% at 100 commits, +167% at 1000, +341% at 10000** on the
+recursive pattern, and ~+105 to +130% on the prefix one. Every cold group is unaffected. Not
+landed at that cost, but the two findings below are worth keeping whenever it is retried.
 
-A sampling profile of the 10000 case puts 1617 of 1675 main-thread samples inside
-`gix_odb`'s `load_one_index`/`load_next_index`, reached from `Odb::contains` via
-`Transaction::get2` and `get_ref`. Those probes are josh's garbage-collection guard: every
-memo hit asks whether the cached object still exists, so the hot path is dominated by
-existence checks, and many of them legitimately miss. libgit2 answered a miss from one
-long-lived odb with mmapped indices; gitoxide's dynamic store answers by loading pack indices
-incrementally, and josh keeps *adding* packs as the memory store flushes, so the loading
-recurs and scales with the pack count.
+**The 100x version of this was self-inflicted.** Setting `refresh_never` on the store (to stop
+gitoxide rescanning its objects directory on every miss) hid josh's own freshly-written packs,
+because the store is opened once per context and shared. The cache guard on every memo hit
+then found its object absent and forced a rebuild -- measured: 116k probes per iteration, 100%
+missing. Enabling refresh instead made them hit (82k of 103k) but charged a directory rescan
+per remaining miss: 7.7s. The patch keeps `refresh_never` and has [`MemOdb`] count the packs it
+writes, so the facade takes a fresh view exactly when one lands (3 rebuilds in the 1000-commit
+case). That took the regression from 10000% to ~300%.
 
-Ruled out as the cause, each measured separately: refresh-on-miss (`refresh_never` alone left
-it at 160x), the missing object cache (`MemoryCappedHashmap`, no change), a handle rebuilt per
-`transaction.odb()` call (holding one for the transaction took 160x to 100x -- worth keeping
-regardless, it is in the patch), and pre-loading every index at facade creation (no change).
-
-Directions for the next attempt, roughly in order of expected value: stop probing the odb per
-memo hit (the guard could consult the memory store plus a per-transaction existence cache, or
-be restricted to entries a gc could plausibly have taken); pack less often, so the index count
-stays small; or configure the store differently (`Slots::Given`). Also worth reconsidering:
-whether the object side needs to move at flag day at all, or whether refs can move first and
-the odb stay on libgit2 until phase 4.
+**The remaining cost is not the existence probes.** Memoizing them per transaction cut the
+probe count from 39906 to 408 per iteration and did not move the time at all, so what is left
+is the object reads themselves: gitoxide decompresses into the caller's buffer where libgit2
+handed back a pointer into its own cache, and josh re-reads the same trees across a filter
+run. The 64 MB `MemoryCappedHashmap` object cache on the handle did not help either -- worth
+checking whether it is actually consulted on the loose/pack path josh hits, and whether the
+per-iteration cost tracks tree re-reads. A profile of the current patch is the place to start;
+the earlier one (which found `load_one_index`) no longer applies.
 
 ## Validation protocol (per step)
 
