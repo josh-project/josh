@@ -19,4 +19,5 @@ gix-pack.workspace = true
 gix-zlib.workspace = true
 josh-gix-ext.workspace = true
 log.workspace = true
+parking_lot.workspace = true
 tempfile.workspace = true

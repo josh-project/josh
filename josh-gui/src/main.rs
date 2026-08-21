@@ -26,6 +26,7 @@ struct Cli {
 }
 
 fn main() {
+    let _flush_guard = josh_core::memodb::FlushGuard::new();
     let cli = Cli::parse();
     let scope = resolve_initial_scope(&cli);
 
@@ -36,6 +37,7 @@ fn main() {
         )
         .with_context(scope)
         .launch(app);
+
 }
 
 fn resolve_initial_scope(cli: &Cli) -> josh_changes::ChangesRef {

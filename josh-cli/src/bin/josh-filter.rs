@@ -517,7 +517,8 @@ fn run_filter(args: Vec<String>) -> anyhow::Result<i32> {
     Ok(0)
 }
 
-fn main() {
+fn main() -> std::process::ExitCode {
+    let _flush_guard = josh_core::memodb::FlushGuard::new();
     env_logger::init();
     let args = {
         let mut args = vec![];
@@ -527,12 +528,14 @@ fn main() {
         args
     };
 
-    std::process::exit(if let Err(e) = run_filter(args) {
+    let code = if let Err(e) = run_filter(args) {
         eprintln!("ERROR: {}", e);
         1
     } else {
         0
-    })
+    };
+
+    std::process::ExitCode::from(code as u8)
 }
 
 #[test]

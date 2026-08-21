@@ -49,6 +49,7 @@ defer = "0.2.1"
 env_logger = "0.11.11"
 log = "0.4.33"
 mime = "0.3"
+parking_lot = "0.12.5"
 form_urlencoded = "1.2.2"
 futures = "0.3.33"
 gix = { version = "0.86.0", default-features = false, features = ["sha1", "parallel"] }

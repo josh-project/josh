@@ -54,6 +54,34 @@ pub enum Expected {
     At(git2::Oid),
 }
 
+#[derive(Debug, Clone)]
+struct PendingRef {
+    name: String,
+    change: PendingRefChange,
+}
+
+#[derive(Debug, Clone)]
+enum PendingRefChange {
+    Update {
+        expected: Expected,
+        target: git2::Oid,
+        log_message: String,
+    },
+    Delete {
+        expected: Expected,
+    },
+    Symbolic {
+        target: String,
+        log_message: String,
+    },
+}
+
+#[derive(Debug, Clone)]
+enum PendingTarget {
+    Object(git2::Oid),
+    Symbolic(String),
+}
+
 static REF_CACHE: LazyLock<RwLock<HashMap<git2::Oid, HashMap<git2::Oid, git2::Oid>>>> =
     LazyLock::new(Default::default);
 
@@ -236,10 +264,17 @@ pub struct Transaction {
     /// transaction crosses threads (josh-graphql requires `Send`) while a `gix::Repository`
     /// holds `Rc` snapshots of packed-refs and shallow state and does not.
     gix_repo: std::sync::Arc<gix::ThreadSafeRepository>,
-    /// Per-transaction in-memory object store, flushed to a packfile when the transaction drops, at
-    /// an explicit boundary, or mid-transaction when it exceeds its size limit. Never shared with
-    /// another transaction.
+    /// The in-memory object store of this transaction's repository, shared with every other
+    /// transaction on the same objects directory and outliving them all, so packing is the
+    /// store's business rather than a transaction's (see [`josh_memodb::registry`]). An
+    /// ephemeral transaction gets a private store instead, reading through to the shared one.
     mem_odb: std::sync::Arc<josh_memodb::MemOdb>,
+    /// The runtime alternates of this transaction's repository handle, mirrored for the object
+    /// facade's write gate (see [`josh_memodb::Alternates`]).
+    alternates: josh_memodb::Alternates,
+    /// Ref edits accepted by this transaction but not yet visible on disk. Reads overlay this
+    /// queue, and disk boundaries flush objects before applying it.
+    pending_refs: std::cell::RefCell<Vec<PendingRef>>,
     mem_odb_limit: Option<usize>,
     ephemeral: bool,
     ref_prefix: Option<String>,
@@ -252,13 +287,24 @@ impl Drop for Transaction {
         // locking backend can release once the last transaction ends.
         self.t2.borrow().cache.end();
 
-        // Skip flushing to disk, the mem odb will be lost, as requested.
+        // Ephemeral transactions discard both their private object store and every ref edit.
         if self.ephemeral {
             return;
         }
 
-        if let Err(e) = self.mem_odb.flush() {
+        // Objects first, refs second: a ref that reaches disk must never point at an object
+        // only memory holds. A flush error is logged and the refs written anyway -- the same
+        // end state as before, where refs were already on disk by the time the flush ran.
+        let publishes_object = self
+            .pending_refs
+            .borrow()
+            .iter()
+            .any(|edit| matches!(&edit.change, PendingRefChange::Update { .. }));
+        if publishes_object && let Err(e) = self.mem_odb.flush() {
             log::error!("failed to flush in-memory object store: {e}");
+        }
+        if let Err(e) = self.apply_pending_refs() {
+            log::error!("failed to write pending ref updates: {e}");
         }
     }
 }
@@ -287,7 +333,15 @@ impl Transaction {
             git2::opts::strict_hash_verification(false);
         });
 
-        let mem_odb = josh_memodb::MemOdb::new(mem_odb_limit, josh_memodb::objects_dir(&repo));
+        // An ephemeral transaction must not contribute to a store that outlives it, so it
+        // buffers privately and reads through to the shared one.
+        let objects_dir = josh_memodb::objects_dir(&repo);
+        let shared = josh_memodb::registry::shared(mem_odb_limit, &objects_dir);
+        let mem_odb = if ephemeral {
+            josh_memodb::MemOdb::chained(mem_odb_limit, objects_dir, shared)
+        } else {
+            shared
+        };
 
         // Balanced in `Drop`; lets a locking backend (sled) hold its lock only while a
         // transaction is live.
@@ -318,6 +372,8 @@ impl Transaction {
             repo,
             gix_repo,
             mem_odb,
+            alternates: Default::default(),
+            pending_refs: std::cell::RefCell::new(Vec::new()),
             mem_odb_limit,
             ephemeral,
             ref_prefix: ref_prefix.map(|prefix| prefix.to_owned()),
@@ -356,17 +412,18 @@ impl Transaction {
     /// The transaction's object-database facade: memory store first, repository odb
     /// fallback (see [`josh_memodb::Odb`]).
     pub fn odb(&self) -> anyhow::Result<josh_memodb::Odb<'_>> {
-        Ok(josh_memodb::Odb::new(
+        Ok(josh_memodb::Odb::with_alternates(
             self.mem_odb.clone(),
             self.repo.odb()?,
+            &self.alternates,
         ))
     }
 
     /// Add `path` (an objects directory) as a runtime alternate of both the repository odb
-    /// and the memory store's write-dedup probe (see [`josh_memodb::Odb::write`]).
+    /// and this transaction's write-dedup probe (see [`josh_memodb::Odb::write`]).
     pub fn add_disk_alternate(&self, path: &str) -> anyhow::Result<()> {
         self.repo.odb()?.add_disk_alternate(path)?;
-        self.mem_odb.add_alternate(path)?;
+        self.alternates.add(path)?;
         Ok(())
     }
 
@@ -402,16 +459,22 @@ impl Transaction {
         Ok(Some(TreeBytes::Odb(obj)))
     }
 
+    /// Pack the repository's buffered objects and block until they are durable, then publish
+    /// every ref update a persistent transaction has accepted. Ephemeral transactions keep
+    /// their pending refs private. The shared store covers everything buffered for the
+    /// repository, not only what this transaction wrote.
     // TODO: remove and rework proxy git launch path to use spawn_git
     pub fn flush_mem_odb(&self) -> anyhow::Result<()> {
         self.mem_odb.flush()?;
+        if !self.ephemeral {
+            self.apply_pending_refs()?;
+        }
         Ok(())
     }
 
-    /// Flush this transaction's in-memory objects, then build a `git` subprocess against its repo.
-    /// Use this in place of [`crate::git::GitCommand::new`] whenever a transaction is in scope: the
-    /// spawned `git` reads objects from disk and cannot see the in-memory backend, so the store must
-    /// be flushed first.
+    /// Flush this transaction's in-memory objects and publish its pending ref updates, then build
+    /// a `git` subprocess against its repo. Use this in place of [`crate::git::GitCommand::new`]
+    /// whenever a transaction is in scope: the spawned `git` reads objects and refs from disk.
     pub fn git_command(
         &self,
         args: &[&str],
@@ -439,14 +502,150 @@ impl Transaction {
     /// partial-name DWIM. `Ok(None)` if the ref (or the end of a symbolic chain) does not
     /// exist. The target is not peeled: for an annotated tag ref this is the tag oid,
     /// peeling is an object-store concern.
-    pub fn resolve_ref(&self, refname: &str) -> anyhow::Result<Option<git2::Oid>> {
-        match self.repo.refname_to_id(refname) {
-            Ok(oid) => Ok(Some(oid)),
+
+    fn pending_target(&self, refname: &str) -> Option<Option<PendingTarget>> {
+        self.pending_refs
+            .borrow()
+            .iter()
+            .rev()
+            .find(|edit| edit.name == refname)
+            .map(|edit| match &edit.change {
+                PendingRefChange::Update { target, .. } => Some(PendingTarget::Object(*target)),
+                PendingRefChange::Delete { .. } => None,
+                PendingRefChange::Symbolic { target, .. } => {
+                    Some(PendingTarget::Symbolic(target.clone()))
+                }
+            })
+    }
+
+    fn ref_target(&self, refname: &str) -> anyhow::Result<Option<PendingTarget>> {
+        if let Some(target) = self.pending_target(refname) {
+            return Ok(target);
+        }
+        match self.repo.find_reference(refname) {
+            Ok(reference) => {
+                if let Some(target) = reference.symbolic_target()? {
+                    Ok(Some(PendingTarget::Symbolic(target.to_owned())))
+                } else {
+                    Ok(reference.target().map(PendingTarget::Object))
+                }
+            }
             Err(e) if e.code() == git2::ErrorCode::NotFound => Ok(None),
             Err(e) => Err(e.into()),
         }
     }
 
+    fn resolve_ref_target(&self, refname: &str) -> anyhow::Result<Option<(String, git2::Oid)>> {
+        let mut name = refname.to_owned();
+        for _ in 0..5 {
+            match self.ref_target(&name)? {
+                Some(PendingTarget::Object(target)) => return Ok(Some((name, target))),
+                Some(PendingTarget::Symbolic(target)) => name = target,
+                None => return Ok(None),
+            }
+        }
+        Err(anyhow!("symbolic ref '{}' is nested too deeply", name))
+    }
+
+    fn pending_partial(&self, partial: &str) -> Option<Option<String>> {
+        let mut candidates = vec![partial.to_owned()];
+        if !partial.starts_with("refs/") {
+            candidates.extend([
+                format!("refs/{partial}"),
+                format!("refs/tags/{partial}"),
+                format!("refs/heads/{partial}"),
+                format!("refs/remotes/{partial}"),
+            ]);
+            if partial != "HEAD" {
+                candidates.push(format!("refs/remotes/{partial}/HEAD"));
+            }
+        }
+        let pending = self.pending_refs.borrow();
+        for candidate in candidates {
+            if let Some(edit) = pending.iter().rev().find(|edit| edit.name == candidate) {
+                return Some(match edit.change {
+                    PendingRefChange::Delete { .. } => None,
+                    _ => Some(edit.name.clone()),
+                });
+            }
+        }
+        None
+    }
+
+    fn apply_pending_refs(&self) -> anyhow::Result<()> {
+        let edits = std::mem::take(&mut *self.pending_refs.borrow_mut());
+        for edit in edits {
+            match edit.change {
+                PendingRefChange::Update {
+                    expected,
+                    target,
+                    log_message,
+                } => self.write_ref(&edit.name, expected, target, &log_message)?,
+                PendingRefChange::Delete { expected } => {
+                    self.delete_ref_now(&edit.name, expected)?
+                }
+                PendingRefChange::Symbolic {
+                    target,
+                    log_message,
+                } => {
+                    self.repo
+                        .reference_symbolic(&edit.name, &target, true, &log_message)?;
+                }
+            }
+        }
+        Ok(())
+    }
+
+    fn write_ref(
+        &self,
+        refname: &str,
+        expected: Expected,
+        target: git2::Oid,
+        log_message: &str,
+    ) -> anyhow::Result<()> {
+        match expected {
+            Expected::Any => {
+                self.repo.reference(refname, target, true, log_message)?;
+            }
+            Expected::At(old) => {
+                self.repo
+                    .reference_matching(refname, target, true, old, log_message)?;
+            }
+            Expected::Absent => {
+                self.repo.reference(refname, target, false, log_message)?;
+            }
+        }
+        Ok(())
+    }
+
+    fn delete_ref_now(&self, refname: &str, expected: Expected) -> anyhow::Result<()> {
+        match expected {
+            Expected::Absent => Err(anyhow!("delete_ref: Expected::Absent is not a valid guard")),
+            Expected::Any => match self.repo.find_reference(refname) {
+                Err(e) if e.code() == git2::ErrorCode::NotFound => Ok(()),
+                Err(e) => Err(e.into()),
+                Ok(mut reference) => match reference.delete() {
+                    Err(e) if e.code() == git2::ErrorCode::NotFound => Ok(()),
+                    other => Ok(other?),
+                },
+            },
+            Expected::At(old) => {
+                let mut reference = self.repo.find_reference(refname)?;
+                if reference.target() != Some(old) {
+                    return Err(anyhow!(
+                        "delete_ref: '{}' does not point at {}",
+                        refname,
+                        old
+                    ));
+                }
+                Ok(reference.delete()?)
+            }
+        }
+    }
+    /// Resolve a fully qualified refname through this transaction's pending overlay.
+    pub fn resolve_ref(&self, refname: &str) -> anyhow::Result<Option<git2::Oid>> {
+        Ok(self.resolve_ref_target(refname)?.map(|(_, target)| target))
+    }
     /// The repository's git directory, for the callers that build paths beside it or hand
     /// it to a `git` subprocess.
     pub fn path(&self) -> &std::path::Path {
@@ -459,17 +658,14 @@ impl Transaction {
     /// so a HEAD moved to a commit this transaction produced resolves. (gix mapping:
     /// `Repository::head()` + `head_id()`.)
     pub fn head(&self) -> anyhow::Result<Head> {
-        let head = self.repo.head()?;
-        let reference = if head.is_branch() {
-            head.name()
-                .map_err(|e| anyhow!("HEAD ref name is not valid UTF-8: {}", e))?
-                .to_string()
+        let (name, target) = self
+            .resolve_ref_target("HEAD")?
+            .ok_or_else(|| anyhow!("HEAD does not point at an object"))?;
+        let reference = if name.starts_with("refs/heads/") {
+            name
         } else {
             "HEAD".to_string()
         };
-        let target = head
-            .target()
-            .ok_or_else(|| anyhow!("HEAD does not point at an object"))?;
         Ok(Head {
             reference,
             target,
@@ -495,8 +691,18 @@ impl Transaction {
     /// `refs/heads/master`). `Ok(None)` when no ref matches. (gix mapping:
     /// `find_reference` with a partial name.)
     pub fn expand_ref_name(&self, short_name: &str) -> anyhow::Result<Option<String>> {
+        if let Some(pending) = self.pending_partial(short_name) {
+            return match pending {
+                Some(name) => Ok(self.resolve_ref_target(&name)?.map(|(name, _)| name)),
+                None => Ok(None),
+            };
+        }
         match self.repo.resolve_reference_from_short_name(short_name) {
-            Ok(reference) => Ok(reference.name().ok().map(|name| name.to_string())),
+            Ok(reference) => Ok(reference
+                .resolve()?
+                .name()
+                .ok()
+                .map(|name| name.to_string())),
             Err(e) if e.code() == git2::ErrorCode::NotFound => Ok(None),
             Err(e) if e.code() == git2::ErrorCode::InvalidSpec => Ok(None),
             Err(e) => Err(e.into()),
@@ -531,15 +737,8 @@ impl Transaction {
         Ok(self.repo.signature()?)
     }
 
-    /// Create or update the direct ref `refname` to point at `target`, guarded by
-    /// `expected`: with `Expected::Any` an existing ref is overwritten unconditionally
-    /// (updating to the value a ref already has is a no-op); `Expected::At(oid)` asserts
-    /// the ref currently points at `oid`; `Expected::Absent` asserts it does not exist.
-    /// On a failed assertion — including a ref that appeared or disappeared
-    /// concurrently — an error is returned and the ref is unchanged. Writers that derive
-    /// `target` from the ref's old value pass `At`/`Absent` so they never overwrite a
-    /// concurrent update. (gix mapping: `PreviousValue::Any` / `MustExistAndMatch` /
-    /// `MustNotExist`.)
+    /// Collect a direct ref update. Transaction reads see it immediately; disk sees it only
+    /// after the object store has been flushed at a boundary or on drop.
     pub fn update_ref(
         &self,
         refname: &str,
@@ -547,21 +746,45 @@ impl Transaction {
         target: git2::Oid,
         log_message: &str,
     ) -> anyhow::Result<()> {
+        let current = self.ref_target(refname)?;
+        let guard_allows_unchanged = match expected {
+            Expected::Any => true,
+            Expected::At(old) => old == target,
+            Expected::Absent => false,
+        };
+        if guard_allows_unchanged
+            && matches!(current, Some(PendingTarget::Object(current)) if current == target)
+        {
+            return Ok(());
+        }
         match expected {
-            Expected::Any => {
-                self.repo.reference(refname, target, true, log_message)?;
+            Expected::Any => {}
+            Expected::Absent if current.is_none() => {}
+            Expected::At(old) if matches!(current, Some(PendingTarget::Object(current)) if current == old) =>
+                {}
+            Expected::Absent => {
+                return Err(anyhow!(
+                    "ref '{}' exists but was expected to be absent",
+                    refname
+                ));
             }
             Expected::At(old) => {
-                self.repo
-                    .reference_matching(refname, target, true, old, log_message)?;
-            }
-            Expected::Absent => {
-                self.repo.reference(refname, target, false, log_message)?;
+                return Err(anyhow!(
+                    "ref '{}' does not point at the expected value {old}",
+                    refname
+                ));
             }
         }
+        self.pending_refs.borrow_mut().push(PendingRef {
+            name: refname.to_owned(),
+            change: PendingRefChange::Update {
+                expected,
+                target,
+                log_message: log_message.to_owned(),
+            },
+        });
         Ok(())
     }
-
     /// Delete the ref `refname`, guarded by `expected`: `Expected::Any` deletes whatever
     /// is there and treats an absent ref as a no-op; `Expected::At(oid)` asserts the ref
     /// currently points at `oid` and errors, leaving the ref in place, on mismatch or
@@ -572,28 +795,23 @@ impl Transaction {
     /// gix's Any-delete succeeds -- acceptable widening at flag day. (gix mapping: RefEdit
     /// Change::Delete with PreviousValue::Any / MustExistAndMatch, RefLog::AndReference.)
     pub fn delete_ref(&self, refname: &str, expected: Expected) -> anyhow::Result<()> {
-        match expected {
-            Expected::Absent => Err(anyhow!("delete_ref: Expected::Absent is not a valid guard")),
-            Expected::Any => match self.repo.find_reference(refname) {
-                Err(e) if e.code() == git2::ErrorCode::NotFound => Ok(()),
-                Err(e) => Err(e.into()),
-                Ok(mut reference) => match reference.delete() {
-                    Err(e) if e.code() == git2::ErrorCode::NotFound => Ok(()),
-                    other => Ok(other?),
-                },
-            },
-            Expected::At(old) => {
-                let mut reference = self.repo.find_reference(refname)?;
-                if reference.target() != Some(old) {
-                    return Err(anyhow!(
-                        "delete_ref: '{}' does not point at {}",
-                        refname,
-                        old
-                    ));
-                }
-                Ok(reference.delete()?)
-            }
+        if expected == Expected::Absent {
+            return Err(anyhow!("delete_ref: Expected::Absent is not a valid guard"));
         }
+        if let Expected::At(old) = expected
+            && !matches!(self.ref_target(refname)?, Some(PendingTarget::Object(target)) if target == old)
+        {
+            return Err(anyhow!(
+                "delete_ref: '{}' does not point at {}",
+                refname,
+                old
+            ));
+        }
+        self.pending_refs.borrow_mut().push(PendingRef {
+            name: refname.to_owned(),
+            change: PendingRefChange::Delete { expected },
+        });
+        Ok(())
     }
 
     /// Force-create or update the symbolic ref `refname` to point at the ref named
@@ -607,8 +825,13 @@ impl Transaction {
         target: &str,
         log_message: &str,
     ) -> anyhow::Result<()> {
-        self.repo
-            .reference_symbolic(refname, target, true, log_message)?;
+        self.pending_refs.borrow_mut().push(PendingRef {
+            name: refname.to_owned(),
+            change: PendingRefChange::Symbolic {
+                target: target.to_owned(),
+                log_message: log_message.to_owned(),
+            },
+        });
         Ok(())
     }
 
@@ -626,15 +849,27 @@ impl Transaction {
             !prefix.contains(['*', '?', '[', '\\']),
             "prefix must consist of refname-valid characters"
         );
-        let mut refs = vec![];
+        let mut refs = HashMap::new();
         for reference in self.repo.references_glob(&format!("{}*", prefix))? {
             let reference = reference?;
             if let (Ok(name), Some(target)) = (reference.name(), reference.target()) {
-                refs.push((name.to_owned(), target));
+                refs.insert(name.to_owned(), target);
             }
         }
-        // git2 yields loose refs in filesystem order followed by packed ones; sorting makes
-        // the order part of the API contract instead of an artifact of the backend.
+        for edit in self.pending_refs.borrow().iter() {
+            if !edit.name.starts_with(prefix) {
+                continue;
+            }
+            match edit.change {
+                PendingRefChange::Update { target, .. } => {
+                    refs.insert(edit.name.clone(), target);
+                }
+                PendingRefChange::Delete { .. } | PendingRefChange::Symbolic { .. } => {
+                    refs.remove(&edit.name);
+                }
+            }
+        }
+        let mut refs: Vec<_> = refs.into_iter().collect();
         refs.sort();
         for (name, target) in refs {
             cb(&name, target)?;
@@ -1194,6 +1429,7 @@ mod tests {
         transaction
             .update_ref("refs/josh/a", Expected::Any, a, "test")
             .unwrap();
+        transaction.apply_pending_refs().unwrap();
         // Pack the ref by hand (git2 exposes no pack-refs API): the CAS must see the
         // packed value, not conclude the ref is absent.
         std::fs::write(
@@ -1227,6 +1463,8 @@ mod tests {
         transaction
             .update_ref("refs/josh-x/c", Expected::Any, oid, "test")
             .unwrap();
+        transaction.apply_pending_refs().unwrap();
+
         transaction
             .git2_repo()
             .reference_symbolic("refs/josh/aa", "refs/josh/a", true, "test")
@@ -1277,6 +1515,7 @@ mod tests {
     }
 
     #[test]
+
     fn delete_ref_any_deletes_existing() {
         let (_dir, transaction) = test_transaction();
         let oid = commit(&transaction, "a");
@@ -1355,6 +1594,7 @@ mod tests {
         transaction
             .update_ref("refs/josh/a", Expected::Any, a, "test")
             .unwrap();
+        transaction.apply_pending_refs().unwrap();
         // Pack the ref by hand (git2 exposes no pack-refs API): delete must remove the
         // packed entry, not conclude the ref is absent.
         std::fs::write(
@@ -1460,5 +1700,182 @@ mod tests {
             transaction.resolve_ref("refs/heads/main").unwrap(),
             Some(oid)
         );
+    }
+
+    /// A context the store-lifetime tests below open several transactions from in turn.
+    fn test_context() -> (tempfile::TempDir, TransactionContext) {
+        let dir = tempfile::tempdir().unwrap();
+        git2::Repository::init_bare(dir.path()).unwrap();
+        let context = TransactionContext::new(
+            dir.path(),
+            std::sync::Arc::new(crate::cache::CacheStack::new()),
+        );
+        (dir, context)
+    }
+
+    fn packs(dir: &std::path::Path) -> usize {
+        std::fs::read_dir(dir.join("objects").join("pack"))
+            .map(|entries| {
+                entries
+                    .filter(|e| {
+                        e.as_ref()
+                            .is_ok_and(|e| e.file_name().to_string_lossy().ends_with(".pack"))
+                    })
+                    .count()
+            })
+            .unwrap_or(0)
+    }
+
+    /// The store outlives the transaction that filled it: a transaction that publishes nothing
+    /// leaves no packfile behind, and the objects it produced are still there for the next
+    /// transaction to read.
+    #[test]
+    fn objects_outlive_a_transaction_that_published_nothing() {
+        let (dir, context) = test_context();
+
+        let oid = {
+            let transaction = context.open().unwrap();
+            transaction
+                .odb()
+                .unwrap()
+                .write(gix_object::Kind::Blob, b"unpublished")
+        };
+
+        assert_eq!(packs(dir.path()), 0, "nothing was published, nothing packs");
+
+        let transaction = context.open().unwrap();
+        let odb = transaction.odb().unwrap();
+        assert!(odb.contains(oid));
+        assert_eq!(&*odb.read(oid).unwrap().1, b"unpublished");
+    }
+
+    /// A publishing transaction keeps its ref private until drop, then flushes the object
+    /// before making the ref visible to disk-only readers.
+    #[test]
+    fn publishing_a_ref_flushes_before_ref_reaches_disk() {
+        let (dir, context) = test_context();
+
+        let oid = {
+            let transaction = context.open().unwrap();
+            let oid = transaction
+                .odb()
+                .unwrap()
+                .write(gix_object::Kind::Blob, b"published");
+            transaction
+                .update_ref("refs/josh/blob", Expected::Absent, oid, "test")
+                .unwrap();
+
+            // Transaction reads see their pending state; disk-only readers see neither half.
+            assert_eq!(
+                transaction.resolve_ref("refs/josh/blob").unwrap(),
+                Some(oid)
+            );
+            let on_disk = git2::Repository::open(dir.path()).unwrap();
+            assert!(on_disk.find_reference("refs/josh/blob").is_err());
+            assert!(on_disk.find_blob(oid).is_err());
+            oid
+        };
+
+        let on_disk = git2::Repository::open(dir.path()).unwrap();
+        assert_eq!(
+            on_disk.find_reference("refs/josh/blob").unwrap().target(),
+            Some(oid)
+        );
+        assert_eq!(on_disk.find_blob(oid).unwrap().content(), b"published");
+    }
+
+    /// An explicit disk-reader boundary has the same ordering as drop: object first, ref second.
+    #[test]
+    fn flush_mem_odb_publishes_pending_refs_after_objects() {
+        let (dir, context) = test_context();
+        let transaction = context.open().unwrap();
+        let oid = transaction
+            .odb()
+            .unwrap()
+            .write(gix_object::Kind::Blob, b"boundary");
+        transaction
+            .update_ref("refs/josh/blob", Expected::Absent, oid, "test")
+            .unwrap();
+
+        transaction.flush_mem_odb().unwrap();
+
+        let on_disk = git2::Repository::open(dir.path()).unwrap();
+        assert_eq!(
+            on_disk.find_reference("refs/josh/blob").unwrap().target(),
+            Some(oid)
+        );
+        assert_eq!(on_disk.find_blob(oid).unwrap().content(), b"boundary");
+    }
+
+    #[test]
+    fn ephemeral_transaction_never_publishes_refs() {
+        let (dir, _) = test_context();
+        {
+            let transaction = TransactionContext::new(
+                dir.path(),
+                std::sync::Arc::new(crate::cache::CacheStack::new()),
+            )
+            .ephemeral()
+            .open()
+            .unwrap();
+            let target = commit(&transaction, "a");
+            transaction
+                .update_ref("refs/josh/ephemeral", Expected::Absent, target, "test")
+                .unwrap();
+
+            assert_eq!(
+                transaction.resolve_ref("refs/josh/ephemeral").unwrap(),
+                Some(target)
+            );
+            transaction.flush_mem_odb().unwrap();
+            assert!(
+                git2::Repository::open(dir.path())
+                    .unwrap()
+                    .find_reference("refs/josh/ephemeral")
+                    .is_err()
+            );
+        }
+
+        assert!(
+            git2::Repository::open(dir.path())
+                .unwrap()
+                .find_reference("refs/josh/ephemeral")
+                .is_err()
+        );
+    }
+
+    /// An ephemeral transaction discards what it writes, but still reads what the repository's
+    /// store holds in memory.
+    #[test]
+    fn ephemeral_reads_the_shared_store_and_discards_its_own() {
+        let (dir, context) = test_context();
+
+        let shared = {
+            let transaction = context.open().unwrap();
+            transaction
+                .odb()
+                .unwrap()
+                .write(gix_object::Kind::Blob, b"shared")
+        };
+
+        let own = {
+            let ephemeral = TransactionContext::new(
+                dir.path(),
+                std::sync::Arc::new(crate::cache::CacheStack::new()),
+            )
+            .ephemeral()
+            .open()
+            .unwrap();
+            let odb = ephemeral.odb().unwrap();
+            assert_eq!(&*odb.read(shared).unwrap().1, b"shared");
+            odb.write(gix_object::Kind::Blob, b"ephemeral")
+        };
+
+        // What the ephemeral transaction wrote is gone; what it read is still buffered.
+        let transaction = context.open().unwrap();
+        let odb = transaction.odb().unwrap();
+        assert!(odb.contains(shared));
+        assert!(!odb.contains(own));
+        assert_eq!(packs(dir.path()), 0);
     }
 }

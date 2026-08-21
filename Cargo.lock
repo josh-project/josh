@@ -3659,6 +3659,7 @@ dependencies = [
  "gix-zlib",
  "josh-gix-ext",
  "log",
+ "parking_lot 0.12.5",
  "tempfile",
 ]
 
