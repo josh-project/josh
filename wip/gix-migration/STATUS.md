@@ -134,6 +134,33 @@ GraphQLHelper and proxy `serve_render_template` open sibling transactions to rea
 caller's possibly-unflushed objects with no flush ordering (works by luck today) — fix when
 porting those crates (3.2b..e).
 
+## Open question: the facade's disk side on gitoxide (3.3c, attempted and reverted)
+
+The attempt is kept as `.agents/work/gix-port/3.3c-facade-on-gix.patch`. It works -- suite
+green, 195 documents -- but `deephistory_glob_incremental` regresses **10x to 100x**, growing
+with history size, so it was not landed.
+
+A sampling profile of the 10000 case puts 1617 of 1675 main-thread samples inside
+`gix_odb`'s `load_one_index`/`load_next_index`, reached from `Odb::contains` via
+`Transaction::get2` and `get_ref`. Those probes are josh's garbage-collection guard: every
+memo hit asks whether the cached object still exists, so the hot path is dominated by
+existence checks, and many of them legitimately miss. libgit2 answered a miss from one
+long-lived odb with mmapped indices; gitoxide's dynamic store answers by loading pack indices
+incrementally, and josh keeps *adding* packs as the memory store flushes, so the loading
+recurs and scales with the pack count.
+
+Ruled out as the cause, each measured separately: refresh-on-miss (`refresh_never` alone left
+it at 160x), the missing object cache (`MemoryCappedHashmap`, no change), a handle rebuilt per
+`transaction.odb()` call (holding one for the transaction took 160x to 100x -- worth keeping
+regardless, it is in the patch), and pre-loading every index at facade creation (no change).
+
+Directions for the next attempt, roughly in order of expected value: stop probing the odb per
+memo hit (the guard could consult the memory store plus a per-transaction existence cache, or
+be restricted to entries a gc could plausibly have taken); pack less often, so the index count
+stays small; or configure the store differently (`Slots::Given`). Also worth reconsidering:
+whether the object side needs to move at flag day at all, or whether refs can move first and
+the odb stay on libgit2 until phase 4.
+
 ## Validation protocol (per step)
 
 - Criterion `pre-gix` baselines live in `target/criterion` (recorded at the 0.1 benches
