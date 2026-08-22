@@ -1,6 +1,6 @@
 # git2 -> gix port: status
 
-Last updated: 2026-08-20 (post-3.3a). See `PLAN.md` in this directory for the full phased plan.
+Last updated: 2026-08-21 (post-3.3b). See `PLAN.md` in this directory for the full phased plan.
 
 ## Landed on master (one commit per step, each suite-green and bench-validated)
 
@@ -53,6 +53,10 @@ Last updated: 2026-08-20 (post-3.3a). See `PLAN.md` in this directory for the fu
 
 | 3.3a | df5d49bc | The non-object reads join the Transaction API ahead of the flag day, each documented with the gix call that will implement it so 3.3 changes internals rather than call sites: `head`, `rev_parse`, `expand_ref_name`, `upstream_ref`, `config_string`, `signature`, `path`. `Head` carries the ref HEAD resolves to (`HEAD` itself when detached, so it is always the ref to update), that ref's unpeeled target for a CAS guard, and the commit -- peeled through the transaction's objects, so a HEAD it just moved resolves. `Transaction::repo` becomes `git2_repo` and states its contract: the porcelain josh has not moved to gix (worktree and index operations, FETCH_HEAD's multi-entry semantics, notes, DWIM), never the objects the transaction holds. josh-changes, josh-graphql, josh-templates, josh-link, josh-compose and josh-proxy are off the handle entirely; 11 PORT markers cleared. What remains is josh-cli porcelain, josh-core internals the flag day rewrites, and tests | n/a (no object path touched) |
 
+| 3.3b | e37b6e3a | The gitoxide view of the repository joins the transaction, ready for the object and ref reads to move over. Held as a `ThreadSafeRepository` and handed out per call as a `gix::Repository`: a transaction crosses threads (josh-graphql requires `Send`) while the thread-local handle holds `Rc` snapshots of packed-refs and shallow state and does not -- which also means the workspace now builds gix with `parallel`, without which even the thread-safe handle is `Rc`-based. The context opens once and every transaction it opens shares that handle: per-transaction opening cost 5% of `refs_filter_update/100` (it reads configuration and resolves alternates), and sharing takes that back to nothing while keeping the pack indices the store discovers. A store that misses an object rescans its objects directory, so a pack another transaction just flushed is still found | `refs_filter_update` -0.1%/-0.8%, `deephistory_subdir` within noise (all p > 0.05 except a +0.5% on /1000) |
+
+| (tooling) | 8705d98e | The container test build renders cargo's diagnostics when it fails. It writes `--message-format=json` to a file and `set -e` exits before anything reads it, so a failure reached the run log as an exit code and nothing else -- which is how a full podman volume (`ld: final link failed: No space left on device`, 295 accumulated step-output volumes filling the VM's 200 GB) first read as a code error | n/a |
+
 Phase 1.2 is complete: no `treebuilder` use remains in `josh-core/src/filter/tree.rs`.
 
 Phase 1.3 (commit/blob creation) required no work: every commit write already goes through
@@ -100,8 +104,11 @@ josh-compose's ephemeral reads — the prysk orchestrator itself). So 3.2 contin
    Lesson for the remaining steps: `josh compose run` does not build the benches, so run
    `cargo bench -- --test` over all of them before calling a step done (the trigram bench
    rejects `--test`; run it with `--quick`).
-5. **3.3 flag day** (3.3a is landed, so the leaf crates no longer see the handle's type):
-   Transaction opens `gix::ThreadSafeRepository` (isolated), refs via
+5. **3.3 flag day** (3.3a and 3.3b are landed: the leaf crates no longer see the handle's
+   type, and the transaction already carries the gitoxide view). What remains: the facade's
+   disk side flips to `repo.objects` -- note gix reads runtime alternates only at open, so
+   `add_disk_alternate` needs the facade to hold a list of stores rather than mutate one --
+   and refs via
    gix-ref (parity contract pinned in the 2.1 method comments + unit tests). Facade disk
    side flips to `repo.objects` — pre-seed the empty tree then (gix does not virtualize it;
    keep the seed out of flush snapshots). From 2.6: josh-proxy `TmpGitNamespace::cleanup`
