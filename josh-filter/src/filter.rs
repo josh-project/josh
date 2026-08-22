@@ -242,16 +242,8 @@ impl Filter {
     }
 
     /// Chain a squash filter
-    pub fn squash(self, ids: Option<&[(git2::Oid, Filter)]>) -> Filter {
-        self.chain(if let Some(ids) = ids {
-            to_filter(Op::Squash(Some(
-                ids.iter()
-                    .map(|(x, y)| (LazyRef::Resolved(*x), *y))
-                    .collect(),
-            )))
-        } else {
-            to_filter(Op::Squash(None))
-        })
+    pub fn squash(self) -> Filter {
+        self.chain(to_filter(Op::Squash))
     }
 
     /// Chain a downstack filter that rebuilds the stack from `base` to the input commit,
@@ -368,6 +360,21 @@ pub fn compose(filters: &[Filter]) -> Filter {
 
 pub fn invert(filter: Filter) -> anyhow::Result<Filter> {
     opt::invert(filter)
+}
+
+/// Expand squash-with-ids into its `:rev(...)` form: one `==` entry per listed commit,
+/// followed by a default entry squashing everything else away.
+pub fn squash_to_rev(ids: impl IntoIterator<Item = (LazyRef, Filter)>) -> Op {
+    let mut entries: Vec<(RevMatch, LazyRef, Filter)> = ids
+        .into_iter()
+        .map(|(r, f)| (RevMatch::Equal, r, f))
+        .collect();
+    entries.push((
+        RevMatch::Default,
+        LazyRef::Resolved(git2::Oid::ZERO_SHA1),
+        to_filter(Op::Squash),
+    ));
+    Op::Rev(entries)
 }
 
 /// The sequence_number filter used for tracking commit sequence numbers. A memoized sentinel

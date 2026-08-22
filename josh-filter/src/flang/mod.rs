@@ -116,14 +116,6 @@ fn pretty2(op: &Op, indent: usize, compose: bool) -> String {
                 .collect::<Vec<_>>();
             format!(":replace(\n{}\n)", v.join("\n"))
         }
-        Op::Squash(Some(ids)) => {
-            let mut v = ids
-                .iter()
-                .map(|(oid, f)| format!("{}{}{}", " ".repeat(indent), &oid.to_string(), spec(*f)))
-                .collect::<Vec<_>>();
-            v.sort();
-            format!(":squash(\n{}\n)", v.join("\n"))
-        }
         Op::Meta(meta, filter) => {
             let ind2 = std::cmp::max(indent, 4);
             let mut meta_parts: Vec<_> = meta
@@ -253,15 +245,7 @@ pub(crate) fn spec2(op: &Op) -> String {
         Op::Invert => ":INVERT".to_string(),
         Op::Index => ":INDEX".to_string(),
         Op::Fold => ":FOLD".to_string(),
-        Op::Squash(None) => ":SQUASH".to_string(),
-        Op::Squash(Some(ids)) => {
-            let mut v = ids
-                .iter()
-                .map(|(oid, f)| format!("{}{}", oid, spec(*f)))
-                .collect::<Vec<_>>();
-            v.sort();
-            format!(":squash({})", v.join(","))
-        }
+        Op::Squash => ":SQUASH".to_string(),
         Op::Adapt(adapter) => format!(":adapt={}", adapter),
         Op::Link(None) => ":link".to_string(),
         Op::Link(Some(mode)) => format!(":link={}", mode),
