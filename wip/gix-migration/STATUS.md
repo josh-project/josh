@@ -1,6 +1,6 @@
 # git2 -> gix port: status
 
-Last updated: 2026-08-21 (post pack-lifetime). See `PLAN.md` in this directory for the full phased plan.
+Last updated: 2026-08-22 (post 3.3c, the odb on gitoxide). See `PLAN.md` in this directory for the full phased plan.
 
 ## Landed on master (one commit per step, each suite-green and bench-validated)
 
@@ -57,6 +57,8 @@ Last updated: 2026-08-21 (post pack-lifetime). See `PLAN.md` in this directory f
 
 | pack lifetime | 6d4e7fcb | **Pack building moves off transaction lifetime and onto the store.** `MemOdb` was built per transaction and packed on drop, so every transaction left a packfile behind however little it wrote. A process-wide registry (`josh_memodb::registry`) now hands out one store per resolved `<commondir>/objects` and a transaction attaches to it, so objects stay readable after it ends and the next transaction reads them from memory instead of from a pack the previous one was forced to write. A transaction packs only when it published: `update_ref` sets the flag, the drop barrier flushes then -- which keeps "refs never point at memory-only objects" at exactly the strength the unconditional flush gave it (bounded by the publishing transaction), where flushing *before* each ref write would put a pack behind every iteration of josh-changes'/josh-cq's write-a-commit-then-write-a-ref loops. `flush_mem_odb`, `git_command`/`spawn_git` and the overflow chunk are unchanged; new `josh_memodb::flush_all` at the end of each binary's `main` packs the rest (not a correctness requirement -- every cache hit is guarded by an odb existence probe, so a lost store recomputes rather than dangles). Forced by sharing: runtime alternates move from the store to the `Transaction` (`josh_memodb::Alternates`) because what an alternate makes reachable is a property of the repository handle, not the objects directory -- josh-templates registers the overlay as an alternate of a *mirror* transaction and the reverse elsewhere, and one write gate must not mix them; ephemeral transactions keep a private store chained to the registered one for reads (they must not contribute to a store outliving them, but what earlier transactions buffered used to be on disk and is now in memory), and an explicit flush drains the chain; the budget becomes per objects directory (tightest limit any attacher asked for, defaulting to the 128 MB josh-cli/josh-proxy ask for) so overflow chunking is how a long-lived process writes packs; `Inner` moves to `RwLock` and `pack_to_disk` takes a pack lock (the exit flush packs inline and would otherwise race the flusher). Suite: `push_stacked.t`'s overlay holds two packs where it held four (the coalescing, visible); every other pinned pack listing reproduces exactly. `destroy_test_env.sh` waits for josh-proxy to exit before listing -- it packs what it holds on the way out, and the listing was already racing anything in flight | **zero regressions across all 56 cases.** The warm path 3.3c was blocked on collapses to a flat ~235us regardless of history length (no pack written, none read back): `deephistory_glob_incremental/recursive` **-76/-88/-91%**, `/prefix` **-97/-97/-95%** vs pre-gix. Also vs pre-gix: `deephistory_prefix_flush` **-28%**, `deephistory_subdir` **-34 to -39%**, `deephistory_rev` **-31%**, `widetree_glob` **-15 to -78%**, `ultrawide_pin_hook` **-29 to -71%**, glob **-25 to -53%**, sparse **-18 to -24%**, distributed **-18 to -19%**, `ultrawide_filter_pin` -11%, `refs_filter_update` **-3.7 to -5.7%**, `ultrawide_filter_parse` no change. Vs the parent commit: `unapply_extend` **-30/-50/-67%** (3.2z's +162/+195/+34% recovered -- the chain josh itself produces stays in memory), `unapply_new_branch` **-4.9/-8.2/-8.0%** |
 
+| 3.3c | d2fa6689 | **The facade's disk side is gitoxide** -- the object half of the flag day; refs stay on libgit2. What a read misses in memory is answered by the repository's gitoxide store, taken from the `ThreadSafeRepository` the transaction already carries (3.3b) rather than opened per facade, so handles share its loaded pack indices and a context pays for them once between all its transactions -- what the reverted first attempt's process-wide store registry was for. The facade is built once per transaction and held, so `Transaction::odb()` hands out a reference and is infallible: that is what makes its object cache (256 MB, matching the raw-object cache libgit2 gave each transaction, since josh opened a repository handle per transaction) worth having, and why the change reaches every call site. Runtime alternates move onto the facade -- gitoxide resolves `objects/info/alternates` at open, so one registered later is a store of its own, consulted after the repository's own in registration order, which is libgit2's chaining order -- and pack lifetime's `Alternates` mirror disappears into that list. A gitoxide store re-reads its objects directory on every miss where libgit2 guarded that refresh with an mtime, so the two places josh misses systematically are handled: the empty tree (libgit2's only hardcoded object, virtualized here and answered *before* disk, while `contains` still reports it absent -- the split `try_kind`'s callers rely on) and the write gate, which asks whether an alternate holds an object josh just produced and is told no every time, so it probes through a second, non-refreshing handle on the same store -- answering from what the store knows without going looking, where an object packed into the alternate since costs a pack duplicate rather than correctness. Disk reads hand back owned bytes (gitoxide decompresses into a caller buffer where libgit2 lent out its own), dropping the lifetime from `Odb`, `Bytes`, `TreeBytes` and `TreeReader`; `read`/`read_header`/`try_kind` become `anyhow`. New unit tests: an object packed after the facade was built is still found, and the write gate over a packed alternate (the proxy's arrangement) both before and after registration. Zero prysk churn -- every pinned pack name and listing reproduces. **Landed with a known regression, see the section below** | vs pre-gix: `deephistory_glob_incremental` **-75 to -97%**, `ultrawide_pin_hook` **-26 to -70%**, `widetree_glob_prefix` **-26 to -79%**, `deephistory_subdir` **-39%**, `subdir_sparse` **-27 to -42%**, `prefix_flush` **-28%**, `deephistory_glob_prefix` -19 to -29%, `glob_literal` -14 to -23%, `glob_recursive` **-11 to -14%**; above pre-gix only `widetree_glob_recursive/1000` +26%, `widetree_glob_sparse/1000` +35%, `subdir_distributed/100` +26%. Vs the parent: `unapply_extend` **-22 to -24%**, `unapply_new_branch` -19%, `subdir_sparse` -7 to -22%, `subdir` -8%, `prefix_flush` -4 to -6%, incremental flat; against `deephistory_glob_recursive` **+67 to +81%**, `widetree_glob_recursive`/`_sparse` +13 to +64%, `ultrawide_pin_hook` +8 to +28%, glob prefix/literal +3 to +16%, `refs_filter_update` +5%, `subdir_distributed/100` +54% |
+
 | (tooling) | 8705d98e | The container test build renders cargo's diagnostics when it fails. It writes `--message-format=json` to a file and `set -e` exits before anything reads it, so a failure reached the run log as an exit code and nothing else -- which is how a full podman volume (`ld: final link failed: No space left on device`, 295 accumulated step-output volumes filling the VM's 200 GB) first read as a code error | n/a |
 
 Phase 1.2 is complete: no `treebuilder` use remains in `josh-core/src/filter/tree.rs`.
@@ -106,22 +108,18 @@ josh-compose's ephemeral reads — the prysk orchestrator itself). So 3.2 contin
    Lesson for the remaining steps: `josh compose run` does not build the benches, so run
    `cargo bench -- --test` over all of them before calling a step done (the trigram bench
    rejects `--test`; run it with `--quick`).
-5. **3.3 flag day** (3.3a and 3.3b are landed: the leaf crates no longer see the handle's
-   type, and the transaction already carries the gitoxide view). What remains: the facade's
-   disk side flips to `repo.objects` -- note gix reads runtime alternates only at open, so
-   `add_disk_alternate` needs the facade to hold a list of stores rather than mutate one --
-   and refs via
-   gix-ref (parity contract pinned in the 2.1 method comments + unit tests). Facade disk
-   side flips to `repo.objects` — pre-seed the empty tree then (gix does not virtualize it;
-   keep the seed out of flush snapshots). From 2.6: josh-proxy `TmpGitNamespace::cleanup`
+5. **3.3 flag day**: 3.3a, 3.3b and 3.3c are landed, so objects are read and written through
+   gitoxide end to end (the empty tree is answered in the facade rather than pre-seeded, and
+   runtime alternates are a list of stores it consults). What remains is **3.3d, refs via
+   gix-ref** (parity contract pinned in the 2.1 method comments + unit tests), which does not
+   depend on the object half. From 2.6: josh-proxy `TmpGitNamespace::cleanup`
    removes namespace refs via `fs::remove_dir_all` behind both git2 and the ref API --
    verify gix's loose-ref/packed-refs view tolerates it at flag day.
 6. **Pack lifetime is landed** (6d4e7fcb): stores are keyed by objects directory and outlive
-   transactions, and only a transaction that published a ref packs when it ends. The condition
-   3.3c needs -- packs that hold still instead of one per transaction -- now holds, so the next
-   move is to retry `3.3c-facade-on-gitoxide.patch` on top of it, with the store registry
-   (`3.3c-store-registry.rs`) for the gitoxide side. Design and measurements in
-   `.agents/work/pack-lifetime/{NOTES,design}.md`.
+   transactions, and only a transaction that published a ref packs when it ends. That is what
+   made 3.3c landable; design and measurements in `.agents/work/pack-lifetime/{NOTES,design}.md`.
+   Carried forward from 3.3c: cold read-heavy walks pay for delta chains read in history order
+   (see the section below), which an upstream gix-pack change would return.
 7. **Phase 4** Port bench setup, flip `josh_core::Oid` inner type, delete josh-memodb FFI
    remnants, remove git2/libgit2-sys workspace-wide (`cargo tree -i git2` empty).
 
@@ -199,8 +197,45 @@ ephemeral transactions, the memory budget, per-repository concurrency), is in
 
 **That landed as 6d4e7fcb**, so the condition holds now: a warm filtering transaction writes no
 pack at all, and the incremental case that measured 3.8ms against libgit2's 1.2ms is down to a
-flat ~235us on libgit2. Retrying `3.3c-facade-on-gitoxide.patch` on top of it is the next step;
-until that is measured green, the odb stays on libgit2.
+flat ~235us on libgit2. **The retry landed as 3.3c** (d2fa6689), rebuilt on that base rather than
+replayed: the store registry is unnecessary once the transaction's own gitoxide store is shared,
+and the facade is held for the transaction rather than made per read. The incremental path this
+section was written about is now flat against the parent and -75 to -97% against pre-gix. What it
+cost instead is the section below.
+
+## The odb flip's known cost: delta chains read in history order
+
+Cold, read-heavy walks pay for the flip -- `deephistory_glob_recursive` +67 to +81% against the
+parent, `widetree_glob` recursive and sparse +13 to +64%, `ultrawide_pin_hook` +8 to +28% -- and
+the cause is one caching decision inside gix-pack, not josh's call sites. Both platforms resolve a
+delta chain by walking up it until they find a cached ancestor. libgit2 then caches the chain's
+**base**, the undeltified object `git` writes for the newest version of a path, so every later read
+of an older version hits it. gitoxide caches the **object it decoded**, keyed by that object's own
+pack offset. A filter run reads history oldest first, so the ancestors of each read are objects it
+has not reached yet and the entries gitoxide caches are never a later read's ancestor: the cache
+cannot hit, and adding one only adds bookkeeping -- measured at another 4-7 points on every case it
+could have helped, and 30 more with the `StaticLinkedList` variant, whose lookup is a linear scan.
+The facade therefore sets an object cache and no delta-base cache.
+
+Isolated with `.agents/work/gix-port/3.3c-read-speed-harness.rs` (drop into `josh-memodb/tests/`),
+which reads 31530 distinct tree oids -- 23 MB, josh's own order, every tree of every commit, oldest
+first -- through both platforms:
+
+| pack | libgit2 | gitoxide (best of four cache configurations) |
+|---|---|---|
+| as `git repack` writes it (chains to depth 50) | **101 ms** | 166 ms (**1.65x slower**) |
+| same objects, `--window=0 --depth=0` | 146 ms | **72 ms** (**2x faster**) |
+
+So the read path is not what is slow: without deltas gitoxide is twice as fast on the same objects,
+and it wins on deltified packs too when reads follow pack order or are scattered (124ms against
+212ms). Counters in `read_tree_bytes`, the same patch applied to both builds, confirm the read
+count and bytes are identical either way, so this is cost per read and not more reads.
+
+Caching the base alongside the target in `decode_entry` would close it upstream; the cache trait a
+caller supplies only ever sees what `decode_entry` puts in it, so there is nothing to do from the
+facade. The comment on `josh_memodb::odb::handle` records this, and the harness is the reproducer
+to hand to gix or to re-run against a later release. Full measurements, including the four cache
+configurations tried and the profile that led here, are in `.agents/work/gix-port/3.3c-v2-findings.md`.
 
 ## Validation protocol (per step)
 
