@@ -301,12 +301,12 @@ fn run_filter(args: Vec<String>) -> anyhow::Result<i32> {
     });
 
     if args.get_flag("discover") {
-        let odb = transaction.odb()?;
+        let odb = transaction.odb();
         let head = transaction
             .rev_parse(&input_ref)?
             .ok_or_else(|| anyhow!("no such revision: {}", input_ref))?;
-        let tree = josh_core::objects::CommitData::read(&odb, head)?.tree_id()?;
-        let hs = josh_core::housekeeping::find_all_workspaces_and_subdirectories(&odb, tree)?;
+        let tree = josh_core::objects::CommitData::read(odb, head)?.tree_id()?;
+        let hs = josh_core::housekeeping::find_all_workspaces_and_subdirectories(odb, tree)?;
         for i in hs {
             let (mut updated_refs, _) = josh_core::filter_refs(
                 &transaction,
@@ -352,9 +352,9 @@ fn run_filter(args: Vec<String>) -> anyhow::Result<i32> {
             .rev_parse(&input_ref)?
             .ok_or_else(|| anyhow!("no such revision: {}", input_ref))?;
 
-        let odb = transaction.odb()?;
+        let odb = transaction.odb();
         let tree = josh_core::objects::CommitData::read(
-            &odb,
+            odb,
             josh_core::filter_commit(&transaction, filterobj, commit)?,
         )?
         .tree_id()?;
@@ -364,11 +364,11 @@ fn run_filter(args: Vec<String>) -> anyhow::Result<i32> {
         let candidates = if josh_core::filter::experimental_features_enabled() {
             let ifilterobj = filterobj.chain(josh_core::filter::parse(":SQUASH:INDEX")?);
             let index_commit = josh_core::filter_commit(&transaction, ifilterobj, commit)?;
-            let index_tree = josh_core::objects::CommitData::read(&odb, index_commit)?.tree_id()?;
-            josh_search::search_candidates(&odb, index_tree, tree, searchstring)?
+            let index_tree = josh_core::objects::CommitData::read(odb, index_commit)?.tree_id()?;
+            josh_search::search_candidates(odb, index_tree, tree, searchstring)?
         } else {
             let mut scan = vec![];
-            josh_core::objects::walk_tree_preorder(&odb, tree, &mut |parent, entry| {
+            josh_core::objects::walk_tree_preorder(odb, tree, &mut |parent, entry| {
                 if !entry.mode.is_tree()
                     && !entry.mode.is_commit()
                     && let Ok(name) = std::str::from_utf8(entry.filename)
@@ -380,7 +380,7 @@ fn run_filter(args: Vec<String>) -> anyhow::Result<i32> {
             })?;
             scan
         };
-        let matches = josh_search::search_matches(&odb, tree, searchstring, &candidates)?;
+        let matches = josh_search::search_matches(odb, tree, searchstring, &candidates)?;
 
         for r in matches {
             for l in r.1 {
@@ -418,7 +418,7 @@ fn run_filter(args: Vec<String>) -> anyhow::Result<i32> {
                 // discarded by the ref update: require fast-forward like git.
                 if rewritten != unfiltered_old
                     && !josh_core::objects::is_descendant_of(
-                        &transaction.odb()?,
+                        transaction.odb(),
                         rewritten,
                         unfiltered_old,
                     )?

@@ -1,18 +1,18 @@
 use josh_memodb::PassthroughHasher;
 use std::hash::BuildHasherDefault;
 
-/// Raw bytes of a tree object, either straight from the odb (first read, zero-copy) or from the
+/// Raw bytes of a tree object, either as the odb decompressed them (first read) or from the
 /// per-transaction tree cache (repeated reads). Derefs to the byte slice either way.
-pub enum TreeBytes<'a> {
-    Odb(git2::OdbObject<'a>),
+pub enum TreeBytes {
+    Odb(Vec<u8>),
     Cached(std::sync::Arc<[u8]>),
 }
 
-impl std::ops::Deref for TreeBytes<'_> {
+impl std::ops::Deref for TreeBytes {
     type Target = [u8];
     fn deref(&self) -> &[u8] {
         match self {
-            TreeBytes::Odb(obj) => obj.data(),
+            TreeBytes::Odb(data) => data,
             TreeBytes::Cached(bytes) => bytes,
         }
     }
@@ -56,7 +56,7 @@ impl TreeCache {
     }
 
     /// Whether `oid` is being read for the second time and should be copied into the cache
-    /// now; the first read is only recorded, so it can hand out the odb buffer zero-copy.
+    /// now; the first read is only recorded, so it can hand out the odb's buffer as it is.
     pub(crate) fn should_promote(&mut self, oid: git2::Oid) -> bool {
         !self.seen.insert(OidKey(oid))
     }

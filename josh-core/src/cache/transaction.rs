@@ -226,9 +226,10 @@ pub struct Transaction {
     /// store's business rather than a transaction's (see [`josh_memodb::registry`]). An
     /// ephemeral transaction gets a private store instead, reading through to the shared one.
     mem_odb: std::sync::Arc<josh_memodb::MemOdb>,
-    /// The runtime alternates of this transaction's repository handle, mirrored for the object
-    /// facade's write gate (see [`josh_memodb::Alternates`]).
-    alternates: josh_memodb::Alternates,
+    /// The object-database facade: this transaction's store in front of the repository's
+    /// objects, plus the runtime alternates registered on it. Built once per transaction so
+    /// its cache serves a whole filter run (see [`josh_memodb::Odb`]).
+    odb: josh_memodb::Odb,
     /// Set once this transaction has pointed a ref at something. Refs must never point at
     /// objects only memory holds, so a transaction that published one packs the store when it
     /// ends.
@@ -293,6 +294,9 @@ impl Transaction {
         } else {
             shared
         };
+        // The store the repository was opened with, so pack indices are loaded once for every
+        // transaction of this context.
+        let odb = josh_memodb::Odb::new(mem_odb.clone(), gix_repo.objects.clone());
 
         // Balanced in `Drop`; lets a locking backend (sled) hold its lock only while a
         // transaction is live.
@@ -323,7 +327,7 @@ impl Transaction {
             repo,
             gix_repo,
             mem_odb,
-            alternates: Default::default(),
+            odb,
             published: std::cell::Cell::new(false),
             mem_odb_limit,
             ephemeral,
@@ -362,21 +366,18 @@ impl Transaction {
         &self.repo
     }
 
-    /// The transaction's object-database facade: memory store first, repository odb
+    /// The transaction's object-database facade: memory store first, repository objects
     /// fallback (see [`josh_memodb::Odb`]).
-    pub fn odb(&self) -> anyhow::Result<josh_memodb::Odb<'_>> {
-        Ok(josh_memodb::Odb::with_alternates(
-            self.mem_odb.clone(),
-            self.repo.odb()?,
-            &self.alternates,
-        ))
+    pub fn odb(&self) -> &josh_memodb::Odb {
+        &self.odb
     }
 
-    /// Add `path` (an objects directory) as a runtime alternate of both the repository odb
-    /// and this transaction's write-dedup probe (see [`josh_memodb::Odb::write`]).
+    /// Add `path` (an objects directory) as a runtime alternate: the facade reads through it
+    /// and never buffers what it holds (see [`josh_memodb::Odb::write`]). The porcelain handle
+    /// is told separately, since it resolves objects of its own.
     pub fn add_disk_alternate(&self, path: &str) -> anyhow::Result<()> {
         self.repo.odb()?.add_disk_alternate(path)?;
-        self.alternates.add(path)?;
+        self.odb.add_alternate(std::path::Path::new(path))?;
         Ok(())
     }
 
@@ -387,11 +388,11 @@ impl Transaction {
     /// Trees still buffered in the memory store come back as zero-copy `Arc` clones of the
     /// store's own buffers and bypass the TreeCache promotion accounting -- caching them
     /// again would only duplicate memory the store already holds.
-    pub fn read_tree_bytes<'a>(
+    pub fn read_tree_bytes(
         &self,
-        odb: &'a josh_memodb::Odb,
+        odb: &josh_memodb::Odb,
         oid: git2::Oid,
-    ) -> anyhow::Result<Option<TreeBytes<'a>>> {
+    ) -> anyhow::Result<Option<TreeBytes>> {
         if let Some(bytes) = self.t2.borrow().tree_cache.get(oid) {
             return Ok(Some(TreeBytes::Cached(bytes)));
         }
@@ -405,7 +406,7 @@ impl Transaction {
         };
         let mut t2 = self.t2.borrow_mut();
         if t2.tree_cache.should_promote(oid) {
-            let bytes: std::sync::Arc<[u8]> = obj.data().into();
+            let bytes: std::sync::Arc<[u8]> = obj.into();
             t2.tree_cache.insert(oid, bytes.clone());
             return Ok(Some(TreeBytes::Cached(bytes)));
         }
@@ -486,7 +487,7 @@ impl Transaction {
         Ok(Head {
             reference,
             target,
-            commit: crate::objects::peel_to_commit(&self.odb()?, target)?,
+            commit: crate::objects::peel_to_commit(self.odb(), target)?,
         })
     }
 
@@ -840,7 +841,7 @@ impl Transaction {
         let oid = t2.cache.read_propagate(filter, tree, hint, true).ok()??;
         // Per-subtree index trees are anchored by no ref, so gc may have pruned a
         // cached one; treat a dangling hit as a miss and reindex.
-        if self.odb().ok()?.contains(oid) {
+        if self.odb().contains(oid) {
             Some(oid)
         } else {
             None
@@ -875,7 +876,7 @@ impl Transaction {
     pub fn get_ref(&self, filter: crate::filter::Filter, from: git2::Oid) -> Option<git2::Oid> {
         if let Some(m) = REF_CACHE.read().unwrap().get(&filter.id())
             && let Some(oid) = m.get(&from)
-            && self.odb().unwrap().contains(*oid)
+            && self.odb().contains(*oid)
         {
             return Some(*oid);
         }
@@ -1014,7 +1015,7 @@ impl Transaction {
                 return Ok(Some(oid));
             }
 
-            if self.odb()?.contains(oid) {
+            if self.odb().contains(oid) {
                 // Only report an object as cached if it exists in the object database.
                 // This forces a rebuild in case the object was garbage collected.
                 return Ok(Some(oid));
@@ -1514,14 +1515,13 @@ mod tests {
             let transaction = context.open().unwrap();
             transaction
                 .odb()
-                .unwrap()
                 .write(gix_object::Kind::Blob, b"unpublished")
         };
 
         assert_eq!(packs(dir.path()), 0, "nothing was published, nothing packs");
 
         let transaction = context.open().unwrap();
-        let odb = transaction.odb().unwrap();
+        let odb = transaction.odb();
         assert!(odb.contains(oid));
         assert_eq!(&*odb.read(oid).unwrap().1, b"unpublished");
     }
@@ -1536,7 +1536,6 @@ mod tests {
             let transaction = context.open().unwrap();
             let oid = transaction
                 .odb()
-                .unwrap()
                 .write(gix_object::Kind::Blob, b"published");
             let head = commit(&transaction, "a");
             transaction
@@ -1558,10 +1557,7 @@ mod tests {
 
         let shared = {
             let transaction = context.open().unwrap();
-            transaction
-                .odb()
-                .unwrap()
-                .write(gix_object::Kind::Blob, b"shared")
+            transaction.odb().write(gix_object::Kind::Blob, b"shared")
         };
 
         let own = {
@@ -1572,14 +1568,14 @@ mod tests {
             .ephemeral()
             .open()
             .unwrap();
-            let odb = ephemeral.odb().unwrap();
+            let odb = ephemeral.odb();
             assert_eq!(&*odb.read(shared).unwrap().1, b"shared");
             odb.write(gix_object::Kind::Blob, b"ephemeral")
         };
 
         // What the ephemeral transaction wrote is gone; what it read is still buffered.
         let transaction = context.open().unwrap();
-        let odb = transaction.odb().unwrap();
+        let odb = transaction.odb();
         assert!(odb.contains(shared));
         assert!(!odb.contains(own));
         assert_eq!(packs(dir.path()), 0);

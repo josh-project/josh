@@ -19,7 +19,7 @@ impl PreparedLinkAdd {
         signature: &git2::Signature,
     ) -> anyhow::Result<git2::Oid> {
         josh_core::objects::write_commit(
-            &transaction.odb()?,
+            transaction.odb(),
             self.tree_oid,
             &[head_commit],
             signature,
@@ -73,8 +73,8 @@ pub fn collect_all_link_refs(
 
     let mut refs = HashSet::new();
 
-    let odb = transaction.odb()?;
-    let mut walk = josh_core::objects::RevWalk::new(&odb);
+    let odb = transaction.odb();
+    let mut walk = josh_core::objects::RevWalk::new(odb);
     walk.push(filtered_commit)
         .context("Failed to push commit to revwalk")?;
 
@@ -82,10 +82,10 @@ pub fn collect_all_link_refs(
         .into_topo_vec(|_| false)
         .context("Failed to walk history")?
     {
-        let tree = josh_core::git::read_tree_id(&odb, oid).context("Failed to get commit tree")?;
+        let tree = josh_core::git::read_tree_id(odb, oid).context("Failed to get commit tree")?;
 
         let link_files =
-            josh_core::link::find_link_files(&odb, tree).context("Failed to find link files")?;
+            josh_core::link::find_link_files(odb, tree).context("Failed to find link files")?;
 
         for (_, filter) in link_files {
             if let (Some(remote), Some(commit)) =
@@ -126,7 +126,7 @@ pub fn prepare_link_add(
     head_tree: git2::Oid,
     mode: josh_core::filter::LinkMode,
 ) -> anyhow::Result<PreparedLinkAdd> {
-    let odb = transaction.odb()?;
+    let odb = transaction.odb();
 
     // Strip leading slash if present (git tree paths are always relative)
     let path = path.strip_prefix("/").unwrap_or(path);
@@ -146,11 +146,11 @@ pub fn prepare_link_add(
         .with_meta("mode", mode.to_string());
     let link_content = josh_core::filter::as_file(link_filter, 0);
 
-    let link_blob = josh_core::objects::write_blob(&odb, link_content.as_bytes())?;
+    let link_blob = josh_core::objects::write_blob(odb, link_content.as_bytes())?;
     let link_path = path.join(".link.josh");
 
     let new_tree = tree::insert_oid(
-        &odb,
+        odb,
         head_tree,
         &link_path,
         link_blob,
@@ -170,13 +170,13 @@ pub fn update_links(
     links_to_update: Vec<(PathBuf, git2::Oid)>,
     signature: &git2::Signature,
 ) -> anyhow::Result<Option<UpdateLinksResult>> {
-    let odb = transaction.odb()?;
+    let odb = transaction.odb();
     let head_tree_id =
-        josh_core::git::read_tree_id(&odb, head_commit).context("Failed to get HEAD tree")?;
+        josh_core::git::read_tree_id(odb, head_commit).context("Failed to get HEAD tree")?;
 
     // Find all link files to get their current metadata
-    let link_files = josh_core::link::find_link_files(&odb, head_tree_id)
-        .context("Failed to find link files")?;
+    let link_files =
+        josh_core::link::find_link_files(odb, head_tree_id).context("Failed to find link files")?;
 
     // Update the link files with new commit OIDs
     let mut updated_link_files: Vec<(PathBuf, josh_core::filter::Filter)> = Vec::new();
@@ -197,16 +197,17 @@ pub fn update_links(
     let mut new_tree = head_tree_id;
     for (path, link_file) in &updated_link_files {
         let link_content = josh_core::filter::as_file(*link_file, 0);
-        let link_blob = josh_core::objects::write_blob(&odb, link_content.as_bytes())?;
+        let link_blob = josh_core::objects::write_blob(odb, link_content.as_bytes())?;
         let link_path = path.join(".link.josh");
 
-        new_tree = tree::insert_oid(&odb, new_tree, &link_path, link_blob, 0o0100644)
-            .with_context(|| {
+        new_tree = tree::insert_oid(odb, new_tree, &link_path, link_blob, 0o0100644).with_context(
+            || {
                 format!(
                     "Failed to insert link file into tree at path '{}'",
                     path.display()
                 )
-            })?;
+            },
+        )?;
     }
 
     if new_tree == head_tree_id {
@@ -215,7 +216,7 @@ pub fn update_links(
 
     // Create a new commit with the updated tree
     let commit_with_updates = josh_core::objects::write_commit(
-        &odb,
+        odb,
         new_tree,
         &[head_commit],
         signature,

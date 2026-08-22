@@ -96,7 +96,7 @@ pub(crate) fn changes_to_refs(
                 change_id: change_id.clone(),
             });
             if let Some(parent_sha) =
-                josh_core::objects::CommitData::read(&transaction.odb()?, change.commit)?
+                josh_core::objects::CommitData::read(transaction.odb(), change.commit)?
                     .first_parent_id()
             {
                 refs.push(PushRef {

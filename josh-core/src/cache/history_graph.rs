@@ -66,7 +66,7 @@ pub fn collect_history_graph_info(
 
     Ok(HistoryGraphInfo {
         sequence_number: hint.sequence_number,
-        reachable_roots: read_roots_blob(&transaction.odb()?, blob)?,
+        reachable_roots: read_roots_blob(transaction.odb(), blob)?,
     })
 }
 
@@ -99,14 +99,14 @@ pub fn parents_share_root(
 
     // Parents disagree on the roots blob: read each blob and intersect.
     let mut common: std::collections::BTreeSet<git2::Oid> =
-        read_roots_blob(&transaction.odb()?, first_blob)?
+        read_roots_blob(transaction.odb(), first_blob)?
             .into_iter()
             .collect();
     for blob_oid in &parent_blobs[1..] {
         if common.is_empty() {
             return Ok(false);
         }
-        let p_set: std::collections::BTreeSet<_> = read_roots_blob(&transaction.odb()?, *blob_oid)?
+        let p_set: std::collections::BTreeSet<_> = read_roots_blob(transaction.odb(), *blob_oid)?
             .into_iter()
             .collect();
         common = common.intersection(&p_set).copied().collect();
@@ -128,12 +128,12 @@ fn ensure_hint_cached(
         return Ok(hint);
     }
 
-    let odb = transaction.odb()?;
+    let odb = transaction.odb();
     if !odb.contains(input) {
         return Err(anyhow!("ensure_hint_cached: input does not exist"));
     }
 
-    let parent_ids = crate::git::read_parent_ids(&odb, input)?;
+    let parent_ids = crate::git::read_parent_ids(odb, input)?;
 
     // Fast path: every parent already has both pieces cached.
     let parents_hint: Option<Vec<(u64, git2::Oid)>> = parent_ids
@@ -145,13 +145,13 @@ fn ensure_hint_cached(
         .collect::<anyhow::Result<_>>()?;
 
     if let Some(parents_hint) = parents_hint {
-        let hint = derive_from_parents(&odb, input, &parents_hint)?;
+        let hint = derive_from_parents(odb, input, &parents_hint)?;
         store_hint(transaction, input, hint)?;
         return Ok(hint);
     }
 
     log::info!("ensure_hint_cached: new_walk for {:?}", input);
-    let mut walk = crate::objects::RevWalk::new(&odb);
+    let mut walk = crate::objects::RevWalk::new(odb);
     walk.push(input)?;
 
     // Prune ancestors that already have *both* pieces cached. Pruning on seq#
@@ -170,7 +170,7 @@ fn ensure_hint_cached(
     })?;
 
     for &oid in sorted.iter().rev() {
-        let parents_hint: Vec<(u64, git2::Oid)> = crate::git::read_parent_ids(&odb, oid)?
+        let parents_hint: Vec<(u64, git2::Oid)> = crate::git::read_parent_ids(odb, oid)?
             .into_iter()
             .map(|p| {
                 try_read_cached_hint(transaction, p)?
@@ -178,7 +178,7 @@ fn ensure_hint_cached(
                     .ok_or_else(|| anyhow!("parent {} hint missing during walk for {}", p, oid))
             })
             .collect::<anyhow::Result<Vec<_>>>()?;
-        let hint = derive_from_parents(&odb, oid, &parents_hint)?;
+        let hint = derive_from_parents(odb, oid, &parents_hint)?;
         store_hint(transaction, oid, hint)?;
     }
 

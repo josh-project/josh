@@ -309,7 +309,7 @@ fn deephistory_rev(c: &mut Criterion) {
             josh_core::filter_commit(&transaction, bench.filter, case.head).expect("subdir");
         // Both heads are freshly filtered, so read them through the transaction's objects.
         let tree_of = |oid| {
-            josh_core::objects::CommitData::read(&transaction.odb().unwrap(), oid)
+            josh_core::objects::CommitData::read(transaction.odb(), oid)
                 .unwrap()
                 .tree_id()
                 .unwrap()

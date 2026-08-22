@@ -197,9 +197,9 @@ impl PinBench {
                 let one_tree = josh_core::filter_commit(&transaction, filter_one_tree, case.head)?;
                 // The filtered commits are still buffered, so read them through the
                 // transaction's object source.
-                let odb = transaction.odb()?;
+                let odb = transaction.odb();
                 let tree_of =
-                    |oid| josh_core::objects::CommitData::read(&odb, oid).and_then(|c| c.tree_id());
+                    |oid| josh_core::objects::CommitData::read(odb, oid).and_then(|c| c.tree_id());
                 let per_path_tree = tree_of(per_path)?;
                 let one_tree_tree = tree_of(one_tree)?;
                 let raw_tree = tree_of(case.head)?;

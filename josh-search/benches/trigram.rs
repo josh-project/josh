@@ -336,12 +336,12 @@ impl TrigramBench {
             let repo = transaction.git2_repo();
             let tip_tree = repo.find_commit(tip)?.tree()?;
             let total_bytes = tree_content_bytes(repo, &tip_tree)?;
-            let odb = transaction.odb()?;
+            let odb = transaction.odb();
 
             // Cold-build the tip index, then flush: the timed groups reopen the repository and
             // read these index trees back, so they must be on disk by then.
             let index_tree_oid = josh_search::trigram_index(
-                &odb,
+                odb,
                 &transaction.trigram_index_cache(tip),
                 &mut josh_search::Indexer::default(),
                 tip_tree.id(),
@@ -353,7 +353,7 @@ impl TrigramBench {
             // degenerated and the search numbers would be meaningless. (The bound is kept at
             // the pre-rework value of 5; the exact index should always produce exactly 1.)
             let rare_path = path_for(n_files / 2).to_string_lossy().into_owned();
-            let (candidates, matches) = search(&odb, index_tree_oid, tip_tree.id(), NEEDLE_RARE)?;
+            let (candidates, matches) = search(odb, index_tree_oid, tip_tree.id(), NEEDLE_RARE)?;
             anyhow::ensure!(
                 matches.len() == 1 && matches[0].0 == rare_path,
                 "rare needle not found in exactly its planted file {rare_path}: {matches:?}"
@@ -366,13 +366,13 @@ impl TrigramBench {
 
             // Gate: the common needle is found in every planted file, the absent one nowhere.
             let common_count = n_files.div_ceil(COMMON_EVERY);
-            let (_, matches) = search(&odb, index_tree_oid, tip_tree.id(), NEEDLE_COMMON)?;
+            let (_, matches) = search(odb, index_tree_oid, tip_tree.id(), NEEDLE_COMMON)?;
             anyhow::ensure!(
                 matches.len() == common_count,
                 "common needle found in {} files, expected {common_count}",
                 matches.len()
             );
-            let (_, matches) = search(&odb, index_tree_oid, tip_tree.id(), NEEDLE_ABSENT)?;
+            let (_, matches) = search(odb, index_tree_oid, tip_tree.id(), NEEDLE_ABSENT)?;
             anyhow::ensure!(
                 matches.is_empty(),
                 "absent needle found in {} files",
@@ -386,7 +386,7 @@ impl TrigramBench {
             let transaction = context.open()?;
             let repo = transaction.git2_repo();
             let root_tree = repo.find_commit(chain[0])?.tree()?;
-            let odb = transaction.odb()?;
+            let odb = transaction.odb();
             // One indexer state for the whole chain, matching how josh keeps one per
             // transaction. Collect the per-commit (source tree, index tree) pairs on the way:
             // the history search group iterates them.
@@ -394,7 +394,7 @@ impl TrigramBench {
             let mut chain_indexes = vec![(
                 root_tree.id(),
                 josh_search::trigram_index(
-                    &odb,
+                    odb,
                     &transaction.trigram_index_cache(chain[0]),
                     &mut indexer,
                     root_tree.id(),
@@ -403,7 +403,7 @@ impl TrigramBench {
             for &oid in &chain[1..] {
                 let tree_oid = repo.find_commit(oid)?.tree_id();
                 let index_oid = josh_search::trigram_index(
-                    &odb,
+                    odb,
                     &transaction.trigram_index_cache(oid),
                     &mut indexer,
                     tree_oid,
@@ -460,13 +460,13 @@ fn trigram_benches(c: &mut Criterion) {
                 let transaction = bench.context.open().expect("open transaction");
                 let repo = transaction.git2_repo();
                 let tip_tree = repo.find_commit(case.tip()).expect("find tip").tree_id();
-                let odb = transaction.odb().expect("odb");
+                let odb = transaction.odb();
 
                 let mut indexer = josh_search::Indexer::default();
 
                 runner.run(|| {
                     josh_search::trigram_index(
-                        &odb,
+                        odb,
                         &transaction.trigram_index_cache(case.tip()),
                         &mut indexer,
                         tip_tree,
@@ -496,12 +496,12 @@ fn trigram_benches(c: &mut Criterion) {
                     .find_commit(case.chain[0])
                     .expect("find root")
                     .tree_id();
-                let odb = transaction.odb().expect("odb");
+                let odb = transaction.odb();
                 // One indexer state across the warm root and the whole chain, matching how
                 // josh keeps one per transaction.
                 let mut indexer = josh_search::Indexer::default();
                 josh_search::trigram_index(
-                    &odb,
+                    odb,
                     &transaction.trigram_index_cache(case.chain[0]),
                     &mut indexer,
                     root_tree,
@@ -512,7 +512,7 @@ fn trigram_benches(c: &mut Criterion) {
                     for &oid in &case.chain[1..] {
                         let tree = repo.find_commit(oid).expect("find churn commit").tree_id();
                         josh_search::trigram_index(
-                            &odb,
+                            odb,
                             &transaction.trigram_index_cache(oid),
                             &mut indexer,
                             tree,
@@ -544,10 +544,10 @@ fn trigram_benches(c: &mut Criterion) {
                     let transaction = bench.context.open().expect("open transaction");
                     let repo = transaction.git2_repo();
                     let source_tree = repo.find_commit(case.tip()).expect("find tip").tree_id();
-                    let odb = transaction.odb().expect("odb");
+                    let odb = transaction.odb();
 
                     runner.run(|| {
-                        search(&odb, case.index_tree_oid, source_tree, needle).expect("search")
+                        search(odb, case.index_tree_oid, source_tree, needle).expect("search")
                     });
                 });
             });
@@ -572,13 +572,13 @@ fn trigram_benches(c: &mut Criterion) {
                 b.iter_with_setup_wrapper(|runner| {
                     josh_core::reset_caches().expect("reset caches");
                     let transaction = bench.context.open().expect("open transaction");
-                    let odb = transaction.odb().expect("odb");
+                    let odb = transaction.odb();
 
                     runner.run(|| {
                         let mut hits = 0;
                         for (tree_oid, index_oid) in &case.chain_indexes {
                             let (_, matches) =
-                                search(&odb, *index_oid, *tree_oid, needle).expect("search");
+                                search(odb, *index_oid, *tree_oid, needle).expect("search");
                             hits += matches.len();
                         }
                         hits

@@ -156,7 +156,7 @@ fn handle_link_add(
         args.filter.as_deref(),
         target,
         initial_oid,
-        josh_core::objects::CommitData::read(&transaction.odb()?, head_commit)?.tree_id()?,
+        josh_core::objects::CommitData::read(transaction.odb(), head_commit)?.tree_id()?,
         mode,
     )?
     .into_commit(transaction, head_commit, &signature)?;
@@ -267,7 +267,7 @@ fn handle_link_update(
     let repo = transaction.git2_repo();
 
     let head_commit = transaction.head().context("Failed to get HEAD")?.commit;
-    let head_tree = josh_core::objects::CommitData::read(&transaction.odb()?, head_commit)?
+    let head_tree = josh_core::objects::CommitData::read(transaction.odb(), head_commit)?
         .tree_id()
         .context("Failed to get HEAD tree")?;
 
@@ -283,16 +283,16 @@ fn handle_link_update(
         if filtered_oid == git2::Oid::ZERO_SHA1 {
             vec![]
         } else {
-            let odb = transaction.odb()?;
-            let filtered_tree = josh_core::objects::CommitData::read(&odb, filtered_oid)
+            let odb = transaction.odb();
+            let filtered_tree = josh_core::objects::CommitData::read(odb, filtered_oid)
                 .context("Failed to find filtered commit")?
                 .tree_id()
                 .context("Failed to get filtered tree")?;
-            josh_core::link::find_link_files(&odb, filtered_tree)
+            josh_core::link::find_link_files(odb, filtered_tree)
                 .context("Failed to find link files in filtered tree")?
         }
     } else {
-        josh_core::link::find_link_files(&transaction.odb()?, head_tree)
+        josh_core::link::find_link_files(transaction.odb(), head_tree)
             .context("Failed to find link files")?
     };
 
@@ -362,7 +362,7 @@ fn handle_link_push(
 ) -> anyhow::Result<()> {
     // Get current HEAD commit
     let head_commit = transaction.head().context("Failed to get HEAD")?.commit;
-    let head_tree = josh_core::objects::CommitData::read(&transaction.odb()?, head_commit)?
+    let head_tree = josh_core::objects::CommitData::read(transaction.odb(), head_commit)?
         .tree_id()
         .context("Failed to get HEAD tree")?;
 
@@ -373,7 +373,7 @@ fn handle_link_push(
     }
 
     // Find the .link.josh file at the given path
-    let link_files = josh_core::link::find_link_files(&transaction.odb()?, head_tree)
+    let link_files = josh_core::link::find_link_files(transaction.odb(), head_tree)
         .context("Failed to find link files")?;
 
     let link_path = std::path::PathBuf::from(normalized_path);

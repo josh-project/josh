@@ -7,8 +7,8 @@ pub fn pathstree(
     input: git2::Oid,
     transaction: &cache::Transaction,
 ) -> anyhow::Result<git2::Oid> {
-    let odb = transaction.odb()?;
-    pathstree_inner(root, input, transaction, &odb)
+    let odb = transaction.odb();
+    pathstree_inner(root, input, transaction, odb)
 }
 
 /// Oid-level body of [`pathstree`]; the odb is hoisted like in [`remove_pred_inner`].
@@ -76,8 +76,8 @@ pub fn regex_replace(
     replacement: &str,
     transaction: &cache::Transaction,
 ) -> anyhow::Result<git2::Oid> {
-    let odb = transaction.odb()?;
-    regex_replace_inner(input, regex, replacement, transaction, &odb)
+    let odb = transaction.odb();
+    regex_replace_inner(input, regex, replacement, transaction, odb)
 }
 
 /// Oid-level body of [`regex_replace`]; the odb is hoisted like in [`remove_pred_inner`].
@@ -129,7 +129,7 @@ fn regex_replace_inner(
 
 /// The raw bytes of the blob `oid`, or `None` when the object is missing or not a blob --
 /// `find_blob`'s tolerance, in facade currency.
-pub fn blob_bytes<'a>(odb: &'a josh_memodb::Odb, oid: git2::Oid) -> Option<josh_memodb::Bytes<'a>> {
+pub fn blob_bytes(odb: &josh_memodb::Odb, oid: git2::Oid) -> Option<josh_memodb::Bytes> {
     match odb.read(oid) {
         Ok((gix_object::Kind::Blob, bytes)) => Some(bytes),
         _ => None,
@@ -264,11 +264,11 @@ fn lookup_entry<'a>(
 /// whole filter arm. Lookups walk the entries lazily and allocate nothing, which suits the
 /// sites that probe a handful of paths in one tree (a path descent, the workspace files of a
 /// commit); [`ParsedTree`] is the counterpart for iterating every entry.
-pub struct TreeReader<'a> {
-    bytes: cache::TreeBytes<'a>,
+pub struct TreeReader {
+    bytes: cache::TreeBytes,
 }
 
-impl TreeReader<'_> {
+impl TreeReader {
     /// Every entry, in stored tree order. Malformed entries are skipped.
     pub fn entries(&self) -> impl Iterator<Item = gix_object::tree::EntryRef<'_>> {
         gix_object::TreeRefIter::from_bytes(&self.bytes, gix_hash::Kind::Sha1)
@@ -285,11 +285,11 @@ impl TreeReader<'_> {
 }
 
 /// Read the tree `oid`, erroring when the object is missing or not a tree.
-pub fn read_tree<'a>(
+pub fn read_tree(
     transaction: &cache::Transaction,
-    odb: &'a josh_memodb::Odb,
+    odb: &josh_memodb::Odb,
     oid: git2::Oid,
-) -> anyhow::Result<TreeReader<'a>> {
+) -> anyhow::Result<TreeReader> {
     let bytes = transaction
         .read_tree_bytes(odb, oid)?
         .ok_or_else(|| anyhow!("{} is not a tree", oid))?;
@@ -420,8 +420,8 @@ pub fn remove_pred(
     pred: &dyn Fn(&str, bool) -> bool,
     key: git2::Oid,
 ) -> anyhow::Result<git2::Oid> {
-    let odb = transaction.odb()?;
-    remove_pred_inner(transaction, &odb, path, input, pred, key)
+    let odb = transaction.odb();
+    remove_pred_inner(transaction, odb, path, input, pred, key)
 }
 
 /// Recursive body of [`remove_pred`], with the odb handle created once at the entry point --
@@ -517,8 +517,8 @@ pub fn remove_pattern(
     key: git2::Oid,
     state: u64,
 ) -> anyhow::Result<git2::Oid> {
-    let odb = transaction.odb()?;
-    remove_pattern_inner(transaction, &odb, input, cp, key, state)
+    let odb = transaction.odb();
+    remove_pattern_inner(transaction, odb, input, cp, key, state)
 }
 
 /// Recursive body of [`remove_pattern`]; see [`remove_pred_inner`] for why the odb is hoisted.
@@ -646,8 +646,8 @@ pub fn subtract(
     input1: git2::Oid,
     input2: git2::Oid,
 ) -> anyhow::Result<git2::Oid> {
-    let odb = transaction.odb()?;
-    subtract_inner(transaction, &odb, input1, input2)
+    let odb = transaction.odb();
+    subtract_inner(transaction, odb, input1, input2)
 }
 
 /// Recursive body of [`subtract`]; see [`remove_pred_inner`] for why the odb is hoisted.
@@ -730,8 +730,8 @@ pub fn intersect(
     input1: git2::Oid,
     input2: git2::Oid,
 ) -> anyhow::Result<git2::Oid> {
-    let odb = transaction.odb()?;
-    intersect_inner(transaction, &odb, input1, input2)
+    let odb = transaction.odb();
+    intersect_inner(transaction, odb, input1, input2)
 }
 
 /// Recursive body of [`intersect`]; see [`remove_pred_inner`] for why the odb is hoisted.
@@ -1018,8 +1018,8 @@ pub fn overlay(
     input1: git2::Oid,
     input2: git2::Oid,
 ) -> anyhow::Result<git2::Oid> {
-    let odb = transaction.odb()?;
-    overlay_inner(transaction, &odb, input1, input2)
+    let odb = transaction.odb();
+    overlay_inner(transaction, odb, input1, input2)
 }
 
 /// Recursive body of [`overlay`]; see [`remove_pred_inner`] for why the odb is hoisted.
@@ -1168,7 +1168,7 @@ pub fn original_path(
         to_filter(Op::Paths).chain(filter),
         Rewrite::from_tree(tree),
     )?;
-    let b = get_blob(transaction, &transaction.odb()?, paths_tree.tree_id(), path);
+    let b = get_blob(transaction, transaction.odb(), paths_tree.tree_id(), path);
     pathline(&b)
 }
 
@@ -1184,9 +1184,9 @@ pub fn repopulated_tree(
         Rewrite::from_tree(full_tree),
     )?;
 
-    let odb = transaction.odb()?;
-    let ipaths = invert_paths(transaction, &odb, "", paths_tree.tree_id())?;
-    populate(transaction, &odb, ipaths, partial_tree)
+    let odb = transaction.odb();
+    let ipaths = invert_paths(transaction, odb, "", paths_tree.tree_id())?;
+    populate(transaction, odb, ipaths, partial_tree)
 }
 
 pub fn populate(
@@ -1393,17 +1393,17 @@ mod tests {
         seen.sort();
         assert_eq!(seen, paths);
 
-        let odb = t.odb().unwrap();
+        let odb = t.odb();
         for kept in ["a/b/keep.rs", "a/keep.rs", "top.rs"] {
             assert!(
-                objects::path_entry(&odb, out, Path::new(kept))
+                objects::path_entry(odb, out, Path::new(kept))
                     .unwrap()
                     .is_some(),
                 "{kept} kept"
             );
         }
         assert!(
-            objects::path_entry(&odb, out, Path::new("a/b/drop.txt"))
+            objects::path_entry(odb, out, Path::new("a/b/drop.txt"))
                 .unwrap()
                 .is_none()
         );
@@ -1416,7 +1416,7 @@ mod tests {
     /// Read a tree the code under test produced: its result lives in the transaction's store,
     /// so it is read through the facade rather than the repository handle.
     fn out_entries(t: &cache::Transaction, oid: git2::Oid) -> Vec<gix_object::tree::Entry> {
-        objects::read_tree_entries(&t.odb().unwrap(), oid).unwrap()
+        objects::read_tree_entries(t.odb(), oid).unwrap()
     }
 
     fn out_entry(
@@ -1536,10 +1536,10 @@ mod tests {
         let out = remove_pred(&t, &mut String::new(), input, &|_, isblob| isblob, key).unwrap();
         assert_eq!(out, input, ".git in input passes through verbatim");
 
-        let odb = t.odb().unwrap();
-        let inserted = insert_oid(&odb, input, Path::new("sub/.git"), blob, 0o100644).unwrap();
+        let odb = t.odb();
+        let inserted = insert_oid(odb, input, Path::new("sub/.git"), blob, 0o100644).unwrap();
         assert_eq!(
-            get_path_entry(&t, &odb, inserted, Path::new("sub/.git"))
+            get_path_entry(&t, odb, inserted, Path::new("sub/.git"))
                 .unwrap()
                 .map(|e| objects::git2_oid(&e.oid)),
             Some(blob),
@@ -1833,7 +1833,7 @@ mod tests {
         let repo = git2::Repository::init_bare(td.path()).unwrap();
         let blob = repo.blob(b"content").unwrap();
         let t = open_transaction(&td);
-        let odb = t.odb().unwrap();
+        let odb = t.odb();
 
         let gitlink = git2::Oid::from_str("0123456789012345678901234567890123456789").unwrap();
         let mut b = git2::build::TreeUpdateBuilder::new();
@@ -1845,20 +1845,20 @@ mod tests {
             .create_updated(&repo, &repo.find_tree(base).unwrap())
             .unwrap();
 
-        let entry = get_path_entry(&t, &odb, root, Path::new("a/b/deep.txt"))
+        let entry = get_path_entry(&t, odb, root, Path::new("a/b/deep.txt"))
             .unwrap()
             .expect("hit at depth 2");
         assert_eq!(objects::git2_oid(&entry.oid), blob);
         assert!(!entry.mode.is_tree());
 
-        let entry = get_path_entry(&t, &odb, root, Path::new("a/sub"))
+        let entry = get_path_entry(&t, odb, root, Path::new("a/sub"))
             .unwrap()
             .expect("gitlink entry resolves");
         assert!(entry.mode.is_commit());
 
         for miss in ["a/b/missing.txt", "a/missing/deep.txt", "top.txt/below"] {
             assert!(
-                get_path_entry(&t, &odb, root, Path::new(miss))
+                get_path_entry(&t, odb, root, Path::new(miss))
                     .unwrap()
                     .is_none(),
                 "{miss} must be a miss"
@@ -1869,7 +1869,7 @@ mod tests {
         // absolute paths and `..` can never name a tree entry and read as misses.
         for hit in ["a/./b/deep.txt", "a//b/deep.txt", "./top.txt", "a/b/"] {
             assert!(
-                get_path_entry(&t, &odb, root, Path::new(hit))
+                get_path_entry(&t, odb, root, Path::new(hit))
                     .unwrap()
                     .is_some(),
                 "{hit} must resolve"
@@ -1877,7 +1877,7 @@ mod tests {
         }
         for miss in ["../top.txt", "/top.txt", "."] {
             assert!(
-                get_path_entry(&t, &odb, root, Path::new(miss))
+                get_path_entry(&t, odb, root, Path::new(miss))
                     .unwrap()
                     .is_none(),
                 "{miss} must be a miss"
@@ -1886,7 +1886,7 @@ mod tests {
 
         // The empty tree reads through the virtualized disk fallback: no entries, plain miss.
         assert!(
-            get_path_entry(&t, &odb, empty_id(), Path::new("anything"))
+            get_path_entry(&t, odb, empty_id(), Path::new("anything"))
                 .unwrap()
                 .is_none()
         );

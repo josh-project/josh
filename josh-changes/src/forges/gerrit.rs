@@ -78,14 +78,14 @@ fn rewrite_chain_with_gerrit_ids(
     tip: git2::Oid,
     base: git2::Oid,
 ) -> anyhow::Result<git2::Oid> {
-    let odb = transaction.odb()?;
+    let odb = transaction.odb();
 
     // Collect the chain from tip down to (but excluding) base, first parent only.
     let mut chain: Vec<git2::Oid> = Vec::new();
     let mut cur = tip;
     while cur != base {
         chain.push(cur);
-        match josh_core::objects::CommitData::read(&odb, cur)?.first_parent_id() {
+        match josh_core::objects::CommitData::read(odb, cur)?.first_parent_id() {
             Some(p) => cur = p,
             None => break,
         }
@@ -94,7 +94,7 @@ fn rewrite_chain_with_gerrit_ids(
 
     let mut new_parent = (base != git2::Oid::ZERO_SHA1).then_some(base);
     for oid in chain {
-        let commit = josh_core::objects::CommitData::read(&odb, oid)?;
+        let commit = josh_core::objects::CommitData::read(odb, oid)?;
         let (josh_id, _) = josh_core::trailers::commit_change_meta(&commit);
         // A commit with no josh change id gets one derived from its own oid: rare
         // for a change stack, but Gerrit requires a Change-Id on every commit.
@@ -107,7 +107,7 @@ fn rewrite_chain_with_gerrit_ids(
         let new_message = message_with_gerrit_change_id(message, &gerrit_id);
 
         new_parent = Some(josh_core::objects::write_commit_with_signatures_of(
-            &odb,
+            odb,
             &commit,
             commit.tree_id()?,
             new_parent.as_slice(),
@@ -168,7 +168,7 @@ pub fn build_gerrit_independent_push(
     tip: git2::Oid,
     base: git2::Oid,
 ) -> anyhow::Result<Vec<PushRef>> {
-    let odb = transaction.odb()?;
+    let odb = transaction.odb();
     let changes = get_changes(transaction, tip, base)?;
     let changes = split_changes(transaction, changes)?;
 
@@ -185,7 +185,7 @@ pub fn build_gerrit_independent_push(
 
         // A change has no dependencies when its split commit sits directly on
         // the target base (nothing else was pulled in below it by `downstack`).
-        let parent = josh_core::objects::CommitData::read(&odb, change.commit)?
+        let parent = josh_core::objects::CommitData::read(odb, change.commit)?
             .parent_ids()
             .next();
         let has_no_deps = if base == git2::Oid::ZERO_SHA1 {
