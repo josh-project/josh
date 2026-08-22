@@ -1,7 +1,4 @@
-use anyhow::anyhow;
-
 use crate::commands::scope::ScopeArgs;
-use crate::forge::github;
 
 /// Arguments for `josh changes sync`.
 #[derive(Debug, clap::Parser)]
@@ -31,93 +28,19 @@ pub fn handle_sync(
     transaction: &josh_core::cache::Transaction,
 ) -> anyhow::Result<()> {
     let repo = transaction.repo();
-
-    // PORT: symbolic-HEAD read is not expressible via resolve_ref; move to a
-    // Transaction helper at flag day (gix head_name()).
-    let head = repo.head()?.peel_to_commit()?;
-    let branch = repo.head()?.shorthand().ok().map(|s| s.to_string());
-
-    let base_oid = if let Some(b) = &branch {
-        match transaction.resolve_ref(&format!("refs/remotes/origin/{}", b))? {
-            Some(oid) => repo.find_object(oid, None)?.peel_to_commit()?.id(),
-            None => git2::Oid::ZERO_SHA1,
-        }
-    } else {
-        git2::Oid::ZERO_SHA1
+    let scope = args.scope.resolve(transaction)?;
+    let opts = josh_github_changes::sync::SyncOptions {
+        clean: args.clean,
+        push: args.push,
     };
 
-    let resolved = args.scope.resolve(transaction)?;
-    let remote_name = match &resolved {
-        josh_changes::ChangesRef::Remote { remote, .. } => Some(remote.as_str()),
-        josh_changes::ChangesRef::Local { .. } => None,
-    };
+    let rt = tokio::runtime::Runtime::new()?;
+    rt.block_on(josh_github_changes::sync::sync(
+        repo,
+        transaction,
+        &scope,
+        opts,
+    ))?;
 
-    if args.clean {
-        clean_scopes(transaction, remote_name)?;
-    }
-
-    match &resolved {
-        josh_changes::ChangesRef::Remote { remote, .. } => {
-            sync_remote(args, transaction, repo, remote)
-        }
-        josh_changes::ChangesRef::Local { branch } => {
-            sync_local(args, transaction, branch, head.id(), base_oid)
-        }
-    }
-}
-
-/// Delete every changes ref of the resolved kind. For Local: every
-/// `refs/josh/changes/<branch>`. For Remote: every
-/// `refs/josh/remotes/<remote>/changes/<branch>` for the chosen remote.
-fn clean_scopes(
-    transaction: &josh_core::cache::Transaction,
-    remote_name: Option<&str>,
-) -> anyhow::Result<()> {
-    let mut to_delete: Vec<josh_changes::ChangesRef> = Vec::new();
-    for scope in josh_changes::all_changes_refs(transaction)? {
-        let keep = match (&scope, remote_name) {
-            (josh_changes::ChangesRef::Local { .. }, None) => true,
-            (josh_changes::ChangesRef::Remote { remote, .. }, Some(name)) => remote == name,
-            _ => false,
-        };
-        if keep {
-            to_delete.push(scope);
-        }
-    }
-    for scope in to_delete {
-        transaction.delete_ref(&scope.ref_name(), josh_core::cache::Expected::Any)?;
-    }
     Ok(())
-}
-
-/// Sync the local changes ref for the current branch (no remote involved).
-fn sync_local(
-    args: &SyncArgs,
-    transaction: &josh_core::cache::Transaction,
-    local_branch: &str,
-    head_oid: git2::Oid,
-    base_oid: git2::Oid,
-) -> anyhow::Result<()> {
-    if args.push {
-        return Err(anyhow!(
-            "--push requires --remote <name>; the Local ref has no posting target"
-        ));
-    }
-    let changes = josh_changes::sync_changes(transaction, head_oid, base_oid, local_branch)?;
-    if changes.is_empty() {
-        println!("No local changes found.");
-    }
-    Ok(())
-}
-
-/// Sync against a GitHub remote: build the cache policy from args and
-/// delegate to the GitHub change-management flow.
-fn sync_remote(
-    args: &SyncArgs,
-    transaction: &josh_core::cache::Transaction,
-    repo: &git2::Repository,
-    remote_name: &str,
-) -> anyhow::Result<()> {
-    let policy = github::cache::CachePolicy::new(args.no_cache, args.cache_ttl);
-    github::changes::sync(transaction, repo, remote_name, &policy, args.push)
 }

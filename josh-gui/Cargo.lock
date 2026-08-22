@@ -3391,8 +3391,10 @@ version = "26.7.28"
 dependencies = [
  "anyhow",
  "chrono",
+ "clap",
  "git2",
  "josh-core",
+ "log",
  "serde",
  "serde_json",
 ]
