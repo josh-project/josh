@@ -369,8 +369,8 @@ pub fn integrate(
         let mut local_commits = Vec::new();
         for oid in walk {
             let oid = oid?;
-            let commit = repo.find_commit(oid)?;
-            if commit.parent_count() > 1 {
+            let commit = josh_core::objects::CommitData::read(&transaction.odb()?, oid)?;
+            if commit.parent_ids().count() > 1 {
                 anyhow::bail!(
                     "local branch '{}' contains merge commits; cannot integrate automatically",
                     branch

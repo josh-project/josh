@@ -40,7 +40,7 @@ pub fn handle_list(
     args: &ListArgs,
     transaction: &josh_core::cache::Transaction,
 ) -> anyhow::Result<()> {
-    let repo = transaction.repo();
+    let odb = transaction.odb()?;
     let scope = args.scope.resolve(transaction)?;
     let changes = josh_changes::list_changes(transaction, &scope)?;
 
@@ -64,14 +64,8 @@ pub fn handle_list(
     let mut rows: Vec<Row> = Vec::with_capacity(changes.len());
     for change in &changes {
         let id = change.id().unwrap_or("<no-change-id>").to_string();
-        let commit = repo.find_commit(change.commit())?;
-        let subject = commit
-            .message()
-            .unwrap_or("")
-            .lines()
-            .next()
-            .unwrap_or("")
-            .to_string();
+        let commit = josh_core::objects::CommitData::read(&odb, change.commit())?;
+        let subject = commit.summary().unwrap_or_default();
 
         let deps_count = change
             .contributing(transaction)
@@ -141,15 +135,15 @@ pub fn handle_show(
     args: &ShowArgs,
     transaction: &josh_core::cache::Transaction,
 ) -> anyhow::Result<()> {
-    let repo = transaction.repo();
+    let odb = transaction.odb()?;
     let scope = args.scope.resolve(transaction)?;
     let change = resolve_change_by_id(transaction, &scope, &args.change_id)?;
 
-    let commit = repo.find_commit(change.commit())?;
-    let msg = commit.message().unwrap_or("");
-    let subject = msg.lines().next().unwrap_or("");
-    let author = commit.author().email().unwrap_or("").to_string();
-    let date = chrono::DateTime::from_timestamp(commit.time().seconds(), 0)
+    let commit = josh_core::objects::CommitData::read(&odb, change.commit())?;
+    let subject = commit.summary().unwrap_or_default();
+    let parsed = commit.parsed()?;
+    let author = parsed.author()?.email.to_string();
+    let date = chrono::DateTime::from_timestamp(parsed.time()?.seconds, 0)
         .map(|dt| dt.format("%Y-%m-%d %H:%M").to_string())
         .unwrap_or_default();
 
@@ -186,7 +180,10 @@ pub fn handle_show(
     println!("Subject:   {}", subject);
 
     println!();
-    let files = file_stats(repo, &commit)?;
+    // PORT: the per-file line stats come out of libgit2's patch machinery; the change
+    // commit is behind a ref, so it is on disk.
+    let repo = transaction.repo();
+    let files = file_stats(repo, &repo.find_commit(change.commit())?)?;
     let total_adds: usize = files.iter().map(|f| f.adds).sum();
     let total_dels: usize = files.iter().map(|f| f.dels).sum();
     println!(
@@ -217,7 +214,7 @@ pub fn handle_deps(
     args: &DepsArgs,
     transaction: &josh_core::cache::Transaction,
 ) -> anyhow::Result<()> {
-    let repo = transaction.repo();
+    let odb = transaction.odb()?;
     let scope = args.scope.resolve(transaction)?;
     let changes = josh_changes::list_changes(transaction, &scope)?;
     let oid_to_change_id = build_oid_to_change_id(&changes);
@@ -240,14 +237,9 @@ pub fn handle_deps(
             Some(d) if d != &args.change_id => d.clone(),
             _ => continue,
         };
-        let subject = repo
-            .find_commit(oid)
+        let subject = josh_core::objects::CommitData::read(&odb, oid)
             .ok()
-            .and_then(|c| {
-                c.message()
-                    .ok()
-                    .map(|m| m.lines().next().unwrap_or("").to_string())
-            })
+            .and_then(|c| c.summary())
             .unwrap_or_default();
         deps.push((dep_id, subject));
     }

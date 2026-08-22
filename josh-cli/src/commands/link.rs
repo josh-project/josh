@@ -298,19 +298,16 @@ fn handle_link_update(
         if filtered_oid == git2::Oid::ZERO_SHA1 {
             vec![]
         } else {
-            let filtered_tree = repo
-                .find_commit(filtered_oid)
+            let odb = transaction.odb()?;
+            let filtered_tree = josh_core::objects::CommitData::read(&odb, filtered_oid)
                 .context("Failed to find filtered commit")?
-                .tree()
+                .tree_id()
                 .context("Failed to get filtered tree")?;
-            josh_core::link::find_link_files(
-                &josh_core::objects::Git2Odb(&repo.odb()?),
-                filtered_tree.id(),
-            )
-            .context("Failed to find link files in filtered tree")?
+            josh_core::link::find_link_files(&odb, filtered_tree)
+                .context("Failed to find link files in filtered tree")?
         }
     } else {
-        josh_core::link::find_link_files(&josh_core::objects::Git2Odb(&repo.odb()?), head_tree.id())
+        josh_core::link::find_link_files(&transaction.odb()?, head_tree.id())
             .context("Failed to find link files")?
     };
 
@@ -397,11 +394,8 @@ fn handle_link_push(
     }
 
     // Find the .link.josh file at the given path
-    let link_files = josh_core::link::find_link_files(
-        &josh_core::objects::Git2Odb(&repo.odb()?),
-        head_tree.id(),
-    )
-    .context("Failed to find link files")?;
+    let link_files = josh_core::link::find_link_files(&transaction.odb()?, head_tree.id())
+        .context("Failed to find link files")?;
 
     let link_path = std::path::PathBuf::from(normalized_path);
     let (_, link_file) = link_files

@@ -71,6 +71,74 @@ pub fn hash_blob(data: &[u8]) -> git2::Oid {
     )
 }
 
+/// The entries of the tree `oid`, owned so several trees can be walked side by side.
+/// Errors when the object is missing or is not a tree.
+pub fn read_tree_entries(
+    src: &(impl gix_object::Find + ?Sized),
+    oid: git2::Oid,
+) -> anyhow::Result<Vec<gix_object::tree::Entry>> {
+    let mut buffer = Vec::new();
+    let data = src
+        .try_find(&gix_oid(oid), &mut buffer)
+        .map_err(|e| anyhow::anyhow!("read tree {}: {}", oid, e))?
+        .ok_or_else(|| anyhow::anyhow!("object {} not found", oid))?;
+    if data.kind != gix_object::Kind::Tree {
+        return Err(anyhow::anyhow!("object {} is not a tree", oid));
+    }
+    Ok(
+        gix_object::TreeRef::from_bytes(&buffer, gix_hash::Kind::Sha1)?
+            .into_owned()
+            .entries,
+    )
+}
+
+/// Descend `path` from the tree `oid`. `None` covers a missing component and a non-tree
+/// entry on the way; the final entry may be of any kind.
+pub fn path_entry(
+    src: &(impl gix_object::Find + ?Sized),
+    oid: git2::Oid,
+    path: &std::path::Path,
+) -> anyhow::Result<Option<gix_object::tree::Entry>> {
+    let mut current = oid;
+    let mut components = path.components().peekable();
+    while let Some(component) = components.next() {
+        let mut buffer = Vec::new();
+        let Some(data) = src
+            .try_find(&gix_oid(current), &mut buffer)
+            .map_err(|e| anyhow::anyhow!("read tree {}: {}", current, e))?
+        else {
+            return Ok(None);
+        };
+        if data.kind != gix_object::Kind::Tree {
+            return Ok(None);
+        }
+        let parsed = gix_object::TreeRef::from_bytes(&buffer, gix_hash::Kind::Sha1)?;
+        let name = std::os::unix::ffi::OsStrExt::as_bytes(component.as_os_str());
+        let Some(entry) = parsed.entries.iter().find(|e| e.filename == name) else {
+            return Ok(None);
+        };
+        if components.peek().is_none() {
+            return Ok(Some((*entry).into()));
+        }
+        current = git2_oid(entry.oid);
+    }
+    Ok(None)
+}
+
+/// The text of the blob `oid`, or `""` when it is missing, is not a blob, holds a NUL byte or
+/// is not valid UTF-8 -- the tolerance the display and script paths want, where a file that
+/// cannot be shown is the same as a file that is not there.
+pub fn blob_text(src: &(impl gix_object::Find + ?Sized), oid: git2::Oid) -> String {
+    let mut buffer = Vec::new();
+    let Ok(Some(data)) = src.try_find(&gix_oid(oid), &mut buffer) else {
+        return String::new();
+    };
+    if data.kind != gix_object::Kind::Blob || buffer.contains(&0) {
+        return String::new();
+    }
+    String::from_utf8(buffer).unwrap_or_default()
+}
+
 /// Preorder tree walk: entries in stored tree order, the callback firing for a tree entry
 /// before its descent, `parent` being the slash-separated path of the containing directory
 /// (`""` at the root level). Non-tree entry objects are never loaded. Descending into a tree

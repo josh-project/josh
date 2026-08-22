@@ -3760,7 +3760,9 @@ dependencies = [
  "allocative",
  "anyhow",
  "git2",
+ "gix-object",
  "josh-filter",
+ "josh-gix-ext",
  "starlark",
 ]
 

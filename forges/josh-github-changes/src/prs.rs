@@ -64,8 +64,12 @@ pub fn collect_pr_infos(
                 entry.head_oid?,
                 entry.base_oid?,
             );
-            let commit = transaction.repo().find_commit(head_oid).ok()?;
-            let raw_message = commit.message().unwrap_or("");
+            let odb = transaction.odb().ok()?;
+            let commit = josh_core::objects::CommitData::read(&odb, head_oid).ok()?;
+            let raw_message = commit
+                .message()
+                .ok()
+                .and_then(|m| std::str::from_utf8(m).ok())?;
             let message = raw_message.trim_end();
             let title = message.lines().next().unwrap_or("").trim().to_string();
             let title = if title.is_empty() {
