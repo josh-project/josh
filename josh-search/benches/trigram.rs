@@ -47,10 +47,19 @@ const CHURN_FRACTION: f64 = 0.01;
 
 // Needles for the search group, planted keyed on file index (not revision) so churn commits
 // preserve them: NEEDLE_RARE in exactly one file, NEEDLE_COMMON in every COMMON_EVERY-th file,
-// NEEDLE_ABSENT nowhere. Nonsense compounds so they cannot occur in the generated text.
+// NEEDLE_ABSENT nowhere, NEEDLE_PUNCT (a punctuation-shaped code query, exercising the curated
+// fold's punctuation selectivity) in exactly one file. Nonsense compounds so they cannot occur
+// in the generated text.
 const NEEDLE_RARE: &str = "xylophonequagmirezephyr";
 const NEEDLE_COMMON: &str = "quixoticjubileewombat";
 const NEEDLE_ABSENT: &str = "grumblesnorkelvortex";
+const NEEDLE_PUNCT: &str = "->sprocketflange(";
+// Numeric: digits cannot occur in the generated text (letters and spaces only), and this
+// gates that number-shaped queries keep their selectivity under the fold rules.
+const NEEDLE_NUM: &str = "0x8f3a92c471";
+// All-vowel, 11 chars: cannot occur inside the 3-10 character vocabulary words and contains
+// no space, so it cannot occur at all; gates vowel-heavy query selectivity.
+const NEEDLE_VOWEL: &str = "ouaeiaouiae";
 const COMMON_EVERY: usize = 20;
 
 /// Expected oid of the cached bench repo's aggregate index commit. This is the cache validity
@@ -59,9 +68,9 @@ const COMMON_EVERY: usize = 20;
 /// here. Filled in by running the bench once after a build change. Debug and release builds use
 /// different case sizes, hence different stamps (and different cache names, see `TESTCASE`).
 const EXPECTED_HEAD: &str = if cfg!(debug_assertions) {
-    "064c638fed3f20f9171e521dce0ae4030db30ff4"
+    "8a8d5de234f988f7210c6861b96ea001c6a440fc"
 } else {
-    "1714feee821f990b51b713cf2ca632c9475274cb"
+    "fc92f7616140bf93288c92e85d1012f19375e84b"
 };
 
 /// Cache name under the user cache dir, per profile: debug and release build different repos
@@ -141,6 +150,15 @@ fn file_content(vocab: &[String], n_files: usize, i: usize, revision: usize) -> 
     }
     if i % COMMON_EVERY == 0 {
         lines.push(format!("marker {} end", NEEDLE_COMMON));
+    }
+    if i == n_files / 3 {
+        lines.push(format!("marker item{}x1); end", NEEDLE_PUNCT));
+    }
+    if i == n_files / 5 {
+        lines.push(format!("marker code {} end", NEEDLE_NUM));
+    }
+    if i == n_files / 7 {
+        lines.push(format!("marker {} end", NEEDLE_VOWEL));
     }
     for _ in 0..WORDS_PER_FILE / WORDS_PER_LINE {
         let line = (0..WORDS_PER_LINE)
@@ -402,6 +420,46 @@ impl TrigramBench {
                 matches.len()
             );
 
+            // Gate: the punctuation needle is found in exactly its planted file with a tight
+            // candidate set — the curated fold must keep punctuation-shaped queries selective.
+            let punct_path = path_for(n_files / 3).to_string_lossy().into_owned();
+            let (candidates, matches) = search(
+                &odb,
+                &mut scache,
+                index_tree_oid,
+                tip_tree.id(),
+                NEEDLE_PUNCT,
+            )?;
+            anyhow::ensure!(
+                matches.len() == 1 && matches[0].0 == punct_path,
+                "punct needle not found in exactly its planted file {punct_path}: {matches:?}"
+            );
+            anyhow::ensure!(
+                candidates.len() <= 5,
+                "punct needle produced {} candidates -- candidate selection degenerated",
+                candidates.len()
+            );
+
+            // Gate: number-shaped and vowel-heavy needles stay selective — the fold rules
+            // must not collapse their trigrams into near-universal classes.
+            for (kind, needle, planted) in [
+                ("num", NEEDLE_NUM, n_files / 5),
+                ("vowel", NEEDLE_VOWEL, n_files / 7),
+            ] {
+                let path = path_for(planted).to_string_lossy().into_owned();
+                let (candidates, matches) =
+                    search(&odb, &mut scache, index_tree_oid, tip_tree.id(), needle)?;
+                anyhow::ensure!(
+                    matches.len() == 1 && matches[0].0 == path,
+                    "{kind} needle not found in exactly its planted file {path}: {matches:?}"
+                );
+                anyhow::ensure!(
+                    candidates.len() <= 5,
+                    "{kind} needle produced {} candidates -- candidate selection degenerated",
+                    candidates.len()
+                );
+            }
+
             // Gate: the incremental path (root warm, then indexing every churn commit) must
             // produce the exact same tip index as the cold build above, and churn must actually
             // have changed the index. This is the property the planned rework must preserve.
@@ -559,6 +617,9 @@ fn trigram_benches(c: &mut Criterion) {
             ("rare", NEEDLE_RARE),
             ("common", NEEDLE_COMMON),
             ("absent", NEEDLE_ABSENT),
+            ("punct", NEEDLE_PUNCT),
+            ("num", NEEDLE_NUM),
+            ("vowel", NEEDLE_VOWEL),
         ] {
             group.throughput(Throughput::Elements(case.n_files as u64));
             group.bench_function(BenchmarkId::new(kind, case.n_files), |b| {
@@ -594,6 +655,9 @@ fn trigram_benches(c: &mut Criterion) {
             ("rare", NEEDLE_RARE),
             ("common", NEEDLE_COMMON),
             ("absent", NEEDLE_ABSENT),
+            ("punct", NEEDLE_PUNCT),
+            ("num", NEEDLE_NUM),
+            ("vowel", NEEDLE_VOWEL),
         ] {
             group.throughput(Throughput::Elements(case.chain_indexes.len() as u64));
             group.bench_function(BenchmarkId::new(kind, case.n_files), |b| {
