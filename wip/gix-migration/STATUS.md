@@ -136,39 +136,35 @@ porting those crates (3.2b..e).
 
 ## Open question: the facade's disk side on gitoxide (3.3c, attempted and reverted)
 
-The attempt is kept as `.agents/work/gix-port/3.3c-facade-on-gix.patch`. It is suite-green
-(195 documents) and now regresses only `deephistory_glob_incremental` -- the warm-cache path a
-proxy serves from -- by **+66% at 100 commits, +167% at 1000, +341% at 10000** on the
-recursive pattern, and ~+105 to +130% on the prefix one. Every cold group is unaffected. Not
-landed at that cost, but the two findings below are worth keeping whenever it is retried.
+The attempt is kept as `.agents/work/gix-port/3.3c-facade-on-gitoxide.patch`. It is suite-green
+(195 documents) and regresses only `deephistory_glob_incremental` -- the warm path a proxy
+serves from -- by +66% at 100 commits, +167% at 1000 and +341% at 10000. Every cold group is
+unaffected. What follows is measured, and corrects two earlier readings of these numbers that
+were taken from process-cumulative counters rather than per-iteration ones.
 
-**The 100x version of this was self-inflicted.** Setting `refresh_never` on the store (to stop
-gitoxide rescanning its objects directory on every miss) hid josh's own freshly-written packs,
-because the store is opened once per context and shared. The cache guard on every memo hit
-then found its object absent and forced a rebuild -- measured: 116k probes per iteration, 100%
-missing. Enabling refresh instead made them hit (82k of 103k) but charged a directory rescan
-per remaining miss: 7.7s. The patch keeps `refresh_never` and has [`MemOdb`] count the packs it
-writes, so the facade takes a fresh view exactly when one lands (3 rebuilds in the 1000-commit
-case). That took the regression from 10000% to ~300%.
+**The regression is not in reading objects.** Filtering one incremental commit performs
+**7 reads, 4 existence checks and 2 finds** -- identical on both backends -- while taking 1.2ms
+on libgit2 and 5.9ms on gitoxide. Thirteen object operations cannot account for 4.7ms, so the
+cost is per-transaction setup, not per-object work. (The warm path also prunes correctly: the
+long walks in a run are the per-case warmups of 100, 900 and 9000 commits, and each timed
+iteration walks at most two.)
 
-**The remaining cost is not the existence probes.** Memoizing them per transaction cut the
-probe count from 39906 to 408 per iteration and did not move the time at all. What is left is
-the object reads, and there are far more of them than the group's premise implies: filtering
-one new commit against a warm cache reads **158354 objects, 113188 of them distinct** -- most
-of the repository -- because the walk does not prune. `walk2` visits ~1560 commits per call
-where it should stop at the first known ancestor, and `known()` -> `get2()` does consult the
-persistent cache, so the reason it does not prune is still open.
+**It is the store's pack indices, and where they get loaded.** A store opened per transaction
+(`gix_odb::at`) enumerates the objects directory eagerly and loads its indices lazily, so the
+loading lands inside the timed section and scales with the pack count -- which is why the
+regression grows with history size. Sharing one store per context makes that cost disappear
+but introduces staleness: `MemOdb::packs_written`, which the patch uses to decide when to take
+a fresh view, is per-transaction, so a pack written by *another* transaction is never noticed,
+the cache guard finds its objects absent, and josh recomputes -- measured at 20014 reads and
+255ms per iteration, far worse than either.
 
-**That re-walking is not the port's doing.** The same instrumentation on the libgit2 baseline
-reports exactly the same numbers -- 13 walk calls, 20307 commits visited. josh reads the whole
-repository per warm iteration today; gitoxide just charges more per read (it decompresses into
-the caller's buffer where libgit2 returned a pointer into its own cache, and the 64 MB
-`MemoryCappedHashmap` on the handle did not change that).
-
-So the incremental regression is the port paying a higher per-read price for reads josh should
-not be making. Fixing the pruning is worth doing on its own merits -- it would speed up the
-warm path several-fold on the current backend -- and it shrinks this step's exposure at the
-same time. That is the thread to pull before retrying the flip.
+**What the next attempt needs**, then, is both halves: one store per context so indices load
+once per process, plus a process-wide pack generation so any transaction can tell that another
+has packed and take a fresh view exactly once. Two findings from this attempt are worth
+keeping either way, and are in the patch: the facade must be held for the transaction rather
+than rebuilt per `odb()` call, and `refresh_never` plus an explicit refresh beats gitoxide's
+default of rescanning the objects directory on every miss (josh probes for absent objects
+constantly, and the default cost 7.7s where the explicit one costs 4ms).
 
 ## Validation protocol (per step)
 
