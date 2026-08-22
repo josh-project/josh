@@ -1,6 +1,6 @@
 use crate::connection::GithubApiConnection;
 use anyhow::anyhow;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 use josh_github_codegen_graphql::{
     add_comment, add_pull_request_review, add_pull_request_review_thread,
@@ -12,7 +12,7 @@ use josh_github_codegen_graphql::{
     GetPrReviews, GetPrsBySha, ListOpenPRs, MarkPullRequestReadyForReview, UpdatePullRequest,
 };
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct PrLabel {
     pub name: String,
     pub color: String,
@@ -30,7 +30,7 @@ pub struct PrComment {
     pub commit_oid: Option<String>,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct PrData {
     pub title: String,
     pub body: Option<String>,

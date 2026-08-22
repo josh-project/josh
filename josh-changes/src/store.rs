@@ -1,5 +1,6 @@
 use crate::change::{Change, encode_change_id_path};
 use crate::refs::ChangesRef;
+use anyhow::Context;
 use josh_core::cache::{Expected, Transaction};
 use josh_core::filter::tree;
 use josh_core::memodb::Odb;
@@ -188,12 +189,13 @@ pub fn store_diff_data(
     Ok(())
 }
 
-pub fn store_pr_data(
+pub fn store_pr_data<T: serde::Serialize>(
     transaction: &Transaction,
     change_id: &str,
-    json: &str,
+    data: &T,
     scope: &ChangesRef,
 ) -> anyhow::Result<()> {
+    let json = serde_json::to_string(data)?;
     let repo = transaction.repo();
     let odb = transaction.odb()?;
     let blob_oid = objects::write_blob(&odb, json.as_bytes())?;
@@ -235,13 +237,14 @@ pub fn store_pr_data(
 
     Ok(())
 }
-
-/// Read stored GitHub PR data JSON for a change, if it exists.
-pub fn read_pr_data(
+/// Read stored GitHub PR data for a change, if it exists, deserialized into
+/// `T`. Fails when the stored blob no longer parses into `T` (e.g. schema
+/// drift from an older josh version) so callers can diagnose it.
+pub fn read_pr_data<T: serde::de::DeserializeOwned>(
     transaction: &Transaction,
     change_id: &str,
     scope: &ChangesRef,
-) -> anyhow::Result<Option<String>> {
+) -> anyhow::Result<Option<T>> {
     let odb = transaction.odb()?;
     let tree = match scope_tree(transaction, &odb, scope)? {
         Some(tree) => tree,
@@ -254,7 +257,10 @@ pub fn read_pr_data(
     };
     for entry in tree::read_tree(transaction, &odb, subtree)?.entries() {
         if let Some(blob) = tree::blob_bytes(&odb, objects::git2_oid(&entry.oid)) {
-            return Ok(Some(String::from_utf8_lossy(&blob).to_string()));
+            let json = String::from_utf8_lossy(&blob);
+            let data: T = serde_json::from_str(&json)
+                .with_context(|| format!("stored PR data for '{}' failed to parse", change_id))?;
+            return Ok(Some(data));
         }
     }
     Ok(None)

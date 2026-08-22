@@ -19,6 +19,19 @@ pub struct StackCommit {
     pub series: String,
 }
 
+/// The subset of stored GitHub PR data the detail view shows.
+#[derive(serde::Deserialize)]
+struct StoredPrData {
+    #[serde(default)]
+    url: String,
+    #[serde(default)]
+    title: String,
+    #[serde(default)]
+    state: String,
+    #[serde(default)]
+    review_decision: Option<String>,
+}
+
 pub struct DetailData {
     pub change_id: String,
     pub sha: String,
@@ -335,15 +348,14 @@ pub fn load_detail(sha: &str, scope: &josh_changes::ChangesRef) -> anyhow::Resul
     let mut stack: Vec<StackCommit> = Vec::new();
     let mut pr_info: Option<PrInfo> = None;
     if let Some(ref cid) = change_id {
-        pr_info = josh_changes::read_pr_data(&transaction, cid, scope)
+        pr_info = josh_changes::read_pr_data::<StoredPrData>(&transaction, cid, scope)
             .ok()
             .flatten()
-            .and_then(|json| serde_json::from_str::<serde_json::Value>(&json).ok())
             .map(|v| PrInfo {
-                url: v["url"].as_str().unwrap_or("").to_string(),
-                title: v["title"].as_str().unwrap_or("").to_string(),
-                state: v["state"].as_str().unwrap_or("").to_string(),
-                review_decision: v["review_decision"].as_str().unwrap_or("").to_string(),
+                url: v.url,
+                title: v.title,
+                state: v.state,
+                review_decision: v.review_decision.unwrap_or_default(),
             });
 
         // Adopt the base oid recorded under the selected scope, if present.

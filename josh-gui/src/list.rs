@@ -367,30 +367,30 @@ pub fn load_rows(scope: &josh_changes::ChangesRef) -> anyhow::Result<ListData> {
     })
 }
 
+/// The subset of stored GitHub PR data the list view shows.
+#[derive(serde::Deserialize)]
+struct StoredPrStatus {
+    review_decision: Option<String>,
+    check_status: Option<String>,
+}
+
+
 fn load_metadata(
     transaction: &josh_core::cache::Transaction,
     scope: &josh_changes::ChangesRef,
     change_id: &str,
 ) -> RowMetadata {
-    let (review_decision, check_status) = josh_changes::read_pr_data(transaction, change_id, scope)
-        .ok()
-        .flatten()
-        .and_then(|json| {
-            serde_json::from_str::<serde_json::Value>(&json)
-                .ok()
-                .map(|v| {
-                    let rd = v["review_decision"]
-                        .as_str()
-                        .map(|s| s.to_string())
-                        .unwrap_or_default();
-                    let cs = v["check_status"]
-                        .as_str()
-                        .map(|s| s.to_string())
-                        .unwrap_or_default();
-                    (rd, cs)
-                })
-        })
-        .unwrap_or_default();
+    let (review_decision, check_status) =
+        josh_changes::read_pr_data::<StoredPrStatus>(transaction, change_id, scope)
+            .ok()
+            .flatten()
+            .map(|s| {
+                (
+                    s.review_decision.unwrap_or_default(),
+                    s.check_status.unwrap_or_default(),
+                )
+            })
+            .unwrap_or_default();
 
     let local_vote = josh_changes::read_vote(transaction, change_id, None, scope)
         .ok()
