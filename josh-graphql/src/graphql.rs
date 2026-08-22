@@ -91,7 +91,7 @@ fn filtered_commit(
     commit_id: git2::Oid,
 ) -> anyhow::Result<CommitData> {
     let filtered = filter::apply_to_commit(filter, commit_id, transaction)?;
-    CommitData::read(&transaction.odb()?, filtered)
+    CommitData::read(transaction.odb(), filtered)
 }
 
 pub struct DiffPath {
@@ -119,15 +119,15 @@ impl Revision {
         kind: git2::ObjectType,
     ) -> FieldResult<Option<Vec<Path>>> {
         let transaction = context.transaction.lock().unwrap();
-        let odb = transaction.odb()?;
-        let commit = CommitData::read(&odb, self.commit_id)?;
+        let odb = transaction.odb();
+        let commit = CommitData::read(odb, self.commit_id)?;
         let x = filter::apply(
             &transaction,
             self.filter,
             Rewrite::from_tree(commit.tree_id()?),
         )?;
         let tree_id = x.tree_id();
-        let paths = find_paths(&transaction, &odb, tree_id, at, depth, kind)?;
+        let paths = find_paths(&transaction, odb, tree_id, at, depth, kind)?;
         let mut ws = vec![];
         for path in paths {
             ws.push(Path {
@@ -151,7 +151,7 @@ impl Revision {
         let transaction = context.transaction.lock().unwrap();
         // Existence/type probe: a bogus id (e.g. the zero oid `parents` substitutes when
         // find_original fails) must error here, not filter to a bogus hash under a nop filter.
-        CommitData::read(&transaction.odb()?, self.commit_id)?;
+        CommitData::read(transaction.odb(), self.commit_id)?;
         let filter_commit = filter::apply_to_commit(self.filter, self.commit_id, &transaction)?;
         Ok(format!("{}", filter_commit))
     }
@@ -218,7 +218,7 @@ impl Revision {
         let transaction = context.transaction.lock().unwrap();
         let filter_commit_id = filter::apply_to_commit(self.filter, self.commit_id, &transaction)?;
 
-        let parents = josh_core::git::read_parent_ids(&transaction.odb()?, filter_commit_id)?
+        let parents = josh_core::git::read_parent_ids(transaction.odb(), filter_commit_id)?
             .into_iter()
             .map(|id| Revision {
                 filter: self.filter,
@@ -248,7 +248,7 @@ impl Revision {
         let filter_commit = filtered_commit(&transaction, self.filter, self.commit_id)?;
 
         // First parents only, followed just far enough to fill the requested window.
-        let odb = transaction.odb()?;
+        let odb = transaction.odb();
         let mut ids = vec![];
         let mut next = Some(filter_commit.id());
         for i in 0..offset + limit {
@@ -256,9 +256,7 @@ impl Revision {
             if i >= offset {
                 ids.push(id);
             }
-            next = josh_core::git::read_parent_ids(&odb, id)?
-                .into_iter()
-                .next();
+            next = josh_core::git::read_parent_ids(odb, id)?.into_iter().next();
         }
 
         let mut contained_in = self.commit_id;
@@ -270,7 +268,7 @@ impl Revision {
 
                 if orig != git2::Oid::ZERO_SHA1 {
                     ids[i] = orig;
-                    contained_in = josh_core::git::read_parent_ids(&transaction.odb()?, ids[i])?
+                    contained_in = josh_core::git::read_parent_ids(transaction.odb(), ids[i])?
                         .into_iter()
                         .next()
                         .unwrap_or(ids[i]);
@@ -317,14 +315,14 @@ impl Revision {
         let transaction = context.transaction.lock().unwrap();
         let filter_commit = filtered_commit(&transaction, self.filter, self.commit_id)?;
 
-        let odb = transaction.odb()?;
+        let odb = transaction.odb();
         let (parent_id, parent_tree_id) = match filter_commit.first_parent_id() {
-            Some(parent) => (parent, josh_core::git::read_tree_id(&odb, parent)?),
+            Some(parent) => (parent, josh_core::git::read_tree_id(odb, parent)?),
             None => (git2::Oid::ZERO_SHA1, git2::Oid::ZERO_SHA1),
         };
 
         let filter_tree_id = filter_commit.tree_id()?;
-        let d = filter::tree::diff_paths(&transaction.odb()?, parent_tree_id, filter_tree_id, "")?;
+        let d = filter::tree::diff_paths(transaction.odb(), parent_tree_id, filter_tree_id, "")?;
 
         let df = d
             .into_iter()
@@ -370,12 +368,12 @@ impl Revision {
     fn file(&self, path: String, context: &Context) -> FieldResult<Option<Path>> {
         let transaction = context.transaction.lock().unwrap();
         let path = std::path::Path::new(&path).to_owned();
-        let odb = transaction.odb()?;
-        let tree = CommitData::read(&odb, self.commit_id)?.tree_id()?;
+        let odb = transaction.odb();
+        let tree = CommitData::read(odb, self.commit_id)?.tree_id()?;
 
         let x = filter::apply(&transaction, self.filter, Rewrite::from_tree(tree))?;
 
-        if let Ok(Some(entry)) = tree::get_path_entry(&transaction, &odb, x.tree_id(), &path) {
+        if let Ok(Some(entry)) = tree::get_path_entry(&transaction, odb, x.tree_id(), &path) {
             if !entry.mode.is_tree() && !entry.mode.is_commit() {
                 Ok(Some(Path {
                     path,
@@ -394,8 +392,8 @@ impl Revision {
     fn dir(&self, path: Option<String>, context: &Context) -> FieldResult<Option<Path>> {
         let path = path.unwrap_or_default();
         let transaction = context.transaction.lock().unwrap();
-        let odb = transaction.odb()?;
-        let tree = CommitData::read(&odb, self.commit_id)?.tree_id()?;
+        let odb = transaction.odb();
+        let tree = CommitData::read(odb, self.commit_id)?.tree_id()?;
 
         let x = filter::apply(&transaction, self.filter, Rewrite::from_tree(tree))?;
 
@@ -410,7 +408,7 @@ impl Revision {
             }));
         }
 
-        if let Ok(Some(entry)) = tree::get_path_entry(&transaction, &odb, x.tree_id(), &path) {
+        if let Ok(Some(entry)) = tree::get_path_entry(&transaction, odb, x.tree_id(), &path) {
             if entry.mode.is_tree() {
                 Ok(Some(Path {
                     path,
@@ -428,7 +426,7 @@ impl Revision {
 
     fn warnings(&self, context: &Context) -> FieldResult<Option<Vec<Warning>>> {
         let transaction = context.transaction.lock().unwrap();
-        let commit = CommitData::read(&transaction.odb()?, self.commit_id)?;
+        let commit = CommitData::read(transaction.odb(), self.commit_id)?;
 
         let warnings = filter::compute_warnings(&transaction, self.filter, commit.tree_id()?)
             .into_iter()
@@ -440,8 +438,8 @@ impl Revision {
 
     fn search(&self, string: String, context: &Context) -> FieldResult<Option<Vec<SearchResult>>> {
         let transaction = context.transaction.lock().unwrap();
-        let odb = transaction.odb()?;
-        let tree = CommitData::read(&odb, self.commit_id)?.tree_id()?;
+        let odb = transaction.odb();
+        let tree = CommitData::read(odb, self.commit_id)?.tree_id()?;
 
         let x = filter::apply(&transaction, self.filter, Rewrite::from_tree(tree))?;
 
@@ -450,10 +448,10 @@ impl Revision {
         let candidates = if filter::experimental_features_enabled() {
             let ifilterobj = filter::parse(":SQUASH:INDEX")?;
             let index_tree = filter::apply(&transaction, ifilterobj, x.clone())?;
-            josh_search::search_candidates(&odb, index_tree.tree_id(), x.tree_id(), &string)?
+            josh_search::search_candidates(odb, index_tree.tree_id(), x.tree_id(), &string)?
         } else {
             let mut scan = vec![];
-            objects::walk_tree_preorder(&odb, x.tree_id(), &mut |parent, entry| {
+            objects::walk_tree_preorder(odb, x.tree_id(), &mut |parent, entry| {
                 if !entry.mode.is_tree()
                     && !entry.mode.is_commit()
                     && let Ok(name) = std::str::from_utf8(entry.filename)
@@ -465,7 +463,7 @@ impl Revision {
             })?;
             scan
         };
-        let results = josh_search::search_matches(&odb, x.tree_id(), &string, &candidates)?;
+        let results = josh_search::search_matches(odb, x.tree_id(), &string, &candidates)?;
 
         let mut r = vec![];
         for m in results {
@@ -573,9 +571,9 @@ impl Markers {
 
         // Resolve on the mirror, read objects on the overlay: the overlay repo sees the
         // mirror's objects through a disk alternate.
-        let odb = transaction.odb()?;
+        let odb = transaction.odb();
         let tree = if let Some(id) = transaction_mirror.resolve_ref(&refname)? {
-            CommitData::read(&odb, id)?.tree_id()?
+            CommitData::read(odb, id)?.tree_id()?
         } else {
             filter::tree::empty_id()
         };
@@ -585,14 +583,14 @@ impl Markers {
         let path = if self.filter.is_nop() {
             marker_path(&commit, &self.topic).join(&self.path)
         } else {
-            let t = CommitData::read(&odb, self.commit_id)?.tree_id()?;
+            let t = CommitData::read(odb, self.commit_id)?.tree_id()?;
             let o = filter::tree::original_path(&transaction, self.filter, t, &self.path)?;
             marker_path(&commit, &self.topic).join(o)
         };
 
-        let prev = match tree::get_path_entry(&transaction, &odb, tree, &path)? {
+        let prev = match tree::get_path_entry(&transaction, odb, tree, &path)? {
             Some(entry) => {
-                let blob = tree::blob_bytes(&odb, objects::git2_oid(&entry.oid))
+                let blob = tree::blob_bytes(odb, objects::git2_oid(&entry.oid))
                     .ok_or_else(|| anyhow!("not a blob: {}", entry.oid))?;
                 std::str::from_utf8(&blob)?.to_owned()
             }
@@ -626,25 +624,21 @@ impl Markers {
 
         let refname = transaction_mirror.refname("refs/josh/meta");
 
-        let odb = transaction.odb()?;
+        let odb = transaction.odb();
         let mtree = if let Some(id) = transaction_mirror.resolve_ref(&refname)? {
-            CommitData::read(&odb, id)?.tree_id()?
+            CommitData::read(odb, id)?.tree_id()?
         } else {
             filter::tree::empty_id()
         };
 
         let commit = self.commit_id.to_string();
-        let mtree = tree::get_path_entry(
-            &transaction,
-            &odb,
-            mtree,
-            &marker_path(&commit, &self.topic),
-        )
-        .ok()
-        .flatten()
-        .filter(|entry| entry.mode.is_tree())
-        .map(|entry| objects::git2_oid(&entry.oid))
-        .unwrap_or_else(filter::tree::empty_id);
+        let mtree =
+            tree::get_path_entry(&transaction, odb, mtree, &marker_path(&commit, &self.topic))
+                .ok()
+                .flatten()
+                .filter(|entry| entry.mode.is_tree())
+                .map(|entry| objects::git2_oid(&entry.oid))
+                .unwrap_or_else(filter::tree::empty_id);
 
         let mtree = if self.filter.is_nop() {
             mtree
@@ -652,14 +646,14 @@ impl Markers {
             filter::tree::repopulated_tree(
                 &transaction,
                 self.filter,
-                CommitData::read(&odb, self.commit_id)?.tree_id()?,
+                CommitData::read(odb, self.commit_id)?.tree_id()?,
                 mtree,
             )?
         };
-        if let Ok(Some(p)) = tree::get_path_entry(&transaction, &odb, mtree, &self.path) {
-            return Ok(linecount(&transaction, &odb, objects::git2_oid(&p.oid)) as i32);
+        if let Ok(Some(p)) = tree::get_path_entry(&transaction, odb, mtree, &self.path) {
+            return Ok(linecount(&transaction, odb, objects::git2_oid(&p.oid)) as i32);
         } else if self.path == std::path::Path::new("") {
-            return Ok(linecount(&transaction, &odb, mtree) as i32);
+            return Ok(linecount(&transaction, odb, mtree) as i32);
         }
         Ok(0)
     }
@@ -676,8 +670,8 @@ impl Path {
         let id = if self.path == std::path::Path::new("") {
             self.tree
         } else {
-            let odb = transaction.odb()?;
-            let entry = tree::get_path_entry(&transaction, &odb, self.tree, &self.path)?
+            let odb = transaction.odb();
+            let entry = tree::get_path_entry(&transaction, odb, self.tree, &self.path)?
                 .ok_or_else(|| anyhow!("no such path: {}", self.path.display()))?;
             objects::git2_oid(&entry.oid)
         };
@@ -690,8 +684,8 @@ impl Path {
         str_to_value: impl FnOnce(&str) -> Result<serde_json::Value, E>,
     ) -> FieldResult<Document> {
         self.internal_serialize(context, |transaction, id| {
-            let odb = transaction.odb()?;
-            let blob = tree::blob_bytes(&odb, id).ok_or_else(|| anyhow!("not a blob: {}", id))?;
+            let odb = transaction.odb();
+            let blob = tree::blob_bytes(odb, id).ok_or_else(|| anyhow!("not a blob: {}", id))?;
             let value =
                 str_to_value(std::str::from_utf8(&blob)?).unwrap_or_else(|_| serde_json::json!({}));
             Ok(Document { id, value })
@@ -740,8 +734,8 @@ impl Path {
     }
     fn text(&self, context: &Context) -> FieldResult<Option<String>> {
         self.internal_serialize(context, |transaction, id| {
-            let odb = transaction.odb()?;
-            let blob = tree::blob_bytes(&odb, id).ok_or_else(|| anyhow!("not a blob: {}", id))?;
+            let odb = transaction.odb();
+            let blob = tree::blob_bytes(odb, id).ok_or_else(|| anyhow!("not a blob: {}", id))?;
             Ok(Some(std::str::from_utf8(&blob)?.to_string()))
         })
     }
@@ -996,7 +990,7 @@ impl RepositoryMut {
         let transaction_mirror = context.transaction_mirror.lock().unwrap();
 
         // Just check that the commit exists
-        CommitData::read(&transaction_mirror.odb()?, git2::Oid::from_str(&at)?)?;
+        CommitData::read(transaction_mirror.odb(), git2::Oid::from_str(&at)?)?;
 
         let filter = if let Some(spec) = filter {
             filter::parse(&spec)?
@@ -1052,7 +1046,7 @@ impl Repository {
         let transaction_mirror = context.transaction_mirror.lock().unwrap();
         let commit_id = {
             let oid = if let Ok(id) = git2::Oid::from_str(&at) {
-                Some((id, transaction_mirror.odb()?.contains(id)))
+                Some((id, transaction_mirror.odb().contains(id)))
             } else {
                 None
             };

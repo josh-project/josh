@@ -474,7 +474,7 @@ fn deephistory_glob(c: &mut Criterion) {
                 josh_core::filter_commit(&transaction, filter, probe).expect("filter probe");
             // The filtered commit is still buffered, so read it through the transaction's
             // object source.
-            let got = josh_core::objects::CommitData::read(&transaction.odb().unwrap(), filtered)
+            let got = josh_core::objects::CommitData::read(transaction.odb(), filtered)
                 .unwrap()
                 .tree_id()
                 .unwrap();

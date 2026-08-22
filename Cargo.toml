@@ -58,7 +58,7 @@ gix-features = { version = "0.49", features = ["progress"] }
 gix-hash = { version = "^0.26", features = ["sha1"] }
 gix-object = "0.63.0"
 gix-odb = "0.83"
-gix-pack = { version = "0.73", features = ["sha1"] }
+gix-pack = { version = "0.73", features = ["sha1", "object-cache-dynamic"] }
 gix-command = "0.9.1"
 gix-diff = { version = "0.66.0", default-features = false, features = ["blob"] }
 gix-filter = "0.33.0"

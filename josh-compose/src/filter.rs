@@ -28,8 +28,8 @@ pub fn compute_ws_tree(
     let filtered_commit = josh_core::filter_commit(transaction, filterobj, source_commit)
         .context("failed to apply filter")?;
 
-    let odb = transaction.odb()?;
-    let ws_tree = josh_core::objects::CommitData::read(&odb, filtered_commit)
+    let odb = transaction.odb();
+    let ws_tree = josh_core::objects::CommitData::read(odb, filtered_commit)
         .context("filtered result is not a commit")?
         .tree_id()?;
 

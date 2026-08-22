@@ -3650,6 +3650,7 @@ dependencies = [
 name = "josh-memodb"
 version = "26.7.28"
 dependencies = [
+ "anyhow",
  "git2",
  "gix-features",
  "gix-hash",

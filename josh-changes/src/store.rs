@@ -55,22 +55,22 @@ pub fn write_changes_tree(
     timestamp: Option<&str>,
     scope: &ChangesRef,
 ) -> anyhow::Result<()> {
-    let odb = transaction.odb()?;
+    let odb = transaction.odb();
     let ref_name = scope.ref_name();
     let prev_commit = transaction.resolve_ref(&ref_name)?;
     let base_tree = match prev_commit {
-        Some(oid) => objects::CommitData::read(&odb, oid)?.tree_id()?,
+        Some(oid) => objects::CommitData::read(odb, oid)?.tree_id()?,
         None => tree::empty_id(),
     };
 
     // Skip if the blob already exists at this path.
-    if let Ok(Some(existing)) = tree::get_path_entry(transaction, &odb, base_tree, path) {
+    if let Ok(Some(existing)) = tree::get_path_entry(transaction, odb, base_tree, path) {
         if objects::git2_oid(&existing.oid) == blob_oid {
             return Ok(());
         }
     }
 
-    let tree = tree::insert_oid(&odb, base_tree, path, blob_oid, git2::FileMode::Blob.into())?;
+    let tree = tree::insert_oid(odb, base_tree, path, blob_oid, git2::FileMode::Blob.into())?;
 
     let sig = match author {
         Some(name) => {
@@ -81,7 +81,7 @@ pub fn write_changes_tree(
         None => josh_core::git::user_signature(transaction)?,
     };
     let msg = format!("update {}\n", ref_name);
-    let new_oid = objects::write_commit(&odb, tree, prev_commit.as_slice(), &sig, &sig, &msg)?;
+    let new_oid = objects::write_commit(odb, tree, prev_commit.as_slice(), &sig, &sig, &msg)?;
     transaction.update_ref(
         &ref_name,
         prev_commit.map_or(Expected::Absent, Expected::At),
@@ -99,19 +99,19 @@ pub fn read_blob_map(
     scope: &ChangesRef,
     path: &std::path::Path,
 ) -> anyhow::Result<std::collections::HashMap<String, String>> {
-    let odb = transaction.odb()?;
-    let tree = match scope_tree(transaction, &odb, scope)? {
+    let odb = transaction.odb();
+    let tree = match scope_tree(transaction, odb, scope)? {
         Some(tree) => tree,
         None => return Ok(Default::default()),
     };
-    let subtree = match get_tree(transaction, &odb, tree, path) {
+    let subtree = match get_tree(transaction, odb, tree, path) {
         Some(t) => t,
         None => return Ok(Default::default()),
     };
     let mut map = std::collections::HashMap::new();
-    for entry in tree::read_tree(transaction, &odb, subtree)?.entries() {
+    for entry in tree::read_tree(transaction, odb, subtree)?.entries() {
         if let Ok(name) = std::str::from_utf8(entry.filename) {
-            if let Some(blob) = tree::blob_bytes(&odb, objects::git2_oid(&entry.oid)) {
+            if let Some(blob) = tree::blob_bytes(odb, objects::git2_oid(&entry.oid)) {
                 map.insert(name.to_string(), String::from_utf8_lossy(&blob).to_string());
             }
         }
@@ -124,7 +124,7 @@ pub fn store_diff_data(
     change: &Change,
     scope: &ChangesRef,
 ) -> anyhow::Result<()> {
-    let odb = transaction.odb()?;
+    let odb = transaction.odb();
     let change_id = change
         .id()
         .ok_or_else(|| anyhow::anyhow!("commit {} has no Change-Id", change.commit()))?;
@@ -132,11 +132,11 @@ pub fn store_diff_data(
     let commit_oid_str = change.commit().to_string();
     let base_str = change.base().to_string();
     let content = format!("{}\n{}", commit_oid_str, base_str);
-    let blob_oid = objects::write_blob(&odb, content.as_bytes())?;
+    let blob_oid = objects::write_blob(odb, content.as_bytes())?;
 
     let entry_name = blob_oid.to_string();
     let tree_oid = tree::insert_oid(
-        &odb,
+        odb,
         tree::empty_id(),
         std::path::Path::new(&entry_name),
         blob_oid,
@@ -146,25 +146,25 @@ pub fn store_diff_data(
     let ref_name = scope.ref_name();
     let prev_tip = transaction.resolve_ref(&ref_name)?;
     let base_tree = match prev_tip {
-        Some(oid) => objects::CommitData::read(&odb, oid)?.tree_id()?,
+        Some(oid) => objects::CommitData::read(odb, oid)?.tree_id()?,
         None => tree::empty_id(),
     };
 
     let path = std::path::Path::new("diffs").join(encode_change_id_path(&change_id));
 
-    if let Ok(Some(existing)) = tree::get_path_entry(transaction, &odb, base_tree, &path) {
+    if let Ok(Some(existing)) = tree::get_path_entry(transaction, odb, base_tree, &path) {
         if objects::git2_oid(&existing.oid) == tree_oid {
             return Ok(());
         }
     }
 
-    let tree = tree::insert_oid(&odb, base_tree, &path, tree_oid, 0o0040000)?;
+    let tree = tree::insert_oid(odb, base_tree, &path, tree_oid, 0o0040000)?;
 
     let sig = transaction.signature()?;
 
     let anchor_sig = git2::Signature::new("JOSH", "josh@josh-project.dev", &git2::Time::new(0, 0))?;
     let anchor_oid = objects::write_commit(
-        &odb,
+        odb,
         tree::empty_id(),
         &[change.commit()],
         &anchor_sig,
@@ -176,7 +176,7 @@ pub fn store_diff_data(
     parents.extend(prev_tip);
     parents.push(anchor_oid);
     let msg = format!("update {}\n", ref_name);
-    let new_oid = objects::write_commit(&odb, tree, &parents, &sig, &sig, &msg)?;
+    let new_oid = objects::write_commit(odb, tree, &parents, &sig, &sig, &msg)?;
     transaction.update_ref(
         &ref_name,
         prev_tip.map_or(Expected::Absent, Expected::At),
@@ -194,11 +194,11 @@ pub fn store_pr_data<T: serde::Serialize>(
     scope: &ChangesRef,
 ) -> anyhow::Result<()> {
     let json = serde_json::to_string(data)?;
-    let odb = transaction.odb()?;
-    let blob_oid = objects::write_blob(&odb, json.as_bytes())?;
+    let odb = transaction.odb();
+    let blob_oid = objects::write_blob(odb, json.as_bytes())?;
 
     let tree_oid = tree::insert_oid(
-        &odb,
+        odb,
         tree::empty_id(),
         std::path::Path::new(&blob_oid.to_string()),
         blob_oid,
@@ -208,23 +208,23 @@ pub fn store_pr_data<T: serde::Serialize>(
     let ref_name = scope.ref_name();
     let prev_tip = transaction.resolve_ref(&ref_name)?;
     let base_tree = match prev_tip {
-        Some(oid) => objects::CommitData::read(&odb, oid)?.tree_id()?,
+        Some(oid) => objects::CommitData::read(odb, oid)?.tree_id()?,
         None => tree::empty_id(),
     };
 
     let path = std::path::Path::new("gh").join(encode_change_id_path(change_id));
 
-    if let Ok(Some(existing)) = tree::get_path_entry(transaction, &odb, base_tree, &path) {
+    if let Ok(Some(existing)) = tree::get_path_entry(transaction, odb, base_tree, &path) {
         if objects::git2_oid(&existing.oid) == tree_oid {
             return Ok(());
         }
     }
 
-    let tree = tree::insert_oid(&odb, base_tree, &path, tree_oid, 0o0040000)?;
+    let tree = tree::insert_oid(odb, base_tree, &path, tree_oid, 0o0040000)?;
 
     let sig = transaction.signature()?;
     let msg = format!("update {}\n", ref_name);
-    let new_oid = objects::write_commit(&odb, tree, prev_tip.as_slice(), &sig, &sig, &msg)?;
+    let new_oid = objects::write_commit(odb, tree, prev_tip.as_slice(), &sig, &sig, &msg)?;
     transaction.update_ref(
         &ref_name,
         prev_tip.map_or(Expected::Absent, Expected::At),
@@ -242,18 +242,18 @@ pub fn read_pr_data<T: serde::de::DeserializeOwned>(
     change_id: &str,
     scope: &ChangesRef,
 ) -> anyhow::Result<Option<T>> {
-    let odb = transaction.odb()?;
-    let tree = match scope_tree(transaction, &odb, scope)? {
+    let odb = transaction.odb();
+    let tree = match scope_tree(transaction, odb, scope)? {
         Some(tree) => tree,
         None => return Ok(None),
     };
     let gh_path = std::path::Path::new("gh").join(encode_change_id_path(change_id));
-    let subtree = match get_tree(transaction, &odb, tree, &gh_path) {
+    let subtree = match get_tree(transaction, odb, tree, &gh_path) {
         Some(t) => t,
         None => return Ok(None),
     };
-    for entry in tree::read_tree(transaction, &odb, subtree)?.entries() {
-        if let Some(blob) = tree::blob_bytes(&odb, objects::git2_oid(&entry.oid)) {
+    for entry in tree::read_tree(transaction, odb, subtree)?.entries() {
+        if let Some(blob) = tree::blob_bytes(odb, objects::git2_oid(&entry.oid)) {
             let json = String::from_utf8_lossy(&blob);
             let data: T = serde_json::from_str(&json)
                 .with_context(|| format!("stored PR data for '{}' failed to parse", change_id))?;
@@ -271,7 +271,7 @@ pub fn delete_change(
     change_id: &str,
     scope: &ChangesRef,
 ) -> anyhow::Result<()> {
-    let odb = transaction.odb()?;
+    let odb = transaction.odb();
     let encoded = encode_change_id_path(change_id);
 
     let ref_name = scope.ref_name();
@@ -279,7 +279,7 @@ pub fn delete_change(
         Some(oid) => oid,
         None => return Ok(()),
     };
-    let mut tree = objects::CommitData::read(&odb, prev_commit)?.tree_id()?;
+    let mut tree = objects::CommitData::read(odb, prev_commit)?.tree_id()?;
     for prefix in &[
         "diffs",
         "comments/C",
@@ -295,16 +295,16 @@ pub fn delete_change(
     ] {
         let path = std::path::Path::new(prefix).join(&encoded);
         if matches!(
-            tree::get_path_entry(transaction, &odb, tree, &path),
+            tree::get_path_entry(transaction, odb, tree, &path),
             Ok(Some(_))
         ) {
-            tree = tree::insert_oid(&odb, tree, &path, git2::Oid::ZERO_SHA1, 0)?;
+            tree = tree::insert_oid(odb, tree, &path, git2::Oid::ZERO_SHA1, 0)?;
         }
     }
 
     let sig = transaction.signature()?;
     let msg = format!("update {}\n", ref_name);
-    let new_oid = objects::write_commit(&odb, tree, &[prev_commit], &sig, &sig, &msg)?;
+    let new_oid = objects::write_commit(odb, tree, &[prev_commit], &sig, &sig, &msg)?;
     transaction.update_ref(&ref_name, Expected::At(prev_commit), new_oid, &msg)?;
 
     Ok(())
