@@ -506,6 +506,10 @@ impl<'a> InMemoryBuilder<'a> {
                 let blob = self.write_blob(b"");
                 push_blob_entries(&mut entries, [("unlink", blob)]);
             }
+            Op::InlineSubmodules => {
+                let blob = self.write_blob(b"");
+                push_blob_entries(&mut entries, [("inline_submodules", blob)]);
+            }
             Op::Invert => {
                 let blob = self.write_blob(b"");
                 push_blob_entries(&mut entries, [("invert", blob)]);
@@ -808,6 +812,10 @@ fn from_tree2(src: &impl gix_object::Find, tree_oid: gix_hash::ObjectId) -> anyh
         "unlink" => {
             let _ = Blob::read(src, entry.id())?;
             Ok(Op::Unlink)
+        }
+        "inline_submodules" => {
+            let _ = repo.find_blob(entry.id())?;
+            Ok(Op::InlineSubmodules)
         }
         "invert" => {
             let _ = Blob::read(src, entry.id())?;
