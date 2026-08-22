@@ -101,6 +101,12 @@ pub struct TransactionContext {
     ref_prefix: Option<String>,
     mem_odb_limit: Option<usize>,
     ephemeral: bool,
+    /// The gitoxide view of `path`, opened once and shared by every transaction this context
+    /// opens: the open itself reads configuration and resolves alternates, and the pack
+    /// indices it discovers are worth keeping across transactions. Sharing is what the
+    /// thread-safe handle is for, and a store that misses an object rescans the objects
+    /// directory, so a pack another transaction just flushed is still found.
+    gix_repo: std::sync::OnceLock<std::sync::Arc<gix::ThreadSafeRepository>>,
 }
 
 impl TransactionContext {
@@ -114,6 +120,7 @@ impl TransactionContext {
             ref_prefix: None,
             mem_odb_limit: None,
             ephemeral: false,
+            gix_repo: Default::default(),
         })
     }
 
@@ -124,6 +131,7 @@ impl TransactionContext {
             ref_prefix: None,
             mem_odb_limit: None,
             ephemeral: false,
+            gix_repo: Default::default(),
         }
     }
 
@@ -148,12 +156,28 @@ impl TransactionContext {
             return Err(anyhow!("path does not exist"));
         }
 
+        let gix_repo = match self.gix_repo.get() {
+            Some(repo) => repo.clone(),
+            None => {
+                // Isolated: the repository's own configuration only, no environment or
+                // system-wide overrides, so a transaction resolves the same objects and refs
+                // whatever the process it runs in.
+                let repo = std::sync::Arc::new(gix::ThreadSafeRepository::open_opts(
+                    &self.path,
+                    gix::open::Options::isolated(),
+                )?);
+                let _ = self.gix_repo.set(repo.clone());
+                repo
+            }
+        };
+
         Ok(Transaction::new(
             git2::Repository::open_ext(
                 &self.path,
                 git2::RepositoryOpenFlags::NO_SEARCH,
                 &[] as &[&std::ffi::OsStr],
             )?,
+            gix_repo,
             self.cache.clone(),
             self.ref_prefix.as_deref(),
             self.mem_odb_limit,
@@ -192,6 +216,11 @@ pub struct Transaction {
     /// borrows it for the entire call while also borrowing other caches through `t2`.
     trigram_indexer: std::cell::RefCell<josh_search::Indexer>,
     repo: git2::Repository,
+    /// The gitoxide view of the same repository, and the one josh reads objects and refs
+    /// through as each of those moves off libgit2. Held in its thread-safe form: a
+    /// transaction crosses threads (josh-graphql requires `Send`) while a `gix::Repository`
+    /// holds `Rc` snapshots of packed-refs and shallow state and does not.
+    gix_repo: std::sync::Arc<gix::ThreadSafeRepository>,
     /// Per-transaction in-memory object store, flushed to a packfile when the transaction drops, at
     /// an explicit boundary, or mid-transaction when it exceeds its size limit. Never shared with
     /// another transaction.
@@ -222,6 +251,7 @@ impl Drop for Transaction {
 impl Transaction {
     fn new(
         repo: git2::Repository,
+        gix_repo: std::sync::Arc<gix::ThreadSafeRepository>,
         cache: std::sync::Arc<CacheStack>,
         ref_prefix: Option<&str>,
         mem_odb_limit: Option<usize>,
@@ -271,6 +301,7 @@ impl Transaction {
             }),
             trigram_indexer: Default::default(),
             repo,
+            gix_repo,
             mem_odb,
             mem_odb_limit,
             ephemeral,
@@ -286,9 +317,18 @@ impl Transaction {
             ref_prefix: self.ref_prefix.clone(),
             mem_odb_limit: self.mem_odb_limit,
             ephemeral: self.ephemeral,
+            // The clone shares this transaction's gitoxide view rather than opening its own.
+            gix_repo: std::sync::OnceLock::from(self.gix_repo.clone()),
         };
 
         context.open()
+    }
+
+    /// A gitoxide handle on this repository. Made per call rather than held: the handle
+    /// itself is not `Send`, and building one is a matter of cloning `Arc`s and taking
+    /// snapshot references -- no filesystem access.
+    pub fn repo(&self) -> gix::Repository {
+        self.gix_repo.to_thread_local()
     }
 
     /// The libgit2 handle on this repository, for the porcelain josh has not moved to gix:
