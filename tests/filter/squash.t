@@ -31,6 +31,9 @@
   $ josh-filter -s --squash-pattern "refs/tags/*" --update refs/heads/filtered
   Warning: reference refs/heads/filtered wasn't updated
   0000000000000000000000000000000000000000
+  [1] :squash(
+  
+  )
   [5] reachable_roots
   [5] sequence_number
 
@@ -47,6 +50,9 @@ This one tag is an annotated tag, to make sure those are handled as well
   [1] :"refs/tags/tag_a"
   [1] :author="New Author";"new@e.mail"
   [1] :squash(
+  
+  )
+  [2] :squash(
       1d69b7d2651f744be3416f2ad526aeccefb99310:"refs/tags/tag_a"
   )
   [7] reachable_roots
@@ -72,6 +78,9 @@ This one tag is an annotated tag, to make sure those are handled as well
   [1] :"refs/tags/tag_a"
   [1] :"refs/tags/tag_b"
   [1] :squash(
+  
+  )
+  [2] :squash(
       1d69b7d2651f744be3416f2ad526aeccefb99310:"refs/tags/tag_a"
   )
   [3] :squash(
@@ -109,6 +118,9 @@ This one tag is an annotated tag, to make sure those are handled as well
   [1] :"refs/tags/tag_a"
   [1] :"refs/tags/tag_b"
   [1] :squash(
+  
+  )
+  [2] :squash(
       1d69b7d2651f744be3416f2ad526aeccefb99310:"refs/tags/tag_a"
   )
   [3] :squash(
@@ -168,6 +180,9 @@ This one tag is an annotated tag, to make sure those are handled as well
   [1] :"refs/tags/tag_b"
   [1] :"refs/tags/tag_c"
   [1] :squash(
+  
+  )
+  [2] :squash(
       1d69b7d2651f744be3416f2ad526aeccefb99310:"refs/tags/tag_a"
   )
   [3] :squash(

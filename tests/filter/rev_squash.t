@@ -52,7 +52,7 @@ post-cutoff commit attached directly to it; the elided region leaves no trace
   $ josh-filter -s "$FILTER" refs/heads/master --update refs/heads/filtered
   ddbbceeab0f8a545c505cccb24ae71b76cdc4f67
   [2] :/subtree
-  [2] :~(
+  [3] :~(
       history="keep-trivial-merges,no-splice"
   )[
       :rev(<=104346ac7daf00a08bef19a999e4c7601aae519a:prefix=subtree,<=75a11dcdd41d68e57d9d9f07862bd284a99da6f0:SQUASH)
@@ -86,7 +86,7 @@ resolution must reverse like a fall-through commit
   $ josh-filter -s "$FILTER" refs/heads/master --update refs/heads/filtered --reverse --check-roundtrip
   502c4f2c20e968f20dc97f4bb54b6a1598f690fd
   [4] :/subtree
-  [4] :~(
+  [5] :~(
       history="keep-trivial-merges,no-splice"
   )[
       :rev(<=104346ac7daf00a08bef19a999e4c7601aae519a:prefix=subtree,<=75a11dcdd41d68e57d9d9f07862bd284a99da6f0:SQUASH)
@@ -130,13 +130,13 @@ would disconnect one of them: the filter fails loudly instead
   $ export R2=$(git rev-parse HEAD)
 
   $ josh-filter -s ":~(history=\"keep-trivial-merges,no-splice\")[:rev(<=$SUBTREE_TIP:prefix=subtree,<=$SUB2_TIP:prefix=subtree2,<=$R2:SQUASH)]" refs/heads/master --update refs/heads/broken
-  [2] :~(
+  [3] :~(
       history="keep-trivial-merges,no-splice"
   )[
       :rev(<=104346ac7daf00a08bef19a999e4c7601aae519a:prefix=subtree,<=64eeef227e94b848388854ea5e8b86a043c7ac12:prefix=subtree2,<=2019cb20591f675b8600a09209e884ccaaf8d1cd:SQUASH)
   ]
   [4] :/subtree
-  [4] :~(
+  [5] :~(
       history="keep-trivial-merges,no-splice"
   )[
       :rev(<=104346ac7daf00a08bef19a999e4c7601aae519a:prefix=subtree,<=75a11dcdd41d68e57d9d9f07862bd284a99da6f0:SQUASH)

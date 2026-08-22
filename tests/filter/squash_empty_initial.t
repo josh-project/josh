@@ -38,6 +38,9 @@
   $ josh-filter -s --squash-pattern "refs/tags/*" --update refs/heads/filtered
   Warning: reference refs/heads/filtered wasn't updated
   0000000000000000000000000000000000000000
+  [1] :squash(
+  
+  )
   [5] reachable_roots
   [5] sequence_number
   $ git log --graph --decorate --pretty=oneline refs/heads/filtered
@@ -52,6 +55,9 @@
   [1] :"refs/tags/tag_a"
   [1] :author="New Author";"new@e.mail"
   [1] :squash(
+  
+  )
+  [2] :squash(
       882f2656a5075936eb37bfefde740e0b453e4479:"refs/tags/tag_a"
   )
   [7] reachable_roots
