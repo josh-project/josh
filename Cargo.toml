@@ -91,10 +91,10 @@ backon = "1.6.0"
 futures-util = "0.3.33"
 thiserror = "2.0.19"
 axum-auth = "0.8.1"
-bincode = "^2"
+bincode = "^3"
 tower-http = { version = "0.7", features = ["trace"] }
 proc-macro2 = "^1"
-prettyplease = "0.2.37"
+prettyplease = "0.3.0"
 graphql_client = "^0.16"
 graphql_client_codegen = { version = "^0.16.0" }
 
