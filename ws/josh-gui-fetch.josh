@@ -1,0 +1,25 @@
+:$label="josh-gui cargo fetch"
+:#image[:+images/rust-gui-dev-local]
+:$network="host"
+
+:$cmd="cd josh-gui && cargo fetch --locked"
+
+env = :[
+    :$CARGO_HOME="/out/cargo-cache"
+]
+
+worktree = :[
+    :+ws/patched-cargo
+    ::**/Cargo.toml
+    ::**/Cargo.lock
+    ::**/rust-toolchain.toml
+    ::**/.cargo/
+    :[
+        ::**/lib.rs
+        ::**/main.rs
+        ::**/bin/
+        ::**/build.rs
+        ::**/benches/
+        ::josh-core/benches/
+    ]:replace("(?s).+":"")
+]
