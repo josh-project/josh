@@ -40,7 +40,7 @@ pub fn handle_list(
     args: &ListArgs,
     transaction: &josh_core::cache::Transaction,
 ) -> anyhow::Result<()> {
-    let odb = transaction.odb()?;
+    let odb = transaction.odb();
     let scope = args.scope.resolve(transaction)?;
     let changes = josh_changes::list_changes(transaction, &scope)?;
 
@@ -64,7 +64,7 @@ pub fn handle_list(
     let mut rows: Vec<Row> = Vec::with_capacity(changes.len());
     for change in &changes {
         let id = change.id().unwrap_or("<no-change-id>").to_string();
-        let commit = josh_core::objects::CommitData::read(&odb, change.commit())?;
+        let commit = josh_core::objects::CommitData::read(odb, change.commit())?;
         let subject = commit.summary().unwrap_or_default();
 
         let deps_count = change
@@ -135,11 +135,11 @@ pub fn handle_show(
     args: &ShowArgs,
     transaction: &josh_core::cache::Transaction,
 ) -> anyhow::Result<()> {
-    let odb = transaction.odb()?;
+    let odb = transaction.odb();
     let scope = args.scope.resolve(transaction)?;
     let change = resolve_change_by_id(transaction, &scope, &args.change_id)?;
 
-    let commit = josh_core::objects::CommitData::read(&odb, change.commit())?;
+    let commit = josh_core::objects::CommitData::read(odb, change.commit())?;
     let subject = commit.summary().unwrap_or_default();
     let parsed = commit.parsed()?;
     let author = parsed.author()?.email.to_string();
@@ -214,7 +214,7 @@ pub fn handle_deps(
     args: &DepsArgs,
     transaction: &josh_core::cache::Transaction,
 ) -> anyhow::Result<()> {
-    let odb = transaction.odb()?;
+    let odb = transaction.odb();
     let scope = args.scope.resolve(transaction)?;
     let changes = josh_changes::list_changes(transaction, &scope)?;
     let oid_to_change_id = build_oid_to_change_id(&changes);
@@ -237,7 +237,7 @@ pub fn handle_deps(
             Some(d) if d != &args.change_id => d.clone(),
             _ => continue,
         };
-        let subject = josh_core::objects::CommitData::read(&odb, oid)
+        let subject = josh_core::objects::CommitData::read(odb, oid)
             .ok()
             .and_then(|c| c.summary())
             .unwrap_or_default();

@@ -24,11 +24,11 @@ pub mod text;
 pub mod tree;
 
 pub fn as_tree(transaction: &cache::Transaction, filter: Filter) -> anyhow::Result<git2::Oid> {
-    josh_filter::persist::as_tree(&transaction.odb()?, filter)
+    josh_filter::persist::as_tree(transaction.odb(), filter)
 }
 
 pub fn from_tree(transaction: &cache::Transaction, tree_oid: git2::Oid) -> anyhow::Result<Filter> {
-    josh_filter::persist::from_tree(&transaction.odb()?, tree_oid)
+    josh_filter::persist::from_tree(transaction.odb(), tree_oid)
 }
 
 static WORKSPACES: LazyLock<std::sync::Mutex<std::collections::HashMap<git2::Oid, Filter>>> =
@@ -548,7 +548,7 @@ fn get_rev_filter(
         } else {
             return Err(anyhow!("unresolved lazy ref"));
         };
-        if match_op != &RevMatch::Default && !transaction.odb()?.contains(*filter_tip) {
+        if match_op != &RevMatch::Default && !transaction.odb().contains(*filter_tip) {
             return Err(anyhow!("`:rev(...)` with nonexistent OID: {}", filter_tip));
         }
         let matches = match match_op {
@@ -612,11 +612,11 @@ pub fn apply_to_commit2(
             return Ok(Some(current_oid));
         }
         Op::Squash(None) => {
-            let odb = transaction.odb()?;
-            let commit = objects::CommitData::read(&odb, commit_id)?;
+            let odb = transaction.odb();
+            let commit = objects::CommitData::read(odb, commit_id)?;
             odb.read_header(commit.tree_id()?)?;
             return Some(history::rewrite_commit(
-                &odb,
+                odb,
                 &commit,
                 &[],
                 Rewrite::from_commit_data(&commit)?,
@@ -643,8 +643,8 @@ pub fn apply_to_commit2(
         }
     };
 
-    let odb = transaction.odb()?;
-    let commit = objects::CommitData::read(&odb, commit_id)?;
+    let odb = transaction.odb();
+    let commit = objects::CommitData::read(odb, commit_id)?;
     // Validate the commit's tree before any filter work (a header probe: no decompression,
     // no parse). Without this gate, an apply over a partially unreadable input can buffer
     // fresh objects into the store before a later read aborts the walk, and the partial
@@ -667,7 +667,7 @@ pub fn apply_to_commit2(
                 // Transplant the squash result's metadata verbatim onto the rewrite of the
                 // original commit (which must stay the base: memoization keys on its id).
                 // Timestamps are the base's own anyway -- no filter alters them.
-                let rc = objects::CommitData::read(&odb, oid)?;
+                let rc = objects::CommitData::read(odb, oid)?;
                 let rcr = rc.parsed()?;
                 Rewrite::from_tree_with_metadata(
                     rc.tree_id()?,
@@ -749,10 +749,10 @@ pub fn apply_to_commit2(
             let tree = commit.tree_id()?;
             // The link probe below folds every failure into "no link", so an unreadable
             // or unparseable commit tree must error here.
-            let tree_reader = tree::read_tree(transaction, &odb, tree)?;
+            let tree_reader = tree::read_tree(transaction, odb, tree)?;
             if let Some(link_file) = read_josh_link(
                 transaction,
-                &odb,
+                odb,
                 &tree_reader,
                 &std::path::PathBuf::new(),
                 ".link.josh",
@@ -792,7 +792,7 @@ pub fn apply_to_commit2(
                 some_or!(filtered_parent_ids, { return Ok(None) });
 
             let mut link_parents = vec![];
-            for (link_path, link_file) in find_link_files(&odb, commit.tree_id()?)?.into_iter() {
+            for (link_path, link_file) in find_link_files(odb, commit.tree_id()?)?.into_iter() {
                 if let Some(commit_str) = link_file.get_meta("commit") {
                     if let Ok(commit_oid) = git2::Oid::from_str(&commit_str) {
                         if let Some(cmt) =
@@ -828,19 +828,19 @@ pub fn apply_to_commit2(
             let tree = commit.tree_id()?;
             // An unreadable commit tree is a hard error -- the retain probes and link
             // reads below fold their failures -- and they all share this one parse.
-            let tree_reader = tree::read_tree(transaction, &odb, tree)?;
-            let mut roots = get_link_roots(transaction, &odb, tree)?;
+            let tree_reader = tree::read_tree(transaction, odb, tree)?;
+            let mut roots = get_link_roots(transaction, odb, tree)?;
 
             // A root commit (no first parent) keeps every root; when a first
             // parent is present its tree must be readable (the retain closure below cannot
             // error).
             if let Some(parent) = commit.first_parent_id() {
-                let parent_tree = git::read_tree_id(&odb, parent)?;
-                let parent_reader = tree::read_tree(transaction, &odb, parent_tree)?;
+                let parent_tree = git::read_tree_id(odb, parent)?;
+                let parent_reader = tree::read_tree(transaction, odb, parent_tree)?;
                 roots.retain(|root| {
                     match (
-                        tree::get_path_entry_at(transaction, &odb, &tree_reader, root),
-                        tree::get_path_entry_at(transaction, &odb, &parent_reader, root),
+                        tree::get_path_entry_at(transaction, odb, &tree_reader, root),
+                        tree::get_path_entry_at(transaction, odb, &parent_reader, root),
                     ) {
                         (Ok(Some(a)), Ok(Some(b))) if a.oid == b.oid => false,
                         _ => true,
@@ -848,7 +848,7 @@ pub fn apply_to_commit2(
                 });
             }
 
-            let all_links = links_from_roots(transaction, &odb, &tree_reader, roots)?;
+            let all_links = links_from_roots(transaction, odb, &tree_reader, roots)?;
 
             // Only embedded-mode links get extra parent commits spliced in
             let embedded_links: Vec<_> = all_links
@@ -921,9 +921,9 @@ pub fn apply_to_commit2(
             // The get_* helpers return a bare Filter and would fold an unreadable tree to
             // Op::Empty, so bad input must error here; every probe below shares the read.
             let tree = commit.tree_id()?;
-            let tree_reader = tree::read_tree(transaction, &odb, tree)?;
+            let tree_reader = tree::read_tree(transaction, odb, tree)?;
             if let Some((redirect, _)) =
-                resolve_workspace_redirect(transaction, &odb, &tree_reader, ws_path)
+                resolve_workspace_redirect(transaction, odb, &tree_reader, ws_path)
             {
                 if let Some(r) = apply_to_commit2(redirect, commit_id, transaction)? {
                     transaction.insert(filter, commit.id(), r, true)?;
@@ -933,14 +933,14 @@ pub fn apply_to_commit2(
                 }
             }
 
-            let commit_filter = get_workspace(transaction, &odb, tree, &tree_reader, ws_path);
+            let commit_filter = get_workspace(transaction, odb, tree, &tree_reader, ws_path);
 
             let parent_filters = commit
                 .parent_ids()
                 .map(|parent| {
-                    let tree_id = git::read_tree_id(&odb, parent)?;
-                    let reader = tree::read_tree(transaction, &odb, tree_id)?;
-                    let pcw = get_workspace(transaction, &odb, tree_id, &reader, ws_path);
+                    let tree_id = git::read_tree_id(odb, parent)?;
+                    let reader = tree::read_tree(transaction, odb, tree_id)?;
+                    let pcw = get_workspace(transaction, odb, tree_id, &reader, ws_path);
                     Ok((parent, pcw))
                 })
                 .collect::<anyhow::Result<Vec<_>>>()?;
@@ -949,15 +949,15 @@ pub fn apply_to_commit2(
         }
         Op::Stored(s_path) => {
             let tree = commit.tree_id()?;
-            let tree_reader = tree::read_tree(transaction, &odb, tree)?;
-            let commit_filter = get_stored(transaction, &odb, tree, &tree_reader, s_path);
+            let tree_reader = tree::read_tree(transaction, odb, tree)?;
+            let commit_filter = get_stored(transaction, odb, tree, &tree_reader, s_path);
 
             let parent_filters = commit
                 .parent_ids()
                 .map(|parent| {
-                    let tree_id = git::read_tree_id(&odb, parent)?;
-                    let reader = tree::read_tree(transaction, &odb, tree_id)?;
-                    let pcs = get_stored(transaction, &odb, tree_id, &reader, s_path);
+                    let tree_id = git::read_tree_id(odb, parent)?;
+                    let reader = tree::read_tree(transaction, odb, tree_id)?;
+                    let pcs = get_stored(transaction, odb, tree_id, &reader, s_path);
                     Ok((parent, pcs))
                 })
                 .collect::<anyhow::Result<Vec<_>>>()?;
@@ -967,17 +967,17 @@ pub fn apply_to_commit2(
         Op::Starlark(s_path, s_subfilter) => {
             check_experimental_features_enabled("Starlark filter")?;
             let tree = commit.tree_id()?;
-            let tree_reader = tree::read_tree(transaction, &odb, tree)?;
+            let tree_reader = tree::read_tree(transaction, odb, tree)?;
             let commit_filter =
-                get_starlark(transaction, &odb, tree, &tree_reader, s_path, *s_subfilter);
+                get_starlark(transaction, odb, tree, &tree_reader, s_path, *s_subfilter);
 
             let parent_filters = commit
                 .parent_ids()
                 .map(|parent| {
-                    let tree_id = git::read_tree_id(&odb, parent)?;
-                    let reader = tree::read_tree(transaction, &odb, tree_id)?;
+                    let tree_id = git::read_tree_id(odb, parent)?;
+                    let reader = tree::read_tree(transaction, odb, tree_id)?;
                     let pcs =
-                        get_starlark(transaction, &odb, tree_id, &reader, s_path, *s_subfilter);
+                        get_starlark(transaction, odb, tree_id, &reader, s_path, *s_subfilter);
                     Ok((parent, pcs))
                 })
                 .collect::<anyhow::Result<Vec<_>>>()?;
@@ -1035,19 +1035,19 @@ pub fn apply_to_commit2(
             check_experimental_features_enabled("unapply filter")?;
             if let LazyRef::Resolved(target) = target {
                 /* dbg!(target); */
-                let target = objects::CommitData::read(&odb, *target)?;
+                let target = objects::CommitData::read(odb, *target)?;
                 // Only a root commit (no first parent) skips link detection; a
                 // first parent that is present must be readable.
                 if let Some(parent_id) = target.first_parent_id() {
-                    let parent = objects::CommitData::read(&odb, parent_id)?;
+                    let parent = objects::CommitData::read(odb, parent_id)?;
                     let ptree = apply(transaction, *uf, Rewrite::from_commit_data(&parent)?)?;
                     // The link probe folds every failure into "no link", so an unreadable
                     // filtered tree must error here.
                     let ptree_id = ptree.tree_id();
-                    let ptree_reader = tree::read_tree(transaction, &odb, ptree_id)?;
+                    let ptree_reader = tree::read_tree(transaction, odb, ptree_id)?;
                     if let Some(link) = read_josh_link(
                         transaction,
-                        &odb,
+                        odb,
                         &ptree_reader,
                         &std::path::PathBuf::new(),
                         ".link.josh",
@@ -1083,9 +1083,8 @@ pub fn apply_to_commit2(
             let tree = commit.tree_id()?;
             // The link probe below folds every failure into "no link", so an unreadable
             // or unparseable commit tree must error here.
-            let tree_reader = tree::read_tree(transaction, &odb, tree)?;
-            if let Some(link) = read_josh_link(transaction, &odb, &tree_reader, path, ".link.josh")
-            {
+            let tree_reader = tree::read_tree(transaction, odb, tree)?;
+            if let Some(link) = read_josh_link(transaction, odb, &tree_reader, path, ".link.josh") {
                 let subdir = filter::invert(link.peel())?;
                 let unapply = to_filter(Op::Unapply(LazyRef::Resolved(commit.id()), subdir));
                 if let Some(commit_str) = link.get_meta("commit") {
@@ -1226,8 +1225,8 @@ pub fn apply(
 ) -> anyhow::Result<Rewrite> {
     // One facade handle for the whole (possibly deeply recursive) application -- building it
     // per recursion level would cost an FFI round-trip each.
-    let odb = transaction.odb()?;
-    apply_impl(transaction, &odb, filter, x)
+    let odb = transaction.odb();
+    apply_impl(transaction, odb, filter, x)
 }
 
 fn apply_impl(
@@ -1891,20 +1890,20 @@ fn unapply_per_rev_filter(
 
     match op {
         Op::Workspace(path) => {
-            let odb = transaction.odb()?;
+            let odb = transaction.odb();
             let tree = pre_process_tree(transaction, tree)?;
-            let tree_reader = tree::read_tree(transaction, &odb, tree)?;
-            let parent_reader = tree::read_tree(transaction, &odb, parent_tree)?;
+            let tree_reader = tree::read_tree(transaction, odb, tree)?;
+            let parent_reader = tree::read_tree(transaction, odb, parent_tree)?;
             let workspace = get_filter(
                 transaction,
-                &odb,
+                odb,
                 tree,
                 &tree_reader,
                 Path::new("workspace.josh"),
             );
             let original_workspace = get_filter(
                 transaction,
-                &odb,
+                odb,
                 parent_tree,
                 &parent_reader,
                 &path.join("workspace.josh"),
@@ -1927,13 +1926,13 @@ fn unapply_per_rev_filter(
             )?))
         }
         Op::Stored(path) => {
-            let odb = transaction.odb()?;
+            let odb = transaction.odb();
             let stored_path = path.with_added_extension("josh");
-            let tree_reader = tree::read_tree(transaction, &odb, tree)?;
-            let parent_reader = tree::read_tree(transaction, &odb, parent_tree)?;
-            let stored = get_filter(transaction, &odb, tree, &tree_reader, &stored_path);
+            let tree_reader = tree::read_tree(transaction, odb, tree)?;
+            let parent_reader = tree::read_tree(transaction, odb, parent_tree)?;
+            let stored = get_filter(transaction, odb, tree, &tree_reader, &stored_path);
             let original_stored =
-                get_filter(transaction, &odb, parent_tree, &parent_reader, &stored_path);
+                get_filter(transaction, odb, parent_tree, &parent_reader, &stored_path);
 
             let sj_file = Filter::new().file(stored_path.clone());
             let filter = compose(&[sj_file, stored]);
@@ -1947,13 +1946,13 @@ fn unapply_per_rev_filter(
             )?))
         }
         Op::Starlark(path, subfilter) => {
-            let odb = transaction.odb()?;
-            let tree_reader = tree::read_tree(transaction, &odb, tree)?;
-            let parent_reader = tree::read_tree(transaction, &odb, parent_tree)?;
-            let filter = get_starlark(transaction, &odb, tree, &tree_reader, path, *subfilter);
+            let odb = transaction.odb();
+            let tree_reader = tree::read_tree(transaction, odb, tree)?;
+            let parent_reader = tree::read_tree(transaction, odb, parent_tree)?;
+            let filter = get_starlark(transaction, odb, tree, &tree_reader, path, *subfilter);
             let original_filter = get_starlark(
                 transaction,
-                &odb,
+                odb,
                 parent_tree,
                 &parent_reader,
                 path,
@@ -1975,9 +1974,9 @@ fn pre_process_tree(
     transaction: &cache::Transaction,
     tree: git2::Oid,
 ) -> anyhow::Result<git2::Oid> {
-    let odb = transaction.odb()?;
+    let odb = transaction.odb();
     let path = Path::new("workspace.josh");
-    let ws_file = tree::get_blob(transaction, &odb, tree, path);
+    let ws_file = tree::get_blob(transaction, odb, tree, path);
     let parsed = filter::parse(&ws_file)?;
 
     if invert(parsed).is_err() {
@@ -1993,7 +1992,7 @@ fn pre_process_tree(
     let blob = &format!("{}{}\n", &blob, pretty(parsed, 0));
 
     let tree = tree::insert_oid(
-        &odb,
+        odb,
         tree,
         path,
         odb.write(gix_object::Kind::Blob, blob.as_bytes()),
@@ -2012,15 +2011,12 @@ pub fn compute_warnings(
     let mut warnings = Vec::new();
     let mut filter = filter;
 
-    let odb = match transaction.odb() {
-        Ok(odb) => odb,
-        Err(_) => return warnings,
-    };
+    let odb = transaction.odb();
 
     if let Op::Workspace(path) = to_op(filter) {
         let workspace_filter = &tree::get_blob(
             transaction,
-            &odb,
+            odb,
             tree,
             &path.join(Path::new("workspace.josh")),
         );
@@ -2034,7 +2030,7 @@ pub fn compute_warnings(
 
     if let Op::Stored(path) = to_op(filter) {
         let stored_path = path.with_added_extension("josh");
-        let stored_filter = &tree::get_blob(transaction, &odb, tree, &stored_path);
+        let stored_filter = &tree::get_blob(transaction, odb, tree, &stored_path);
         if let Ok(res) = parse(stored_filter) {
             filter = res;
         } else {
@@ -2094,7 +2090,7 @@ pub fn is_ancestor_of(
             let mut todo = vec![tip];
             let mut ancestors = std::collections::HashSet::from_iter(todo.iter().copied());
             while let Some(commit) = todo.pop() {
-                for parent in crate::git::read_parent_ids(&transaction.odb()?, commit)? {
+                for parent in crate::git::read_parent_ids(transaction.odb(), commit)? {
                     if ancestors.insert(parent) {
                         // Newly inserted! Also handle its parents.
                         todo.push(parent);
@@ -2357,7 +2353,7 @@ fn per_rev_filter(
                 .iter()
                 .filter(|x| **x != git2::Oid::ZERO_SHA1 && **x != target_id)
             {
-                if !objects::is_descendant_of(&transaction.odb()?, target_id, *id)? {
+                if !objects::is_descendant_of(transaction.odb(), target_id, *id)? {
                     return Err(anyhow!(
                         "cannot squash {}: its filtered parents {} and {} do not descend \
                          from one another. `:SQUASH` can only preserve a single lineage",
@@ -2408,7 +2404,7 @@ pub fn downstack(
     change_oid: git2::Oid,
     base_oid: git2::Oid,
 ) -> anyhow::Result<git2::Oid> {
-    if !objects::is_descendant_of(&transaction.odb()?, change_oid, base_oid)? {
+    if !objects::is_descendant_of(transaction.odb(), change_oid, base_oid)? {
         return Err(anyhow!(
             "change {} is not a descendant of base {}",
             change_oid,
@@ -2422,8 +2418,8 @@ pub fn downstack(
     // RangeWalk needed. A base that passes the descendant check but is NOT on
     // the spine would make "the stack from base" ill-defined; error instead
     // of answering.
-    let odb = transaction.odb()?;
-    let mut walk = objects::RevWalk::new(&odb);
+    let odb = transaction.odb();
+    let mut walk = objects::RevWalk::new(odb);
     walk.simplify_first_parent();
     walk.push(change_oid)?;
     let mut seen_base = false;
@@ -2449,7 +2445,7 @@ pub fn downstack(
 
     let mut commits: Vec<objects::CommitData> = oids
         .into_iter()
-        .map(|oid| objects::CommitData::read(&odb, oid))
+        .map(|oid| objects::CommitData::read(odb, oid))
         .collect::<anyhow::Result<Vec<_>>>()?;
 
     // The last commit is `change`; split it off from the intermediates
@@ -2457,10 +2453,10 @@ pub fn downstack(
 
     // Seed the affected dependency set with the change's own deps, then walk
     // intermediates backwards, keeping any commit whose deps intersect.
-    let mut affected = downstack_commit_deps(transaction, &odb, &change_commit)?;
+    let mut affected = downstack_commit_deps(transaction, odb, &change_commit)?;
     let mut needed: Vec<bool> = vec![false; commits.len()];
     for (i, intermediate) in commits.iter().enumerate().rev() {
-        let deps = downstack_commit_deps(transaction, &odb, intermediate)?;
+        let deps = downstack_commit_deps(transaction, odb, intermediate)?;
         if !deps.is_disjoint(&affected) {
             needed[i] = true;
             affected.extend(deps);
@@ -2470,7 +2466,7 @@ pub fn downstack(
     // Rebase needed intermediates forward onto current_base. The rebuilt base's tree is the
     // merge result just written, so no commit read-back is needed between steps.
     let mut current_base_id = base_oid;
-    let mut current_base_tree = git::read_tree_id(&odb, base_oid)?;
+    let mut current_base_tree = git::read_tree_id(odb, base_oid)?;
     for (intermediate, is_needed) in commits.iter().zip(needed.iter()) {
         if !is_needed {
             continue;
@@ -2483,12 +2479,12 @@ pub fn downstack(
         })?;
         let new_tree_oid = cached_merge_trees(
             transaction,
-            git::read_tree_id(&odb, inter_parent)?,
+            git::read_tree_id(odb, inter_parent)?,
             current_base_tree,
             intermediate.tree_id()?,
         )?;
         let new_oid = history::rewrite_commit(
-            &odb,
+            odb,
             intermediate,
             &[current_base_id],
             Rewrite::from_tree(new_tree_oid),
@@ -2504,7 +2500,7 @@ pub fn downstack(
         .ok_or_else(|| anyhow!("downstack: change {} has no parent", change_commit.id()))?;
     let new_tree_oid = cached_merge_trees(
         transaction,
-        git::read_tree_id(&odb, change_parent)?,
+        git::read_tree_id(odb, change_parent)?,
         current_base_tree,
         change_commit.tree_id()?,
     )?;
@@ -2517,7 +2513,7 @@ pub fn downstack(
     new_parents.extend(change_commit.parent_ids().skip(1));
 
     let new_oid = history::rewrite_commit(
-        &odb,
+        odb,
         &change_commit,
         &new_parents,
         Rewrite::from_tree(new_tree_oid),
@@ -2555,7 +2551,7 @@ fn cached_merge_trees(
     if let Some(hit) = transaction.get_merge_trees(key) {
         return Ok(hit);
     }
-    let oid = objects::merge_trees(&transaction.odb()?, a, b, c)?;
+    let oid = objects::merge_trees(transaction.odb(), a, b, c)?;
     transaction.insert_merge_trees(key, oid);
     Ok(oid)
 }

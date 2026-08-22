@@ -14,6 +14,6 @@ pub mod registry;
 
 pub use hash::PassthroughHasher;
 pub use mem_odb::MemOdb;
-pub use odb::{Alternates, Bytes, Odb};
+pub use odb::{Bytes, Odb};
 pub use pack::objects_dir;
 pub use registry::FlushGuard;

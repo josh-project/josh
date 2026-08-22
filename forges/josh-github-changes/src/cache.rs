@@ -72,7 +72,7 @@ pub fn store_sync_fingerprint(
     scope: &ChangesRef,
 ) -> anyhow::Result<()> {
     let json = serde_json::to_string(fingerprint)?;
-    let blob_oid = josh_core::objects::write_blob(&transaction.odb()?, json.as_bytes())?;
+    let blob_oid = josh_core::objects::write_blob(transaction.odb(), json.as_bytes())?;
     let path = std::path::Path::new("gh_cache")
         .join(encode_change_id_path(change_id))
         .join(LEAF);

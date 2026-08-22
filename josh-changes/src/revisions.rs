@@ -15,7 +15,7 @@ pub fn read_revisions(
     change: &Change,
     scope: &ChangesRef,
 ) -> anyhow::Result<Vec<Revision>> {
-    let odb = transaction.odb()?;
+    let odb = transaction.odb();
     let change_id = match change.id() {
         Some(id) => id,
         None => return Ok(Vec::new()),
@@ -30,7 +30,7 @@ pub fn read_revisions(
     let diffs_of = |tree: git2::Oid| -> Option<git2::Oid> {
         crate::store::get_tree(
             transaction,
-            &odb,
+            odb,
             tree,
             &std::path::Path::new("diffs").join(encode_change_id_path(change_id)),
         )
@@ -38,12 +38,12 @@ pub fn read_revisions(
 
     let mut revs: Vec<Revision> = Vec::new();
     let mut seen: std::collections::HashSet<String> = std::collections::HashSet::new();
-    let mut walk = objects::RevWalk::new(&odb);
+    let mut walk = objects::RevWalk::new(odb);
     walk.simplify_first_parent();
     walk.push(head)?;
 
     for oid in walk.into_topo_vec(|_| false)? {
-        let commit = objects::CommitData::read(&odb, oid)?;
+        let commit = objects::CommitData::read(odb, oid)?;
         let Ok(cur_tree) = commit.tree_id() else {
             continue;
         };
@@ -53,11 +53,11 @@ pub fn read_revisions(
         };
         let parent_cid_tree = commit
             .first_parent_id()
-            .and_then(|p| josh_core::git::read_tree_id(&odb, p).ok())
+            .and_then(|p| josh_core::git::read_tree_id(odb, p).ok())
             .and_then(diffs_of)
-            .and_then(|t| tree::read_tree(transaction, &odb, t).ok());
+            .and_then(|t| tree::read_tree(transaction, odb, t).ok());
 
-        for entry in tree::read_tree(transaction, &odb, cid_tree)?.entries() {
+        for entry in tree::read_tree(transaction, odb, cid_tree)?.entries() {
             let commit_oid = String::from_utf8_lossy(entry.filename).into_owned();
             if commit_oid.is_empty() || seen.contains(&commit_oid) {
                 continue;
