@@ -1,6 +1,6 @@
 # git2 -> gix port: status
 
-Last updated: 2026-08-16 (post-2.3). See `PLAN.md` in this directory for the full phased plan.
+Last updated: 2026-08-16 (post-2.4). See `PLAN.md` in this directory for the full phased plan.
 
 ## Landed on master (one commit per step, each suite-green and bench-validated)
 
@@ -18,6 +18,8 @@ Last updated: 2026-08-16 (post-2.3). See `PLAN.md` in this directory for the ful
 | 2.2 | c3320d47 | josh-changes onto the Transaction ref API: all public fns take `&Transaction` (redundant `(repo, transaction)` pairs collapsed; `Change::new`/`create_synthetic_merge_commit` take oids, `Change::new` now fallible); ref reads via `resolve_ref`, enumeration via two `for_each_ref_prefixed` calls, and every `repo.commit(Some(&ref))` split into `repo.commit(None, ..)` + `Transaction::update_ref`, reshaped to take an `Expected` guard (`Any`/`Absent`/`At(oid)`, mirroring gix `PreviousValue`); `At`/`Absent` preserve libgit2's first-parent-must-be-tip check on the metadata refs (contract pinned by 6 unit tests incl. packed-ref match and error-on-vanished). Object I/O, git2 revwalks, `repo.head()` (symbolic HEAD) and `revparse_single` stay on `transaction.repo()` until flag day (`// PORT:` markers). Deliberate divergences: corrupt-ref errors propagate instead of reading as absent (2.1 contract), symbolic refs under `refs/josh/{changes,remotes}/` no longer enumerate, reflog message text differs. Callers ported: josh-cli, josh-proxy, josh-github-changes (+josh-core dep), josh-gui (+josh-core dep; per-callback `TransactionContext` over an empty `CacheStack`) | flat (`refs_filter_update` no-change vs pre-gix; josh-core hot paths untouched) |
 
 | 2.3 | bd1b18f5 | josh-graphql onto the Transaction ref API: all five ref sites (reads only, all on the mirror transaction) — the two Markers `revparse_single` sites -> `resolve_ref` (absent -> empty-tree fallback kept; objects still read on the overlay via disk alternate), `Reference::rev` -> `resolve_ref` + explicit missing-ref error, `Repository::refs` -> `for_each_ref_prefixed` over ns + the pattern's literal prefix, names matched ns-stripped against the pattern with the vendored `glob` crate (default `MatchOptions` = wildmatch flags 0: `*`/`?` cross `/`; ns never enters glob syntax); `format_marker` -> new `josh_gix_ext::hash_blob` (byte-identical). `Repository::rev`'s user rev-syntax revparse stays on `transaction.repo()` (PORT marker), as do object I/O and the prysk-pinned history revwalk. Deliberate divergences (refs listing has zero in-repo callers/tests): byte-sorted listing, symrefs/non-UTF-8/corrupt refs skip instead of enumerate/error, glob-crate edge patterns (mid-string `**` errors, no `[^a]`/POSIX classes). New graphql_refs.t pins the matcher contract, a unit test pins `hash_blob` | flat (josh-core untouched; `refs_filter_update` -3%, deephistory at post-1.5 levels on clean-master control; NOTE: `deephistory_{subdir,rev}/100` read +290% vs pre-gix on clean master too — bisected to 0993209a (refcounted sled lifetime: per-iteration transaction drops close/reopen the db, whose flush/reopen I/O dominates short cases); fixed by pinning the db in bench setups, restoring -23%/-21%) |
+
+| 2.4 | 33b12c96 | josh-cli onto the Transaction ref API: reads via `resolve_ref`, enumeration via `for_each_ref_prefixed` (backing refs, cache chain discovery, `--squash-pattern` filtered inline with the vendored `glob` crate — josh-cli gains the glob dep), writes via `update_ref` (`Expected::Any` everywhere except the unapply write and the pull branch move, which guard with `At` of the ref's stored target — the pull guard deliberately uses `head.target()`, not the peeled commit, so a branch-at-annotated-tag state still CASes correctly); cache-build writes go through the `build_transaction` owning the mem-odb overlay. The API gains `delete_ref` (Expected-guarded; `Any` = missing-ok, `Absent` = contract error, symref deleted-not-followed) and `create_symref` (always-force, dangling targets allowed; fetch's remote-HEAD symrefs, later josh-proxy's `reference_symbolic`), contracts pinned by doc comments + 12 unit tests (incl. packed-ref delete). `resolve_default_branch`/`resolve_input_ref`/`resolve_upstream_ref` now take `&Transaction`. Symbolic-HEAD/symbolic-target reads, DWIM, FETCH_HEAD, `branch_upstream_name`, rev-parse stay on `transaction.repo()` (19 PORT markers). Deliberate divergences (suite-invisible; zero prysk churn — push.t's `--base` context+cause chain kept byte-identical): byte-sorted enumeration (squash-pattern duplicate-oid collision winner now deterministic byte-greatest refname, pinned by new `squash_same_oid.t` together with the vendored-glob mid-string `**` error), corrupt refs and syntactically invalid user-supplied refnames error instead of reading as absent/zero (incl. cache chain-discovery iteration errors, previously swallowed), `resolve_ref` follows symrefs where targets were read directly, guarded writes error on concurrent ref moves instead of clobbering, sync `--clean` deletion is missing-ok (find/delete race removed) | flat-to-better (`refs_filter_update` **-2 to -5%**, `deephistory_{subdir,rev}` control at post-1.5 levels, pinned-sled setups) |
 
 Phase 1.2 is complete: no `treebuilder` use remains in `josh-core/src/filter/tree.rs`.
 
@@ -43,15 +45,13 @@ write); blob writes are plain odb writes that memodb intercepts.
 
 ## Next steps
 
-1. **2.4** josh-cli: ref sites onto the Transaction ref API (usage map in 2.1-research.md;
-   watch the two-transaction cache-build path and the order-sensitive squash-pattern glob in
-   josh-filter.rs). Then **2.5** josh-filter (`Filter::id()`, `LazyRef::Resolved`),
-   josh-link/starlark/templates; **2.6** audit
+1. **2.5** josh-filter (`Filter::id()`, `LazyRef::Resolved`), josh-link/starlark/templates,
+   and josh-proxy ref sites; then **2.6** audit
    (remaining `transaction.repo()` callers only transaction.rs, git.rs, housekeeping.rs
    object reads, memodb registration). Ref-usage maps for all leaf crates are in
-   `.agents/work/gix-port/2.1-research.md`. The ref API will need deletion/symbolic-create
-   additions when josh-proxy migrates (`upstream.rs` fake-head delete, `service.rs`
-   `reference_symbolic`).
+   `.agents/work/gix-port/2.1-research.md`. `delete_ref`/`create_symref` exist since 2.4 —
+   josh-proxy's `upstream.rs` fake-head delete and `service.rs` `reference_symbolic`
+   consume them when it migrates.
 2. **Phase 3** Flusher packs via gix-pack; memory store into the adapter; flag day: Transaction
    opens `gix::ThreadSafeRepository` (isolated), refs via gix-ref (parity contract pinned in
    the 2.1 method comments + unit tests). Plan gap found in 2.1: `cache/distributed.rs` holds
