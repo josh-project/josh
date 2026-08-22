@@ -1,0 +1,12 @@
+[workspace]
+resolver = "2"
+members = ["josh-filter-guest", "examples/subdirs-prefixed"]
+
+# Guest modules are committed as blobs into user repositories and loaded on
+# every proxy evaluation, so release builds are tuned for size, not speed.
+[profile.release]
+opt-level = "z"
+lto = "fat"
+strip = true
+panic = "abort"
+codegen-units = 1
