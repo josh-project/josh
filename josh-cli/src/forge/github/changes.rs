@@ -3,11 +3,10 @@
 //! feedback back to GitHub.
 
 use anyhow::{Context, anyhow};
-use serde_json;
 
 use josh_core::git::normalize_repo_path;
 use josh_github_graphql::connection::GithubApiConnection;
-use josh_github_graphql::operations::pull_request::PrSummary;
+use josh_github_graphql::operations::pull_request::{PrData, PrSummary};
 
 use super::{api_connection_hint, make_api_connection};
 
@@ -72,30 +71,48 @@ async fn run_sync(
         target_branch_shas: &target_branch_shas,
     };
 
-    // Only PRs whose fingerprint cache misses get their metadata fetched.
     let mut stats = SyncStats::default();
-    let stale: Vec<&PrSummary> = prs
-        .iter()
-        .filter(|pr| {
-            let change_id = change_id_for_pr(pr, owner, repo_name);
-            let scope = remote_scope_for(remote_name, &target_branch_for_pr(pr));
-            let hit = policy.lookup(transaction, &change_id, &scope, pr);
-            if hit {
-                stats.track_cached(pr.number);
+
+    // Only PRs whose fingerprint cache misses get their metadata fetched.
+    {
+        let stale: Vec<&PrSummary> = prs
+            .iter()
+            .filter(|pr| {
+                let change_id = change_id_for_pr(pr, owner, repo_name);
+                let scope = remote_scope_for(remote_name, &target_branch_for_pr(pr));
+                let hit = policy.lookup(transaction, &change_id, &scope, pr);
+                if hit {
+                    stats.track_cached(pr.number);
+                }
+                !hit
+            })
+            .collect();
+
+        for pr in stale {
+            let result = match ctx.fetch_pr_meta(pr).await {
+                Ok(meta) => ctx.store_pr_meta(policy, pr, meta),
+                Err(e) => Err(e),
+            };
+            match result {
+                Ok(n) => stats.track_synced(pr.number, n),
+                Err(e) => stats.track_skipped(pr.number, e),
             }
-            !hit
-        })
-        .collect();
-
-    sync_prs(&ctx, &stale, policy, &mut stats).await;
-    stats.report();
-
-    ctx.gc_closed_changes(&prs).await?;
-
-    if push {
-        ctx.push_local_feedback(&prs).await;
+        }
     }
 
+    {
+        let gc_candidates = ctx.gc_candidates(&prs)?;
+        let states = ctx.fetch_gc_states(gc_candidates).await;
+        ctx.apply_gc(states, &mut stats)?;
+    }
+
+    if push {
+        for pending in ctx.prepare_feedback(&prs) {
+            stats.track_pushed(&ctx.publish_feedback(pending).await);
+        }
+    }
+
+    stats.report();
     Ok(())
 }
 
@@ -107,6 +124,14 @@ struct SyncStats {
     skipped: Vec<(i64, String)>,
     /// PR numbers served from the fingerprint cache.
     cached: Vec<i64>,
+    /// (change id, PR number, final state) per cleaned change.
+    cleaned: Vec<(String, i64, String)>,
+    /// (change id, PR number, reason) per change that could not be cleaned.
+    gc_skipped: Vec<(String, i64, String)>,
+    /// (PR number, posted comments, posted votes) per pushed PR.
+    pushed: Vec<(i64, usize, usize)>,
+    /// (PR number, reason) per failed or partially failed feedback push.
+    push_failures: Vec<(i64, String)>,
 }
 
 /// "0 PRs skipped" / "1 PR skipped: #8" / "4 PRs skipped: #8, #9 and 2 more PRs".
@@ -157,6 +182,30 @@ impl SyncStats {
         self.cached.push(pr_number);
     }
 
+    /// Record a change deleted because its PR closed or merged.
+    fn track_cleaned(&mut self, change_id: &str, pr_number: i64, state: &str) {
+        self.cleaned
+            .push((change_id.to_string(), pr_number, state.to_string()));
+    }
+
+    /// Record one PR's feedback publish outcome.
+    fn track_pushed(&mut self, outcome: &PublishOutcome) {
+        self.pushed.push((
+            outcome.pr_number,
+            outcome.posted_comments,
+            outcome.posted_votes,
+        ));
+        for e in &outcome.errors {
+            self.push_failures.push((outcome.pr_number, e.clone()));
+        }
+    }
+
+    /// Record a change whose cleanup was skipped, with the reason.
+    fn track_gc_skipped(&mut self, change_id: &str, pr_number: i64, reason: String) {
+        self.gc_skipped
+            .push((change_id.to_string(), pr_number, reason));
+    }
+
     /// Print the end-of-sync summary.
     fn report(&self) {
         for (number, comments) in &self.synced {
@@ -164,6 +213,18 @@ impl SyncStats {
         }
         for (number, error) in &self.skipped {
             eprintln!("  PR #{}: {} — skipped", number, error);
+        }
+        for (change_id, pr_number, state) in &self.cleaned {
+            println!(
+                "  Cleaned up '{}' (PR #{}: {})",
+                change_id, pr_number, state
+            );
+        }
+        for (change_id, pr_number, reason) in &self.gc_skipped {
+            eprintln!(
+                "  Change '{}' (PR #{}): {} -- skipping",
+                change_id, pr_number, reason
+            );
         }
         let total: usize = self.synced.iter().map(|(_, n)| n).sum();
         let skipped: Vec<i64> = self.skipped.iter().map(|(n, _)| *n).collect();
@@ -174,30 +235,34 @@ impl SyncStats {
             pr_count_list(&skipped, "PR", " skipped"),
             pr_count_list(&self.cached, "change", " cached"),
         );
-    }
-}
-
-/// Fetch and store metadata (local change, diff data, comments) for each
-/// given PR, accumulating counts into `stats`.
-async fn sync_prs(
-    ctx: &GithubSyncCtx<'_>,
-    prs: &[&PrSummary],
-    policy: &CachePolicy,
-    stats: &mut SyncStats,
-) {
-    for pr in prs {
-        let result = match ctx.fetch_pr_meta(pr).await {
-            Ok(meta) => ctx.store_pr_meta(policy, pr, meta),
-            Err(e) => Err(e),
-        };
-        match result {
-            Ok(n) => stats.track_synced(pr.number, n),
-            Err(e) => stats.track_skipped(pr.number, e),
+        if !self.cleaned.is_empty() {
+            println!("Cleaned up {} closed/merged changes.", self.cleaned.len());
+        }
+        if !self.pushed.is_empty() || !self.push_failures.is_empty() {
+            for (number, error) in &self.push_failures {
+                eprintln!("  PR #{}: {}", number, error);
+            }
+            for (number, comments, votes) in &self.pushed {
+                if *comments > 0 {
+                    println!("  PR #{}: posted {} local comments", number, comments);
+                }
+                if *votes > 0 {
+                    println!("  PR #{}: posted {} votes", number, votes);
+                }
+            }
+            let total_comments: usize = self.pushed.iter().map(|(_, c, _)| c).sum();
+            let total_votes: usize = self.pushed.iter().map(|(_, _, v)| v).sum();
+            println!(
+                "Posted {} local comments and {} votes to GitHub.",
+                total_comments, total_votes
+            );
         }
     }
 }
 
-/// Context for GitHub-backed sync phases.
+/// Shared context for one sync run: repo and transaction handles, the GitHub
+/// API connection, the identity of the remote being synced, and the fetched
+/// target-branch tips. Per-phase behavior is documented on the methods.
 struct GithubSyncCtx<'a> {
     transaction: &'a josh_core::cache::Transaction,
     repo: &'a git2::Repository,
@@ -311,8 +376,12 @@ impl GithubSyncCtx<'_> {
 
         josh_changes::store_diff_data(self.transaction, &change, &meta.remote_scope)?;
 
-        let json = serde_json::to_string(&meta.pr_data)?;
-        josh_changes::store_pr_data(self.transaction, &meta.change_id, &json, &meta.remote_scope)?;
+        josh_changes::store_pr_data(
+            self.transaction,
+            &meta.change_id,
+            &meta.pr_data,
+            &meta.remote_scope,
+        )?;
 
         let fetched = josh_github_changes::fetched_comments(&meta.pr_data);
         let written = josh_changes::store_fetched_comments(
@@ -347,11 +416,50 @@ struct PrMeta {
     pr_data: josh_github_graphql::operations::pull_request::PrData,
 }
 
+/// A local change whose PR is absent from the open list, awaiting a closure
+/// check against GitHub before deletion.
+struct GcCandidate {
+    change_id: String,
+    remote_scope: josh_changes::ChangesRef,
+    pr_number: i64,
+}
+
+/// Pending local feedback for one PR, loaded from local refs and ready to
+/// publish. Comment and vote loads fail independently.
+struct PendingFeedback {
+    pr_number: i64,
+    head_ref_name: String,
+    head_oid: String,
+    change_id: String,
+    remote_scope: josh_changes::ChangesRef,
+    comments: anyhow::Result<josh_changes::PendingComments>,
+    votes: anyhow::Result<PendingVotes>,
+}
+
+/// Pending votes plus the full outbox, needed for post-publish cleanup.
+struct PendingVotes {
+    pending: Vec<(String, josh_changes::VoteData)>,
+    outbox: Vec<(String, josh_changes::VoteData)>,
+}
+
+/// Result of publishing one PR's feedback: what was posted and recorded,
+/// plus message-ready descriptions of every failure along the way.
+struct PublishOutcome {
+    pr_number: i64,
+    posted_comments: usize,
+    posted_votes: usize,
+    errors: Vec<String>,
+}
+
 impl GithubSyncCtx<'_> {
-    /// Delete local changes whose PRs are no longer open on GitHub, after
-    /// recording their final PR state. Returns the number of cleaned changes.
-    async fn gc_closed_changes(&self, prs: &[PrSummary]) -> anyhow::Result<usize> {
-        let open_change_ids = collect_open_change_ids(prs, self.owner, self.repo_name);
+    /// Collect local changes under this remote whose PRs are not in the open
+    /// list and which map to a PR number. Local reads only -- no network, no
+    /// writes.
+    fn gc_candidates(&self, prs: &[PrSummary]) -> anyhow::Result<Vec<GcCandidate>> {
+        let open_change_ids: std::collections::HashSet<String> = prs
+            .iter()
+            .map(|pr| change_id_for_pr(pr, self.owner, self.repo_name))
+            .collect();
 
         // Iterate every (change, scope) pair under this remote -- changes may live
         // under multiple target-branch refs.
@@ -360,300 +468,309 @@ impl GithubSyncCtx<'_> {
                 .into_iter()
                 .filter(|r| r.remote() == Some(self.remote_name))
                 .collect();
-        let mut all_changes: Vec<(josh_changes::Change, josh_changes::ChangesRef)> = Vec::new();
+
+        let mut candidates = Vec::new();
         for scope in &remote_scopes {
-            for c in josh_changes::list_changes(self.transaction, scope)? {
-                all_changes.push((c, scope.clone()));
+            for change in josh_changes::list_changes(self.transaction, scope)? {
+                let Some(change_id) = change.id() else {
+                    continue;
+                };
+                if open_change_ids.contains(change_id) {
+                    continue;
+                }
+                if let Some(pr_number) = resolve_pr_number(
+                    self.transaction,
+                    self.owner,
+                    self.repo_name,
+                    change_id,
+                    scope,
+                ) {
+                    candidates.push(GcCandidate {
+                        change_id: change_id.to_string(),
+                        remote_scope: scope.clone(),
+                        pr_number,
+                    });
+                }
             }
         }
-        let mut cleaned = 0usize;
+        Ok(candidates)
+    }
 
-        for (change, remote_scope) in &all_changes {
-            let Some(change_id) = change.id() else {
-                continue;
-            };
-
-            if open_change_ids.contains(change_id) {
-                continue;
-            }
-
-            let Some(pr_number) = self.resolve_pr_number(change_id, remote_scope) else {
-                continue;
-            };
-
-            // Fetch the current PR data from GitHub.
-            let pr_data = match self
+    /// Fetch the current PR state for each candidate. Network only -- no
+    /// local writes; per-PR fetch failures are carried into the action stage.
+    async fn fetch_gc_states(
+        &self,
+        candidates: Vec<GcCandidate>,
+    ) -> Vec<(GcCandidate, anyhow::Result<PrData>)> {
+        let mut states = Vec::with_capacity(candidates.len());
+        for candidate in candidates {
+            let state = self
                 .api
-                .get_pr_comments(self.owner, self.repo_name, pr_number)
-                .await
-            {
+                .get_pr_comments(self.owner, self.repo_name, candidate.pr_number)
+                .await;
+            states.push((candidate, state));
+        }
+        states
+    }
+
+    /// Apply garbage collection: record the final PR state and delete the
+    /// change for every candidate whose PR is closed/merged. All local writes
+    /// happen here; outcomes are tracked in `stats`.
+    fn apply_gc(
+        &self,
+        states: Vec<(GcCandidate, anyhow::Result<PrData>)>,
+        stats: &mut SyncStats,
+    ) -> anyhow::Result<()> {
+        for (candidate, state) in states {
+            let GcCandidate {
+                change_id,
+                remote_scope,
+                pr_number,
+            } = &candidate;
+            let pr_number = *pr_number;
+
+            let pr_data = match state {
                 Ok(d) => d,
                 Err(e) => {
-                    eprintln!(
-                        "  Change '{}' (PR #{}): failed to fetch PR data: {} -- skipping",
-                        change_id, pr_number, e
+                    stats.track_gc_skipped(
+                        change_id,
+                        pr_number,
+                        format!("failed to fetch PR data: {}", e),
                     );
                     continue;
                 }
             };
 
-            // Guard: if the PR is still open, do not delete the change.
-            if pr_data.state == "OPEN" {
-                // Record the current state even if unexpectedly open.
-                let json = serde_json::to_string(&pr_data)?;
-                josh_changes::store_pr_data(self.transaction, change_id, &json, remote_scope)?;
-                eprintln!(
-                    "  Change '{}' (PR #{}): unexpectedly still OPEN on GitHub \
-                     -- skipping deletion",
-                    change_id, pr_number
-                );
-                continue;
-            }
-
-            // Commit 1: store the updated PR data (final CLOSED/MERGED state).
-            let json = serde_json::to_string(&pr_data)?;
+            // Record the final PR state for every candidate, open or closed;
+            // a failed ref write skips the candidate like any other failure.
             if let Err(e) =
-                josh_changes::store_pr_data(self.transaction, change_id, &json, remote_scope)
+                josh_changes::store_pr_data(self.transaction, change_id, &pr_data, remote_scope)
             {
-                eprintln!(
-                    "  Change '{}' (PR #{}): failed to store updated PR data: {} \
-                     -- skipping deletion",
-                    change_id, pr_number, e
+                stats.track_gc_skipped(
+                    change_id,
+                    pr_number,
+                    format!("failed to store updated PR data: {}", e),
                 );
                 continue;
             }
 
-            // Commit 2: delete the change from the remote changes ref.
-            if let Err(e) = josh_changes::delete_change(self.transaction, change_id, remote_scope) {
-                eprintln!(
-                    "  Change '{}' (PR #{}): failed to delete: {}",
-                    change_id, pr_number, e
+            // Guard: if the PR is still open, do not delete the change. The
+            // state string is the Debug form of the GraphQL enum ("Open").
+            if pr_data.state.eq_ignore_ascii_case("open") {
+                stats.track_gc_skipped(
+                    change_id,
+                    pr_number,
+                    "unexpectedly still OPEN on GitHub".to_string(),
                 );
-            } else {
-                println!(
-                    "  Cleaned up '{}' (PR #{}: {})",
-                    change_id, pr_number, pr_data.state
-                );
-                cleaned += 1;
+                continue;
+            }
+
+            // Delete the change from the remote changes ref.
+            match josh_changes::delete_change(self.transaction, change_id, remote_scope) {
+                Ok(()) => stats.track_cleaned(change_id, pr_number, &pr_data.state),
+                Err(e) => {
+                    stats.track_gc_skipped(change_id, pr_number, format!("failed to delete: {}", e))
+                }
             }
         }
 
-        if cleaned > 0 {
-            println!("Cleaned up {} closed/merged changes.", cleaned);
-        }
-        Ok(cleaned)
+        Ok(())
     }
 
-    /// Determine the PR number for a change: parse it from a synthetic
-    /// `{owner}/{repo}/pull/{N}` change ID, or fall back to stored PR data for
-    /// custom Change-Ids. Returns None for purely local changes.
-    fn resolve_pr_number(
-        &self,
-        change_id: &str,
-        remote_scope: &josh_changes::ChangesRef,
-    ) -> Option<i64> {
-        if let Some(n) = parse_pr_number_from_change_id(change_id, self.owner, self.repo_name) {
-            return Some(n);
-        }
-
-        // Custom Change-Id; try reading stored PR data.
-        match josh_changes::read_pr_data(self.transaction, change_id, remote_scope) {
-            Ok(Some(json)) => match serde_json::from_str::<serde_json::Value>(&json) {
-                Ok(v) => match v.get("number").and_then(|n| n.as_i64()) {
-                    Some(n) => Some(n),
-                    None => {
-                        eprintln!(
-                            "  Change '{}': no PR number in stored data -- skipping",
-                            change_id
-                        );
-                        None
-                    }
-                },
-                Err(e) => {
-                    eprintln!(
-                        "  Change '{}': invalid stored PR data: {} -- skipping",
-                        change_id, e
-                    );
-                    None
+    /// Load pending local feedback (comments and votes) for every PR. Local
+    /// reads only -- no network, no writes. Comment and vote loads fail
+    /// independently; failures are carried into the publish stage.
+    fn prepare_feedback(&self, prs: &[PrSummary]) -> Vec<PendingFeedback> {
+        prs.iter()
+            .map(|pr| {
+                let change_id = change_id_for_pr(pr, self.owner, self.repo_name);
+                let remote_scope = remote_scope_for(self.remote_name, &target_branch_for_pr(pr));
+                let comments =
+                    josh_changes::read_comments(self.transaction, &change_id, &remote_scope)
+                        .and_then(|c| {
+                            josh_github_changes::pending_comments(
+                                self.transaction,
+                                &change_id,
+                                &remote_scope,
+                                c,
+                            )
+                        });
+                let votes =
+                    josh_changes::list_outbox_votes(self.transaction, &change_id, &remote_scope)
+                        .and_then(|outbox| {
+                            josh_github_changes::pending_votes(
+                                self.transaction,
+                                &change_id,
+                                &remote_scope,
+                                &outbox,
+                            )
+                            .map(|pending| PendingVotes { pending, outbox })
+                        });
+                PendingFeedback {
+                    pr_number: pr.number,
+                    head_ref_name: pr.head_ref_name.clone(),
+                    head_oid: pr.head_oid.clone(),
+                    change_id,
+                    remote_scope,
+                    comments,
+                    votes,
                 }
-            },
-            Ok(None) => {
-                // Purely local change with no PR data at all.
-                None
-            }
+            })
+            .collect()
+    }
+
+    /// Publish one PR's pending feedback to GitHub and record the resulting
+    /// GitHub IDs locally. All network mutations and local writes of the push
+    /// phase happen here; failures are collected as messages in the outcome.
+    async fn publish_feedback(&self, pending: PendingFeedback) -> PublishOutcome {
+        let mut outcome = PublishOutcome {
+            pr_number: pending.pr_number,
+            posted_comments: 0,
+            posted_votes: 0,
+            errors: Vec::new(),
+        };
+
+        let comments = match &pending.comments {
+            Ok(c) => Some(c),
             Err(e) => {
-                eprintln!(
-                    "  Change '{}': failed to read PR data: {} -- skipping",
-                    change_id, e
-                );
+                outcome
+                    .errors
+                    .push(format!("failed to load local comments: {}", e));
                 None
             }
-        }
-    }
-
-    /// Post local comments and votes that haven't been pushed to GitHub yet.
-    async fn push_local_feedback(&self, prs: &[PrSummary]) {
-        let mut total_posted = 0usize;
-        let mut total_votes_posted = 0usize;
-        for pr in prs {
-            let change_id = change_id_for_pr(pr, self.owner, self.repo_name);
-            let target_branch = target_branch_for_pr(pr);
-            let remote_scope = remote_scope_for(self.remote_name, &target_branch);
-
-            match self
-                .api
-                .find_pull_request_by_head(self.owner, self.repo_name, &pr.head_ref_name, None)
-                .await
-            {
-                Ok(Some((pr_node_id, _, _))) => {
-                    total_posted += self
-                        .push_pr_comments(pr, &pr_node_id, &change_id, &remote_scope)
-                        .await;
-                    total_votes_posted += self
-                        .push_pr_votes(pr, &pr_node_id, &change_id, &remote_scope)
-                        .await;
-                }
-                Ok(None) => {
-                    eprintln!(
-                        "  No open PR found for {} — skipping comment push",
-                        pr.head_ref_name
-                    );
-                }
-                Err(e) => {
-                    eprintln!("  Failed to look up PR for {}: {}", pr.head_ref_name, e);
-                }
+        };
+        let votes = match &pending.votes {
+            Ok(v) => Some(v),
+            Err(e) => {
+                outcome
+                    .errors
+                    .push(format!("failed to load local votes: {}", e));
+                None
             }
+        };
+        if comments.is_none() && votes.is_none() {
+            return outcome;
         }
-        println!(
-            "Posted {} local comments and {} votes to GitHub.",
-            total_posted, total_votes_posted
-        );
-    }
 
-    /// Post pending local comments for one PR and record their GitHub IDs.
-    /// Returns the number posted and recorded; a load failure aborts the
-    /// comment push for this PR and returns 0.
-    async fn push_pr_comments(
-        &self,
-        pr: &PrSummary,
-        pr_node_id: &str,
-        change_id: &str,
-        remote_scope: &josh_changes::ChangesRef,
-    ) -> usize {
-        let comments = match josh_changes::read_comments(self.transaction, change_id, remote_scope)
+        let pr_node_id = match self
+            .api
+            .find_pull_request_by_head(self.owner, self.repo_name, &pending.head_ref_name, None)
+            .await
         {
-            Ok(c) => c,
+            Ok(Some((id, _, _))) => id,
+            Ok(None) => {
+                outcome.errors.push(format!(
+                    "no open PR found for {} -- skipping feedback push",
+                    pending.head_ref_name
+                ));
+                return outcome;
+            }
             Err(e) => {
-                eprintln!("  PR #{}: failed to load local comments: {}", pr.number, e);
-                return 0;
+                outcome.errors.push(format!(
+                    "failed to look up PR for {}: {}",
+                    pending.head_ref_name, e
+                ));
+                return outcome;
             }
         };
-        let pending = match josh_github_changes::pending_comments(
-            self.transaction,
-            change_id,
-            remote_scope,
-            comments,
-        ) {
-            Ok(p) => p,
-            Err(e) => {
-                eprintln!("  PR #{}: failed to load local comments: {}", pr.number, e);
-                return 0;
+
+        if let Some(c) = comments {
+            let post = josh_github_changes::post_comments(self.api, &pr_node_id, c).await;
+            for p in &post.posted {
+                match josh_github_changes::store_github_id(
+                    self.transaction,
+                    &pending.change_id,
+                    &p.local_id,
+                    &p.github_id,
+                    &pending.remote_scope,
+                ) {
+                    Ok(()) => outcome.posted_comments += 1,
+                    Err(e) => outcome
+                        .errors
+                        .push(format!("failed to record posted comment: {}", e)),
+                }
             }
-        };
-        let outcome = josh_github_changes::post_comments(self.api, pr_node_id, &pending).await;
-        let mut recorded = 0usize;
-        for p in &outcome.posted {
-            if let Err(e) = josh_github_changes::store_github_id(
+            if let Some(e) = post.error {
+                outcome
+                    .errors
+                    .push(format!("failed to post comments: {}", e));
+            }
+        }
+
+        if let Some(v) = votes {
+            let post = josh_github_changes::post_votes(
+                self.api,
+                &pr_node_id,
+                &pending.head_oid,
+                &v.pending,
+            )
+            .await;
+            for (user, data) in &post.posted {
+                match josh_github_changes::store_github_vote_id(
+                    self.transaction,
+                    &pending.change_id,
+                    user,
+                    data,
+                    &pending.remote_scope,
+                ) {
+                    Ok(()) => outcome.posted_votes += 1,
+                    Err(e) => outcome
+                        .errors
+                        .push(format!("failed to record posted vote: {}", e)),
+                }
+            }
+            // Drop outbox entries whose post is now reflected in gh_vote_ids.
+            // Safe unconditionally -- no-op when nothing needs cleaning.
+            if let Err(e) = josh_github_changes::cleanup_posted_outbox_votes(
                 self.transaction,
-                change_id,
-                &p.local_id,
-                &p.github_id,
-                remote_scope,
+                &pending.change_id,
+                &pending.remote_scope,
+                &v.outbox,
             ) {
-                eprintln!(
-                    "  PR #{}: failed to record posted comment: {}",
-                    pr.number, e
-                );
-                continue;
+                outcome
+                    .errors
+                    .push(format!("failed to clean up posted votes: {}", e));
             }
-            recorded += 1;
+            if let Some(e) = post.error {
+                outcome.errors.push(format!("failed to post votes: {}", e));
+            }
         }
-        if recorded > 0 {
-            println!("  PR #{}: posted {} local comments", pr.number, recorded);
-        }
-        if let Some(e) = outcome.error {
-            eprintln!("  PR #{}: failed to post comments: {}", pr.number, e);
-        }
-        recorded
+
+        outcome
+    }
+}
+
+/// Determine the PR number for a change: parse it from a synthetic
+/// `{owner}/{repo}/pull/{N}` change ID, or fall back to stored PR data for
+/// custom Change-Ids. Returns None for purely local changes, which GC never
+/// touches.
+fn resolve_pr_number(
+    transaction: &josh_core::cache::Transaction,
+    owner: &str,
+    repo: &str,
+    change_id: &str,
+    remote_scope: &josh_changes::ChangesRef,
+) -> Option<i64> {
+    if let Some(n) = change_id
+        .strip_prefix(&format!("{}/{}/pull/", owner, repo))
+        .and_then(|n| n.parse().ok())
+    {
+        return Some(n);
     }
 
-    /// Post pending local votes for one PR and record their GitHub IDs.
-    /// Returns the number posted and recorded; a load failure aborts the
-    /// vote push for this PR and returns 0.
-    async fn push_pr_votes(
-        &self,
-        pr: &PrSummary,
-        pr_node_id: &str,
-        change_id: &str,
-        remote_scope: &josh_changes::ChangesRef,
-    ) -> usize {
-        let outbox_votes =
-            match josh_changes::list_outbox_votes(self.transaction, change_id, remote_scope) {
-                Ok(v) => v,
-                Err(e) => {
-                    eprintln!("  PR #{}: failed to load local votes: {}", pr.number, e);
-                    return 0;
-                }
-            };
-        let pending_votes = match josh_github_changes::pending_votes(
-            self.transaction,
-            change_id,
-            remote_scope,
-            &outbox_votes,
-        ) {
-            Ok(v) => v,
-            Err(e) => {
-                eprintln!("  PR #{}: failed to load local votes: {}", pr.number, e);
-                return 0;
-            }
-        };
-        let outcome =
-            josh_github_changes::post_votes(self.api, pr_node_id, &pr.head_oid, &pending_votes)
-                .await;
-        let mut recorded_votes = 0usize;
-        for (user, data) in &outcome.posted {
-            if let Err(e) = josh_github_changes::store_github_vote_id(
-                self.transaction,
-                change_id,
-                user,
-                data,
-                remote_scope,
-            ) {
-                eprintln!("  PR #{}: failed to record posted vote: {}", pr.number, e);
-                continue;
-            }
-            recorded_votes += 1;
-        }
-        // Drop outbox entries whose post is now reflected in gh_vote_ids.
-        // Safe to call unconditionally -- it's a no-op when nothing needs cleaning.
-        if let Err(e) = josh_github_changes::cleanup_posted_outbox_votes(
-            self.transaction,
-            change_id,
-            remote_scope,
-            &outbox_votes,
-        ) {
+    // Custom Change-Id; read the PR number from stored PR data. A corrupt or
+    // schema-drifted blob is reported instead of silently dropping the change
+    // from GC.
+    match josh_changes::read_pr_data::<PrData>(transaction, change_id, remote_scope) {
+        Ok(Some(data)) => Some(data.number),
+        Ok(None) => None,
+        Err(e) => {
             eprintln!(
-                "  PR #{}: failed to clean up posted votes: {}",
-                pr.number, e
+                "Change '{}': stored PR data failed to load, excluding from GC: {}",
+                change_id, e
             );
+            None
         }
-        if recorded_votes > 0 {
-            println!("  PR #{}: posted {} votes", pr.number, recorded_votes);
-        }
-        if let Some(e) = outcome.error {
-            eprintln!("  PR #{}: failed to post votes: {}", pr.number, e);
-        }
-        recorded_votes
     }
 }
 
@@ -663,12 +780,6 @@ fn parse_changes_target(head_ref_name: &str) -> Option<String> {
         josh_changes::StackedRef::ChangeRef(change) => Some(change.target().to_string()),
         josh_changes::StackedRef::StackHead { target, .. } => Some(target),
     }
-}
-
-/// Extract the PR number from a synthetic change ID of the form `{owner}/{repo}/pull/{N}`.
-fn parse_pr_number_from_change_id(change_id: &str, owner: &str, repo: &str) -> Option<i64> {
-    let prefix = format!("{}/{}/pull/", owner, repo);
-    change_id.strip_prefix(&prefix)?.parse().ok()
 }
 
 /// Derive the change ID for a PR: the change-id from the head commit's trailers
@@ -695,17 +806,6 @@ fn remote_scope_for(remote_name: &str, target_branch: &str) -> josh_changes::Cha
         remote: remote_name.to_string(),
         branch: target_branch.to_string(),
     }
-}
-
-/// Build the set of change IDs for the given open PRs.
-fn collect_open_change_ids(
-    prs: &[PrSummary],
-    owner: &str,
-    repo: &str,
-) -> std::collections::HashSet<String> {
-    prs.iter()
-        .map(|pr| change_id_for_pr(pr, owner, repo))
-        .collect()
 }
 
 /// Read the remote config and return the GitHub (owner, repo) pair.
