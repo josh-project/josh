@@ -746,10 +746,12 @@ impl Transaction {
             .or_default()
             .insert(from, to);
 
-        // In addition to commits that are explicitly requested to be stored, also store
-        // random extra commits (probability 1/256) to avoid long searches for filters that reduce
-        // the history length by a very large factor.
-        if store || from.as_bytes()[0] == 0 {
+        // In addition to commits that are explicitly requested to be stored, also store the
+        // sample points, so that every backward walk reaches a stored entry within a bounded
+        // number of steps -- including across merge jumps and at orphans. This is what keeps
+        // filters that reduce the history length by a very large factor (which store almost
+        // nothing of their own) from re-walking all of history on every request.
+        if store || hint.is_sample_point() {
             t2.cache.write_all(filter, from, to, hint, false)?;
         }
         Ok(())
