@@ -324,7 +324,9 @@ pub fn write_commit_with_signatures_of(
     Ok(git2_oid(&id))
 }
 
-fn gix_signature(sig: &git2::Signature<'_>) -> anyhow::Result<gix_actor::Signature> {
+/// The gix spelling of a git2 signature: name and email verbatim, and the timestamp as
+/// seconds plus a UTC offset in seconds.
+pub fn gix_signature(sig: &git2::Signature<'_>) -> anyhow::Result<gix_actor::Signature> {
     let when = sig.when();
     Ok(gix_actor::Signature {
         name: sig.name_bytes().into(),
