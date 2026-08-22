@@ -1,0 +1,22 @@
+[package]
+name = "josh-git-serde"
+version = "26.7.28"
+repository = "https://github.com/josh-project/josh"
+license-file = "../LICENSE"
+description = "serde serialization of Rust values into git tree objects"
+keywords = ["git", "serde", "tree"]
+readme = "../README.md"
+edition = "2024"
+
+[dependencies]
+anyhow.workspace = true
+git2.workspace = true
+gix-object.workspace = true
+percent-encoding = "2.3.2"
+serde.workspace = true
+thiserror.workspace = true
+
+josh-gix-ext.workspace = true
+
+[dev-dependencies]
+gix-hash.workspace = true
