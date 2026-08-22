@@ -54,32 +54,37 @@ pub enum Expected {
     At(git2::Oid),
 }
 
-#[derive(Debug, Clone)]
-struct PendingRef {
-    name: String,
-    change: PendingRefChange,
+/// Parse `refname` as the fully qualified name every ref API method requires it to be.
+fn full_ref_name(refname: &str) -> anyhow::Result<gix::refs::FullName> {
+    gix::refs::FullName::try_from(refname)
+        .map_err(|e| anyhow!("'{}' is not a valid refname: {}", refname, e))
 }
 
-#[derive(Debug, Clone)]
-enum PendingRefChange {
-    Update {
-        expected: Expected,
-        target: git2::Oid,
-        log_message: String,
-    },
-    Delete {
-        expected: Expected,
-    },
-    Symbolic {
-        target: String,
-        log_message: String,
-    },
+/// Who a reflog entry names. gix refuses to append to a reflog without a committer, where
+/// libgit2 fell back to `unknown <unknown>` rather than fail the ref update; so does this.
+fn reflog_committer(
+    signature: Option<&git2::Signature<'_>>,
+) -> anyhow::Result<gix_actor::Signature> {
+    match signature {
+        Some(signature) => crate::objects::gix_signature(signature),
+        None => Ok(gix_actor::Signature {
+            name: "unknown".into(),
+            email: "unknown".into(),
+            time: gix_actor::date::Time::now_local_or_utc(),
+        }),
+    }
 }
 
-#[derive(Debug, Clone)]
-enum PendingTarget {
-    Object(git2::Oid),
-    Symbolic(String),
+/// The gix guard an [`Expected`] is.
+fn previous_value(expected: Expected) -> gix::refs::transaction::PreviousValue {
+    use gix::refs::transaction::PreviousValue;
+    match expected {
+        Expected::Any => PreviousValue::Any,
+        Expected::Absent => PreviousValue::MustNotExist,
+        Expected::At(old) => PreviousValue::MustExistAndMatch(gix::refs::Target::Object(
+            crate::objects::gix_oid(old),
+        )),
+    }
 }
 
 static REF_CACHE: LazyLock<RwLock<HashMap<git2::Oid, HashMap<git2::Oid, git2::Oid>>>> =
@@ -273,9 +278,13 @@ pub struct Transaction {
     /// objects, plus the runtime alternates registered on it. Built once per transaction so
     /// its cache serves a whole filter run (see [`josh_memodb::Odb`]).
     odb: josh_memodb::Odb,
-    /// Ref edits accepted by this transaction but not yet visible on disk. Reads overlay this
-    /// queue, and disk boundaries flush objects before applying it.
-    pending_refs: std::cell::RefCell<Vec<PendingRef>>,
+    /// Ref updates this transaction has accepted but not yet written to disk. They are
+    /// applied after the store has been flushed -- at an explicit boundary
+    /// ([`Transaction::flush_mem_odb`], [`Transaction::git_command`]) or, failing that, on
+    /// drop -- so a ref only ever becomes visible once the objects it points at are durable.
+    /// Reads fold the pending state in (see [`Transaction::find_ref`]), so a caller cannot
+    /// tell the difference.
+    pending_refs: std::cell::RefCell<Vec<gix::refs::transaction::RefEdit>>,
     mem_odb_limit: Option<usize>,
     ephemeral: bool,
     ref_prefix: Option<String>,
@@ -296,11 +305,15 @@ impl Drop for Transaction {
         // Objects first, refs second: a ref that reaches disk must never point at an object
         // only memory holds. A flush error is logged and the refs written anyway -- the same
         // end state as before, where refs were already on disk by the time the flush ran.
-        let publishes_object = self
-            .pending_refs
-            .borrow()
-            .iter()
-            .any(|edit| matches!(&edit.change, PendingRefChange::Update { .. }));
+        let publishes_object = self.pending_refs.borrow().iter().any(|edit| {
+            matches!(
+                &edit.change,
+                gix::refs::transaction::Change::Update {
+                    new: gix::refs::Target::Object(_),
+                    ..
+                }
+            )
+        });
         if publishes_object && let Err(e) = self.mem_odb.flush() {
             log::error!("failed to flush in-memory object store: {e}");
         }
@@ -405,8 +418,8 @@ impl Transaction {
     }
 
     /// The libgit2 handle on this repository, for the porcelain josh has not moved to gix:
-    /// worktree and index operations, `FETCH_HEAD`'s multi-entry semantics, notes, and
-    /// git's DWIM name resolution. It must never read or write objects josh produces --
+    /// worktree and index operations, `FETCH_HEAD`'s multi-entry semantics, notes, revision
+    /// syntax and configuration. It must never read or write objects josh produces --
     /// those live in this transaction's store until it flushes, and this handle cannot see
     /// them (use [`Transaction::odb`]).
     pub fn git2_repo(&self) -> &git2::Repository {
@@ -499,56 +512,49 @@ impl Transaction {
         format!("{}{}", ref_prefix, r)
     }
 
-    /// Resolve a fully qualified refname to its target oid, following symbolic refs. No
-    /// partial-name DWIM. `Ok(None)` if the ref (or the end of a symbolic chain) does not
-    /// exist. The target is not peeled: for an annotated tag ref this is the tag oid,
-    /// peeling is an object-store concern.
+    /// The gitoxide ref store. Ref work goes through it rather than a [`Transaction::repo`]
+    /// handle, which clones an object database a ref read has no use for. Its
+    /// packed-refs snapshot is shared with every transaction of the context and mtime-checked,
+    /// so refs another process packs are seen.
+    fn refs(&self) -> &gix::refs::file::Store {
+        &self.gix_repo.refs
+    }
 
-    fn pending_target(&self, refname: &str) -> Option<Option<PendingTarget>> {
+    /// The state `name` has once this transaction's collected-but-unwritten edits are folded
+    /// in: `None` when no edit touches it, and otherwise the ref's target with a delete
+    /// collapsed to `None`. The *last* edit wins, matching the order the writes would have
+    /// landed in.
+    fn pending_target(&self, name: &gix::refs::FullName) -> Option<Option<gix::refs::Target>> {
         self.pending_refs
             .borrow()
             .iter()
             .rev()
-            .find(|edit| edit.name == refname)
+            .find(|edit| &edit.name == name)
             .map(|edit| match &edit.change {
-                PendingRefChange::Update { target, .. } => Some(PendingTarget::Object(*target)),
-                PendingRefChange::Delete { .. } => None,
-                PendingRefChange::Symbolic { target, .. } => {
-                    Some(PendingTarget::Symbolic(target.clone()))
-                }
+                gix::refs::transaction::Change::Update { new, .. } => Some(new.clone()),
+                gix::refs::transaction::Change::Delete { .. } => None,
             })
     }
 
-    fn ref_target(&self, refname: &str) -> anyhow::Result<Option<PendingTarget>> {
-        if let Some(target) = self.pending_target(refname) {
-            return Ok(target);
+    /// Look up one fully qualified ref through the pending overlay first and the store
+    /// second: the view every ref read of this transaction answers from, so reads observe
+    /// writes that have not reached disk yet.
+    fn find_ref(&self, name: &gix::refs::FullName) -> anyhow::Result<Option<gix::refs::Reference>> {
+        if let Some(target) = self.pending_target(name) {
+            return Ok(target.map(|target| gix::refs::Reference {
+                name: name.clone(),
+                target,
+                peeled: None,
+            }));
         }
-        match self.repo.find_reference(refname) {
-            Ok(reference) => {
-                if let Some(target) = reference.symbolic_target()? {
-                    Ok(Some(PendingTarget::Symbolic(target.to_owned())))
-                } else {
-                    Ok(reference.target().map(PendingTarget::Object))
-                }
-            }
-            Err(e) if e.code() == git2::ErrorCode::NotFound => Ok(None),
-            Err(e) => Err(e.into()),
-        }
+        Ok(self.refs().try_find(name.as_ref())?)
     }
 
-    fn resolve_ref_target(&self, refname: &str) -> anyhow::Result<Option<(String, git2::Oid)>> {
-        let mut name = refname.to_owned();
-        for _ in 0..5 {
-            match self.ref_target(&name)? {
-                Some(PendingTarget::Object(target)) => return Ok(Some((name, target))),
-                Some(PendingTarget::Symbolic(target)) => name = target,
-                None => return Ok(None),
-            }
-        }
-        Err(anyhow!("symbolic ref '{}' is nested too deeply", name))
-    }
-
-    fn pending_partial(&self, partial: &str) -> Option<Option<String>> {
+    /// Match this transaction's pending ref names against the expansions git tries for a
+    /// partial name (`main` -> `refs/main`, `refs/tags/main`, `refs/heads/main`, ...),
+    /// mirroring gix's own candidate order. Pending names enter through `&str` APIs, so
+    /// byte-invalid names cannot occur here.
+    fn find_pending_partial(&self, partial: &str) -> Option<Option<gix::refs::Reference>> {
         let mut candidates = vec![partial.to_owned()];
         if !partial.starts_with("refs/") {
             candidates.extend([
@@ -563,90 +569,86 @@ impl Transaction {
         }
         let pending = self.pending_refs.borrow();
         for candidate in candidates {
-            if let Some(edit) = pending.iter().rev().find(|edit| edit.name == candidate) {
-                return Some(match edit.change {
-                    PendingRefChange::Delete { .. } => None,
-                    _ => Some(edit.name.clone()),
+            if let Some(edit) = pending
+                .iter()
+                .rev()
+                .find(|edit| edit.name.as_bstr() == candidate.as_bytes())
+            {
+                return Some(match &edit.change {
+                    gix::refs::transaction::Change::Update { new, .. } => {
+                        Some(gix::refs::Reference {
+                            name: edit.name.clone(),
+                            target: new.clone(),
+                            peeled: None,
+                        })
+                    }
+                    gix::refs::transaction::Change::Delete { .. } => None,
                 });
             }
         }
         None
     }
 
-    fn apply_pending_refs(&self) -> anyhow::Result<()> {
-        let edits = std::mem::take(&mut *self.pending_refs.borrow_mut());
-        for edit in edits {
-            match edit.change {
-                PendingRefChange::Update {
-                    expected,
-                    target,
-                    log_message,
-                } => self.write_ref(&edit.name, expected, target, &log_message)?,
-                PendingRefChange::Delete { expected } => {
-                    self.delete_ref_now(&edit.name, expected)?
-                }
-                PendingRefChange::Symbolic {
-                    target,
-                    log_message,
-                } => {
-                    self.repo
-                        .reference_symbolic(&edit.name, &target, true, &log_message)?;
-                }
-            }
-        }
-        Ok(())
-    }
-
-    fn write_ref(
-        &self,
-        refname: &str,
-        expected: Expected,
-        target: git2::Oid,
-        log_message: &str,
-    ) -> anyhow::Result<()> {
-        match expected {
-            Expected::Any => {
-                self.repo.reference(refname, target, true, log_message)?;
-            }
-            Expected::At(old) => {
-                self.repo
-                    .reference_matching(refname, target, true, old, log_message)?;
-            }
-            Expected::Absent => {
-                self.repo.reference(refname, target, false, log_message)?;
-            }
-        }
-        Ok(())
-    }
-
-    fn delete_ref_now(&self, refname: &str, expected: Expected) -> anyhow::Result<()> {
-        match expected {
-            Expected::Absent => Err(anyhow!("delete_ref: Expected::Absent is not a valid guard")),
-            Expected::Any => match self.repo.find_reference(refname) {
-                Err(e) if e.code() == git2::ErrorCode::NotFound => Ok(()),
-                Err(e) => Err(e.into()),
-                Ok(mut reference) => match reference.delete() {
-                    Err(e) if e.code() == git2::ErrorCode::NotFound => Ok(()),
-                    other => Ok(other?),
-                },
-            },
-            Expected::At(old) => {
-                let mut reference = self.repo.find_reference(refname)?;
-                if reference.target() != Some(old) {
-                    return Err(anyhow!(
-                        "delete_ref: '{}' does not point at {}",
-                        refname,
-                        old
-                    ));
-                }
-                Ok(reference.delete()?)
-            }
-        }
-    }
-    /// Resolve a fully qualified refname through this transaction's pending overlay.
+    /// Resolve a fully qualified refname to its target oid, following symbolic refs. No
+    /// partial-name DWIM. `Ok(None)` if the ref (or the end of a symbolic chain) does not
+    /// exist. The target is not peeled: for an annotated tag ref this is the tag oid,
+    /// peeling is an object-store concern.
     pub fn resolve_ref(&self, refname: &str) -> anyhow::Result<Option<git2::Oid>> {
-        Ok(self.resolve_ref_target(refname)?.map(|(_, target)| target))
+        // Parsing as a full name is what rejects `master`: gix's find would resolve it.
+        let name = full_ref_name(refname)?;
+        let Some(reference) = self.find_ref(&name)? else {
+            return Ok(None);
+        };
+        Ok(self.follow_symrefs(reference)?.map(|(_, target)| target))
     }
+
+    /// The name of the ref a symbolic ref points at, unfollowed. `Ok(None)` when `refname`
+    /// does not exist or is a direct ref: the callers reading a remote's advertised HEAD
+    /// treat both as "the remote named no default branch".
+    pub fn symref_target(&self, refname: &str) -> anyhow::Result<Option<String>> {
+        let name = full_ref_name(refname)?;
+        let Some(reference) = self.find_ref(&name)? else {
+            return Ok(None);
+        };
+        match &reference.target {
+            gix::refs::Target::Object(_) => Ok(None),
+            gix::refs::Target::Symbolic(target) => Ok(Some(
+                std::str::from_utf8(target.as_bstr())
+                    .map_err(|e| {
+                        anyhow!("target of symbolic ref '{}' is not UTF-8: {}", refname, e)
+                    })?
+                    .to_string(),
+            )),
+        }
+    }
+
+    /// Follow `reference` to the direct ref its symbolic chain ends at, and return that ref's
+    /// name and unpeeled target. `Ok(None)` for a dangling chain: a ref that points nowhere
+    /// reads as missing.
+    fn follow_symrefs(
+        &self,
+        mut reference: gix::refs::Reference,
+    ) -> anyhow::Result<Option<(gix::refs::FullName, git2::Oid)>> {
+        // git's own limit on how far a symbolic ref may point.
+        for _ in 0..5 {
+            let next = match &reference.target {
+                gix::refs::Target::Object(id) => {
+                    let target = crate::objects::git2_oid(id);
+                    return Ok(Some((reference.name, target)));
+                }
+                gix::refs::Target::Symbolic(next) => self.find_ref(next)?,
+            };
+            match next {
+                Some(next) => reference = next,
+                None => return Ok(None),
+            }
+        }
+        Err(anyhow!(
+            "symbolic ref '{}' is nested too deeply",
+            reference.name.as_bstr()
+        ))
+    }
+
     /// The repository's git directory, for the callers that build paths beside it or hand
     /// it to a `git` subprocess.
     pub fn path(&self) -> &std::path::Path {
@@ -656,12 +658,19 @@ impl Transaction {
     /// Where HEAD points. Errors when HEAD is unborn (a repository whose HEAD names a
     /// branch that does not exist yet) or detached at an object that is not a commit;
     /// annotated tags are peeled. The commit is resolved through the transaction's objects,
-    /// so a HEAD moved to a commit this transaction produced resolves. (gix mapping:
-    /// `Repository::head()` + `head_id()`.)
+    /// so a HEAD moved to a commit this transaction produced resolves.
     pub fn head(&self) -> anyhow::Result<Head> {
+        let head = self
+            .find_ref(&full_ref_name("HEAD")?)?
+            .ok_or_else(|| anyhow!("repository has no HEAD"))?;
         let (name, target) = self
-            .resolve_ref_target("HEAD")?
-            .ok_or_else(|| anyhow!("HEAD does not point at an object"))?;
+            .follow_symrefs(head)?
+            .ok_or_else(|| anyhow!("HEAD does not point at an object (unborn or dangling)"))?;
+        let name = std::str::from_utf8(name.as_bstr())
+            .map_err(|e| anyhow!("HEAD ref name is not valid UTF-8: {}", e))?
+            .to_string();
+        // Only a branch is the ref to update; a detached HEAD -- and the odd symbolic HEAD
+        // pointing outside `refs/heads/` -- is updated as `HEAD` itself.
         let reference = if name.starts_with("refs/heads/") {
             name
         } else {
@@ -689,25 +698,26 @@ impl Transaction {
 
     /// The fully qualified name of the ref a short name refers to, resolved the way git
     /// resolves an argument that could name several things (`master` ->
-    /// `refs/heads/master`). `Ok(None)` when no ref matches. (gix mapping:
-    /// `find_reference` with a partial name.)
+    /// `refs/heads/master`). Symbolic refs are followed, so `HEAD` expands to the branch it
+    /// is on rather than to itself -- this is the name callers write back to. `Ok(None)`
+    /// when no ref matches.
     pub fn expand_ref_name(&self, short_name: &str) -> anyhow::Result<Option<String>> {
-        if let Some(pending) = self.pending_partial(short_name) {
-            return match pending {
-                Some(name) => Ok(self.resolve_ref_target(&name)?.map(|(name, _)| name)),
-                None => Ok(None),
-            };
-        }
-        match self.repo.resolve_reference_from_short_name(short_name) {
-            Ok(reference) => Ok(reference
-                .resolve()?
-                .name()
+        // A name that is not even a valid partial refname names no ref, like one that
+        // matches nothing: what a user typed is input, not a contract.
+        let Ok(partial) = gix::refs::PartialName::try_from(short_name) else {
+            return Ok(None);
+        };
+        let Some(reference) = (match self.find_pending_partial(short_name) {
+            Some(reference) => reference,
+            None => self.refs().try_find(partial.as_ref())?,
+        }) else {
+            return Ok(None);
+        };
+        Ok(self.follow_symrefs(reference)?.and_then(|(name, _)| {
+            std::str::from_utf8(name.as_bstr())
                 .ok()
-                .map(|name| name.to_string())),
-            Err(e) if e.code() == git2::ErrorCode::NotFound => Ok(None),
-            Err(e) if e.code() == git2::ErrorCode::InvalidSpec => Ok(None),
-            Err(e) => Err(e.into()),
-        }
+                .map(ToOwned::to_owned)
+        }))
     }
 
     /// The remote-tracking ref that `branch_ref` is configured to track, from
@@ -738,8 +748,19 @@ impl Transaction {
         Ok(self.repo.signature()?)
     }
 
-    /// Collect a direct ref update. Transaction reads see it immediately; disk sees it only
-    /// after the object store has been flushed at a boundary or on drop.
+    /// Create or update the direct ref `refname` to point at `target`, guarded by
+    /// `expected`: with `Expected::Any` an existing ref is overwritten unconditionally
+    /// (updating to the value a ref already has is a no-op); `Expected::At(oid)` asserts
+    /// the ref currently points at `oid`; `Expected::Absent` asserts it does not exist.
+    /// An assertion already false when called returns an error and leaves the pending state
+    /// unchanged. Writers that derive `target` from the ref's old value pass `At`/`Absent`
+    /// so they never overwrite a concurrent update.
+    ///
+    /// The write itself is deferred: the edit is collected and applied once this
+    /// transaction's objects are durable (see [`Transaction::pending_refs`]), so a ref can
+    /// never appear on disk while its target is memory-only. gix rechecks the guard when the
+    /// edit lands; a race after this method returns therefore fails the explicit boundary or
+    /// is logged by drop rather than overwriting the other writer.
     pub fn update_ref(
         &self,
         refname: &str,
@@ -747,92 +768,198 @@ impl Transaction {
         target: git2::Oid,
         log_message: &str,
     ) -> anyhow::Result<()> {
-        let current = self.ref_target(refname)?;
+        let name = full_ref_name(refname)?;
+        // A write is a lock file, a write and a rename; a read is a stat. So a ref already
+        // pointing at `target` is left alone -- the no-op this contract promises, and most of
+        // what a proxy serving a repository whose refs rarely move does. Probing cannot pay
+        // where the guard already rules the current value out.
         let guard_allows_unchanged = match expected {
             Expected::Any => true,
             Expected::At(old) => old == target,
             Expected::Absent => false,
         };
         if guard_allows_unchanged
-            && matches!(current, Some(PendingTarget::Object(current)) if current == target)
+            && let Some(reference) = self.find_ref(&name)?
+            && reference.target == gix::refs::Target::Object(crate::objects::gix_oid(target))
         {
             return Ok(());
         }
         match expected {
             Expected::Any => {}
-            Expected::Absent if current.is_none() => {}
-            Expected::At(old) if matches!(current, Some(PendingTarget::Object(current)) if current == old) =>
-                {}
             Expected::Absent => {
-                return Err(anyhow!(
-                    "ref '{}' exists but was expected to be absent",
-                    refname
-                ));
+                if self.find_ref(&name)?.is_some() {
+                    return Err(anyhow!(
+                        "ref '{}' exists but was expected to be absent",
+                        refname
+                    ));
+                }
             }
-            Expected::At(old) => {
-                return Err(anyhow!(
-                    "ref '{}' does not point at the expected value {old}",
-                    refname
-                ));
-            }
-        }
-        self.pending_refs.borrow_mut().push(PendingRef {
-            name: refname.to_owned(),
-            change: PendingRefChange::Update {
-                expected,
-                target,
-                log_message: log_message.to_owned(),
+            Expected::At(old) => match self.find_ref(&name)? {
+                Some(reference)
+                    if reference.target
+                        == gix::refs::Target::Object(crate::objects::gix_oid(old)) => {}
+                _ => {
+                    return Err(anyhow!(
+                        "ref '{}' does not point at the expected value {old}",
+                        refname
+                    ));
+                }
             },
-        });
+        }
+        self.pending_refs
+            .borrow_mut()
+            .push(gix::refs::transaction::RefEdit {
+                change: gix::refs::transaction::Change::Update {
+                    log: gix::refs::transaction::LogChange {
+                        mode: gix::refs::transaction::RefLog::AndReference,
+                        force_create_reflog: false,
+                        message: log_message.into(),
+                    },
+                    expected: previous_value(expected),
+                    new: gix::refs::Target::Object(crate::objects::gix_oid(target)),
+                },
+                name,
+                deref: false,
+            });
         Ok(())
     }
+
+    /// Run `edits` as one ref transaction, supplying what a `gix::Repository` would have:
+    /// lock timeouts and a reflog identity (see [`reflog_committer`]).
+    fn edit_refs(
+        &self,
+        edits: Vec<gix::refs::transaction::RefEdit>,
+    ) -> anyhow::Result<Vec<gix::refs::transaction::RefEdit>> {
+        use gix::lock::acquire::Fail;
+        let committer = reflog_committer(self.repo.signature().ok().as_ref())?;
+        let mut time_buf = gix_actor::date::parse::TimeBuf::default();
+        Ok(self
+            .refs()
+            .transaction()
+            // gix's defaults for `core.filesRefLockTimeout` and `core.packedRefsTimeout`.
+            .prepare(
+                edits,
+                Fail::AfterDurationWithBackoff(std::time::Duration::from_millis(100)),
+                Fail::AfterDurationWithBackoff(std::time::Duration::from_millis(1000)),
+            )?
+            .commit(committer.to_ref(&mut time_buf))?)
+    }
+
+    /// Apply every collected ref edit in order. gix rejects one transaction that names the
+    /// same ref twice, so split the queue into maximal runs with distinct names; that keeps
+    /// multi-ref batches cheap while preserving same-ref chains and reflog entries exactly
+    /// as if each public API call had written immediately.
+    fn apply_pending_refs(&self) -> anyhow::Result<()> {
+        let edits = {
+            let mut pending = self.pending_refs.borrow_mut();
+            if pending.is_empty() {
+                return Ok(());
+            }
+            std::mem::take(&mut *pending)
+        };
+
+        let mut first_error = None;
+        let mut run = Vec::new();
+        let mut seen = std::collections::HashSet::new();
+        for edit in edits {
+            let name = edit.name.as_bstr().to_owned();
+            if seen.contains(&name) {
+                self.apply_ref_run(std::mem::take(&mut run), &mut first_error);
+                seen.clear();
+            }
+            seen.insert(name);
+            run.push(edit);
+        }
+        self.apply_ref_run(run, &mut first_error);
+
+        if let Some(error) = first_error {
+            Err(error)
+        } else {
+            Ok(())
+        }
+    }
+
+    fn apply_ref_run(
+        &self,
+        edits: Vec<gix::refs::transaction::RefEdit>,
+        first_error: &mut Option<anyhow::Error>,
+    ) {
+        if edits.is_empty() {
+            return;
+        }
+        if let Err(error) = self.edit_refs(edits) {
+            if first_error.is_some() {
+                log::error!("failed to write pending ref updates: {error}");
+            } else {
+                *first_error = Some(error);
+            }
+        }
+    }
+
     /// Delete the ref `refname`, guarded by `expected`: `Expected::Any` deletes whatever
     /// is there and treats an absent ref as a no-op; `Expected::At(oid)` asserts the ref
     /// currently points at `oid` and errors, leaving the ref in place, on mismatch or
     /// absence. `Expected::Absent` is a contract error. The ref entry itself is deleted
     /// (a symbolic ref is deleted, not followed); loose and packed entries and the reflog
-    /// are removed. Under git2 an `Any` delete of a ref concurrently modified (not
-    /// deleted) mid-call may error (libgit2 CASes against the value read at find time);
-    /// gix's Any-delete succeeds -- acceptable widening at flag day. (gix mapping: RefEdit
-    /// Change::Delete with PreviousValue::Any / MustExistAndMatch, RefLog::AndReference.)
+    /// are removed. An `Any` delete does not mind a ref moving concurrently, where libgit2
+    /// CAS'd against the value it read at find time and could fail.
     pub fn delete_ref(&self, refname: &str, expected: Expected) -> anyhow::Result<()> {
         if expected == Expected::Absent {
             return Err(anyhow!("delete_ref: Expected::Absent is not a valid guard"));
         }
-        if let Expected::At(old) = expected
-            && !matches!(self.ref_target(refname)?, Some(PendingTarget::Object(target)) if target == old)
-        {
-            return Err(anyhow!(
-                "delete_ref: '{}' does not point at {}",
-                refname,
-                old
-            ));
+        let name = full_ref_name(refname)?;
+        if let Expected::At(old) = expected {
+            match self.find_ref(&name)? {
+                Some(reference)
+                    if reference.target
+                        == gix::refs::Target::Object(crate::objects::gix_oid(old)) => {}
+                _ => {
+                    return Err(anyhow!(
+                        "ref '{}' does not point at the expected value {old}",
+                        refname
+                    ));
+                }
+            }
         }
-        self.pending_refs.borrow_mut().push(PendingRef {
-            name: refname.to_owned(),
-            change: PendingRefChange::Delete { expected },
-        });
+        self.pending_refs
+            .borrow_mut()
+            .push(gix::refs::transaction::RefEdit {
+                change: gix::refs::transaction::Change::Delete {
+                    expected: previous_value(expected),
+                    log: gix::refs::transaction::RefLog::AndReference,
+                },
+                name,
+                deref: false,
+            });
         Ok(())
     }
 
     /// Force-create or update the symbolic ref `refname` to point at the ref named
     /// `target`, which is validated for refname format but need not exist (dangling
     /// symrefs are allowed). Always overwrites, like `Expected::Any`; grow a guard
-    /// parameter only when a consumer needs one (as update_ref did). (gix mapping:
-    /// RefEdit Change::Update with Target::Symbolic, PreviousValue::Any.)
+    /// parameter only when a consumer needs one (as update_ref did). No reflog entry is
+    /// written -- a symbolic update records no oid -- where libgit2 wrote one.
     pub fn create_symref(
         &self,
         refname: &str,
         target: &str,
         log_message: &str,
     ) -> anyhow::Result<()> {
-        self.pending_refs.borrow_mut().push(PendingRef {
-            name: refname.to_owned(),
-            change: PendingRefChange::Symbolic {
-                target: target.to_owned(),
-                log_message: log_message.to_owned(),
-            },
-        });
+        self.pending_refs
+            .borrow_mut()
+            .push(gix::refs::transaction::RefEdit {
+                change: gix::refs::transaction::Change::Update {
+                    log: gix::refs::transaction::LogChange {
+                        mode: gix::refs::transaction::RefLog::AndReference,
+                        force_create_reflog: false,
+                        message: log_message.into(),
+                    },
+                    expected: gix::refs::transaction::PreviousValue::Any,
+                    new: gix::refs::Target::Symbolic(full_ref_name(target)?),
+                },
+                name: full_ref_name(refname)?,
+                deref: false,
+            });
         Ok(())
     }
 
@@ -844,32 +971,66 @@ impl Transaction {
         prefix: &str,
         mut cb: impl FnMut(&str, git2::Oid) -> anyhow::Result<()>,
     ) -> anyhow::Result<()> {
-        // Glob metacharacters (*?[\) are all invalid in refnames, so appending `*` — which
-        // matches across `/` — turns the glob walk into plain prefix iteration.
+        // Glob metacharacters (*?[\) are all invalid in refnames, so a caller passing one
+        // means to match, not to prefix.
         debug_assert!(
             !prefix.contains(['*', '?', '[', '\\']),
             "prefix must consist of refname-valid characters"
         );
+        let store = self.refs();
+        let platform = store.iter()?;
+        // The directory walk is what keeps this cheap, but gix does it only for a prefix that
+        // is also a safe relative path: without a trailing `/` it starts one directory up (so
+        // `` would walk above `.git` and `refs` all of it, objects included), and it rejects
+        // components a checkout could not create, which josh's percent-encoded upstream
+        // namespaces can be. The rest walk every ref, which the name filter makes equivalent.
+        let walkable: Option<&gix::path::RelativePath> = prefix
+            .contains('/')
+            .then(|| prefix.try_into().ok())
+            .flatten();
+        let iter = match walkable {
+            Some(prefix) => platform.prefixed(prefix)?,
+            None => platform.all()?,
+        };
         let mut refs = HashMap::new();
-        for reference in self.repo.references_glob(&format!("{}*", prefix))? {
+        for reference in iter {
             let reference = reference?;
-            if let (Ok(name), Some(target)) = (reference.name(), reference.target()) {
-                refs.insert(name.to_owned(), target);
-            }
-        }
-        for edit in self.pending_refs.borrow().iter() {
-            if !edit.name.starts_with(prefix) {
+            let (Ok(name), gix::refs::Target::Object(target)) = (
+                std::str::from_utf8(reference.name.as_bstr()),
+                &reference.target,
+            ) else {
+                continue;
+            };
+            if !name.starts_with(prefix) {
                 continue;
             }
-            match edit.change {
-                PendingRefChange::Update { target, .. } => {
-                    refs.insert(edit.name.clone(), target);
+            refs.insert(name.to_owned(), crate::objects::git2_oid(target));
+        }
+        for edit in self.pending_refs.borrow().iter() {
+            let Ok(name) = std::str::from_utf8(edit.name.as_bstr()) else {
+                continue;
+            };
+            if !name.starts_with(prefix) {
+                continue;
+            }
+            match &edit.change {
+                gix::refs::transaction::Change::Update {
+                    new: gix::refs::Target::Object(target),
+                    ..
+                } => {
+                    refs.insert(name.to_owned(), crate::objects::git2_oid(target));
                 }
-                PendingRefChange::Delete { .. } | PendingRefChange::Symbolic { .. } => {
-                    refs.remove(&edit.name);
+                gix::refs::transaction::Change::Update {
+                    new: gix::refs::Target::Symbolic(_),
+                    ..
+                }
+                | gix::refs::transaction::Change::Delete { .. } => {
+                    refs.remove(name);
                 }
             }
         }
+        // Byte order of the full names is the contract, not whatever order the store
+        // happens to iterate in.
         let mut refs: Vec<_> = refs.into_iter().collect();
         refs.sort();
         for (name, target) in refs {
@@ -1464,16 +1625,22 @@ mod tests {
         transaction
             .update_ref("refs/josh-x/c", Expected::Any, oid, "test")
             .unwrap();
+        // A ref in a subdirectory beside one whose name sorts around it: `-` is below `/`,
+        // so a walk that treats a directory as a plain name orders these the other way.
+        transaction
+            .update_ref("refs/josh/c/d", Expected::Any, oid, "test")
+            .unwrap();
+        transaction
+            .update_ref("refs/josh/c-d", Expected::Any, oid, "test")
+            .unwrap();
         transaction.apply_pending_refs().unwrap();
-
         transaction
             .git2_repo()
             .reference_symbolic("refs/josh/aa", "refs/josh/a", true, "test")
             .unwrap();
 
-        // Pack `refs/josh/a` by hand (git2 exposes no pack-refs API). Loose refs alone come
-        // pre-sorted out of the filesystem walk; only a packed ref sorting before a loose
-        // one catches removal of the explicit sort.
+        // Pack `refs/josh/a` by hand (no pack-refs API is exposed), so the listing also has
+        // to merge the packed side in.
         std::fs::write(
             dir.path().join("packed-refs"),
             format!(
@@ -1492,7 +1659,15 @@ mod tests {
                 Ok(())
             })
             .unwrap();
-        assert_eq!(seen, ["refs/josh/a", "refs/josh/b"]);
+        assert_eq!(
+            seen,
+            [
+                "refs/josh/a",
+                "refs/josh/b",
+                "refs/josh/c-d",
+                "refs/josh/c/d"
+            ]
+        );
     }
 
     #[test]
@@ -1516,7 +1691,184 @@ mod tests {
     }
 
     #[test]
+    fn for_each_ref_prefixed_takes_a_partial_component() {
+        let (_dir, transaction) = test_transaction();
+        let oid = commit(&transaction, "a");
+        for name in [
+            "refs/heads/feature",
+            "refs/heads/featherweight",
+            "refs/heads/x",
+        ] {
+            transaction
+                .update_ref(name, Expected::Any, oid, "test")
+                .unwrap();
+        }
 
+        let mut seen = vec![];
+        transaction
+            .for_each_ref_prefixed("refs/heads/feat", |name, _| {
+                seen.push(name.to_owned());
+                Ok(())
+            })
+            .unwrap();
+        assert_eq!(seen, ["refs/heads/featherweight", "refs/heads/feature"]);
+    }
+
+    #[test]
+    fn for_each_ref_prefixed_without_a_slash_lists_every_matching_ref() {
+        // A user-supplied glob's literal part can be a prefix that names no directory --
+        // `` or `refs` -- which is where the directory walk cannot be used.
+        let (_dir, transaction) = test_transaction();
+        let oid = commit(&transaction, "a");
+        transaction
+            .update_ref("refs/heads/main", Expected::Any, oid, "test")
+            .unwrap();
+
+        for prefix in ["", "refs"] {
+            let mut seen = vec![];
+            transaction
+                .for_each_ref_prefixed(prefix, |name, _| {
+                    seen.push(name.to_owned());
+                    Ok(())
+                })
+                .unwrap();
+            assert_eq!(seen, ["refs/heads/main"], "prefix '{}'", prefix);
+        }
+
+        let mut seen = vec![];
+        transaction
+            .for_each_ref_prefixed("other", |name, _| {
+                seen.push(name.to_owned());
+                Ok(())
+            })
+            .unwrap();
+        assert!(seen.is_empty());
+    }
+
+    #[test]
+    fn for_each_ref_prefixed_takes_a_prefix_no_worktree_could_hold() {
+        // Upstream namespaces are percent-encoded repository paths, so a prefix component
+        // can be a name gix refuses as a relative path -- here a Windows device name.
+        let (_dir, transaction) = test_transaction();
+        let oid = commit(&transaction, "a");
+        let prefix = "refs/josh/upstream/aux/refs/heads/";
+        transaction
+            .update_ref(&format!("{}main", prefix), Expected::Any, oid, "test")
+            .unwrap();
+        transaction
+            .update_ref("refs/heads/main", Expected::Any, oid, "test")
+            .unwrap();
+
+        let mut seen = vec![];
+        transaction
+            .for_each_ref_prefixed(prefix, |name, _| {
+                seen.push(name.to_owned());
+                Ok(())
+            })
+            .unwrap();
+        assert_eq!(seen, ["refs/josh/upstream/aux/refs/heads/main"]);
+    }
+
+    #[test]
+    fn update_ref_to_the_value_a_ref_already_has_writes_nothing() {
+        use std::os::unix::fs::MetadataExt;
+        let (dir, transaction) = test_transaction();
+        let a = commit(&transaction, "a");
+        let b = commit(&transaction, "b");
+        transaction
+            .update_ref("refs/heads/main", Expected::Any, a, "test")
+            .unwrap();
+        transaction.apply_pending_refs().unwrap();
+
+        // A write is a lock file and a rename, so it replaces the file; leaving the ref
+        // alone keeps it.
+        let inode = || dir.path().join("refs/heads/main").metadata().unwrap().ino();
+        let before = inode();
+        transaction
+            .update_ref("refs/heads/main", Expected::Any, a, "test")
+            .unwrap();
+        transaction
+            .update_ref("refs/heads/main", Expected::At(a), a, "test")
+            .unwrap();
+        assert_eq!(inode(), before);
+
+        assert!(
+            transaction
+                .update_ref("refs/heads/main", Expected::At(b), b, "test")
+                .is_err()
+        );
+        assert_eq!(inode(), before);
+        transaction
+            .update_ref("refs/heads/main", Expected::Any, b, "test")
+            .unwrap();
+        transaction.apply_pending_refs().unwrap();
+        assert_ne!(inode(), before);
+        assert_eq!(transaction.resolve_ref("refs/heads/main").unwrap(), Some(b));
+    }
+
+    #[test]
+    fn expand_ref_name_resolves_symbolic_refs() {
+        // Callers hand the expanded name to `update_ref`, where a guarded write against a
+        // symbolic ref could not match an oid.
+        let (_dir, transaction) = test_transaction();
+        let oid = commit(&transaction, "a");
+        transaction
+            .update_ref("refs/heads/main", Expected::Any, oid, "test")
+            .unwrap();
+        transaction
+            .create_symref("HEAD", "refs/heads/main", "test")
+            .unwrap();
+
+        assert_eq!(
+            transaction.expand_ref_name("HEAD").unwrap().as_deref(),
+            Some("refs/heads/main")
+        );
+        assert_eq!(
+            transaction.expand_ref_name("main").unwrap().as_deref(),
+            Some("refs/heads/main")
+        );
+        assert_eq!(transaction.expand_ref_name("nope").unwrap(), None);
+    }
+
+    #[test]
+    fn update_ref_writes_a_reflog_entry() {
+        // The one thing a bare test repository cannot show: gix appends to the reflog where
+        // git does, and refuses to do it without a committer.
+        let dir = tempfile::tempdir().unwrap();
+        git2::Repository::init(dir.path()).unwrap();
+        let context = TransactionContext::new(
+            dir.path().join(".git"),
+            std::sync::Arc::new(crate::cache::CacheStack::new()),
+        );
+        let transaction = context.open().unwrap();
+
+        let a = commit(&transaction, "a");
+        let b = commit(&transaction, "b");
+        transaction
+            .update_ref("refs/heads/main", Expected::Any, a, "first")
+            .unwrap();
+        transaction
+            .update_ref("refs/heads/main", Expected::Any, b, "second")
+            .unwrap();
+        transaction.apply_pending_refs().unwrap();
+
+        let log = std::fs::read_to_string(dir.path().join(".git/logs/refs/heads/main")).unwrap();
+        let lines: Vec<&str> = log.lines().collect();
+        assert_eq!(lines.len(), 2, "{}", log);
+        assert!(lines[0].starts_with(&format!("{} {}", git2::Oid::ZERO_SHA1, a)));
+        assert!(lines[0].ends_with("\tfirst"));
+        assert!(lines[1].starts_with(&format!("{} {}", a, b)));
+        assert!(lines[1].ends_with("\tsecond"));
+    }
+
+    #[test]
+    fn reflog_committer_falls_back_to_unknown() {
+        let committer = reflog_committer(None).unwrap();
+        assert_eq!(committer.name, "unknown");
+        assert_eq!(committer.email, "unknown");
+    }
+
+    #[test]
     fn delete_ref_any_deletes_existing() {
         let (_dir, transaction) = test_transaction();
         let oid = commit(&transaction, "a");
