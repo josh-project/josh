@@ -391,7 +391,13 @@ fn run_filter(args: Vec<String>) -> anyhow::Result<i32> {
             let ifilterobj = filterobj.chain(josh_core::filter::parse(":SQUASH:INDEX")?);
             let index_commit = josh_core::filter_commit(&transaction, ifilterobj, commit.id())?;
             let index_tree = josh_core::objects::CommitData::read(&odb, index_commit)?.tree_id()?;
-            josh_search::search_candidates(&odb, index_tree, tree, searchstring)?
+            josh_search::search_candidates(
+                &odb,
+                &mut transaction.search_cache(),
+                index_tree,
+                tree,
+                searchstring,
+            )?
         } else {
             let mut scan = vec![];
             josh_core::objects::walk_tree_preorder(&odb, tree, &mut |parent, entry| {
@@ -406,7 +412,13 @@ fn run_filter(args: Vec<String>) -> anyhow::Result<i32> {
             })?;
             scan
         };
-        let matches = josh_search::search_matches(&odb, tree, searchstring, &candidates)?;
+        let matches = josh_search::search_matches(
+            &odb,
+            &mut transaction.search_cache(),
+            tree,
+            searchstring,
+            &candidates,
+        )?;
 
         for r in matches {
             for l in r.1 {

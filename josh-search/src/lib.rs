@@ -632,57 +632,87 @@ pub fn trigram_index(
     Ok(to_git2(index))
 }
 
+/// Search memoization, meant to be kept alive for many [`search_candidates`] /
+/// [`search_matches`] calls (josh keeps one per transaction). Everything is keyed by content
+/// — object ids and the query string — so entries are valid for any commit of the repository:
+/// searching a history reuses the candidate walks of every shared subtree and verifies every
+/// distinct blob once, no matter how many commits it appears in.
+#[derive(Default)]
+pub struct SearchCache {
+    /// (query, index tree, source tree) -> sorted candidate paths.
+    candidates: HashMap<(String, git2::Oid, git2::Oid), std::sync::Arc<Vec<String>>>,
+    /// (mirror roots (normalized), source tree) -> relative candidate paths of the walk.
+    walks: HashMap<(Vec<git2::Oid>, git2::Oid), std::sync::Arc<Vec<String>>>,
+    /// source tree -> all file paths under it (relative).
+    all_paths: HashMap<git2::Oid, std::sync::Arc<Vec<String>>>,
+    /// (query, blob) -> matching (line number, line) pairs.
+    blob_matches: HashMap<(String, git2::Oid), std::sync::Arc<Vec<(usize, String)>>>,
+}
+
 /// The candidate files for `searchstring`: those containing every trigram of the query.
 ///
 /// Queries shorter than three characters have no trigrams; every file of `source_tree` is a
 /// candidate then, and [`search_matches`] does the filtering.
 pub fn search_candidates(
     src: &dyn Objects,
+    cache: &mut SearchCache,
     index_tree: git2::Oid,
     source_tree: git2::Oid,
     searchstring: &str,
 ) -> anyhow::Result<Vec<String>> {
+    let key = (searchstring.to_owned(), index_tree, source_tree);
+    if let Some(hit) = cache.candidates.get(&key) {
+        return Ok((**hit).clone());
+    }
+
     let trigrams = distinct_trigrams(searchstring);
 
-    let mut results = vec![];
-    if trigrams.is_empty() {
-        collect_paths(src, source_tree, "", &mut results)?;
-        return Ok(results);
-    }
-
-    let mut roots = vec![];
-    for t in &trigrams {
-        let path = format!("{:02x}/{:02x}/{:02x}", t[0], t[1], t[2]);
-        match path_entry(src, index_tree, std::path::Path::new(&path))? {
-            Some(oid) => roots.push(oid),
-            // A trigram absent from the index cannot occur in any file.
-            None => return Ok(vec![]),
+    let results = if trigrams.is_empty() {
+        (*all_paths(src, cache, source_tree)?).clone()
+    } else {
+        let mut roots = vec![];
+        let mut absent = false;
+        for t in &trigrams {
+            let path = format!("{:02x}/{:02x}/{:02x}", t[0], t[1], t[2]);
+            match path_entry(src, index_tree, std::path::Path::new(&path))? {
+                Some(oid) => roots.push(oid),
+                // A trigram absent from the index cannot occur in any file.
+                None => {
+                    absent = true;
+                    break;
+                }
+            }
         }
-    }
-    roots.sort();
-    roots.dedup();
+        if absent {
+            vec![]
+        } else {
+            roots.sort();
+            roots.dedup();
 
-    // Cap the intersection width: any subset of trigrams yields a superset of candidates, and
-    // search_matches verifies exactly anyway. Keep the mirrors with the fewest entries — they
-    // constrain the most.
-    const MAX_INTERSECT: usize = 16;
-    if roots.len() > MAX_INTERSECT {
-        let mut sized = roots
-            .iter()
-            .map(|&oid| anyhow::Ok((read_tree_entries(src, oid)?.len(), oid)))
-            .collect::<Result<Vec<_>, _>>()?;
-        sized.sort();
-        roots = sized
-            .into_iter()
-            .take(MAX_INTERSECT)
-            .map(|(_, oid)| oid)
-            .collect();
-    }
+            // Cap the intersection width: any subset of trigrams yields a superset of
+            // candidates, and search_matches verifies exactly anyway. Keep the mirrors with
+            // the fewest entries — they constrain the most.
+            const MAX_INTERSECT: usize = 16;
+            if roots.len() > MAX_INTERSECT {
+                let mut sized = roots
+                    .iter()
+                    .map(|&oid| anyhow::Ok((read_tree_entries(src, oid)?.len(), oid)))
+                    .collect::<Result<Vec<_>, _>>()?;
+                sized.sort();
+                roots = sized
+                    .into_iter()
+                    .take(MAX_INTERSECT)
+                    .map(|(_, oid)| oid)
+                    .collect();
+            }
 
-    intersect_walk(src, &roots, source_tree, "", &mut results)?;
-    // The walk visits mirror entries in bucket (hash) order; report candidates in path order.
-    results.sort();
-    results.dedup();
+            (*walk(src, cache, roots, source_tree)?).clone()
+        }
+    };
+
+    cache
+        .candidates
+        .insert(key, std::sync::Arc::new(results.clone()));
     Ok(results)
 }
 
@@ -698,21 +728,26 @@ fn buckets_of(
     map
 }
 
-/// Emit every candidate file path present in ALL of the mirror trees `roots`. Mirror entries
-/// are named by bucket; `source` provides the bucket -> entries mapping per level. A blob
-/// entry expands to every bucket member (each file directly, each directory — coarse leaf —
-/// to all files under it); a tree entry recurses into every large-directory member.
-fn intersect_walk(
+/// The candidate file paths (relative to `source`) present in ALL of the mirror trees
+/// `roots`, memoized on the normalized root set and the source tree. Mirror entries are named
+/// by bucket; `source` provides the bucket -> entries mapping per level. A blob entry expands
+/// to every bucket member (each file directly, each directory — coarse leaf — to all files
+/// under it); a tree entry recurses into every large-directory member. Because results are
+/// relative and keyed by content, walks are shared across commits and across trigrams
+/// wherever the subtrees agree.
+fn walk(
     src: &dyn Objects,
-    roots: &[git2::Oid],
+    cache: &mut SearchCache,
+    mut roots: Vec<git2::Oid>,
     source: git2::Oid,
-    prefix: &str,
-    out: &mut Vec<String>,
-) -> anyhow::Result<()> {
-    // Content addressing fast path: identical mirrors (trigrams with the same file set)
-    // intersect to themselves.
-    if roots.iter().all(|oid| *oid == roots[0]) {
-        return collect_mirror_paths(src, roots[0], source, prefix, out);
+) -> anyhow::Result<std::sync::Arc<Vec<String>>> {
+    // The intersection is a set operation: normalize the key. Identical mirrors (trigrams
+    // with the same file set) intersect to themselves, so duplicates collapse.
+    roots.sort();
+    roots.dedup();
+    let key = (roots.clone(), source);
+    if let Some(hit) = cache.walks.get(&key) {
+        return Ok(hit.clone());
     }
 
     let trees = roots
@@ -726,16 +761,21 @@ fn intersect_walk(
     let source_entries = read_tree_entries(src, source)?;
     let buckets = buckets_of(&source_entries);
 
+    let mut out = vec![];
     'entry: for entry in smallest {
         let bucket = std::str::from_utf8(&entry.filename)?;
 
         let mut child_roots = Vec::with_capacity(trees.len());
-        for tree in &trees {
-            match tree.iter().find(|e| e.filename == entry.filename) {
-                Some(other) if other.mode.is_tree() == entry.mode.is_tree() => {
-                    child_roots.push(to_git2(other.oid))
+        if trees.len() == 1 {
+            child_roots.push(to_git2(entry.oid));
+        } else {
+            for tree in &trees {
+                match tree.iter().find(|e| e.filename == entry.filename) {
+                    Some(other) if other.mode.is_tree() == entry.mode.is_tree() => {
+                        child_roots.push(to_git2(other.oid))
+                    }
+                    _ => continue 'entry,
                 }
-                _ => continue 'entry,
             }
         }
 
@@ -748,66 +788,28 @@ fn intersect_walk(
                     continue;
                 }
                 let name = std::str::from_utf8(&member.filename)?;
-                let path = join_path(prefix, name);
-                intersect_walk(src, &child_roots, to_git2(member.oid), &path, out)?;
+                let sub = walk(src, cache, child_roots.clone(), to_git2(member.oid))?;
+                out.extend(sub.iter().map(|p| join_path(name, p)));
             }
         } else if !entry.mode.is_commit() {
-            emit_leaf(src, members, prefix, out)?;
-        }
-    }
-    Ok(())
-}
-
-/// Emit the candidates of one mirror blob leaf resolved to its bucket `members`: each file
-/// member directly, each directory member (a coarse leaf) expanded to all files under it.
-fn emit_leaf(
-    src: &dyn Objects,
-    members: &[&gix_object::tree::Entry],
-    prefix: &str,
-    out: &mut Vec<String>,
-) -> anyhow::Result<()> {
-    for member in members {
-        let name = std::str::from_utf8(&member.filename)?;
-        let path = join_path(prefix, name);
-        if member.mode.is_tree() {
-            collect_paths(src, to_git2(member.oid), &path, out)?;
-        } else if !member.mode.is_commit() {
-            out.push(path);
-        }
-    }
-    Ok(())
-}
-
-/// Emit every candidate of the single mirror `oid`, following `source` for bucket resolution
-/// and coarse expansion.
-fn collect_mirror_paths(
-    src: &dyn Objects,
-    oid: git2::Oid,
-    source: git2::Oid,
-    prefix: &str,
-    out: &mut Vec<String>,
-) -> anyhow::Result<()> {
-    let source_entries = read_tree_entries(src, source)?;
-    let buckets = buckets_of(&source_entries);
-    for entry in read_tree_entries(src, oid)? {
-        let bucket = std::str::from_utf8(&entry.filename)?;
-        let Some(members) = buckets.get(bucket) else {
-            continue;
-        };
-        if entry.mode.is_tree() {
             for member in members {
-                if !member.mode.is_tree() {
-                    continue;
-                }
                 let name = std::str::from_utf8(&member.filename)?;
-                let path = join_path(prefix, name);
-                collect_mirror_paths(src, to_git2(entry.oid), to_git2(member.oid), &path, out)?;
+                if member.mode.is_tree() {
+                    let sub = all_paths(src, cache, to_git2(member.oid))?;
+                    out.extend(sub.iter().map(|p| join_path(name, p)));
+                } else if !member.mode.is_commit() {
+                    out.push(name.to_owned());
+                }
             }
-        } else if !entry.mode.is_commit() {
-            emit_leaf(src, members, prefix, out)?;
         }
     }
-    Ok(())
+
+    // Mirror iteration follows bucket (hash) order; keep results in path order.
+    out.sort();
+    out.dedup();
+    let out = std::sync::Arc::new(out);
+    cache.walks.insert(key, out.clone());
+    Ok(out)
 }
 
 /// The entries of the tree `oid`, owned so several trees can be walked side by side.
@@ -830,34 +832,29 @@ fn read_tree_entries(
     )
 }
 
-/// Emit every blob path under `oid` (a tree), prefixed with `prefix`.
-fn collect_paths(
+/// All file paths under the tree `oid` (relative), memoized per tree: the expansion of coarse
+/// leaves and the fallback for queries without trigrams.
+fn all_paths(
     src: &dyn Objects,
+    cache: &mut SearchCache,
     oid: git2::Oid,
-    prefix: &str,
-    out: &mut Vec<String>,
-) -> anyhow::Result<()> {
-    let mut buffer = Vec::new();
-    let Some(data) = src
-        .try_find(&to_gix(oid), &mut buffer)
-        .map_err(|e| anyhow::anyhow!("read tree {}: {}", oid, e))?
-    else {
-        return Ok(());
-    };
-    if data.kind != gix_object::Kind::Tree {
-        return Ok(());
+) -> anyhow::Result<std::sync::Arc<Vec<String>>> {
+    if let Some(hit) = cache.all_paths.get(&oid) {
+        return Ok(hit.clone());
     }
-    let tree = gix_object::TreeRef::from_bytes(&buffer, gix_hash::Kind::Sha1)?.into_owned();
-    for entry in tree.entries {
+    let mut out = vec![];
+    for entry in read_tree_entries(src, oid)? {
         let name = std::str::from_utf8(&entry.filename)?;
-        let path = join_path(prefix, name);
         if entry.mode.is_tree() {
-            collect_paths(src, to_git2(entry.oid), &path, out)?;
+            let sub = all_paths(src, cache, to_git2(entry.oid))?;
+            out.extend(sub.iter().map(|p| join_path(name, p)));
         } else if !entry.mode.is_commit() {
-            out.push(path);
+            out.push(name.to_owned());
         }
     }
-    Ok(())
+    let out = std::sync::Arc::new(out);
+    cache.all_paths.insert(oid, out.clone());
+    Ok(out)
 }
 
 fn join_path(prefix: &str, name: &str) -> String {
@@ -870,39 +867,44 @@ fn join_path(prefix: &str, name: &str) -> String {
 
 type SearchMatchesResult = Vec<(String, Vec<(usize, String)>)>;
 
+/// Verify `candidates` against the query, byte-exact. Per-blob results are memoized on
+/// (query, blob oid): a blob's matching lines do not depend on the commit or path it appears
+/// under, so verifying a history costs one scan per distinct blob.
 pub fn search_matches(
     src: &dyn Objects,
+    cache: &mut SearchCache,
     tree: git2::Oid,
     searchstring: &str,
-    candidates: &Vec<String>,
+    candidates: &[String],
 ) -> anyhow::Result<SearchMatchesResult> {
     let mut results = vec![];
 
     for c in candidates {
-        let b = get_blob_path(src, tree, std::path::Path::new(&c));
-
-        let mut bresults = vec![];
-
-        for (linenr, l) in b.lines().enumerate() {
-            if l.contains(searchstring) {
-                bresults.push((linenr + 1, l.to_owned()));
+        let Some(blob) = path_entry(src, tree, std::path::Path::new(&c))? else {
+            continue;
+        };
+        let key = (searchstring.to_owned(), blob);
+        let bresults = if let Some(hit) = cache.blob_matches.get(&key) {
+            hit.clone()
+        } else {
+            let b = read_blob_text(src, to_gix(blob));
+            let mut lines = vec![];
+            for (linenr, l) in b.lines().enumerate() {
+                if l.contains(searchstring) {
+                    lines.push((linenr + 1, l.to_owned()));
+                }
             }
-        }
+            let lines = std::sync::Arc::new(lines);
+            cache.blob_matches.insert(key, lines.clone());
+            lines
+        };
 
         if !bresults.is_empty() {
-            results.push((c.to_owned(), bresults));
+            results.push((c.to_owned(), (*bresults).clone()));
         }
     }
 
     Ok(results)
-}
-
-/// Like [`read_blob_text`], but for a path inside `tree`.
-fn get_blob_path(src: &dyn Objects, tree: git2::Oid, path: &std::path::Path) -> String {
-    match path_entry(src, tree, path) {
-        Ok(Some(oid)) => read_blob_text(src, to_gix(oid)),
-        _ => "".to_owned(),
-    }
 }
 
 /// The oid at `path` inside `tree`, or `None` when any component is missing or not a tree.
@@ -1029,6 +1031,8 @@ mod tests {
             "03111ef5ca624b955d799a80181c1bf0c2099fcd"
         );
 
+        let mut sc = SearchCache::default();
+
         // "Tes" folds to "tes", which lives at 74/65/73 in the hex spine. sub1 is a small
         // directory, so the mirror records it as one coarse blob leaf under its bucket name.
         let leaf = path_entry(
@@ -1044,24 +1048,29 @@ mod tests {
         );
 
         // Coarse hits expand to every file under the directory; verification is exact.
-        let candidates = search_candidates(&objects(&repo), index, tree.id(), "document").unwrap();
+        let candidates =
+            search_candidates(&objects(&repo), &mut sc, index, tree.id(), "document").unwrap();
         assert_eq!(candidates, vec!["sub1/file1", "sub1/file2"]);
-        let matches = search_matches(&objects(&repo), tree.id(), "document", &candidates).unwrap();
+        let matches =
+            search_matches(&objects(&repo), &mut sc, tree.id(), "document", &candidates).unwrap();
         assert_eq!(matches.len(), 2);
 
         // Trigrams are case-folded, so candidates are a case-insensitive superset ("Test" in
         // file1 makes sub1 a candidate for "test") while match verification stays byte-exact.
-        let candidates = search_candidates(&objects(&repo), index, tree.id(), "test").unwrap();
+        let candidates =
+            search_candidates(&objects(&repo), &mut sc, index, tree.id(), "test").unwrap();
         assert_eq!(candidates, vec!["sub1/file1", "sub1/file2"]);
-        let matches = search_matches(&objects(&repo), tree.id(), "test", &candidates).unwrap();
+        let matches =
+            search_matches(&objects(&repo), &mut sc, tree.id(), "test", &candidates).unwrap();
         assert!(matches.is_empty());
 
         let candidates =
-            search_candidates(&objects(&repo), index, tree.id(), "missingword").unwrap();
+            search_candidates(&objects(&repo), &mut sc, index, tree.id(), "missingword").unwrap();
         assert!(candidates.is_empty());
 
         // Short query: every file is a candidate.
-        let candidates = search_candidates(&objects(&repo), index, tree.id(), "e").unwrap();
+        let candidates =
+            search_candidates(&objects(&repo), &mut sc, index, tree.id(), "e").unwrap();
         assert_eq!(candidates.len(), 3);
 
         // Indexing is deterministic and memoization-independent.
@@ -1110,12 +1119,19 @@ mod tests {
 
         // The bucket is a superset: both members are candidates for a needle in one of them;
         // verification is exact.
+        let mut sc = SearchCache::default();
         let candidates =
-            search_candidates(&objects(&repo), index, tree.id(), "needleword").unwrap();
+            search_candidates(&objects(&repo), &mut sc, index, tree.id(), "needleword").unwrap();
         assert!(candidates.contains(&"big/target_file".to_owned()));
         assert!(candidates.contains(&format!("big/{}", collider)));
-        let matches =
-            search_matches(&objects(&repo), tree.id(), "needleword", &candidates).unwrap();
+        let matches = search_matches(
+            &objects(&repo),
+            &mut sc,
+            tree.id(),
+            "needleword",
+            &candidates,
+        )
+        .unwrap();
         assert_eq!(matches.len(), 1);
         assert_eq!(matches[0].0, "big/target_file");
     }
@@ -1173,22 +1189,36 @@ mod tests {
             Some(git2::ObjectType::Blob)
         );
 
+        let mut sc = SearchCache::default();
+
         // Fine candidates stay per-file (modulo bucket collisions) and matches exact.
         let candidates =
-            search_candidates(&objects(&repo), index, tree.id(), "uniqueword07").unwrap();
+            search_candidates(&objects(&repo), &mut sc, index, tree.id(), "uniqueword07").unwrap();
         assert!(candidates.contains(&"big/file_07".to_owned()));
-        let matches =
-            search_matches(&objects(&repo), tree.id(), "uniqueword07", &candidates).unwrap();
+        let matches = search_matches(
+            &objects(&repo),
+            &mut sc,
+            tree.id(),
+            "uniqueword07",
+            &candidates,
+        )
+        .unwrap();
         assert_eq!(matches.len(), 1);
         assert_eq!(matches[0].0, "big/file_07");
 
         // A coarse hit makes every file under the directory a candidate; verification is
         // exact.
         let candidates =
-            search_candidates(&objects(&repo), index, tree.id(), "needleinsmall").unwrap();
+            search_candidates(&objects(&repo), &mut sc, index, tree.id(), "needleinsmall").unwrap();
         assert_eq!(candidates, vec!["small/a", "small/b"]);
-        let matches =
-            search_matches(&objects(&repo), tree.id(), "needleinsmall", &candidates).unwrap();
+        let matches = search_matches(
+            &objects(&repo),
+            &mut sc,
+            tree.id(),
+            "needleinsmall",
+            &candidates,
+        )
+        .unwrap();
         assert_eq!(matches.len(), 1);
         assert_eq!(matches[0].0, "small/a");
 
@@ -1216,7 +1246,7 @@ mod tests {
                 ("sub2/mod", "alpha beta gamma"),
             ],
         );
-        trigram_index(&objects(&repo), &cache, &mut indexer, tree_a.id()).unwrap();
+        let index_a = trigram_index(&objects(&repo), &cache, &mut indexer, tree_a.id()).unwrap();
 
         // One file modified, one removed (its unique trigrams must vanish from the spine), one
         // added in a fresh directory.
@@ -1241,12 +1271,39 @@ mod tests {
             trigram_index(&objects(&repo), &cold, &mut Indexer::default(), tree_b.id()).unwrap();
         assert_eq!(index_b, index_b_cold);
 
-        // The incremental index searches correctly.
-        let hits = search_candidates(&objects(&repo), index_b, tree_b.id(), "delta").unwrap();
-        assert_eq!(hits, vec!["sub2/mod"]);
-        let hits = search_candidates(&objects(&repo), index_b, tree_b.id(), "zebra").unwrap();
+        // The incremental index searches correctly — through a cache warmed on commit A,
+        // like one GraphQL history+search query warms it: memo entries are content-keyed, so
+        // cross-commit reuse must not leak commit A's results into commit B's.
+        let mut sc = SearchCache::default();
+        let hits =
+            search_candidates(&objects(&repo), &mut sc, index_a, tree_a.id(), "delta").unwrap();
         assert!(hits.is_empty());
-        let hits = search_candidates(&objects(&repo), index_b, tree_b.id(), "addition").unwrap();
+        let hits =
+            search_candidates(&objects(&repo), &mut sc, index_a, tree_a.id(), "zebra").unwrap();
+        let matches =
+            search_matches(&objects(&repo), &mut sc, tree_a.id(), "zebra", &hits).unwrap();
+        assert_eq!(matches.len(), 1);
+        assert_eq!(matches[0].0, "sub1/gone");
+
+        let hits =
+            search_candidates(&objects(&repo), &mut sc, index_b, tree_b.id(), "delta").unwrap();
+        assert_eq!(hits, vec!["sub2/mod"]);
+        let hits =
+            search_candidates(&objects(&repo), &mut sc, index_b, tree_b.id(), "zebra").unwrap();
+        assert!(hits.is_empty());
+        let hits =
+            search_candidates(&objects(&repo), &mut sc, index_b, tree_b.id(), "addition").unwrap();
         assert_eq!(hits, vec!["sub3/new"]);
+
+        // Warm-cache results equal fresh-cache results.
+        let fresh = search_candidates(
+            &objects(&repo),
+            &mut SearchCache::default(),
+            index_b,
+            tree_b.id(),
+            "delta",
+        )
+        .unwrap();
+        assert_eq!(fresh, vec!["sub2/mod"]);
     }
 }

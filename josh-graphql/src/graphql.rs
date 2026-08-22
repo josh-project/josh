@@ -450,7 +450,13 @@ impl Revision {
         let candidates = if filter::experimental_features_enabled() {
             let ifilterobj = filter::parse(":SQUASH:INDEX")?;
             let index_tree = filter::apply(&transaction, ifilterobj, x.clone())?;
-            josh_search::search_candidates(&odb, index_tree.tree_id(), x.tree_id(), &string)?
+            josh_search::search_candidates(
+                &odb,
+                &mut transaction.search_cache(),
+                index_tree.tree_id(),
+                x.tree_id(),
+                &string,
+            )?
         } else {
             let mut scan = vec![];
             objects::walk_tree_preorder(&odb, x.tree_id(), &mut |parent, entry| {
@@ -465,7 +471,13 @@ impl Revision {
             })?;
             scan
         };
-        let results = josh_search::search_matches(&odb, x.tree_id(), &string, &candidates)?;
+        let results = josh_search::search_matches(
+            &odb,
+            &mut transaction.search_cache(),
+            x.tree_id(),
+            &string,
+            &candidates,
+        )?;
 
         let mut r = vec![];
         for m in results {
