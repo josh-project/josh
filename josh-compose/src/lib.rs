@@ -61,10 +61,10 @@ pub fn run(
     // uncommitted changes (input_ref == "."). For committed refs there is no
     // working tree to write back to.
     let extract_to_workdir = opts.input_ref == ".";
-    let odb = transaction.odb()?;
+    let odb = transaction.odb();
     container::run_container(
         transaction,
-        &odb,
+        odb,
         ws_tree,
         &mut attempted,
         extract_to_workdir,
@@ -94,8 +94,8 @@ pub fn plan_images(
 
     let (ws_tree, _safe_name) = filter::compute_ws_tree(transaction, &filter_spec, source_commit)?;
 
-    let odb = transaction.odb()?;
-    plan::collect_image_oids(transaction, &odb, ws_tree, ignore_cache, runtime)
+    let odb = transaction.odb();
+    plan::collect_image_oids(transaction, odb, ws_tree, ignore_cache, runtime)
 }
 
 /// Enumerate every job hash (workspace tree OID) that a `run` with the same options
@@ -118,6 +118,6 @@ pub fn plan_jobs(
 
     let (ws_tree, _safe_name) = filter::compute_ws_tree(transaction, &filter_spec, source_commit)?;
 
-    let odb = transaction.odb()?;
-    plan::collect_job_hashes(transaction, &odb, ws_tree, ignore_cache, runtime)
+    let odb = transaction.odb();
+    plan::collect_job_hashes(transaction, odb, ws_tree, ignore_cache, runtime)
 }

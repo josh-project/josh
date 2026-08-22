@@ -69,12 +69,12 @@ pub fn handle_track(
         None,
         "HEAD",
         fetched_commit,
-        josh_core::objects::CommitData::read(&transaction.odb()?, head.commit)?.tree_id()?,
+        josh_core::objects::CommitData::read(transaction.odb(), head.commit)?.tree_id()?,
         link_mode,
     )?
     .into_tree_oid();
 
-    let odb = transaction.odb()?;
+    let odb = transaction.odb();
     let refs_blob = {
         let refs_map: BTreeMap<String, String> = refs
             .iter()
@@ -84,14 +84,14 @@ pub fn handle_track(
         let refs_json =
             serde_json::to_string_pretty(&refs_map).context("Failed to serialize refs to JSON")?;
 
-        josh_core::objects::write_blob(&odb, refs_json.as_bytes())
+        josh_core::objects::write_blob(odb, refs_json.as_bytes())
             .context("Failed to create refs.json blob")?
     };
 
     let refs_path = std::path::Path::new("remotes").join(id).join("refs.json");
 
     let final_tree = tree::insert_oid(
-        &odb,
+        odb,
         tree_with_link_oid,
         &refs_path,
         refs_blob,
@@ -100,7 +100,7 @@ pub fn handle_track(
     .context("Failed to insert refs.json into tree")?;
 
     let final_commit = josh_core::objects::write_commit(
-        &odb,
+        odb,
         final_tree,
         &[head.commit],
         &signature,

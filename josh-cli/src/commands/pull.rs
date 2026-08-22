@@ -232,7 +232,7 @@ fn upstream_change_ids(
     base: git2::Oid,
 ) -> anyhow::Result<std::collections::HashSet<String>> {
     let repo = transaction.git2_repo();
-    let odb = transaction.odb()?;
+    let odb = transaction.odb();
     let mut ids = std::collections::HashSet::new();
     let mut walk = repo.revwalk()?;
     walk.push(tip)?;
@@ -241,7 +241,7 @@ fn upstream_change_ids(
     }
 
     for oid in walk {
-        let commit = josh_core::objects::CommitData::read(&odb, oid?)?;
+        let commit = josh_core::objects::CommitData::read(odb, oid?)?;
         if let (Some(id), _) = commit_change_meta(&commit) {
             ids.insert(id);
         }
@@ -259,25 +259,29 @@ fn restack_commits(
 ) -> anyhow::Result<(git2::Oid, usize)> {
     use josh_core::objects::CommitData;
 
-    let odb = transaction.odb()?;
-    let mut acc = CommitData::read(&odb, tip)?;
+    let odb = transaction.odb();
+    let mut acc = CommitData::read(odb, tip)?;
     let mut kept = 0usize;
 
     for &oid in commits {
-        let commit = CommitData::read(&odb, oid)?;
+        let commit = CommitData::read(odb, oid)?;
         let parent = commit
             .first_parent_id()
             .with_context(|| format!("cannot restack root commit {}", short_oid(oid)))?;
-        let parent_tree = CommitData::read(&odb, parent)?.tree_id()?;
+        let parent_tree = CommitData::read(odb, parent)?.tree_id()?;
 
-        let tree_oid =
-            josh_core::objects::merge_trees(&odb, parent_tree, acc.tree_id()?, commit.tree_id()?)
-                .with_context(|| {
-                format!(
-                    "conflict while restacking change commit {} onto upstream; resolve manually",
-                    short_oid(oid)
-                )
-            })?;
+        let tree_oid = josh_core::objects::merge_trees(
+            odb,
+            parent_tree,
+            acc.tree_id()?,
+            commit.tree_id()?,
+        )
+        .with_context(|| {
+            format!(
+                "conflict while restacking change commit {} onto upstream; resolve manually",
+                short_oid(oid)
+            )
+        })?;
         if tree_oid == acc.tree_id()? {
             // The change became empty on top of the new base (e.g. its content
             // already landed upstream without a matching Change-Id).
@@ -285,13 +289,13 @@ fn restack_commits(
         }
 
         let new_oid = josh_core::objects::write_commit_with_signatures_of(
-            &odb,
+            odb,
             &commit,
             tree_oid,
             &[acc.id()],
             std::str::from_utf8(commit.message_raw()?).unwrap_or_default(),
         )?;
-        acc = CommitData::read(&odb, new_oid)?;
+        acc = CommitData::read(odb, new_oid)?;
         kept += 1;
     }
 
@@ -326,7 +330,7 @@ pub fn integrate(
     let new = transaction
         .resolve_ref(&upstream_refname)?
         .ok_or_else(|| anyhow::anyhow!("failed to resolve upstream ref '{}'", upstream_refname))?;
-    let new = josh_core::objects::peel_to_commit(&transaction.odb()?, new)
+    let new = josh_core::objects::peel_to_commit(transaction.odb(), new)
         .with_context(|| format!("failed to resolve upstream ref '{}'", upstream_refname))?;
     let old = head.commit;
     // The ref's stored target, which the CAS guard on the write below compares against;
@@ -337,7 +341,7 @@ pub fn integrate(
         return Ok(IntegrateReport::UpToDate);
     }
 
-    let merge_base = josh_core::objects::merge_base(&transaction.odb()?, old, new)?;
+    let merge_base = josh_core::objects::merge_base(transaction.odb(), old, new)?;
 
     // Upstream is already contained in the local branch: nothing to integrate.
     if merge_base == new {
@@ -357,7 +361,7 @@ pub fn integrate(
         let mut local_commits = Vec::new();
         for oid in walk {
             let oid = oid?;
-            let commit = josh_core::objects::CommitData::read(&transaction.odb()?, oid)?;
+            let commit = josh_core::objects::CommitData::read(transaction.odb(), oid)?;
             if commit.parent_ids().count() > 1 {
                 anyhow::bail!(
                     "local branch '{}' contains merge commits; cannot integrate automatically",
@@ -372,7 +376,7 @@ pub fn integrate(
         let mut skipped = Vec::new();
         let mut remaining = Vec::new();
         for &oid in &local_commits {
-            let commit = josh_core::objects::CommitData::read(&transaction.odb()?, oid)?;
+            let commit = josh_core::objects::CommitData::read(transaction.odb(), oid)?;
             match commit_change_meta(&commit) {
                 (Some(id), _) if applied.contains(&id) => skipped.push(id),
                 // A commit with a Change-Id not yet applied upstream, or one

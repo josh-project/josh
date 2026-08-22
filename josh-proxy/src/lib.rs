@@ -299,19 +299,19 @@ pub fn merge_meta(
     }
     let rev = transaction_mirror.refname("refs/josh/meta");
 
-    let odb = transaction.odb()?;
+    let odb = transaction.odb();
     let (mut tree, parents) = if let Some(meta_oid) = transaction_mirror.resolve_ref(&rev)? {
-        let meta_commit = josh_core::objects::CommitData::read(&odb, meta_oid)?;
+        let meta_commit = josh_core::objects::CommitData::read(odb, meta_oid)?;
         (meta_commit.tree_id()?, vec![meta_oid])
     } else {
         (josh_core::filter::tree::empty_id(), vec![])
     };
 
     for (path, add_lines) in meta_add.iter() {
-        let prev = match josh_core::filter::tree::get_path_entry(transaction, &odb, tree, path)? {
+        let prev = match josh_core::filter::tree::get_path_entry(transaction, odb, tree, path)? {
             Some(entry) => {
                 let blob = josh_core::filter::tree::blob_bytes(
-                    &odb,
+                    odb,
                     josh_core::objects::git2_oid(&entry.oid),
                 )
                 .ok_or_else(|| anyhow!("not a blob: {}", entry.oid))?;
@@ -330,14 +330,14 @@ pub fn merge_meta(
         lines.sort_unstable();
         lines.dedup();
 
-        let blob = josh_core::objects::write_blob(&odb, lines.join("\n").as_bytes())?;
+        let blob = josh_core::objects::write_blob(odb, lines.join("\n").as_bytes())?;
 
-        tree = josh_core::filter::tree::insert_oid(&odb, tree, path, blob, 0o0100644)?;
+        tree = josh_core::filter::tree::insert_oid(odb, tree, path, blob, 0o0100644)?;
     }
 
     let signature = josh_core::git::josh_commit_signature()?;
     let oid =
-        josh_core::objects::write_commit(&odb, tree, &parents, &signature, &signature, "marker")?;
+        josh_core::objects::write_commit(odb, tree, &parents, &signature, &signature, "marker")?;
 
     Ok(Some(("refs/josh/meta".to_string(), oid)))
 }

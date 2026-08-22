@@ -37,7 +37,7 @@ pub fn handle_sync(
 
     let base_oid = if let Some(b) = &branch {
         match transaction.resolve_ref(&format!("refs/remotes/origin/{}", b))? {
-            Some(oid) => josh_core::objects::peel_to_commit(&transaction.odb()?, oid)?,
+            Some(oid) => josh_core::objects::peel_to_commit(transaction.odb(), oid)?,
             None => git2::Oid::ZERO_SHA1,
         }
     } else {

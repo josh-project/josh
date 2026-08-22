@@ -291,8 +291,9 @@ mod tests {
         let tree = repo.find_tree(tree_id).unwrap();
         let commit_id = repo.commit(None, &sig, &sig, "test", &tree, &[]).unwrap();
 
-        let store = josh_memodb::MemOdb::new(None, josh_memodb::objects_dir(&repo));
-        let odb = josh_memodb::Odb::new(store, repo.odb().unwrap());
+        let objects_dir = josh_memodb::objects_dir(&repo);
+        let store = josh_memodb::MemOdb::new(None, objects_dir.clone());
+        let odb = josh_memodb::Odb::at(store, &objects_dir).unwrap();
         assert_eq!(
             super::read_tree_id(&odb, commit_id).unwrap(),
             repo.find_commit(commit_id).unwrap().tree_id()

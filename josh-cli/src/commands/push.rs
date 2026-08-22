@@ -185,12 +185,12 @@ fn prepare_push(
                 "--merge requires --base=<ref> or an existing destination ref"
             ));
         }
-        let odb = transaction.odb()?;
+        let odb = transaction.odb();
         let merged_tree =
-            josh_core::objects::merge_commits(&odb, original_target, unfiltered_oid, None)?;
+            josh_core::objects::merge_commits(odb, original_target, unfiltered_oid, None)?;
         let signature = josh_core::git::josh_commit_signature()?;
         josh_core::objects::write_commit(
-            &odb,
+            odb,
             merged_tree,
             &[original_target, unfiltered_oid],
             &signature,

@@ -64,8 +64,8 @@ pub fn collect_pr_infos(
                 entry.head_oid?,
                 entry.base_oid?,
             );
-            let odb = transaction.odb().ok()?;
-            let commit = josh_core::objects::CommitData::read(&odb, head_oid).ok()?;
+            let odb = transaction.odb();
+            let commit = josh_core::objects::CommitData::read(odb, head_oid).ok()?;
             let raw_message = commit
                 .message()
                 .ok()

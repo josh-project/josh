@@ -16,7 +16,7 @@ pub fn store_github_id(
     github_id: &str,
     scope: &ChangesRef,
 ) -> anyhow::Result<()> {
-    let blob_oid = josh_core::objects::write_blob(&transaction.odb()?, github_id.as_bytes())?;
+    let blob_oid = josh_core::objects::write_blob(transaction.odb(), github_id.as_bytes())?;
     let path = std::path::Path::new("gh_ids")
         .join(encode_change_id_path(change_id))
         .join(local_hash);
@@ -47,7 +47,7 @@ pub fn store_github_vote_id(
     scope: &ChangesRef,
 ) -> anyhow::Result<()> {
     let json = serde_json::to_string(vote_data)?;
-    let blob_oid = josh_core::objects::write_blob(&transaction.odb()?, json.as_bytes())?;
+    let blob_oid = josh_core::objects::write_blob(transaction.odb(), json.as_bytes())?;
     let path = std::path::Path::new("gh_vote_ids")
         .join(encode_change_id_path(change_id))
         .join(user);

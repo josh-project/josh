@@ -76,11 +76,11 @@ fn write_vote_inner(
     let content = json.to_string();
     let content_hash =
         git2::Oid::hash_object(git2::ObjectType::Blob, content.as_bytes())?.to_string();
-    let odb = transaction.odb()?;
-    let blob_oid = objects::write_blob(&odb, content.as_bytes())?;
+    let odb = transaction.odb();
+    let blob_oid = objects::write_blob(odb, content.as_bytes())?;
 
     let tree_oid = tree::insert_oid(
-        &odb,
+        odb,
         tree::empty_id(),
         std::path::Path::new(&blob_oid.to_string()),
         blob_oid,
@@ -103,17 +103,17 @@ fn write_vote_inner(
     let ref_name = scope.ref_name();
     let prev_commit = transaction.resolve_ref(&ref_name)?;
     let base_tree = match prev_commit {
-        Some(oid) => objects::CommitData::read(&odb, oid)?.tree_id()?,
+        Some(oid) => objects::CommitData::read(odb, oid)?.tree_id()?,
         None => tree::empty_id(),
     };
 
-    if let Ok(Some(existing)) = tree::get_path_entry(transaction, &odb, base_tree, &path) {
+    if let Ok(Some(existing)) = tree::get_path_entry(transaction, odb, base_tree, &path) {
         if objects::git2_oid(&existing.oid) == tree_oid {
             return Ok(content_hash);
         }
     }
 
-    let tree = tree::insert_oid(&odb, base_tree, &path, tree_oid, 0o0040000)?;
+    let tree = tree::insert_oid(odb, base_tree, &path, tree_oid, 0o0040000)?;
 
     let sig = match author {
         Some(name) => {
@@ -124,7 +124,7 @@ fn write_vote_inner(
         None => transaction.signature()?,
     };
     let msg = format!("update {}\n", ref_name);
-    let new_oid = objects::write_commit(&odb, tree, prev_commit.as_slice(), &sig, &sig, &msg)?;
+    let new_oid = objects::write_commit(odb, tree, prev_commit.as_slice(), &sig, &sig, &msg)?;
     transaction.update_ref(
         &ref_name,
         prev_commit.map_or(Expected::Absent, Expected::At),
@@ -141,9 +141,9 @@ pub fn read_vote(
     user: Option<&str>,
     scope: &ChangesRef,
 ) -> anyhow::Result<Option<VoteData>> {
-    let odb = transaction.odb()?;
+    let odb = transaction.odb();
     let tree = match transaction.resolve_ref(&scope.ref_name())? {
-        Some(oid) => objects::CommitData::read(&odb, oid)?.tree_id()?,
+        Some(oid) => objects::CommitData::read(odb, oid)?.tree_id()?,
         None => return Ok(None),
     };
 
@@ -160,12 +160,12 @@ pub fn read_vote(
         .join(encode_change_id_path(change_id))
         .join(&user);
 
-    let subtree = match get_tree(transaction, &odb, tree, &path) {
+    let subtree = match get_tree(transaction, odb, tree, &path) {
         Some(t) => t,
         None => return Ok(None),
     };
-    for entry in tree::read_tree(transaction, &odb, subtree)?.entries() {
-        if let Some(blob) = tree::blob_bytes(&odb, objects::git2_oid(&entry.oid)) {
+    for entry in tree::read_tree(transaction, odb, subtree)?.entries() {
+        if let Some(blob) = tree::blob_bytes(odb, objects::git2_oid(&entry.oid)) {
             let data: VoteData = serde_json::from_slice(&blob)?;
             return Ok(Some(data));
         }
@@ -197,18 +197,18 @@ fn list_votes_at_prefix(
     scope: &ChangesRef,
     path_prefix: &str,
 ) -> anyhow::Result<Vec<(String, VoteData)>> {
-    let odb = transaction.odb()?;
+    let odb = transaction.odb();
     let tree = match transaction.resolve_ref(&scope.ref_name())? {
-        Some(oid) => objects::CommitData::read(&odb, oid)?.tree_id()?,
+        Some(oid) => objects::CommitData::read(odb, oid)?.tree_id()?,
         None => return Ok(Default::default()),
     };
     let path = std::path::Path::new(path_prefix).join(encode_change_id_path(change_id));
-    let subtree = match get_tree(transaction, &odb, tree, &path) {
+    let subtree = match get_tree(transaction, odb, tree, &path) {
         Some(t) => t,
         None => return Ok(Default::default()),
     };
     let mut votes = Vec::new();
-    for entry in tree::read_tree(transaction, &odb, subtree)?.entries() {
+    for entry in tree::read_tree(transaction, odb, subtree)?.entries() {
         let user = match std::str::from_utf8(entry.filename) {
             Ok(name) => name.to_string(),
             Err(_) => continue,
@@ -216,12 +216,12 @@ fn list_votes_at_prefix(
         if !entry.mode.is_tree() {
             continue;
         }
-        let user_tree = match tree::read_tree(transaction, &odb, objects::git2_oid(&entry.oid)) {
+        let user_tree = match tree::read_tree(transaction, odb, objects::git2_oid(&entry.oid)) {
             Ok(t) => t,
             Err(_) => continue,
         };
         for child in user_tree.entries() {
-            if let Some(blob) = tree::blob_bytes(&odb, objects::git2_oid(&child.oid)) {
+            if let Some(blob) = tree::blob_bytes(odb, objects::git2_oid(&child.oid)) {
                 if let Ok(data) = serde_json::from_slice::<VoteData>(&blob) {
                     votes.push((user.clone(), data));
                 }
@@ -243,14 +243,14 @@ pub fn delete_outbox_votes(
         return Ok(0);
     }
 
-    let odb = transaction.odb()?;
+    let odb = transaction.odb();
     let encoded = encode_change_id_path(change_id);
     let ref_name = scope.ref_name();
     let prev_commit = match transaction.resolve_ref(&ref_name)? {
         Some(oid) => oid,
         None => return Ok(0),
     };
-    let mut tree = objects::CommitData::read(&odb, prev_commit)?.tree_id()?;
+    let mut tree = objects::CommitData::read(odb, prev_commit)?.tree_id()?;
 
     let mut removed = 0usize;
     for user in users {
@@ -258,10 +258,10 @@ pub fn delete_outbox_votes(
             .join(&encoded)
             .join(user);
         if matches!(
-            tree::get_path_entry(transaction, &odb, tree, &path),
+            tree::get_path_entry(transaction, odb, tree, &path),
             Ok(Some(_))
         ) {
-            tree = tree::insert_oid(&odb, tree, &path, git2::Oid::ZERO_SHA1, 0)?;
+            tree = tree::insert_oid(odb, tree, &path, git2::Oid::ZERO_SHA1, 0)?;
             removed += 1;
         }
     }
@@ -272,7 +272,7 @@ pub fn delete_outbox_votes(
 
     let sig = transaction.signature()?;
     let msg = format!("delete outbox votes on {}\n", ref_name);
-    let new_oid = objects::write_commit(&odb, tree, &[prev_commit], &sig, &sig, &msg)?;
+    let new_oid = objects::write_commit(odb, tree, &[prev_commit], &sig, &sig, &msg)?;
     transaction.update_ref(&ref_name, Expected::At(prev_commit), new_oid, &msg)?;
 
     Ok(removed)
