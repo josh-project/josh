@@ -203,6 +203,8 @@ fn main() {
         Command::Repo(cmd) => run_repo(cmd, cli.distributed_cache),
     };
 
+    josh_core::memodb::flush_all();
+
     if let Err(e) = result {
         eprintln!("Error: {e}");
 

@@ -323,5 +323,7 @@ fn main() {
             exit_code
         });
 
+    josh_core::memodb::flush_all();
+
     std::process::exit(exit_code);
 }
