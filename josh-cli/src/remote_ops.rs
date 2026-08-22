@@ -49,14 +49,10 @@ pub fn resolve_default_branch(
     remote_name: &str,
 ) -> anyhow::Result<String> {
     let head_symref = format!("refs/remotes/{}/HEAD", remote_name);
-    // PORT: symbolic-target read needs the target name, not the oid, so it is not
-    // expressible via resolve_ref; stays on the git2 handle until flag day (gix
-    // try_find_reference then).
     transaction
-        .git2_repo()
-        .find_reference(&head_symref)
+        .symref_target(&head_symref)
         .ok()
-        .and_then(|r| r.symbolic_target().ok().flatten().map(|s| s.to_string()))
+        .flatten()
         .and_then(|target| {
             target
                 .strip_prefix(&format!("refs/remotes/{}/", remote_name))

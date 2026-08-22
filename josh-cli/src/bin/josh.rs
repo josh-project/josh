@@ -392,16 +392,9 @@ fn handle_clone(
         // Read the remote HEAD symref to get the default branch
         let head_ref = "refs/remotes/origin/HEAD".to_string();
 
-        // PORT: symbolic-target read needs the target name, not the oid, so it is not
-        // expressible via resolve_ref; stays on the git2 handle until flag day (gix
-        // try_find_reference then).
-        let head_reference = repo
-            .find_reference(&head_ref)
-            .with_context(|| format!("Failed to find remote HEAD reference {}", head_ref))?;
-
-        let symref_target = head_reference
-            .symbolic_target()?
-            .context("Remote HEAD reference is not a symbolic reference")?;
+        let symref_target = transaction
+            .symref_target(&head_ref)?
+            .with_context(|| format!("{} is missing or not a symbolic reference", head_ref))?;
 
         // Extract branch name from symref target (e.g., "refs/remotes/origin/master" -> "master")
         let branch_name = symref_target
