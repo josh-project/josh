@@ -111,8 +111,8 @@ fn write_comment_inner(
     let content = serde_json::to_string(meta)?;
     let content_hash =
         git2::Oid::hash_object(git2::ObjectType::Blob, content.as_bytes())?.to_string();
-    let odb = transaction.odb()?;
-    let blob_oid = objects::write_blob(&odb, content.as_bytes())?;
+    let odb = transaction.odb();
+    let blob_oid = objects::write_blob(odb, content.as_bytes())?;
 
     let prefix = std::path::Path::new(path_prefix);
     let path = if let Some(ref file) = meta.file {
@@ -120,9 +120,9 @@ fn write_comment_inner(
             Some(s) => git2::Oid::from_str(s)?,
             None => change.commit(),
         };
-        let commit_tree = objects::CommitData::read(&odb, resolve_commit)?.tree_id()?;
+        let commit_tree = objects::CommitData::read(odb, resolve_commit)?.tree_id()?;
         let file_blob =
-            tree::get_path_entry(transaction, &odb, commit_tree, std::path::Path::new(file))?
+            tree::get_path_entry(transaction, odb, commit_tree, std::path::Path::new(file))?
                 .ok_or_else(|| anyhow!("no such path: {}", file))?
                 .oid
                 .to_string();
@@ -170,7 +170,7 @@ pub fn comment_author(
         None => return Err(anyhow!("change has no Change-Id")),
     };
 
-    let odb = transaction.odb()?;
+    let odb = transaction.odb();
     let ref_name = scope.ref_name();
     let head = match transaction.resolve_ref(&ref_name)? {
         Some(oid) => oid,
@@ -179,18 +179,18 @@ pub fn comment_author(
 
     let path = if let Some(f) = file {
         // Find the blob_id for this comment in the current tree.
-        let head_tree = objects::CommitData::read(&odb, head)?.tree_id()?;
+        let head_tree = objects::CommitData::read(odb, head)?.tree_id()?;
         let cid_path = std::path::Path::new("comments")
             .join("F")
             .join(encode_change_id_path(change_id));
         let mut found = None;
-        if let Some(cid_tree) = get_tree(transaction, &odb, head_tree, &cid_path) {
-            for blob_entry in tree::read_tree(transaction, &odb, cid_tree)?.entries() {
+        if let Some(cid_tree) = get_tree(transaction, odb, head_tree, &cid_path) {
+            for blob_entry in tree::read_tree(transaction, odb, cid_tree)?.entries() {
                 let blob_name = std::str::from_utf8(blob_entry.filename).unwrap_or("");
                 let sub = std::path::Path::new(f).join(comment_id);
                 let full = cid_path.join(blob_name).join(&sub);
                 if matches!(
-                    tree::get_path_entry(transaction, &odb, head_tree, &full),
+                    tree::get_path_entry(transaction, odb, head_tree, &full),
                     Ok(Some(_))
                 ) {
                     found = Some(full);
@@ -211,20 +211,20 @@ pub fn comment_author(
             .join(comment_id)
     };
 
-    let mut walk = objects::RevWalk::new(&odb);
+    let mut walk = objects::RevWalk::new(odb);
     walk.simplify_first_parent();
     walk.push(head)?;
 
     for oid in walk.into_topo_vec(|_| false)? {
-        let commit = objects::CommitData::read(&odb, oid)?;
+        let commit = objects::CommitData::read(odb, oid)?;
         let tree = commit.tree_id()?;
-        if let Ok(Some(entry)) = tree::get_path_entry(transaction, &odb, tree, &path) {
+        if let Ok(Some(entry)) = tree::get_path_entry(transaction, odb, tree, &path) {
             // The commit that introduced or last changed this blob authored the comment.
             let is_new = match commit.first_parent_id() {
-                Some(parent) => josh_core::git::read_tree_id(&odb, parent)
+                Some(parent) => josh_core::git::read_tree_id(odb, parent)
                     .ok()
                     .and_then(|pt| {
-                        tree::get_path_entry(transaction, &odb, pt, &path)
+                        tree::get_path_entry(transaction, odb, pt, &path)
                             .ok()
                             .flatten()
                     })
@@ -271,20 +271,20 @@ pub fn read_comments(
     change_id: &str,
     scope: &ChangesRef,
 ) -> anyhow::Result<Vec<Comment>> {
-    let odb = transaction.odb()?;
+    let odb = transaction.odb();
     let ref_name = scope.ref_name();
     let head_commit = match transaction.resolve_ref(&ref_name)? {
         Some(oid) => oid,
         None => return Ok(Vec::new()),
     };
-    let tree = objects::CommitData::read(&odb, head_commit)?.tree_id()?;
+    let tree = objects::CommitData::read(odb, head_commit)?.tree_id()?;
 
     let mut comments = Vec::new();
 
     // Posted/fetched: comments/{C,F}/...
     collect_comments_at_prefix(
         transaction,
-        &odb,
+        odb,
         tree,
         change_id,
         "comments",
@@ -294,7 +294,7 @@ pub fn read_comments(
     // Pending outbox (only meaningful on Remote refs): outbox/comments/{C,F}/...
     collect_comments_at_prefix(
         transaction,
-        &odb,
+        odb,
         tree,
         change_id,
         "outbox/comments",
@@ -303,15 +303,15 @@ pub fn read_comments(
     )?;
 
     // Walk history once to resolve author/timestamp for all comments.
-    let mut walk = objects::RevWalk::new(&odb);
+    let mut walk = objects::RevWalk::new(odb);
     walk.simplify_first_parent();
     let _ = walk.push(head_commit);
     'outer: for oid in walk.into_topo_vec(|_| false)?.into_iter() {
-        if let Ok(commit) = objects::CommitData::read(&odb, oid) {
+        if let Ok(commit) = objects::CommitData::read(odb, oid) {
             let Ok(tree) = commit.tree_id() else { continue };
             let parent_tree = commit
                 .first_parent_id()
-                .and_then(|p| josh_core::git::read_tree_id(&odb, p).ok());
+                .and_then(|p| josh_core::git::read_tree_id(odb, p).ok());
             for c in &mut comments {
                 if c.author.is_some() {
                     continue;
@@ -326,10 +326,10 @@ pub fn read_comments(
                         .join("C")
                         .join(encode_change_id_path(change_id))
                         .join(&c.id);
-                    if let Ok(Some(entry)) = tree::get_path_entry(transaction, &odb, tree, &p) {
+                    if let Ok(Some(entry)) = tree::get_path_entry(transaction, odb, tree, &p) {
                         let is_new = parent_tree
                             .and_then(|pt| {
-                                tree::get_path_entry(transaction, &odb, pt, &p)
+                                tree::get_path_entry(transaction, odb, pt, &p)
                                     .ok()
                                     .flatten()
                             })
@@ -346,18 +346,18 @@ pub fn read_comments(
                     let cid_path = std::path::Path::new(prefix)
                         .join("F")
                         .join(encode_change_id_path(change_id));
-                    if let Some(cid_tree) = get_tree(transaction, &odb, tree, &cid_path)
-                        && let Ok(reader) = tree::read_tree(transaction, &odb, cid_tree)
+                    if let Some(cid_tree) = get_tree(transaction, odb, tree, &cid_path)
+                        && let Ok(reader) = tree::read_tree(transaction, odb, cid_tree)
                     {
                         for blob_entry in reader.entries() {
                             let blob_name = std::str::from_utf8(blob_entry.filename).unwrap_or("");
                             let sub = std::path::Path::new(c.file.as_ref().unwrap()).join(&c.id);
                             let full_path = cid_path.join(blob_name).join(&sub);
                             if let Ok(Some(entry)) =
-                                tree::get_path_entry(transaction, &odb, tree, &full_path)
+                                tree::get_path_entry(transaction, odb, tree, &full_path)
                             {
                                 let parent_entry = parent_tree.and_then(|pt| {
-                                    tree::get_path_entry(transaction, &odb, pt, &full_path)
+                                    tree::get_path_entry(transaction, odb, pt, &full_path)
                                         .ok()
                                         .flatten()
                                 });
@@ -494,7 +494,7 @@ pub fn delete_outbox_comments(
     if content_hashes.is_empty() {
         return Ok(0);
     }
-    let odb = transaction.odb()?;
+    let odb = transaction.odb();
     let want: std::collections::HashSet<&str> = content_hashes.iter().map(|s| s.as_str()).collect();
 
     let ref_name = scope.ref_name();
@@ -502,15 +502,15 @@ pub fn delete_outbox_comments(
         Some(oid) => oid,
         None => return Ok(0),
     };
-    let mut tree = objects::CommitData::read(&odb, prev_commit)?.tree_id()?;
+    let mut tree = objects::CommitData::read(odb, prev_commit)?.tree_id()?;
 
     let encoded = encode_change_id_path(change_id);
     let mut paths_to_remove: Vec<std::path::PathBuf> = Vec::new();
 
     // Non-file: outbox/comments/C/<change>/<hash>
     let c_prefix = std::path::Path::new("outbox/comments/C").join(&encoded);
-    if let Some(c_tree) = get_tree(transaction, &odb, tree, &c_prefix) {
-        for entry in tree::read_tree(transaction, &odb, c_tree)?.entries() {
+    if let Some(c_tree) = get_tree(transaction, odb, tree, &c_prefix) {
+        for entry in tree::read_tree(transaction, odb, c_tree)?.entries() {
             if let Ok(name) = std::str::from_utf8(entry.filename) {
                 if want.contains(name) {
                     paths_to_remove.push(c_prefix.join(name));
@@ -521,10 +521,10 @@ pub fn delete_outbox_comments(
 
     // File: outbox/comments/F/<change>/<blob_id>/<path>/<to>/<file>/<hash>
     let f_prefix = std::path::Path::new("outbox/comments/F").join(&encoded);
-    if let Some(f_tree) = get_tree(transaction, &odb, tree, &f_prefix) {
+    if let Some(f_tree) = get_tree(transaction, odb, tree, &f_prefix) {
         collect_outbox_file_paths(
             transaction,
-            &odb,
+            odb,
             f_tree,
             &f_prefix,
             &want,
@@ -538,16 +538,16 @@ pub fn delete_outbox_comments(
 
     for path in &paths_to_remove {
         if matches!(
-            tree::get_path_entry(transaction, &odb, tree, path),
+            tree::get_path_entry(transaction, odb, tree, path),
             Ok(Some(_))
         ) {
-            tree = tree::insert_oid(&odb, tree, path, git2::Oid::ZERO_SHA1, 0)?;
+            tree = tree::insert_oid(odb, tree, path, git2::Oid::ZERO_SHA1, 0)?;
         }
     }
 
     let sig = transaction.signature()?;
     let msg = format!("cleanup posted outbox comments on {}\n", ref_name);
-    let new_oid = objects::write_commit(&odb, tree, &[prev_commit], &sig, &sig, &msg)?;
+    let new_oid = objects::write_commit(odb, tree, &[prev_commit], &sig, &sig, &msg)?;
     transaction.update_ref(&ref_name, Expected::At(prev_commit), new_oid, &msg)?;
 
     Ok(paths_to_remove.len())

@@ -144,13 +144,13 @@ impl PrefixFlushBench {
             let filtered = josh_core::filter_commit(&transaction, filter, case.head)?;
             // The filtered commit is still buffered, so read it through the transaction's
             // object source rather than the repository handle.
-            let odb = transaction.odb()?;
-            let filtered_tree = josh_core::objects::CommitData::read(&odb, filtered)?.tree_id()?;
+            let odb = transaction.odb();
+            let filtered_tree = josh_core::objects::CommitData::read(odb, filtered)?.tree_id()?;
             let nested_tree =
-                josh_core::objects::path_entry(&odb, filtered_tree, Path::new(PREFIX))?
+                josh_core::objects::path_entry(odb, filtered_tree, Path::new(PREFIX))?
                     .map(|entry| josh_core::objects::git2_oid(&entry.oid))
                     .ok_or_else(|| anyhow::anyhow!("prefix filter produced no `{PREFIX}` entry"))?;
-            let raw_tree = josh_core::objects::CommitData::read(&odb, case.head)?.tree_id()?;
+            let raw_tree = josh_core::objects::CommitData::read(odb, case.head)?.tree_id()?;
             anyhow::ensure!(
                 nested_tree == raw_tree,
                 "prefix filter did not nest the tree under `{PREFIX}` -- benchmark would measure \

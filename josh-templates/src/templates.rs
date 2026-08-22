@@ -49,11 +49,11 @@ impl GraphQLHelper {
             self.transaction_context(&self.repo_path).open()?
         };
 
-        let odb = transaction.odb()?;
-        let tree = josh_core::objects::CommitData::read(&odb, self.commit_id)?.tree_id()?;
-        let entry = josh_core::objects::path_entry(&odb, tree, &path)?
+        let odb = transaction.odb();
+        let tree = josh_core::objects::CommitData::read(odb, self.commit_id)?.tree_id()?;
+        let entry = josh_core::objects::path_entry(odb, tree, &path)?
             .ok_or_else(|| anyhow!("no such path: {}", path.display()))?;
-        let query = josh_core::objects::blob_text(&odb, josh_core::objects::git2_oid(&entry.oid));
+        let query = josh_core::objects::blob_text(odb, josh_core::objects::git2_oid(&entry.oid));
 
         let mut variables = juniper::Variables::new();
 
@@ -149,9 +149,9 @@ pub fn render(
         return Err(anyhow!("no command"));
     };
 
-    let odb = transaction.odb()?;
-    let tree = josh_core::objects::CommitData::read(&odb, commit_id)?.tree_id()?;
-    let entry = josh_core::objects::path_entry(&odb, tree, &std::path::PathBuf::from(path))?;
+    let odb = transaction.odb();
+    let tree = josh_core::objects::CommitData::read(odb, commit_id)?.tree_id()?;
+    let entry = josh_core::objects::path_entry(odb, tree, &std::path::PathBuf::from(path))?;
 
     let entry = if let Some(entry) = entry {
         entry
@@ -160,7 +160,7 @@ pub fn render(
     };
 
     let template = if entry.mode.is_blob() {
-        let content = josh_core::objects::blob_text(&odb, josh_core::objects::git2_oid(&entry.oid));
+        let content = josh_core::objects::blob_text(odb, josh_core::objects::git2_oid(&entry.oid));
         let file = content.as_str();
         if cmd == "get" {
             return Ok(Some((file.to_string(), params)));

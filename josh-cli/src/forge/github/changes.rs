@@ -281,13 +281,13 @@ impl GithubSyncCtx<'_> {
 
         let head_oid =
             git2::Oid::from_str(&pr.head_oid).map_err(|e| anyhow!("bad head OID: {}", e))?;
-        let odb = self.transaction.odb()?;
-        josh_core::objects::CommitData::read(&odb, head_oid)
+        let odb = self.transaction.odb();
+        josh_core::objects::CommitData::read(odb, head_oid)
             .map_err(|_| anyhow!("head commit {} not available from GitHub", pr.head_oid))?;
 
         let base_oid =
             git2::Oid::from_str(&pr.base_ref_oid).map_err(|e| anyhow!("bad base OID: {}", e))?;
-        josh_core::objects::CommitData::read(&odb, base_oid)
+        josh_core::objects::CommitData::read(odb, base_oid)
             .map_err(|_| anyhow!("base commit {} not available from GitHub", pr.base_ref_oid))?;
 
         // For stacked changes the base is the merge-base against the ultimate
@@ -301,7 +301,7 @@ impl GithubSyncCtx<'_> {
                 .unwrap_or(base_oid);
 
             Some(josh_core::objects::merge_base(
-                &self.transaction.odb()?,
+                self.transaction.odb(),
                 against,
                 head_oid,
             )?)

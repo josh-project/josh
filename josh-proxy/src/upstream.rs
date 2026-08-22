@@ -442,15 +442,11 @@ pub fn process_repo_update(repo_update: RepoUpdate) -> anyhow::Result<String> {
         let oid_to_push = if push_options.merge {
             if let Some(base_commit_id) = transaction_mirror.resolve_ref(&original_target_ref)? {
                 let signature = josh_core::git::josh_commit_signature()?;
-                let odb = transaction.odb()?;
-                let merged_tree = josh_core::objects::merge_commits(
-                    &odb,
-                    base_commit_id,
-                    backward_new_oid,
-                    None,
-                )?;
+                let odb = transaction.odb();
+                let merged_tree =
+                    josh_core::objects::merge_commits(odb, base_commit_id, backward_new_oid, None)?;
                 josh_core::objects::write_commit(
-                    &odb,
+                    odb,
                     merged_tree,
                     &[base_commit_id, backward_new_oid],
                     &signature,
@@ -504,8 +500,7 @@ pub fn process_repo_update(repo_update: RepoUpdate) -> anyhow::Result<String> {
             let mut warnings = josh_core::filter::compute_warnings(
                 &transaction,
                 filter,
-                josh_core::objects::CommitData::read(&transaction.odb()?, push_ref.oid)?
-                    .tree_id()?,
+                josh_core::objects::CommitData::read(transaction.odb(), push_ref.oid)?.tree_id()?,
             );
 
             if !warnings.is_empty() {

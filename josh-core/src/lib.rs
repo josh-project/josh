@@ -173,7 +173,7 @@ pub fn filter_commit(
 ) -> anyhow::Result<git2::Oid> {
     // A chained filter feeds the previous step's freshly built commit in here, so the peel
     // has to see the transaction's buffered objects.
-    let original_commit = objects::peel_to_commit(&transaction.odb()?, oid)?;
+    let original_commit = objects::peel_to_commit(transaction.odb(), oid)?;
 
     let filter_commit = if let Some(s) = transaction.get_ref(filterobj, oid) {
         s
