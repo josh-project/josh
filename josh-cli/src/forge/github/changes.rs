@@ -63,7 +63,6 @@ async fn run_sync(
 
     let ctx = GithubSyncCtx {
         transaction,
-        repo,
         api: &api,
         owner,
         repo_name,
@@ -265,7 +264,6 @@ impl SyncStats {
 /// target-branch tips. Per-phase behavior is documented on the methods.
 struct GithubSyncCtx<'a> {
     transaction: &'a josh_core::cache::Transaction,
-    repo: &'a git2::Repository,
     api: &'a GithubApiConnection,
     owner: &'a str,
     repo_name: &'a str,
@@ -283,14 +281,13 @@ impl GithubSyncCtx<'_> {
 
         let head_oid =
             git2::Oid::from_str(&pr.head_oid).map_err(|e| anyhow!("bad head OID: {}", e))?;
-        self.repo
-            .find_commit(head_oid)
+        let odb = self.transaction.odb()?;
+        josh_core::objects::CommitData::read(&odb, head_oid)
             .map_err(|_| anyhow!("head commit {} not available from GitHub", pr.head_oid))?;
 
         let base_oid =
             git2::Oid::from_str(&pr.base_ref_oid).map_err(|e| anyhow!("bad base OID: {}", e))?;
-        self.repo
-            .find_commit(base_oid)
+        josh_core::objects::CommitData::read(&odb, base_oid)
             .map_err(|_| anyhow!("base commit {} not available from GitHub", pr.base_ref_oid))?;
 
         // For stacked changes the base is the merge-base against the ultimate

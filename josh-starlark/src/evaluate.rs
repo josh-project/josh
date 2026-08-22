@@ -19,12 +19,12 @@ use starlark::{
 /// The `tree_oid` parameter is made available as a global variable named "tree"
 /// in the Starlark script, allowing access to the git tree via methods.
 ///
-/// SAFETY contract: `repo` must remain valid for the entire duration of this call.
+/// SAFETY contract: `objects` must remain valid for the entire duration of this call.
 /// The evaluation is synchronous; no threads are spawned and no values escape.
 pub fn evaluate(
     script: &str,
     tree_oid: git2::Oid,
-    repo: &git2::Repository,
+    objects: &dyn gix_object::Find,
 ) -> anyhow::Result<Filter> {
     // Parse the starlark script
     let ast = AstModule::parse("script.star", script.to_owned(), &Dialect::Standard)
@@ -40,7 +40,7 @@ pub fn evaluate(
         module.set("filter", filter_value);
 
         // Add a global "tree" value (the git tree) to the module
-        let tree_value = module.heap().alloc(StarlarkTree::new(tree_oid, repo));
+        let tree_value = module.heap().alloc(StarlarkTree::new(tree_oid, objects));
         module.set("tree", tree_value);
 
         // Create an evaluator

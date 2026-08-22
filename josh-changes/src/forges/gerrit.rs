@@ -168,7 +168,7 @@ pub fn build_gerrit_independent_push(
     tip: git2::Oid,
     base: git2::Oid,
 ) -> anyhow::Result<Vec<PushRef>> {
-    let repo = transaction.repo();
+    let odb = transaction.odb()?;
     let changes = get_changes(transaction, tip, base)?;
     let changes = split_changes(transaction, changes)?;
 
@@ -185,7 +185,9 @@ pub fn build_gerrit_independent_push(
 
         // A change has no dependencies when its split commit sits directly on
         // the target base (nothing else was pulled in below it by `downstack`).
-        let parent = repo.find_commit(change.commit)?.parent_ids().next();
+        let parent = josh_core::objects::CommitData::read(&odb, change.commit)?
+            .parent_ids()
+            .next();
         let has_no_deps = if base == git2::Oid::ZERO_SHA1 {
             parent.is_none()
         } else {

@@ -17,4 +17,7 @@ anyhow.workspace = true
 git2.workspace = true
 
 josh-filter.workspace = true
+josh-gix-ext.workspace = true
+
+gix-object.workspace = true
 

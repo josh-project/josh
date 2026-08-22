@@ -11,7 +11,8 @@ fn test_simple_filter() -> anyhow::Result<()> {
     let script = r#"
 filter = filter.subdir("src")
 "#;
-    let filter = evaluate(script, empty_tree_oid, &repo)?;
+    let odb = repo.odb()?;
+    let filter = evaluate(script, empty_tree_oid, &josh_gix_ext::Git2Odb(&odb))?;
     let filter_spec = spec(filter);
     assert_eq!(filter_spec, ":/src");
     Ok(())
@@ -27,7 +28,8 @@ fn test_chain_filter() -> anyhow::Result<()> {
     let script = r#"
 filter = filter.subdir("src").prefix("lib")
 "#;
-    let filter = evaluate(script, empty_tree_oid, &repo)?;
+    let odb = repo.odb()?;
+    let filter = evaluate(script, empty_tree_oid, &josh_gix_ext::Git2Odb(&odb))?;
     let filter_spec = spec(filter);
     assert_eq!(filter_spec, ":/src:prefix=lib");
     Ok(())
@@ -43,7 +45,8 @@ fn test_file_filter() -> anyhow::Result<()> {
     let script = r#"
 filter = filter.file("README.md")
 "#;
-    let filter = evaluate(script, empty_tree_oid, &repo)?;
+    let odb = repo.odb()?;
+    let filter = evaluate(script, empty_tree_oid, &josh_gix_ext::Git2Odb(&odb))?;
     let filter_spec = spec(filter);
     // file() creates a rename from the same path to itself, which is represented as ::README.md
     assert_eq!(filter_spec, "::README.md");
@@ -62,7 +65,8 @@ f1 = filter.subdir("src")
 f2 = filter.subdir("lib")
 filter = compose([f1, f2])
 "#;
-    let filter = evaluate(script, empty_tree_oid, &repo)?;
+    let odb = repo.odb()?;
+    let filter = evaluate(script, empty_tree_oid, &josh_gix_ext::Git2Odb(&odb))?;
     let filter_spec = spec(filter);
     // compose formats as :[filter1,filter2]
     assert_eq!(filter_spec, ":[:/src,:/lib]");
@@ -126,7 +130,8 @@ fn test_tree_file() -> anyhow::Result<()> {
 content = tree.file("README.md")
 filter = filter.subdir("src")
 "#;
-    let filter = evaluate(script, root_tree_oid, &repo)?;
+    let odb = repo.odb()?;
+    let filter = evaluate(script, root_tree_oid, &josh_gix_ext::Git2Odb(&odb))?;
     let filter_spec = spec(filter);
     assert_eq!(filter_spec, ":/src");
     Ok(())
@@ -141,7 +146,8 @@ content = tree.file("nonexistent.txt")
 # Should return empty string, not error
 filter = filter.subdir("src")
 "#;
-    let filter = evaluate(script, root_tree_oid, &repo)?;
+    let odb = repo.odb()?;
+    let filter = evaluate(script, root_tree_oid, &josh_gix_ext::Git2Odb(&odb))?;
     let filter_spec = spec(filter);
     assert_eq!(filter_spec, ":/src");
     Ok(())
@@ -156,7 +162,8 @@ src_tree = tree.tree("src")
 main_content = src_tree.file("main.rs")
 filter = filter.subdir("src")
 "#;
-    let filter = evaluate(script, root_tree_oid, &repo)?;
+    let odb = repo.odb()?;
+    let filter = evaluate(script, root_tree_oid, &josh_gix_ext::Git2Odb(&odb))?;
     let filter_spec = spec(filter);
     assert_eq!(filter_spec, ":/src");
     Ok(())
@@ -171,7 +178,8 @@ nonexistent_tree = tree.tree("nonexistent")
 # Should return empty tree, not error
 filter = filter.subdir("src")
 "#;
-    let filter = evaluate(script, root_tree_oid, &repo)?;
+    let odb = repo.odb()?;
+    let filter = evaluate(script, root_tree_oid, &josh_gix_ext::Git2Odb(&odb))?;
     let filter_spec = spec(filter);
     assert_eq!(filter_spec, ":/src");
     Ok(())
@@ -186,7 +194,8 @@ dirs_list = tree.dirs("")
 # Should contain "src"
 filter = filter.subdir("src")
 "#;
-    let filter = evaluate(script, root_tree_oid, &repo)?;
+    let odb = repo.odb()?;
+    let filter = evaluate(script, root_tree_oid, &josh_gix_ext::Git2Odb(&odb))?;
     let filter_spec = spec(filter);
     assert_eq!(filter_spec, ":/src");
     Ok(())
@@ -201,7 +210,8 @@ files_list = tree.files("")
 # Should contain "README.md"
 filter = filter.subdir("src")
 "#;
-    let filter = evaluate(script, root_tree_oid, &repo)?;
+    let odb = repo.odb()?;
+    let filter = evaluate(script, root_tree_oid, &josh_gix_ext::Git2Odb(&odb))?;
     let filter_spec = spec(filter);
     assert_eq!(filter_spec, ":/src");
     Ok(())
@@ -216,7 +226,8 @@ src_tree = tree.tree("src")
 main_content = src_tree.file("main.rs")
 filter = filter.subdir("src")
 "#;
-    let filter = evaluate(script, root_tree_oid, &repo)?;
+    let odb = repo.odb()?;
+    let filter = evaluate(script, root_tree_oid, &josh_gix_ext::Git2Odb(&odb))?;
     let filter_spec = spec(filter);
     assert_eq!(filter_spec, ":/src");
     Ok(())
@@ -242,7 +253,8 @@ def collect_all_files(dir_path=""):
 all_file_filters = collect_all_files("")
 filter = compose(all_file_filters)
 "#;
-    let filter = evaluate(script, root_tree_oid, &repo)?;
+    let odb = repo.odb()?;
+    let filter = evaluate(script, root_tree_oid, &josh_gix_ext::Git2Odb(&odb))?;
     let filter_spec = spec(filter);
 
     // The filter should contain all files: README.md, src/main.rs, src/lib/utils.rs.

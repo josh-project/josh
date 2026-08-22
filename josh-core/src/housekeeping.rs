@@ -123,7 +123,7 @@ pub fn discover_filter_candidates(transaction: &cache::Transaction) -> anyhow::R
     let trace_s = span!(Level::TRACE, "discover_filter_candidates");
     let _e = trace_s.enter();
 
-    let odb = repo.odb()?;
+    let odb = transaction.odb()?;
     transaction.for_each_ref_prefixed("refs/josh/upstream/", |name, target| {
         if !name.ends_with(".git/HEAD") {
             return Ok(());
@@ -145,7 +145,7 @@ pub fn discover_filter_candidates(transaction: &cache::Transaction) -> anyhow::R
             let tree = repo
                 .find_object(target, None)?
                 .peel(git2::ObjectType::Tree)?;
-            let hs = find_all_workspaces_and_subdirectories(&objects::Git2Odb(&odb), tree.id())?;
+            let hs = find_all_workspaces_and_subdirectories(&odb, tree.id())?;
             known_f.0 = target;
             for i in hs {
                 known_f.1.insert(i);

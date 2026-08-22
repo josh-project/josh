@@ -458,8 +458,7 @@ fn get_starlark(
         Ok(rw) => rw.tree_id(),
         Err(_) => return to_filter(Op::Empty),
     };
-    // PORT: josh-starlark reads the filtered tree through the repo handle.
-    match josh_starlark::evaluate(&script, filtered_tree, transaction.repo()) {
+    match josh_starlark::evaluate(&script, filtered_tree, odb) {
         Ok(f) => {
             let star_file = Filter::new().file(star_path);
             compose(&[star_file, subfilter, f])

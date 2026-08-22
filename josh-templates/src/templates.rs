@@ -49,15 +49,11 @@ impl GraphQLHelper {
             self.transaction_context(&self.repo_path).open()?
         };
 
-        let tree = transaction.repo().find_commit(self.commit_id)?.tree()?;
-
-        let blob = tree
-            .get_path(&path)?
-            .to_object(transaction.repo())?
-            .peel_to_blob()
-            .map(|x| x.content().to_vec())
-            .unwrap_or_default();
-        let query = String::from_utf8(blob)?;
+        let odb = transaction.odb()?;
+        let tree = josh_core::objects::CommitData::read(&odb, self.commit_id)?.tree_id()?;
+        let entry = josh_core::objects::path_entry(&odb, tree, &path)?
+            .ok_or_else(|| anyhow!("no such path: {}", path.display()))?;
+        let query = josh_core::objects::blob_text(&odb, josh_core::objects::git2_oid(&entry.oid));
 
         let mut variables = juniper::Variables::new();
 
@@ -154,19 +150,19 @@ pub fn render(
         return Err(anyhow!("no command"));
     };
 
-    let tree = transaction.repo().find_commit(commit_id)?.tree()?;
-    let obj = tree
-        .get_path(&std::path::PathBuf::from(path))?
-        .to_object(transaction.repo());
+    let odb = transaction.odb()?;
+    let tree = josh_core::objects::CommitData::read(&odb, commit_id)?.tree_id()?;
+    let entry = josh_core::objects::path_entry(&odb, tree, &std::path::PathBuf::from(path))?;
 
-    let obj = if let Ok(obj) = obj {
-        obj
+    let entry = if let Some(entry) = entry {
+        entry
     } else {
         return Ok(None);
     };
 
-    let template = if let Ok(blob) = obj.peel_to_blob() {
-        let file = std::str::from_utf8(blob.content())?;
+    let template = if entry.mode.is_blob() {
+        let content = josh_core::objects::blob_text(&odb, josh_core::objects::git2_oid(&entry.oid));
+        let file = content.as_str();
         if cmd == "get" {
             return Ok(Some((file.to_string(), params)));
         }
@@ -219,9 +215,6 @@ pub fn render(
     } else {
         return Ok(Some(("".to_string(), params)));
     };
-
-    drop(obj);
-    drop(tree);
 
     let repo_path = if split_odb {
         transaction

@@ -10,24 +10,24 @@ use std::fmt::{self, Display};
 use std::path::PathBuf;
 
 /// Opaque Tree type for Starlark
-/// We wrap git2::Tree by storing its OID and a raw pointer to the repository.
+/// We wrap a git tree by storing its OID and a raw pointer to the object source it came from.
 #[derive(Clone, ProvidesStaticType, NoSerialize)]
 pub(crate) struct StarlarkTree {
     pub tree_oid: git2::Oid,
     // SAFETY: StarlarkTree is only constructed inside `evaluate()`, which is
-    // synchronous and spawns no threads. The referenced `git2::Repository` must
+    // synchronous and spawns no threads. The referenced object source must
     // remain alive and at a stable address for that entire duration so this raw
     // pointer stays valid.
-    repo: *const git2::Repository,
+    objects: *const dyn gix_object::Find,
 }
 
-// SAFETY: See the `repo` field documentation above.
+// SAFETY: See the `objects` field documentation above.
 unsafe impl Send for StarlarkTree {}
 unsafe impl Sync for StarlarkTree {}
 
 impl Allocative for StarlarkTree {
     fn visit<'a, 'b: 'a>(&self, _visitor: &'a mut allocative::Visitor<'b>) {
-        // Tree OID is Copy and small; repo is a raw pointer we do not own.
+        // Tree OID is Copy and small; the object source is a raw pointer we do not own.
     }
 }
 
@@ -61,23 +61,27 @@ impl<'v> StarlarkValue<'v> for StarlarkTree {
 }
 
 impl StarlarkTree {
-    /// Create a new StarlarkTree from a git2::Oid and a repository reference.
+    /// Create a new StarlarkTree from a tree OID and the object source to read it from.
     ///
-    /// This constructor is crate-private because the returned value stores `repo`
+    /// This constructor is crate-private because the returned value stores `objects`
     /// as a raw pointer without carrying a lifetime. The crate must therefore only
-    /// construct `StarlarkTree` values in contexts that guarantee the repository
+    /// construct `StarlarkTree` values in contexts that guarantee the object source
     /// outlives the tree and all of its clones, such as the synchronous
     /// `evaluate()` flow described in the struct-level safety comments.
-    pub(crate) fn new(tree_oid: git2::Oid, repo: &git2::Repository) -> Self {
+    pub(crate) fn new(tree_oid: git2::Oid, objects: &dyn gix_object::Find) -> Self {
+        let objects: *const (dyn gix_object::Find + '_) = objects;
         Self {
             tree_oid,
-            repo: repo as *const _,
+            // SAFETY: erasing the borrow's lifetime is sound under the same contract that
+            // makes the raw pointer sound -- the object source outlives this value and every
+            // clone of it.
+            objects: unsafe { std::mem::transmute(objects) },
         }
     }
 
-    fn repo(&self) -> &git2::Repository {
-        // SAFETY: See the `repo` field documentation on the struct.
-        unsafe { &*self.repo }
+    fn objects(&self) -> &dyn gix_object::Find {
+        // SAFETY: See the `objects` field documentation on the struct.
+        unsafe { &*self.objects }
     }
 
     /// Get empty tree OID
@@ -85,13 +89,8 @@ impl StarlarkTree {
         git2::Oid::from_str("4b825dc642cb6eb9a060e54bf8d69288fbee4904").unwrap()
     }
 
-    /// Navigate to a path in the tree, returning the OID of the tree at that path.
-    /// Caller must hold repo lock when using navigate_to_path_oid_with_repo.
-    fn navigate_to_path_oid_with_repo(
-        &self,
-        path: &str,
-        repo: &git2::Repository,
-    ) -> anyhow::Result<git2::Oid> {
+    /// Navigate to a path in the tree, returning the OID of the tree at that path
+    fn navigate_to_path_oid(&self, path: &str) -> anyhow::Result<git2::Oid> {
         if path.is_empty() {
             return Ok(self.tree_oid);
         }
@@ -104,59 +103,56 @@ impl StarlarkTree {
 
         let mut current_tree_oid = self.tree_oid;
         for component in components {
-            let current_tree = repo
-                .find_tree(current_tree_oid)
-                .context("Failed to find tree")?;
-
-            let entry = current_tree
-                .get_name(component)
+            let entry = josh_gix_ext::read_tree_entries(self.objects(), current_tree_oid)
+                .context("Failed to find tree")?
+                .into_iter()
+                .find(|e| e.filename == component.as_bytes())
                 .ok_or_else(|| anyhow!("Path component '{}' not found", component))?;
 
-            if entry.kind() != Some(git2::ObjectType::Tree) {
+            if !entry.mode.is_tree() {
                 return Err(anyhow!("Path component '{}' is not a directory", component));
             }
 
-            current_tree_oid = entry.id();
+            current_tree_oid = josh_gix_ext::git2_oid(&entry.oid);
         }
 
         Ok(current_tree_oid)
     }
 
-    /// Navigate to a path in the tree, returning the OID of the tree at that path
-    fn navigate_to_path_oid(&self, path: &str) -> anyhow::Result<git2::Oid> {
-        self.navigate_to_path_oid_with_repo(path, self.repo())
-    }
-
     /// Get blob content at path, returning empty string if not found or binary
     fn get_file_content(&self, path: &str) -> String {
-        let repo = self.repo();
-
-        let tree = match repo.find_tree(self.tree_oid) {
-            Ok(t) => t,
-            Err(_) => return String::new(),
+        let objects = self.objects();
+        let Ok(Some(entry)) =
+            josh_gix_ext::path_entry(objects, self.tree_oid, PathBuf::from(path).as_path())
+        else {
+            return String::new();
         };
-
-        let entry = match tree.get_path(PathBuf::from(path).as_path()) {
-            Ok(e) => e,
-            Err(_) => return String::new(),
-        };
-
-        if entry.kind() != Some(git2::ObjectType::Blob) {
+        if !entry.mode.is_blob() {
             return String::new();
         }
+        josh_gix_ext::blob_text(objects, josh_gix_ext::git2_oid(&entry.oid))
+    }
 
-        let blob = match repo.find_blob(entry.id()) {
-            Ok(b) => b,
-            Err(_) => return String::new(),
+    /// The full paths of the entries at `path` that satisfy `keep`, in stored tree order.
+    /// An unreadable path yields no entries, so a script can probe freely.
+    fn child_paths(&self, path: &str, keep: fn(&gix_object::tree::Entry) -> bool) -> Vec<String> {
+        let Ok(target_tree_oid) = self.navigate_to_path_oid(path) else {
+            return Vec::new();
         };
-
-        if blob.is_binary() {
-            return String::new();
-        }
-
-        std::str::from_utf8(blob.content())
-            .map(|s| s.to_string())
-            .unwrap_or_default()
+        let Ok(entries) = josh_gix_ext::read_tree_entries(self.objects(), target_tree_oid) else {
+            return Vec::new();
+        };
+        let base_path = if path.is_empty() {
+            String::new()
+        } else {
+            format!("{}/", path)
+        };
+        entries
+            .iter()
+            .filter(|entry| keep(entry))
+            .filter_map(|entry| std::str::from_utf8(&entry.filename).ok())
+            .map(|name| format!("{}{}", base_path, name))
+            .collect()
     }
 }
 
@@ -175,42 +171,11 @@ fn tree_methods(_builder: &mut MethodsBuilder) {
         path: StringValue,
         heap: starlark::values::Heap<'v>,
     ) -> anyhow::Result<Vec<Value<'v>>> {
-        let repo = this.repo();
-
-        let target_tree_oid = if path.as_str().is_empty() {
-            this.tree_oid
-        } else {
-            match this.navigate_to_path_oid_with_repo(path.as_str(), repo) {
-                Ok(oid) => oid,
-                Err(_) => return Ok(Vec::new()), // Path doesn't exist, return empty list
-            }
-        };
-
-        let target_tree = repo
-            .find_tree(target_tree_oid)
-            .context("Failed to find tree")?;
-
-        let mut dirs = Vec::new();
-        let base_path = if path.as_str().is_empty() {
-            String::new()
-        } else {
-            format!("{}/", path.as_str())
-        };
-
-        for entry in target_tree.iter() {
-            if let Ok(name) = entry.name() {
-                if entry.kind() == Some(git2::ObjectType::Tree) {
-                    let full_path = if base_path.is_empty() {
-                        name.to_string()
-                    } else {
-                        format!("{}{}", base_path, name)
-                    };
-                    dirs.push(heap.alloc_str(&full_path).to_value());
-                }
-            }
-        }
-
-        Ok(dirs)
+        Ok(this
+            .child_paths(path.as_str(), |entry| entry.mode.is_tree())
+            .iter()
+            .map(|path| heap.alloc_str(path).to_value())
+            .collect())
     }
 
     /// Get a list of full paths to child files (blobs) at the given path
@@ -220,42 +185,11 @@ fn tree_methods(_builder: &mut MethodsBuilder) {
         path: StringValue,
         heap: starlark::values::Heap<'v>,
     ) -> anyhow::Result<Vec<Value<'v>>> {
-        let repo = this.repo();
-
-        let target_tree_oid = if path.as_str().is_empty() {
-            this.tree_oid
-        } else {
-            match this.navigate_to_path_oid_with_repo(path.as_str(), repo) {
-                Ok(oid) => oid,
-                Err(_) => return Ok(Vec::new()), // Path doesn't exist, return empty list
-            }
-        };
-
-        let target_tree = repo
-            .find_tree(target_tree_oid)
-            .context("Failed to find tree")?;
-
-        let mut files = Vec::new();
-        let base_path = if path.as_str().is_empty() {
-            String::new()
-        } else {
-            format!("{}/", path.as_str())
-        };
-
-        for entry in target_tree.iter() {
-            if let Ok(name) = entry.name() {
-                if entry.kind() == Some(git2::ObjectType::Blob) {
-                    let full_path = if base_path.is_empty() {
-                        name.to_string()
-                    } else {
-                        format!("{}{}", base_path, name)
-                    };
-                    files.push(heap.alloc_str(&full_path).to_value());
-                }
-            }
-        }
-
-        Ok(files)
+        Ok(this
+            .child_paths(path.as_str(), |entry| entry.mode.is_blob())
+            .iter()
+            .map(|path| heap.alloc_str(path).to_value())
+            .collect())
     }
 
     /// Get the tree at the given path
@@ -268,7 +202,7 @@ fn tree_methods(_builder: &mut MethodsBuilder) {
 
         Ok(StarlarkTree {
             tree_oid,
-            repo: this.repo,
+            objects: this.objects,
         })
     }
 }
