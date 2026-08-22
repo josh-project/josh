@@ -3487,6 +3487,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "josh-git-serde"
+version = "26.7.28"
+dependencies = [
+ "anyhow",
+ "git2",
+ "gix-hash",
+ "gix-object",
+ "josh-gix-ext",
+ "percent-encoding",
+ "serde",
+ "thiserror 2.0.19",
+]
+
+[[package]]
 name = "josh-github-auth"
 version = "26.7.28"
 dependencies = [
