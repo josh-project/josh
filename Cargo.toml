@@ -16,6 +16,7 @@ members = [
     "josh-ssh-shell",
     "josh-templates",
     "josh-starlark",
+    "josh-wasm",
     "cq/josh-cq",
     "cq/josh-cq-test-components",
     "josh-changes",
@@ -113,6 +114,7 @@ josh-rpc = { path = "josh-rpc", version = "26.7.28" }
 josh-search = { path = "josh-search", version = "26.7.28" }
 josh-starlark = { path = "josh-starlark", version = "26.7.28" }
 josh-templates = { path = "josh-templates", version = "26.7.28" }
+josh-wasm = { path = "josh-wasm", version = "26.7.28" }
 
 # Forges support
 josh-github-changes = { path = "forges/josh-github-changes", version = "26.7.28" }
@@ -211,6 +213,7 @@ josh-link = { path = "josh-link" }
 josh-rpc = { path = "josh-rpc" }
 josh-starlark = { path = "josh-starlark" }
 josh-templates = { path = "josh-templates" }
+josh-wasm = { path = "josh-wasm" }
 josh-github-changes = { path = "forges/josh-github-changes" }
 josh-github-graphql = { path = "forges/josh-github-graphql" }
 josh-github-codegen-graphql = { path = "forges/josh-github-codegen-graphql" }
