@@ -37,7 +37,6 @@ fn main() {
         )
         .with_context(scope)
         .launch(app);
-
 }
 
 fn resolve_initial_scope(cli: &Cli) -> josh_changes::ChangesRef {

@@ -40,3 +40,4 @@ pub use error::SerdeGitError;
 pub use ser::to_value;
 pub use store::{from_tree_oid, to_tree_oid};
 pub use value::GitValue;
+pub use wire::encode_key;

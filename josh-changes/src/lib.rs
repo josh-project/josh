@@ -9,6 +9,7 @@ pub use josh_core::trailers::{commit_change_meta, parse_change_meta};
 mod change;
 mod comments;
 mod forges;
+pub mod layout;
 mod refs;
 mod revisions;
 mod stacked;

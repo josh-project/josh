@@ -219,7 +219,7 @@ pub fn pending_comments(
     // Pending comments live in `outbox/comments/...` on the Remote ref. Anything
     // already under `comments/...` was either fetched from the remote or has
     // already been posted; either way it should not be re-posted.
-    let posted_ids = crate::ids::read_github_ids(transaction, change_id, scope)?;
+    let posted_ids = crate::node_ids::read_comment_node_ids(transaction, change_id, scope)?;
     let to_post = comments
         .into_iter()
         .filter(|c| c.pending && !posted_ids.contains_key(&c.id))
@@ -246,14 +246,20 @@ pub fn record_fetched_comments(
     scope: &josh_changes::ChangesRef,
 ) -> anyhow::Result<()> {
     for (local_hash, github_id) in written {
-        crate::ids::store_github_id(transaction, change_id, local_hash, github_id, scope)?;
+        crate::node_ids::store_comment_node_id(
+            transaction,
+            change_id,
+            local_hash,
+            github_id,
+            scope,
+        )?;
     }
 
     let fetched: std::collections::HashSet<&str> = written
         .iter()
         .map(|(_, github_id)| github_id.as_str())
         .collect();
-    let gh_ids = crate::ids::read_github_ids(transaction, change_id, scope)?;
+    let gh_ids = crate::node_ids::read_comment_node_ids(transaction, change_id, scope)?;
     let to_remove: Vec<String> = gh_ids
         .into_iter()
         .filter(|(_, github_id)| fetched.contains(github_id.as_str()))
@@ -277,7 +283,7 @@ pub fn pending_votes(
         return Ok(Vec::new());
     }
 
-    let tracked = crate::ids::read_github_vote_ids(transaction, change_id, scope)?;
+    let tracked = crate::node_ids::read_vote_node_ids(transaction, change_id, scope)?;
     Ok(votes
         .iter()
         .filter(|(user, data)| match tracked.get(user) {
@@ -302,7 +308,7 @@ pub fn cleanup_posted_outbox_votes(
         return Ok(0);
     }
 
-    let tracked = crate::ids::read_github_vote_ids(transaction, change_id, scope)?;
+    let tracked = crate::node_ids::read_vote_node_ids(transaction, change_id, scope)?;
     if tracked.is_empty() {
         return Ok(0);
     }

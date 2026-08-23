@@ -19,19 +19,6 @@ pub struct StackCommit {
     pub series: String,
 }
 
-/// The subset of stored GitHub PR data the detail view shows.
-#[derive(serde::Deserialize)]
-struct StoredPrData {
-    #[serde(default)]
-    url: String,
-    #[serde(default)]
-    title: String,
-    #[serde(default)]
-    state: String,
-    #[serde(default)]
-    review_decision: Option<String>,
-}
-
 pub struct DetailData {
     pub change_id: String,
     pub sha: String,
@@ -348,7 +335,7 @@ pub fn load_detail(sha: &str, scope: &josh_changes::ChangesRef) -> anyhow::Resul
     let mut stack: Vec<StackCommit> = Vec::new();
     let mut pr_info: Option<PrInfo> = None;
     if let Some(ref cid) = change_id {
-        pr_info = josh_changes::read_pr_data::<StoredPrData>(&transaction, cid, scope)
+        pr_info = josh_github_changes::read_pr_data(&transaction, cid, scope)
             .ok()
             .flatten()
             .map(|v| PrInfo {

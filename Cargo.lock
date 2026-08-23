@@ -3312,8 +3312,8 @@ dependencies = [
  "chrono",
  "git2",
  "josh-core",
+ "josh-git-serde",
  "serde",
- "serde_json",
 ]
 
 [[package]]
@@ -3538,10 +3538,10 @@ dependencies = [
  "git2",
  "josh-changes",
  "josh-core",
+ "josh-git-serde",
  "josh-github-graphql",
  "josh-github-webhooks",
  "serde",
- "serde_json",
  "url",
 ]
 
