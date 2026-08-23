@@ -1,0 +1,15 @@
+:$label="devtools cargo fetch"
+:#image[:+images/rust-dev-local]
+:$network="host"
+
+:$cmd="cd devtools/git-tree-pretty && cargo fetch --locked"
+
+env = :[
+    :$CARGO_HOME="/out/cargo-cache"
+]
+
+worktree = :[
+    ::devtools/git-tree-pretty/Cargo.toml
+    ::devtools/git-tree-pretty/Cargo.lock
+    ::devtools/git-tree-pretty/src/main.rs:replace("(?s).+":"")
+]

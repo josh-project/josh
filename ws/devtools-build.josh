@@ -1,0 +1,21 @@
+:$label="devtools build"
+:#image[:+images/rust-dev-local]
+:$cache="sccache"
+
+:+sidecars
+
+inputs = :[
+    :#fetch[:+ws/devtools-fetch]
+    :#devtools-deps-build[:+ws/devtools-deps-build]
+]
+
+env = :[
+    :$RUSTFLAGS="-D warnings -Ctarget-feature=-crt-static"
+    :$CARGO_HOME="/fetch/cargo-cache"
+]
+
+worktree = :[
+    ::run.sh=ws/devtools-build.sh
+    ::check-sccache.sh=ws/check-sccache.sh
+    ::devtools/git-tree-pretty/
+]

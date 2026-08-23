@@ -1,0 +1,14 @@
+:$label="devtools"
+:$output="workdir"
+:#image[:+images/scrut-test-local]
+
+inputs = :[
+    :#devtools-build[:+ws/devtools-build]
+]
+
+worktree = :[
+    ::run.sh=devtools/tests.sh
+    ::run-tests.sh
+    ::scripts/
+    ::devtools/tests/
+]

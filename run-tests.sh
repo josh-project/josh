@@ -15,7 +15,10 @@ fi
 
 PATH="/josh/debug/:/build-go/debug/:${PATH}"
 PATH="${TARGET_DIR}/debug/:${TARGET_DIR}:${PATH}"
-PATH="$(pwd)/scripts/:${PATH}"
+PATH="$(pwd)/devtools/target/debug/:$(pwd)/scripts/:${PATH}"
+if [ -d /devtools-build/debug ]; then
+    PATH="/devtools-build/debug/:${PATH}"
+fi
 export PATH
 
 export JOSH_COMMIT_TIME=0
