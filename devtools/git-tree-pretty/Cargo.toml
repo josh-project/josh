@@ -1,0 +1,14 @@
+[package]
+name = "git-tree-pretty"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "git-tree-pretty"
+path = "src/main.rs"
+
+[dependencies]
+gix = { version = "0.86.0", default-features = false, features = ["sha1", "revision", "status"] }
+clap = { version = "4.6.5", features = ["derive", "env"] }
+anyhow = { version = "1", features = ["backtrace"] }
+libc = "0.2.189"
