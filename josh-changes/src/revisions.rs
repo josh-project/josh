@@ -1,6 +1,5 @@
 use crate::change::{Change, encode_change_id_path};
 use crate::refs::ChangesRef;
-use josh_core::filter::tree;
 use josh_core::objects;
 
 #[derive(Debug, Clone)]
@@ -54,37 +53,29 @@ pub fn read_revisions(
         let parent_cid_tree = commit
             .first_parent_id()
             .and_then(|p| josh_core::git::read_tree_id(odb, p).ok())
-            .and_then(diffs_of)
-            .and_then(|t| tree::read_tree(transaction, odb, t).ok());
-
-        for entry in tree::read_tree(transaction, odb, cid_tree)?.entries() {
-            let commit_oid = String::from_utf8_lossy(entry.filename).into_owned();
-            if commit_oid.is_empty() || seen.contains(&commit_oid) {
-                continue;
-            }
-            let is_new = parent_cid_tree
-                .as_ref()
-                .and_then(|pt| pt.entry(entry.filename))
-                .is_none_or(|e| e.oid != entry.oid);
-            if !is_new {
-                continue;
-            }
-            let Ok(parsed) = commit.parsed() else {
-                continue;
-            };
-            seen.insert(commit_oid.clone());
-            revs.push(Revision {
-                commit_oid,
-                author: parsed
-                    .author()
-                    .map(|a| String::from_utf8_lossy(a.email).into_owned())
-                    .unwrap_or_default(),
-                timestamp: parsed
-                    .committer()
-                    .map(|t| t.seconds().to_string())
-                    .unwrap_or_default(),
-            });
+            .and_then(diffs_of);
+        if parent_cid_tree == Some(cid_tree) {
+            continue;
         }
+        let Ok(parsed) = commit.parsed() else {
+            continue;
+        };
+        // The subtree is content-addressed by the (commit, base) pair, so its
+        // oid identifies the revision.
+        if !seen.insert(cid_tree.to_string()) {
+            continue;
+        }
+        revs.push(Revision {
+            commit_oid: cid_tree.to_string(),
+            author: parsed
+                .author()
+                .map(|a| String::from_utf8_lossy(a.email).into_owned())
+                .unwrap_or_default(),
+            timestamp: parsed
+                .committer()
+                .map(|t| t.seconds().to_string())
+                .unwrap_or_default(),
+        });
     }
 
     revs.reverse();

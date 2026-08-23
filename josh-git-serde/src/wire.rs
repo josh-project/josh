@@ -35,7 +35,10 @@ pub(crate) const FILENAME_SET: &AsciiSet = &CONTROLS
     .add(b'}')
     .add(b'~');
 
-pub(crate) fn encode_key(key: &str) -> String {
+/// Map an arbitrary key to a valid git tree entry name. The escape set is
+/// deliberately wider than git's forbidden bytes so encoded names are safe in
+/// josh filters too.
+pub fn encode_key(key: &str) -> String {
     utf8_percent_encode(key, FILENAME_SET).to_string()
 }
 

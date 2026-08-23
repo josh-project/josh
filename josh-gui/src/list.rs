@@ -368,12 +368,6 @@ pub fn load_rows(scope: &josh_changes::ChangesRef) -> anyhow::Result<ListData> {
 }
 
 /// The subset of stored GitHub PR data the list view shows.
-#[derive(serde::Deserialize)]
-struct StoredPrStatus {
-    review_decision: Option<String>,
-    check_status: Option<String>,
-}
-
 
 fn load_metadata(
     transaction: &josh_core::cache::Transaction,
@@ -381,7 +375,7 @@ fn load_metadata(
     change_id: &str,
 ) -> RowMetadata {
     let (review_decision, check_status) =
-        josh_changes::read_pr_data::<StoredPrStatus>(transaction, change_id, scope)
+        josh_github_changes::read_pr_data(transaction, change_id, scope)
             .ok()
             .flatten()
             .map(|s| {

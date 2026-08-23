@@ -51,6 +51,9 @@ pub struct PrData {
     pub head_ref_name: String,
     pub review_decision: Option<String>,
     pub check_status: Option<String>,
+    // Sequences are unsupported by the git-tree format; labels are fetch-time
+    // only and never persisted.
+    #[serde(skip)]
     pub labels: Vec<PrLabel>,
     #[serde(skip)]
     pub comments: Vec<PrComment>,

@@ -674,7 +674,7 @@ impl GithubSyncCtx<'_> {
         if let Some(c) = comments {
             let post = josh_github_changes::post_comments(self.api, &pr_node_id, c).await;
             for p in &post.posted {
-                match josh_github_changes::store_github_id(
+                match josh_github_changes::store_comment_node_id(
                     self.transaction,
                     &pending.change_id,
                     &p.local_id,
@@ -703,7 +703,7 @@ impl GithubSyncCtx<'_> {
             )
             .await;
             for (user, data) in &post.posted {
-                match josh_github_changes::store_github_vote_id(
+                match josh_github_changes::store_vote_node_id(
                     self.transaction,
                     &pending.change_id,
                     user,
@@ -758,7 +758,7 @@ fn resolve_pr_number(
     // Custom Change-Id; read the PR number from stored PR data. A corrupt or
     // schema-drifted blob is reported instead of silently dropping the change
     // from GC.
-    match josh_changes::read_pr_data::<PrData>(transaction, change_id, remote_scope) {
+    match josh_github_changes::read_pr_data(transaction, change_id, remote_scope) {
         Ok(Some(data)) => Some(data.number),
         Ok(None) => None,
         Err(e) => {

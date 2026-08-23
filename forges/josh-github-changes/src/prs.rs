@@ -1,10 +1,31 @@
-//! Creating and updating GitHub pull requests for stacked changes.
+//! Creating and updating GitHub pull requests for stacked changes, and
+//! reading back the stored per-change PR data.
 
 use std::collections::HashMap;
 
 use josh_github_graphql::connection::GithubApiConnection;
+use josh_github_graphql::operations::pull_request::PrData;
 
 use crate::display::pr_link;
+use crate::layout::{GithubChangesRefData, GITHUB_PR_DATA_PATH};
+
+/// Read the stored PR data for a change, if present. Fails when the stored
+/// tree does not decode (`sync --clean` rebuilds the ref).
+pub fn read_pr_data(
+    transaction: &josh_core::cache::Transaction,
+    change_id: &str,
+    scope: &josh_changes::ChangesRef,
+) -> anyhow::Result<Option<PrData>> {
+    let Some(mut data) = josh_changes::read_filtered::<GithubChangesRefData>(
+        transaction,
+        scope,
+        josh_changes::namespace_filter(GITHUB_PR_DATA_PATH),
+    )?
+    else {
+        return Ok(None);
+    };
+    Ok(data.gh.remove(change_id))
+}
 
 #[derive(Debug)]
 pub struct PrInfo {

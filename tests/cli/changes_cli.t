@@ -101,9 +101,9 @@ the ref's history walk so we glob it too for robustness.
   
   Comments (2):
     [josh@example.com] * (glob)
-      hello on c1
-    [josh@example.com] * (glob)
       another comment
+    [josh@example.com] * (glob)
+      hello on c1
 
 show: an id with no comments still prints a "Comments (0):" header.
 

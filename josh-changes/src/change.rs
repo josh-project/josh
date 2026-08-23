@@ -1,7 +1,6 @@
 use crate::refs::ChangesRef;
 use crate::store::store_diff_data;
-use anyhow::anyhow;
-use josh_core::filter::tree;
+use anyhow::{Context, anyhow};
 use josh_core::objects;
 use josh_core::trailers::{commit_change_meta, parse_change_meta};
 
@@ -114,10 +113,6 @@ pub fn create_synthetic_merge_commit(
     )
 }
 
-pub(crate) fn decode_change_id_path(enc: &str) -> String {
-    enc.replace("%2F", "/")
-}
-
 pub(crate) fn split_changes(
     transaction: &josh_core::cache::Transaction,
     changes: std::collections::HashMap<git2::Oid, Change>,
@@ -187,43 +182,27 @@ pub fn list_changes(
     scope: &ChangesRef,
 ) -> anyhow::Result<Vec<Change>> {
     let odb = transaction.odb();
-    let tree = match transaction.resolve_ref(&scope.ref_name())? {
-        Some(oid) => objects::CommitData::read(odb, oid)?.tree_id()?,
-        None => return Ok(Vec::new()),
+    // Pre-tree-format entries must fail loudly rather than drop changes;
+    // `josh changes sync --clean` rebuilds the ref.
+    let Some(data) = crate::store::read_filtered::<crate::layout::ChangesRefData>(
+        transaction,
+        scope,
+        crate::store::namespace_filter("diffs"),
+    )
+    .with_context(|| "undecodable diff data; run `josh changes sync --clean` to rebuild the ref")?
+    else {
+        return Ok(Vec::new());
     };
 
-    let diffs_tree =
-        match crate::store::get_tree(transaction, odb, tree, std::path::Path::new("diffs")) {
-            Some(t) => t,
-            None => return Ok(Vec::new()),
-        };
+    // Sort by change id: map iteration order is unspecified, tree entry order
+    // was sorted.
+    let mut entries: Vec<_> = data.diffs.into_iter().collect();
+    entries.sort_by(|a, b| a.0.cmp(&b.0));
 
     let mut changes = Vec::new();
-    for entry in tree::read_tree(transaction, odb, diffs_tree)?.entries() {
-        let change_id = decode_change_id_path(std::str::from_utf8(entry.filename).unwrap_or(""));
-        if change_id.is_empty() || !entry.mode.is_tree() {
-            continue;
-        }
-        let subtree = match tree::read_tree(transaction, odb, objects::git2_oid(&entry.oid)) {
-            Ok(t) => t,
-            Err(_) => continue,
-        };
-        // The subtree has a single blob named by its content hash.
-        // Read it to get tip and base OIDs.
-        let mut tip_oid = git2::Oid::ZERO_SHA1;
-        let mut base_oid = git2::Oid::ZERO_SHA1;
-        for se in subtree.entries() {
-            let blob = match tree::blob_bytes(odb, objects::git2_oid(&se.oid)) {
-                Some(b) => b,
-                None => continue,
-            };
-            let content = String::from_utf8_lossy(&blob);
-            if let Some((tip_str, base_str)) = content.split_once('\n') {
-                tip_oid = git2::Oid::from_str(tip_str).unwrap_or(git2::Oid::ZERO_SHA1);
-                base_oid = git2::Oid::from_str(base_str).unwrap_or(git2::Oid::ZERO_SHA1);
-            }
-            break;
-        }
+    for (change_id, data) in entries {
+        let tip_oid = git2::Oid::from_str(&data.commit).unwrap_or(git2::Oid::ZERO_SHA1);
+        let base_oid = git2::Oid::from_str(&data.base).unwrap_or(git2::Oid::ZERO_SHA1);
         if tip_oid == git2::Oid::ZERO_SHA1 {
             continue;
         }

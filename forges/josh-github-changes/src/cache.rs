@@ -1,9 +1,11 @@
 //! Sync fingerprint cache on changes refs: snapshot of the list-query fields
 //! from the last full comment fetch, so sync can skip unchanged PRs.
-//! Persisted as a JSON blob at `gh_cache/<change-id>/fingerprint` —
+//! Persisted as a josh-git-serde tree at `gh_cache/<change-id>/fingerprint` --
 //! the path is part of the on-disk format and must not change.
 
 use josh_changes::{encode_change_id_path, ChangesRef};
+
+use crate::layout::{GithubChangesRefData, GITHUB_CACHE_PATH};
 use josh_core::cache::Transaction;
 use josh_github_graphql::operations::pull_request::PrSummary;
 
@@ -49,19 +51,21 @@ impl SyncFingerprint {
 }
 
 /// Read the stored sync fingerprint for a change, if present and well-formed.
-/// A missing or corrupt blob is a cache miss, not an error.
+/// A missing or corrupt entry is a cache miss, not an error.
 pub fn read_sync_fingerprint(
     transaction: &Transaction,
     change_id: &str,
     scope: &ChangesRef,
 ) -> anyhow::Result<Option<SyncFingerprint>> {
-    let path = std::path::Path::new("gh_cache").join(encode_change_id_path(change_id));
-    let map = josh_changes::read_blob_map(transaction, scope, &path)?;
-    let Some(json) = map.get(LEAF) else {
-        return Ok(None);
-    };
-    // Corrupt blob → cache miss (safe refetch), not an error.
-    Ok(serde_json::from_str(json).ok())
+    // Decode failures (e.g. pre-tree-format blobs) stay soft here: a corrupt
+    // fingerprint is a cache miss, and sync refetches and overwrites.
+    let data = josh_changes::read_filtered::<GithubChangesRefData>(
+        transaction,
+        scope,
+        josh_changes::namespace_filter(GITHUB_CACHE_PATH),
+    )
+    .unwrap_or(None);
+    Ok(data.and_then(|d| d.gh_cache.get(change_id).map(|c| c.fingerprint.clone())))
 }
 
 /// Store the sync fingerprint for a change after a successful full fetch.
@@ -71,12 +75,11 @@ pub fn store_sync_fingerprint(
     fingerprint: &SyncFingerprint,
     scope: &ChangesRef,
 ) -> anyhow::Result<()> {
-    let json = serde_json::to_string(fingerprint)?;
-    let blob_oid = josh_core::objects::write_blob(transaction.odb(), json.as_bytes())?;
-    let path = std::path::Path::new("gh_cache")
+    let path = std::path::Path::new(GITHUB_CACHE_PATH)
         .join(encode_change_id_path(change_id))
         .join(LEAF);
-    josh_changes::write_changes_tree(transaction, &path, blob_oid, None, None, scope)
+    josh_changes::write_value(transaction, &path, fingerprint, None, None, scope)?;
+    Ok(())
 }
 
 #[cfg(test)]
@@ -141,13 +144,5 @@ mod tests {
         assert!(!fp.is_fresh(4601, 3600));
         // Clock skew: fetched_at in the future counts as fresh.
         assert!(fp.is_fresh(500, 3600));
-    }
-
-    #[test]
-    fn json_round_trip() {
-        let fp = SyncFingerprint::from_summary(&summary(), 4242);
-        let json = serde_json::to_string(&fp).unwrap();
-        let back: SyncFingerprint = serde_json::from_str(&json).unwrap();
-        assert_eq!(fp, back);
     }
 }

@@ -4,8 +4,6 @@ use anyhow::anyhow;
 
 use crate::commands::scope::ScopeArgs;
 
-use josh_github_graphql::operations::pull_request::PrData;
-
 /// Arguments for `josh changes list`.
 #[derive(Debug, clap::Parser)]
 pub struct ListArgs {
@@ -156,8 +154,7 @@ pub fn handle_show(
         println!("Series:    {}", series);
     }
 
-    if let Ok(Some(pr)) = josh_changes::read_pr_data::<PrData>(transaction, &args.change_id, &scope)
-    {
+    if let Ok(Some(pr)) = josh_github_changes::read_pr_data(transaction, &args.change_id, &scope) {
         print!("PR:        {} [{}]", pr.title, pr.state);
         let rd = pr.review_decision.as_deref().unwrap_or("");
         if !rd.is_empty() {

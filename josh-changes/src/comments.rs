@@ -1,11 +1,12 @@
 use crate::change::{Change, encode_change_id_path};
 use crate::refs::ChangesRef;
-use crate::store::{get_tree, write_changes_tree};
-use anyhow::anyhow;
+use crate::store::{get_tree, place_oid, value_oid};
+use anyhow::{Context, anyhow};
 use josh_core::cache::{Expected, Transaction};
 use josh_core::filter::tree;
 use josh_core::memodb::Odb;
 use josh_core::objects;
+use josh_git_serde::{from_tree_oid, from_value};
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct Location {
@@ -20,11 +21,8 @@ pub struct CommentMeta {
     pub message: String,
     #[serde(skip)]
     pub file: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none", default)]
     pub location: Option<Location>,
-    #[serde(skip_serializing_if = "Option::is_none", default)]
     pub reply_to: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none", default)]
     pub update_of: Option<String>,
 }
 
@@ -108,12 +106,10 @@ fn write_comment_inner(
         .id()
         .ok_or_else(|| anyhow::anyhow!("commit {} has no Change-Id", change.commit()))?;
 
-    let content = serde_json::to_string(meta)?;
-    let content_hash =
-        git2::Oid::hash_object(git2::ObjectType::Blob, content.as_bytes())?.to_string();
-    let odb = transaction.odb();
-    let blob_oid = objects::write_blob(odb, content.as_bytes())?;
+    let (root, mode) = value_oid(transaction, meta)?;
+    let content_hash = root.to_string();
 
+    let odb = transaction.odb();
     let prefix = std::path::Path::new(path_prefix);
     let path = if let Some(ref file) = meta.file {
         let resolve_commit = match blob_commit_override {
@@ -138,8 +134,7 @@ fn write_comment_inner(
             .join(encode_change_id_path(&change_id))
             .join(&content_hash)
     };
-    write_changes_tree(transaction, &path, blob_oid, author, timestamp, scope)?;
-
+    place_oid(transaction, &path, root, mode, author, timestamp, scope)?;
     Ok(content_hash)
 }
 
@@ -243,18 +238,18 @@ pub fn comment_author(
     Err(anyhow!("comment {} not found in {}", comment_id, ref_name))
 }
 
-fn parse_comment_blob(
+/// Decode the comment tree `entry_oid` into a [`Comment`]. `file` comes from
+/// the entry's path, not from the tree.
+fn read_comment(
     odb: &Odb,
-    name: &[u8],
-    blob_oid: git2::Oid,
+    id: &str,
+    entry_oid: git2::Oid,
     file: Option<String>,
 ) -> anyhow::Result<Comment> {
-    let id = String::from_utf8_lossy(name).into_owned();
-    let blob =
-        tree::blob_bytes(odb, blob_oid).ok_or_else(|| anyhow!("not a blob: {}", blob_oid))?;
-    let meta: CommentMeta = serde_json::from_slice(&blob)?;
+    let value = from_tree_oid(odb, entry_oid)?;
+    let meta: CommentMeta = from_value(&value)?;
     Ok(Comment {
-        id,
+        id: id.to_string(),
         message: meta.message,
         file,
         location: meta.location,
@@ -407,12 +402,11 @@ fn collect_comments_at_prefix(
         &std::path::Path::new("C").join(encode_change_id_path(change_id)),
     ) {
         for entry in tree::read_tree(transaction, odb, cid_tree)?.entries() {
-            if let Ok(mut c) =
-                parse_comment_blob(odb, entry.filename, objects::git2_oid(&entry.oid), None)
-            {
-                c.pending = pending;
-                out.push(c);
-            }
+            let id = String::from_utf8_lossy(entry.filename).into_owned();
+            let mut c = read_comment(odb, &id, objects::git2_oid(&entry.oid), None)
+                .with_context(|| format!("undecodable comment {} on change {}", id, change_id))?;
+            c.pending = pending;
+            out.push(c);
         }
     }
 
@@ -432,6 +426,7 @@ fn collect_comments_at_prefix(
                 collect_comments_under_into(
                     transaction,
                     odb,
+                    change_id,
                     blob_tree,
                     std::path::Path::new(""),
                     &mut found,
@@ -450,33 +445,36 @@ fn collect_comments_at_prefix(
 fn collect_comments_under_into(
     transaction: &Transaction,
     odb: &Odb,
+    change_id: &str,
     tree: git2::Oid,
     file_prefix: &std::path::Path,
     out: &mut Vec<Comment>,
 ) -> anyhow::Result<()> {
     for entry in tree::read_tree(transaction, odb, tree)?.entries() {
         let name = std::str::from_utf8(entry.filename).unwrap_or("");
+        let entry_oid = objects::git2_oid(&entry.oid);
+        let file = if file_prefix.as_os_str().is_empty() {
+            None
+        } else {
+            Some(file_prefix.to_string_lossy().to_string())
+        };
         if entry.mode.is_tree() {
-            let child_file = file_prefix.join(name);
-            collect_comments_under_into(
-                transaction,
-                odb,
-                objects::git2_oid(&entry.oid),
-                &child_file,
-                out,
-            )?;
+            match read_comment(odb, name, entry_oid, file) {
+                Ok(c) => out.push(c),
+                // Path-component directory, not a comment leaf: descend.
+                Err(_) => collect_comments_under_into(
+                    transaction,
+                    odb,
+                    change_id,
+                    entry_oid,
+                    &file_prefix.join(name),
+                    out,
+                )?,
+            }
         } else if !entry.mode.is_commit() {
-            let file = if file_prefix.as_os_str().is_empty() {
-                None
-            } else {
-                Some(file_prefix.to_string_lossy().to_string())
-            };
-            out.push(parse_comment_blob(
-                odb,
-                entry.filename,
-                objects::git2_oid(&entry.oid),
-                file,
-            )?);
+            out.push(read_comment(odb, name, entry_oid, file).with_context(|| {
+                format!("undecodable comment {} on change {}", name, change_id)
+            })?);
         }
     }
     Ok(())
