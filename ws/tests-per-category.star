@@ -29,6 +29,7 @@ def generate_test_nodes():
 
         inputs = compose([
             filter.treeid("josh", filter.stored("ws/build-rust")),
+            filter.treeid("devtools-build", filter.stored("ws/devtools-build")),
             filter.treeid("build-go", filter.stored("ws/build-go")),
         ]).prefix("inputs")
 

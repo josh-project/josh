@@ -33,21 +33,27 @@
   $ git add .
   $ git commit -m "add st" 1> /dev/null
 
-  $ tree
+  $ git-tree-pretty .
   .
-  |-- st
-  |   `-- config.josh
-  |-- st2
-  |   `-- config.josh
-  |-- sub1
-  |   `-- file1
-  |-- sub2
-  |   `-- subsub
-  |       `-- file2
-  `-- sub3
-      `-- sub_file
-  
-  7 directories, 5 files
+  ├── st/
+  │   └── config.josh
+  │       ┆  x = :[::sub2/subsub/,::sub1/]
+  ├── st2/
+  │   └── config.josh
+  │       ┆  :[
+  │       ┆    a = :[::sub2/subsub/,::sub3/]
+  │       ┆    :/sub1:prefix=blub
+  │       ┆  ]:prefix=xyz
+  ├── sub1/
+  │   └── file1
+  │       ┆  contents1
+  ├── sub2/
+  │   └── subsub/
+  │       └── file2
+  │           ┆  contents1
+  └── sub3/
+      └── sub_file
+          ┆  contents1
 
   $ josh-filter -s :+st/config
   9527d0249f419b172c6ca02390fde00f81e9c078
@@ -70,21 +76,20 @@
   * add file2
   * add file1
 
-  $ git checkout FILTERED_HEAD 2> /dev/null
-  $ tree
+  $ git-tree-pretty FILTERED_HEAD
   .
-  |-- st
-  |   `-- config.josh
-  `-- x
-      |-- sub1
-      |   `-- file1
-      `-- sub2
-          `-- subsub
-              `-- file2
-  
-  6 directories, 3 files
+  ├── st/
+  │   └── config.josh
+  │       ┆  x = :[::sub2/subsub/,::sub1/]
+  └── x/
+      ├── sub1/
+      │   └── file1
+      │       ┆  contents1
+      └── sub2/
+          └── subsub/
+              └── file2
+                  ┆  contents1
 
-  $ git checkout master 2> /dev/null
   $ josh-filter -s :+st2/config
   f9e1862628d454b0cc4e98305983335d9c615113
   [2] :+st/config
@@ -121,20 +126,24 @@
   * add file2
   * add file1
 
-  $ git checkout FILTERED_HEAD 2> /dev/null
-  $ tree
+  $ git-tree-pretty FILTERED_HEAD
   .
-  |-- st2
-  |   `-- config.josh
-  `-- xyz
-      |-- a
-      |   |-- sub2
-      |   |   `-- subsub
-      |   |       `-- file2
-      |   `-- sub3
-      |       `-- sub_file
-      `-- blub
-          `-- file1
-  
-  8 directories, 4 files
+  ├── st2/
+  │   └── config.josh
+  │       ┆  :[
+  │       ┆    a = :[::sub2/subsub/,::sub3/]
+  │       ┆    :/sub1:prefix=blub
+  │       ┆  ]:prefix=xyz
+  └── xyz/
+      ├── a/
+      │   ├── sub2/
+      │   │   └── subsub/
+      │   │       └── file2
+      │   │           ┆  contents1
+      │   └── sub3/
+      │       └── sub_file
+      │           ┆  contents1
+      └── blub/
+          └── file1
+              ┆  contents1
 

@@ -43,14 +43,14 @@
 
   $ git clone -q http://localhost:8002/real_repo.git:workspace=ws.git ws
   $ cd ws
-  $ tree
+  $ git-tree-pretty .
   .
-  |-- a
-  |   `-- b
-  |       `-- file2
-  `-- workspace.josh
-  
-  3 directories, 2 files
+  ├── a/
+  │   └── b/
+  │       └── file2
+  │           ┆  contents1
+  └── workspace.josh
+      ┆  a/b = :/sub2
 
   $ git log --graph --pretty=%s
   * add file2
@@ -85,37 +85,41 @@
 
   $ git clean -ffdx 1> /dev/null
 
-  $ tree
+  $ git-tree-pretty .
   .
-  |-- sub1
-  |   `-- subsub
-  |       `-- newfile_1
-  |-- sub2
-  |   |-- file2
-  |   `-- newfile_2
-  `-- ws
-      `-- workspace.josh
-  
-  5 directories, 4 files
+  ├── sub1/
+  │   └── subsub/
+  │       └── newfile_1
+  │           ┆  newfile_1_contents
+  ├── sub2/
+  │   ├── file2
+  │   │   ┆  contents1
+  │   └── newfile_2
+  │       ┆  newfile_2_contents
+  └── ws/
+      └── workspace.josh
+          ┆  c = :/sub1
+          ┆  a/b = :/sub2
   $ git log --graph --pretty=%s
   * publish
   * add in filter
   * add file2
   * add workspace
 
-  $ git checkout -q HEAD~1 1> /dev/null
-  $ tree
+  $ git-tree-pretty HEAD~1
   .
-  |-- sub2
-  |   |-- file2
-  |   `-- newfile_2
-  `-- ws
-      |-- c
-      |   `-- subsub
-      |       `-- newfile_1
-      `-- workspace.josh
-  
-  5 directories, 4 files
+  ├── sub2/
+  │   ├── file2
+  │   │   ┆  contents1
+  │   └── newfile_2
+  │       ┆  newfile_2_contents
+  └── ws/
+      ├── c/
+      │   └── subsub/
+      │       └── newfile_1
+      │           ┆  newfile_1_contents
+      └── workspace.josh
+          ┆  a/b = :/sub2
 
   $ bash ${TESTDIR}/destroy_test_env.sh
   "real_repo.git" = [

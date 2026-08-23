@@ -19,21 +19,13 @@
    1 file changed, 1 insertion(+)
    create mode 100644 subdir/hw.txt
 
-  $ git diff ${EMPTY_TREE}..refs/heads/master
-  diff --git a/hw.txt b/hw.txt
-  new file mode 100644
-  index 0000000..3b18e51
-  --- /dev/null
-  +++ b/hw.txt
-  @@ -0,0 +1 @@
-  +hello world
-  diff --git a/subdir/hw.txt b/subdir/hw.txt
-  new file mode 100644
-  index 0000000..1b95c6e
-  --- /dev/null
-  +++ b/subdir/hw.txt
-  @@ -0,0 +1 @@
-  +hello moon
+  $ git-tree-pretty refs/heads/master
+  .
+  ├── hw.txt
+  │   ┆  hello world
+  └── subdir/
+      └── hw.txt
+          ┆  hello moon
 
 Write a custom header into the commit (h/t https://github.com/Byron/gitoxide/blob/68cbea8gix/tests/fixtures/make_pre_epoch_repo.sh#L12-L27)
   $ git cat-file -p @ | tee commit.txt
@@ -69,21 +61,14 @@ Write a custom header into the commit (h/t https://github.com/Byron/gitoxide/blo
   $ josh-filter --update refs/heads/filtered ':prefix=pre'
   63982dc9240ef0b6dc10fa1643bfa8700b5e2a3f
 
-  $ git diff ${EMPTY_TREE}..refs/heads/filtered
-  diff --git a/pre/hw.txt b/pre/hw.txt
-  new file mode 100644
-  index 0000000..3b18e51
-  --- /dev/null
-  +++ b/pre/hw.txt
-  @@ -0,0 +1 @@
-  +hello world
-  diff --git a/pre/subdir/hw.txt b/pre/subdir/hw.txt
-  new file mode 100644
-  index 0000000..1b95c6e
-  --- /dev/null
-  +++ b/pre/subdir/hw.txt
-  @@ -0,0 +1 @@
-  +hello moon
+  $ git-tree-pretty refs/heads/filtered
+  .
+  └── pre/
+      ├── hw.txt
+      │   ┆  hello world
+      └── subdir/
+          └── hw.txt
+              ┆  hello moon
 
   $ git cat-file -p refs/heads/filtered
   tree 6876aad1a2259b9d4c7c24e0e3ff908d3d580404

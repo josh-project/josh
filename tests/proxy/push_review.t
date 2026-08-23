@@ -50,30 +50,26 @@
   $ git checkout rfm
   Switched to branch 'rfm'
 
-  $ tree
+  $ git-tree-pretty .
   .
-  `-- sub1
-      |-- file1
-      `-- file2
-  
-  2 directories, 2 files
+  └── sub1/
+      ├── file1
+      │   ┆  contents1
+      └── file2
+          ┆  contents2
 
-  $ cat sub1/file2
-  contents2
 
   $ git checkout rdm
   Switched to branch 'rdm'
 
-  $ tree
+  $ git-tree-pretty .
   .
-  `-- sub1
-      |-- file1
-      `-- file2
-  
-  2 directories, 2 files
+  └── sub1/
+      ├── file1
+      │   ┆  contents1
+      └── file2
+          ┆  contents2
 
-  $ cat sub1/file2
-  contents2
 
 
 Make sure all temporary namespace got removed

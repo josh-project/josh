@@ -21,12 +21,11 @@
   [2] sequence_number
   $ git checkout hidden 1> /dev/null
   Switched to branch 'hidden'
-  $ tree
+  $ git-tree-pretty .
   .
-  `-- sub1
-      `-- file1
-  
-  2 directories, 1 file
+  └── sub1/
+      └── file1
+          ┆  contents1
   $ git log --graph --pretty=%s
   * add file1
 
@@ -43,19 +42,18 @@
   $ git checkout master
   Switched to branch 'master'
 
-  $ tree
+  $ git-tree-pretty .
   .
-  |-- sub1
-  |   |-- file1
-  |   `-- file3
-  `-- sub2
-      `-- file2
-  
-  3 directories, 3 files
+  ├── sub1/
+  │   ├── file1
+  │   │   ┆  contents1
+  │   └── file3
+  │       ┆  contents3
+  └── sub2/
+      └── file2
+          ┆  contents1
 
 
-  $ cat sub1/file3
-  contents3
 
   $ git log --graph --pretty=%s
   * add sub1/file3

@@ -61,26 +61,22 @@
   * add file2
   * add file1
 
-  $ git checkout -q refs/josh/master 1> /dev/null
-  $ tree
+  $ git-tree-pretty refs/josh/master
   .
-  |-- workspace.josh
-  `-- ws
-      `-- c
-  
-  3 directories, 1 file
+  └── workspace.josh
+      ┆  a/b = :/sub2
+      ┆  c/ = :/sub1
 
-  $ git checkout -q HEAD~1
-  $ tree
+  $ git-tree-pretty refs/josh/master~1
   .
-  |-- a
-  |   `-- b
-  |       `-- file2
-  |-- c
-  |   `-- file1
-  |-- workspace.josh
-  `-- ws
-      `-- c
-  
-  6 directories, 3 files
+  ├── a/
+  │   └── b/
+  │       └── file2
+  │           ┆  contents1
+  ├── c/
+  │   └── file1
+  │       ┆  contents1
+  └── workspace.josh
+      ┆  a/b = :/sub2
+      ┆  c = :/sub1
 

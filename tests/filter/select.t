@@ -24,15 +24,12 @@ select keeps only the paths matched by the inner filter (the complement of exclu
   [2] sequence_number
   $ git checkout selected 1> /dev/null
   Switched to branch 'selected'
-  $ tree
+  $ git-tree-pretty .
   .
-  `-- sub2
-      `-- file2
-  
-  2 directories, 1 file
+  └── sub2/
+      └── file2
+          ┆  contents2
 
-  $ cat sub2/file2
-  contents2
 
 selecting into a subtree keeps only the matched file, dropping siblings and other trees:
 
@@ -42,12 +39,11 @@ selecting into a subtree keeps only the matched file, dropping siblings and othe
   179c05ebefb1e481a31334cdf6dc552e28e28151
   $ git checkout selected_file 1> /dev/null
   Switched to branch 'selected_file'
-  $ tree
+  $ git-tree-pretty .
   .
-  `-- sub1
-      `-- file1
-  
-  2 directories, 1 file
+  └── sub1/
+      └── file1
+          ┆  contents1
 
 
 :select[::sub2/] and :exclude[::sub1/] produce the same tree:

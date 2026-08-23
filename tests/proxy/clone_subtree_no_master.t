@@ -29,14 +29,14 @@
    1 file changed, 1 insertion(+)
    create mode 100644 sub2/file2
 
-  $ tree
+  $ git-tree-pretty .
   .
-  |-- sub1
-  |   `-- file1
-  `-- sub2
-      `-- file2
-  
-  3 directories, 2 files
+  ├── sub1/
+  │   └── file1
+  │       ┆  contents1
+  └── sub2/
+      └── file2
+          ┆  contents1
 
   $ git log --graph --pretty=%s
   * add file2
@@ -61,10 +61,9 @@
   *: No such file or directory (glob)
   [1]
 
-  $ tree
+  $ git read-tree --empty
+  $ git-tree-pretty +
   .
-  
-  0 directories, 0 files
 
   $ git log --graph --pretty=%s
   fatal: your current branch 'master' does not have any commits yet

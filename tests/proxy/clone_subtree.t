@@ -29,14 +29,14 @@
    1 file changed, 1 insertion(+)
    create mode 100644 sub2/file2
 
-  $ tree
+  $ git-tree-pretty .
   .
-  |-- sub1
-  |   `-- file1
-  `-- sub2
-      `-- file2
-  
-  3 directories, 2 files
+  ├── sub1/
+  │   └── file1
+  │       ┆  contents1
+  └── sub2/
+      └── file2
+          ┆  contents1
 
   $ git log --graph --pretty=%s
   * add file2
@@ -65,11 +65,10 @@
   $ cat .git/refs/remotes/origin/HEAD
   ref: refs/remotes/origin/master
 
-  $ tree
+  $ git-tree-pretty .
   .
-  `-- file1
-  
-  1 directory, 1 file
+  └── file1
+      ┆  contents1
 
   $ git log --graph --pretty=%s
   * add file1

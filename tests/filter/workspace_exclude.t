@@ -40,16 +40,18 @@
 
   $ git checkout filtered
   Switched to branch 'filtered'
-  $ tree
+  $ git-tree-pretty .
   .
-  |-- a
-  |   `-- file4
-  |-- sub2
-  |   `-- subsub
-  |       `-- file2
-  `-- workspace.josh
-  
-  4 directories, 3 files
+  ├── a/
+  │   └── file4
+  │       ┆  contents4
+  ├── sub2/
+  │   └── subsub/
+  │       └── file2
+  │           ┆  contents1
+  └── workspace.josh
+      ┆  ::sub2/subsub/
+      ┆  a = :/sub1:exclude[::file1]
 
   $ echo ws_content > fileX
   $ echo ws_content > file1
@@ -77,22 +79,22 @@
   $ git checkout master
   Switched to branch 'master'
 
-  $ tree
+  $ git-tree-pretty .
   .
-  |-- sub1
-  |   |-- file1
-  |   `-- file4
-  |-- sub2
-  |   `-- subsub
-  |       `-- file2
-  `-- ws
-      |-- file1
-      |-- fileX
-      `-- workspace.josh
-  
-  5 directories, 6 files
-
-  $ cat ws/file1
-  ws_content
-  $ cat sub1/file1
-  contents1
+  ├── sub1/
+  │   ├── file1
+  │   │   ┆  contents1
+  │   └── file4
+  │       ┆  contents4
+  ├── sub2/
+  │   └── subsub/
+  │       └── file2
+  │           ┆  contents1
+  └── ws/
+      ├── file1
+      │   ┆  ws_content
+      ├── fileX
+      │   ┆  ws_content
+      └── workspace.josh
+          ┆  a = :/sub1:exclude[::file1]
+          ┆  ::sub2/subsub/

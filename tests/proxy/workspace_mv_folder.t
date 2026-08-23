@@ -92,17 +92,19 @@ Flushed credential cache
    + 1b46698...d91fa49 master     -> origin/master  (forced update)
   Already up to date.
 
-  $ tree
+  $ git-tree-pretty .
   .
-  |-- a
-  |   `-- b
-  |       `-- file2
-  |-- c
-  |   `-- subsub
-  |       `-- file1
-  `-- workspace.josh
-  
-  5 directories, 3 files
+  ├── a/
+  │   └── b/
+  │       └── file2
+  │           ┆  contents1
+  ├── c/
+  │   └── subsub/
+  │       └── file1
+  │           ┆  contents1
+  └── workspace.josh
+      ┆  c = :/sub1
+      ┆  a/b = :/sub2
 
   $ git log --graph --pretty=%s
   *   Merge from :workspace=ws
@@ -178,17 +180,19 @@ Flushed credential cache
    + 5d8563b...251b9a3 master     -> origin/master  (forced update)
   Already up to date.
 
-  $ tree
+  $ git-tree-pretty .
   .
-  |-- a
-  |   `-- c
-  |       `-- file2
-  |-- c
-  |   `-- subsub
-  |       `-- file1
-  `-- workspace.josh
-  
-  5 directories, 3 files
+  ├── a/
+  │   └── c/
+  │       └── file2
+  │           ┆  contents1
+  ├── c/
+  │   └── subsub/
+  │       └── file1
+  │           ┆  contents1
+  └── workspace.josh
+      ┆  c = :/sub1
+      ┆  a/c = :/sub2
 
   $ git log --graph --pretty=%s
   * mod workspace
@@ -210,20 +214,22 @@ Flushed credential cache
    ws/workspace.josh | 2 +-
    1 file changed, 1 insertion(+), 1 deletion(-)
 
-  $ tree
+  $ git-tree-pretty .
   .
-  |-- file1
-  |-- newfile1
-  |-- newfile_master
-  |-- sub1
-  |   `-- subsub
-  |       `-- file1
-  |-- sub2
-  |   `-- file2
-  `-- ws
-      `-- workspace.josh
-  
-  5 directories, 6 files
+  ├── file1
+  ├── newfile1
+  ├── newfile_master
+  ├── sub1/
+  │   └── subsub/
+  │       └── file1
+  │           ┆  contents1
+  ├── sub2/
+  │   └── file2
+  │       ┆  contents1
+  └── ws/
+      └── workspace.josh
+          ┆  c = :/sub1
+          ┆  a/c = :/sub2
   $ git log --graph --pretty=%s
   * mod workspace
   *   Merge from :workspace=ws

@@ -31,12 +31,12 @@ Clone with josh filter
   
   Cloned repository to: ${TESTTMP}/filtered/
   $ cd filtered
-  $ tree
+  $ git-tree-pretty .
   .
-  |-- file1
-  `-- file2
-  
-  1 directory, 2 files
+  ├── file1
+  │   ┆  file1 content
+  └── file2
+      ┆  file2 content
 
   $ git log --oneline
   33cbd5f add file2

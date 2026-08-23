@@ -93,18 +93,19 @@
  
   $ git clone -q http://localhost:8002/real_repo.git:workspace=ws:/pre.git ws
   $ cd ws
-  $ tree
+  $ git-tree-pretty .
   .
-  |-- a
-  |   `-- b
-  |       `-- file2
-  |-- c
-  |   `-- subsub
-  |       `-- file1
-  `-- d
-      `-- file3
-  
-  6 directories, 3 files
+  ├── a/
+  │   └── b/
+  │       └── file2
+  │           ┆  contents1
+  ├── c/
+  │   └── subsub/
+  │       └── file1
+  │           ┆  contents1
+  └── d/
+      └── file3
+          ┆  contents3
  
   $ git log --graph --pretty=%s
   *   mod workspace
@@ -114,27 +115,26 @@
   * add file1
  
   $ git checkout -q HEAD~1 1> /dev/null
-  $ tree
+  $ git-tree-pretty .
   .
-  |-- a
-  |   `-- b
-  |       `-- file2
-  `-- c
-      `-- subsub
-          `-- file1
-  
-  5 directories, 2 files
+  ├── a/
+  │   └── b/
+  │       └── file2
+  │           ┆  contents1
+  └── c/
+      └── subsub/
+          └── file1
+              ┆  contents1
  
   $ git checkout HEAD~1 1> /dev/null
   Previous HEAD position was 2a03ad0 add file2
   HEAD is now at 02668d7 add file1
-  $ tree
+  $ git-tree-pretty .
   .
-  `-- c
-      `-- subsub
-          `-- file1
-  
-  3 directories, 1 file
+  └── c/
+      └── subsub/
+          └── file1
+              ┆  contents1
  
   $ git checkout master 1> /dev/null
   Previous HEAD position was 02668d7 add file1
@@ -160,25 +160,33 @@
  
   $ git clean -ffdx 1> /dev/null
  
-  $ tree
+  $ git-tree-pretty .
   .
-  |-- newfile1
-  |-- newfile_master
-  |-- root_file1
-  |-- sub1
-  |   `-- subsub
-  |       `-- newfile_1
-  |-- sub2
-  |   |-- file2
-  |   `-- newfile_2
-  |-- sub3
-  |   `-- file3
-  `-- ws
-      |-- pre
-      |   `-- ws_file
-      `-- workspace.josh
-  
-  7 directories, 9 files
+  ├── newfile1
+  ├── newfile_master
+  ├── root_file1
+  ├── sub1/
+  │   └── subsub/
+  │       └── newfile_1
+  │           ┆  newfile_1_contents
+  ├── sub2/
+  │   ├── file2
+  │   │   ┆  contents1
+  │   └── newfile_2
+  │       ┆  newfile_2_contents
+  ├── sub3/
+  │   └── file3
+  │       ┆  contents3
+  └── ws/
+      ├── pre/
+      │   └── ws_file
+      │       ┆  ws_file_contents
+      └── workspace.josh
+          ┆  pre = :[
+          ┆      c = :/sub1
+          ┆      a/b = :/sub2
+          ┆      d = :/sub3
+          ┆  ]
   $ git log --graph --pretty=%s
   * add in filter
   * mod workspace
@@ -196,45 +204,50 @@
  
   $ git checkout -q HEAD~1 1> /dev/null
   $ git clean -ffdx 1> /dev/null
-  $ tree
+  $ git-tree-pretty .
   .
-  |-- newfile1
-  |-- newfile_master
-  |-- root_file1
-  |-- sub1
-  |   `-- subsub
-  |       `-- file1
-  |-- sub2
-  |   `-- file2
-  |-- sub3
-  |   `-- file3
-  `-- ws
-      `-- workspace.josh
-  
-  6 directories, 7 files
-  $ cat sub1/subsub/file1
-  contents1
+  ├── newfile1
+  ├── newfile_master
+  ├── root_file1
+  ├── sub1/
+  │   └── subsub/
+  │       └── file1
+  │           ┆  contents1
+  ├── sub2/
+  │   └── file2
+  │       ┆  contents1
+  ├── sub3/
+  │   └── file3
+  │       ┆  contents3
+  └── ws/
+      └── workspace.josh
+          ┆  pre/a/b = :/sub2
+          ┆  pre/c = :/sub1
+          ┆  pre/d = :/sub3
  
   $ git checkout HEAD~1 1> /dev/null
   Previous HEAD position was 2b7018e mod workspace
   HEAD is now at d038198 add file3
   $ git clean -ffdx 1> /dev/null
-  $ tree
+  $ git-tree-pretty .
   .
-  |-- newfile1
-  |-- newfile_master
-  |-- root_file1
-  |-- sub1
-  |   `-- subsub
-  |       `-- file1
-  |-- sub2
-  |   `-- file2
-  |-- sub3
-  |   `-- file3
-  `-- ws
-      `-- workspace.josh
-  
-  6 directories, 7 files
+  ├── newfile1
+  ├── newfile_master
+  ├── root_file1
+  ├── sub1/
+  │   └── subsub/
+  │       └── file1
+  │           ┆  contents1
+  ├── sub2/
+  │   └── file2
+  │       ┆  contents1
+  ├── sub3/
+  │   └── file3
+  │       ┆  contents3
+  └── ws/
+      └── workspace.josh
+          ┆  pre/a/b = :/sub2
+          ┆  pre/c = :/sub1
  
  
   $ bash ${TESTDIR}/destroy_test_env.sh

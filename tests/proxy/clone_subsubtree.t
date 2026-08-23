@@ -31,15 +31,15 @@
    1 file changed, 1 insertion(+)
    create mode 100644 sub2/file2
 
-  $ tree
+  $ git-tree-pretty .
   .
-  |-- sub1
-  |   `-- subsub
-  |       `-- file1
-  `-- sub2
-      `-- file2
-  
-  4 directories, 2 files
+  ├── sub1/
+  │   └── subsub/
+  │       └── file1
+  │           ┆  contents1
+  └── sub2/
+      └── file2
+          ┆  contents1
 
   $ git log --graph --pretty=%s
   * add file2
@@ -52,12 +52,11 @@
   $ cd ${TESTTMP}
   $ git clone -q http://localhost:8002/real_repo.git:/sub1.git
   $ cd sub1
-  $ tree
+  $ git-tree-pretty .
   .
-  `-- subsub
-      `-- file1
-  
-  2 directories, 1 file
+  └── subsub/
+      └── file1
+          ┆  contents1
 
   $ git log --graph --pretty=%s master
   * add file1
@@ -67,11 +66,10 @@
   $ cd subsub
   $ git branch
   * master
-  $ tree
+  $ git-tree-pretty .
   .
-  `-- file1
-  
-  1 directory, 1 file
+  └── file1
+      ┆  contents1
 
   $ git log --graph --pretty=%s master
   * add file1

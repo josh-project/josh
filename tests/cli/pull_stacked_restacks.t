@@ -69,14 +69,16 @@ Pull: applied changes are skipped, the remaining change is restacked
   * landed change 3
   * landed change 2
   * add file1
-  $ tree
+  $ git-tree-pretty .
   .
-  |-- file1
-  |-- file2
-  |-- file3
-  `-- file4
-  
-  1 directory, 4 files
+  ├── file1
+  │   ┆  file1 content
+  ├── file2
+  │   ┆  contents2
+  ├── file3
+  │   ┆  contents3
+  └── file4
+      ┆  contents4
 
 Pull again: no-op
 
@@ -105,13 +107,17 @@ against the upstream stack, so it is simply kept and cherry-picked on top.
   * landed change 3
   * landed change 2
   * add file1
-  $ tree
+  $ git-tree-pretty .
   .
-  |-- file1
-  |-- file2
-  |-- file3
-  |-- file4
-  |-- file5
-  `-- file9
-  
-  1 directory, 6 files
+  ├── file1
+  │   ┆  file1 content
+  ├── file2
+  │   ┆  contents2
+  ├── file3
+  │   ┆  contents3
+  ├── file4
+  │   ┆  contents4
+  ├── file5
+  │   ┆  contents5
+  └── file9
+      ┆  other

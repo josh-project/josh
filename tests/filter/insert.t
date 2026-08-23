@@ -49,22 +49,12 @@ Apply: blob at a multi-component path lands at the nested destination
 
 Apply: compose with blob inserts blob alongside other files
   $ josh-filter -s ':[:/sub1,:$added.txt="hello world"]' master --update refs/josh/filter/master2 1> /dev/null
-  $ git diff ${EMPTY_TREE}..josh/filter/master2
-  diff --git a/added.txt b/added.txt
-  new file mode 100644
-  index 0000000..95d09f2
-  --- /dev/null
-  +++ b/added.txt
-  @@ -0,0 +1 @@
-  +hello world
-  \ No newline at end of file
-  diff --git a/file1 b/file1
-  new file mode 100644
-  index 0000000..a024003
-  --- /dev/null
-  +++ b/file1
-  @@ -0,0 +1 @@
-  +contents1
+  $ git-tree-pretty josh/filter/master2
+  .
+  ├── added.txt
+  │   ╵  hello world
+  └── file1
+      ┆  contents1
 
 Apply: composing many inserts across sibling directories keeps every insert
 (regression: an insert group must invert to :empty, not a union of excludes,

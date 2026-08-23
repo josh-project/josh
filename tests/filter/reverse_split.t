@@ -23,14 +23,14 @@
   [2] sequence_number
   $ git checkout filtered 1> /dev/null
   Switched to branch 'filtered'
-  $ tree
+  $ git-tree-pretty .
   .
-  |-- a
-  |   `-- file1.a
-  `-- rest
-      `-- file2.b
-  
-  3 directories, 2 files
+  ├── a/
+  │   └── file1.a
+  │       ┆  contents1
+  └── rest/
+      └── file2.b
+          ┆  contents1
   $ git log --graph --pretty=%s
   * add file2.b
   * add file1.a
@@ -75,12 +75,14 @@
   @@ -0,0 +1 @@
   +contents3
 
-  $ tree
+  $ git-tree-pretty .
   .
-  |-- file1.a
-  |-- file2.b
-  |-- file3.a
-  `-- file4.b
-  
-  1 directory, 4 files
+  ├── file1.a
+  │   ┆  contents1
+  ├── file2.b
+  │   ┆  contents1
+  ├── file3.a
+  │   ┆  contents3
+  └── file4.b
+      ┆  contents3
 

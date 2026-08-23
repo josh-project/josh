@@ -48,12 +48,12 @@
 
   $ cd libs
 
-  $ tree
+  $ git-tree-pretty .
   .
-  |-- file1
-  `-- file2
-  
-  1 directory, 2 files
+  ├── file1
+  │   ┆  contents1
+  └── file2
+      ┆  contents2
 
   $ josh remote add remote2 ${TESTTMP}/remote2/libs :/sub2
   Added remote 'remote2' with filter ':/sub2'
@@ -64,19 +64,19 @@
   the current branch tracks 'refs/remotes/origin/master', which does not belong to remote 'remote2'
   [1]
 
-  $ tree
+  $ git-tree-pretty .
   .
-  |-- file1
-  `-- file2
-  
-  1 directory, 2 files
+  ├── file1
+  │   ┆  contents1
+  └── file2
+      ┆  contents2
 
   $ josh changes pull
   Already up to date.
 
-  $ tree
+  $ git-tree-pretty .
   .
-  |-- file1
-  `-- file2
-  
-  1 directory, 2 files
+  ├── file1
+  │   ┆  contents1
+  └── file2
+      ┆  contents2

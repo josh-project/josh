@@ -99,16 +99,17 @@
   $ git reset --hard
   HEAD is now at fbd00b3 sync
 
-  $ tree
+  $ git-tree-pretty .
   .
-  |-- a
-  |   `-- b
-  |       `-- file3
-  `-- c
-      |-- file1
-      `-- file2
-  
-  4 directories, 3 files
+  ├── a/
+  │   └── b/
+  │       └── file3
+  │           ┆  contents1
+  └── c/
+      ├── file1
+      │   ┆  contents1
+      └── file2
+          ┆  contents2
   $ git log --graph --pretty=%s
   * sync
   * initial

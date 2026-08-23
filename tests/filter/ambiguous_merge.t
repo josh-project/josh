@@ -102,19 +102,24 @@
   On branch master
   nothing to commit, working tree clean
 
-  $ tree
+  $ git-tree-pretty .
   .
-  |-- sub1
-  |   |-- file1
-  |   |-- file2
-  |   |-- file3
-  |   |-- file4
-  |   `-- fileY
-  `-- sub2
-      |-- file2
-      `-- fileX
-  
-  3 directories, 7 files
+  ├── sub1/
+  │   ├── file1
+  │   │   ┆  contents1
+  │   ├── file2
+  │   │   ┆  contents1
+  │   ├── file3
+  │   │   ┆  contents3
+  │   ├── file4
+  │   │   ┆  contents4
+  │   └── fileY
+  │       ┆  contents6
+  └── sub2/
+      ├── file2
+      │   ┆  contents1
+      └── fileX
+          ┆  contents2
 
   $ git log --graph --oneline --decorate master
   *   8cbae19 (HEAD -> master) Merge branch 'hidden_branch1' into hidden_master

@@ -30,12 +30,15 @@
    1 file changed, 3 insertions(+)
    create mode 100644 sub1/file1.large
 
-  $ tree
+  $ git-tree-pretty .
   .
-  `-- sub1
-      `-- file1.large
-  
-  2 directories, 1 file
+  ├── .gitattributes
+  │   ┆  *.large filter=lfs diff=lfs merge=lfs -text
+  └── sub1/
+      └── file1.large
+          ┆  version https://git-lfs.github.com/spec/v1
+          ┆  oid sha256:8f88da056e2ed130ee23b3b61245d2e0948fe335236dcb23a100a087f92130f2
+          ┆  size 10
 
   $ git config lfs.http://localhost:8001/real_repo.git/info/lfs.locksverify false
 

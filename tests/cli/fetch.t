@@ -29,12 +29,12 @@
 
   $ cd libs
 
-  $ tree
+  $ git-tree-pretty .
   .
-  |-- file1
-  `-- file2
-  
-  1 directory, 2 files
+  ├── file1
+  │   ┆  contents1
+  └── file2
+      ┆  contents2
 
   $ echo newfile > newfile
   $ git add newfile
@@ -51,13 +51,14 @@
   updated master (d8388f5..61e377b)
   Fetched from remote: origin
 
-  $ tree
+  $ git-tree-pretty .
   .
-  |-- file1
-  |-- file2
-  `-- newfile
-  
-  1 directory, 3 files
+  ├── file1
+  │   ┆  contents1
+  ├── file2
+  │   ┆  contents2
+  └── newfile
+      ┆  newfile
 
   $ git log --oneline
   6a6f932 add newfile
@@ -89,10 +90,11 @@
   
   HEAD is now at 61e377b add remote_newfile
 
-  $ tree
+  $ git-tree-pretty .
   .
-  |-- file1
-  |-- file2
-  `-- remote_newfile
-  
-  1 directory, 3 files
+  ├── file1
+  │   ┆  contents1
+  ├── file2
+  │   ┆  contents2
+  └── remote_newfile
+      ┆  remote_newfile

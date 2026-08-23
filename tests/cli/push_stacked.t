@@ -29,11 +29,10 @@ Clone with josh filter
   
   Cloned repository to: ${TESTTMP}/filtered/
   $ cd filtered
-  $ tree
+  $ git-tree-pretty .
   .
-  `-- file1
-  
-  1 directory, 1 file
+  └── file1
+      ┆  file1 content
 
 Make changes with Change-Id for stacked changes
 

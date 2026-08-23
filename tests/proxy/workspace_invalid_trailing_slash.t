@@ -73,21 +73,20 @@ Flushed credential cache
   | * add subsub1
   * add workspace
 
-  $ tree
+  $ git-tree-pretty .
   .
-  |-- a
-  |   |-- subsub1
-  |   |   `-- file1
-  |   `-- subsub2
-  |       `-- file1
-  `-- workspace.josh
-  
-  4 directories, 3 files
-  $ cat workspace.josh
-  a = :/sub1:[
-      ::subsub1/
-      ::subsub2/
-  ]
+  ├── a/
+  │   ├── subsub1/
+  │   │   └── file1
+  │   │       ┆  contents1
+  │   └── subsub2/
+  │       └── file1
+  │           ┆  contents1
+  └── workspace.josh
+      ┆  a = :/sub1:[
+      ┆      ::subsub1/
+      ┆      ::subsub2/
+      ┆  ]
 
   $ cd ${TESTTMP}/real_repo
   $ git pull --rebase
@@ -155,16 +154,17 @@ Flushed credential cache
   $ git pull --rebase
   Current branch master is up to date.
 
-  $ tree
+  $ git-tree-pretty .
   .
-  |-- a
-  |   |-- subsub1
-  |   |   `-- file1
-  |   `-- subsub2
-  |       `-- file1
-  `-- workspace.josh
-  
-  4 directories, 3 files
+  ├── a/
+  │   ├── subsub1/
+  │   │   └── file1
+  │   │       ┆  contents1
+  │   └── subsub2/
+  │       └── file1
+  │           ┆  contents1
+  └── workspace.josh
+      ┆  a/ = :/sub1
 
   $ git log --graph --pretty=%s
   * mod workspace

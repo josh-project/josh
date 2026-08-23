@@ -66,22 +66,22 @@
   
   15 directories, 10 files
 
-  $ tree
+  $ git-tree-pretty .
   .
-  |-- file1
-  `-- file2
-  
-  1 directory, 2 files
+  ├── file1
+  │   ┆  contents1
+  └── file2
+      ┆  contents2
 
   $ git checkout feature
   branch 'feature' set up to track 'origin/feature'.
   Switched to a new branch 'feature'
 
-  $ tree
+  $ git-tree-pretty .
   .
-  |-- file1
-  `-- file2
-  
-  1 directory, 2 files
+  ├── file1
+  │   ┆  contents1
+  └── file2
+      ┆  contents2
 
 

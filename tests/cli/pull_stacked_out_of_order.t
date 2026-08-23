@@ -73,14 +73,16 @@ Pull: B is skipped, C and A are restacked on top of the landed B
   * change C
   * landed change B
   * add file1
-  $ tree
+  $ git-tree-pretty .
   .
-  |-- file1
-  |-- file2
-  |-- file3
-  `-- file4
-  
-  1 directory, 4 files
+  ├── file1
+  │   ┆  file1 content
+  ├── file2
+  │   ┆  contents2
+  ├── file3
+  │   ┆  contents3
+  └── file4
+      ┆  contents4
 
 Pull again: no-op
 

@@ -34,13 +34,13 @@ Artificially create a subtree merge
   $ git mv file2 subtree/
   $ git add subtree
   $ git commit -a --amend -m "subtree merge" 1>/dev/null
-  $ tree
+  $ git-tree-pretty .
   .
-  |-- file1
-  `-- subtree
-      `-- file2
-  
-  2 directories, 2 files
+  ├── file1
+  │   ┆  contents1
+  └── subtree/
+      └── file2
+          ┆  contents2
   $ git log --graph --pretty=%s
   *   subtree merge
   |\  

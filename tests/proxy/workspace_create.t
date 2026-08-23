@@ -92,17 +92,19 @@ Flushed credential cache
    + 1b46698...003a297 master     -> origin/master  (forced update)
   Already up to date.
 
-  $ tree
+  $ git-tree-pretty .
   .
-  |-- a
-  |   `-- b
-  |       `-- file2
-  |-- c
-  |   `-- subsub
-  |       `-- file1
-  `-- workspace.josh
-  
-  5 directories, 3 files
+  ├── a/
+  │   └── b/
+  │       └── file2
+  │           ┆  contents1
+  ├── c/
+  │   └── subsub/
+  │       └── file1
+  │           ┆  contents1
+  └── workspace.josh
+      ┆  c = :/sub1
+      ┆  a/b = :/sub2
 
   $ git log --graph --pretty=%s
   * add workspace
@@ -178,19 +180,23 @@ Flushed credential cache
    2 files changed, 3 insertions(+), 1 deletion(-)
    create mode 100644 d/file3
 
-  $ tree
+  $ git-tree-pretty .
   .
-  |-- a
-  |   `-- b
-  |       `-- file2
-  |-- c
-  |   `-- subsub
-  |       `-- file1
-  |-- d
-  |   `-- file3
-  `-- workspace.josh
-  
-  6 directories, 4 files
+  ├── a/
+  │   └── b/
+  │       └── file2
+  │           ┆  contents1
+  ├── c/
+  │   └── subsub/
+  │       └── file1
+  │           ┆  contents1
+  ├── d/
+  │   └── file3
+  │       ┆  contents3
+  └── workspace.josh
+      ┆  a/b = :/sub2
+      ┆  c = :/sub1
+      ┆  d = :/sub3
 
   $ git log --graph --pretty=%s
   *   mod workspace
@@ -200,36 +206,31 @@ Flushed credential cache
   * add file2
   * add file1
 
-  $ git checkout -q HEAD~1 1> /dev/null
-  $ tree
+  $ git-tree-pretty HEAD~1
   .
-  |-- a
-  |   `-- b
-  |       `-- file2
-  |-- c
-  |   `-- subsub
-  |       `-- file1
-  `-- workspace.josh
-  
-  5 directories, 3 files
+  ├── a/
+  │   └── b/
+  │       └── file2
+  │           ┆  contents1
+  ├── c/
+  │   └── subsub/
+  │       └── file1
+  │           ┆  contents1
+  └── workspace.josh
+      ┆  c = :/sub1
+      ┆  a/b = :/sub2
 
-  $ git checkout HEAD~1 1> /dev/null
-  Previous HEAD position was 003a297 add workspace
-  HEAD is now at 2a03ad0 add file2
-  $ tree
+  $ git-tree-pretty HEAD~2
   .
-  |-- a
-  |   `-- b
-  |       `-- file2
-  `-- c
-      `-- subsub
-          `-- file1
-  
-  5 directories, 2 files
+  ├── a/
+  │   └── b/
+  │       └── file2
+  │           ┆  contents1
+  └── c/
+      └── subsub/
+          └── file1
+              ┆  contents1
 
-  $ git checkout master 1> /dev/null
-  Previous HEAD position was 2a03ad0 add file2
-  Switched to branch 'master'
 
   $ echo newfile_1_contents > c/subsub/newfile_1
   $ git rm c/subsub/file1
@@ -293,28 +294,31 @@ Flushed credential cache
   Already up to date.
 
 Note that d/ is still in the tree but now it is not overlayed
-  $ tree
+  $ git-tree-pretty .
   .
-  |-- a
-  |   `-- b
-  |       |-- file2
-  |       `-- newfile_2
-  |-- c
-  |   `-- subsub
-  |       `-- newfile_1
-  |-- d
-  |   `-- file3
-  |-- w
-  |   `-- file3
-  |-- workspace.josh
-  `-- ws_file
-  
-  7 directories, 7 files
+  ├── a/
+  │   └── b/
+  │       ├── file2
+  │       │   ┆  contents1
+  │       └── newfile_2
+  │           ┆  newfile_2_contents
+  ├── c/
+  │   └── subsub/
+  │       └── newfile_1
+  │           ┆  newfile_1_contents
+  ├── d/
+  │   └── file3
+  │       ┆  contents3
+  ├── w/
+  │   └── file3
+  │       ┆  contents3
+  ├── workspace.josh
+  │   ┆  c = :/sub1
+  │   ┆  a/b = :/sub2
+  │   ┆  w = :/sub3
+  └── ws_file
+      ┆  ws_file_contents
 
-  $ cat workspace.josh
-  c = :/sub1
-  a/b = :/sub2
-  w = :/sub3
 
   $ git log --graph --pretty=%s
   * try to modify ws
@@ -352,26 +356,33 @@ Flushed credential cache
   $ git clean -ffdx 1> /dev/null
 
 Note that ws/d/ is now present in the ws
-  $ tree
+  $ git-tree-pretty .
   .
-  |-- file1
-  |-- newfile1
-  |-- newfile_master
-  |-- sub1
-  |   `-- subsub
-  |       `-- newfile_1
-  |-- sub2
-  |   |-- file2
-  |   `-- newfile_2
-  |-- sub3
-  |   `-- file3
-  `-- ws
-      |-- d
-      |   `-- file3
-      |-- workspace.josh
-      `-- ws_file
-  
-  7 directories, 10 files
+  ├── file1
+  ├── newfile1
+  ├── newfile_master
+  ├── sub1/
+  │   └── subsub/
+  │       └── newfile_1
+  │           ┆  newfile_1_contents
+  ├── sub2/
+  │   ├── file2
+  │   │   ┆  contents1
+  │   └── newfile_2
+  │       ┆  newfile_2_contents
+  ├── sub3/
+  │   └── file3
+  │       ┆  contents3
+  └── ws/
+      ├── d/
+      │   └── file3
+      │       ┆  contents3
+      ├── workspace.josh
+      │   ┆  c = :/sub1
+      │   ┆  a/b = :/sub2
+      │   ┆  w = :/sub3
+      └── ws_file
+          ┆  ws_file_contents
   $ git log --graph --pretty=%s
   * try to modify ws
   * add in filter
@@ -390,45 +401,55 @@ Note that ws/d/ is now present in the ws
 
   $ git checkout -q HEAD~1 1> /dev/null
   $ git clean -ffdx 1> /dev/null
-  $ tree
+  $ git-tree-pretty .
   .
-  |-- file1
-  |-- newfile1
-  |-- newfile_master
-  |-- sub1
-  |   `-- subsub
-  |       `-- newfile_1
-  |-- sub2
-  |   |-- file2
-  |   `-- newfile_2
-  |-- sub3
-  |   `-- file3
-  `-- ws
-      |-- workspace.josh
-      `-- ws_file
-  
-  6 directories, 9 files
+  ├── file1
+  ├── newfile1
+  ├── newfile_master
+  ├── sub1/
+  │   └── subsub/
+  │       └── newfile_1
+  │           ┆  newfile_1_contents
+  ├── sub2/
+  │   ├── file2
+  │   │   ┆  contents1
+  │   └── newfile_2
+  │       ┆  newfile_2_contents
+  ├── sub3/
+  │   └── file3
+  │       ┆  contents3
+  └── ws/
+      ├── workspace.josh
+      │   ┆  c = :/sub1
+      │   ┆  a/b = :/sub2
+      │   ┆  d = :/sub3
+      └── ws_file
+          ┆  ws_file_contents
 
   $ git checkout HEAD~1 1> /dev/null
   Previous HEAD position was a1a7760 add in filter
   HEAD is now at f021d4b mod workspace
   $ git clean -ffdx 1> /dev/null
-  $ tree
+  $ git-tree-pretty .
   .
-  |-- file1
-  |-- newfile1
-  |-- newfile_master
-  |-- sub1
-  |   `-- subsub
-  |       `-- file1
-  |-- sub2
-  |   `-- file2
-  |-- sub3
-  |   `-- file3
-  `-- ws
-      `-- workspace.josh
-  
-  6 directories, 7 files
+  ├── file1
+  ├── newfile1
+  ├── newfile_master
+  ├── sub1/
+  │   └── subsub/
+  │       └── file1
+  │           ┆  contents1
+  ├── sub2/
+  │   └── file2
+  │       ┆  contents1
+  ├── sub3/
+  │   └── file3
+  │       ┆  contents3
+  └── ws/
+      └── workspace.josh
+          ┆  a/b = :/sub2
+          ┆  c = :/sub1
+          ┆  d = :/sub3
 
   $ bash ${TESTDIR}/destroy_test_env.sh
   "real_repo.git" = [

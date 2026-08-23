@@ -40,13 +40,13 @@ should still be included.
    1 file changed, 1 insertion(+)
    create mode 100644 sub1/file2
 
-  $ tree
+  $ git-tree-pretty .
   .
-  `-- sub1
-      |-- file1
-      `-- file2
-  
-  2 directories, 2 files
+  └── sub1/
+      ├── file1
+      │   ┆  contents1
+      └── file2
+          ┆  contents2
 
   $ git log --graph --pretty=%s
   * add file2
@@ -63,13 +63,13 @@ should still be included.
 
   $ cd full_repo
 
-  $ tree
+  $ git-tree-pretty .
   .
-  `-- sub1
-      |-- file1
-      `-- file2
-  
-  2 directories, 2 files
+  └── sub1/
+      ├── file1
+      │   ┆  contents1
+      └── file2
+          ┆  contents2
 
   $ git log --graph --pretty=%s
   * add file2

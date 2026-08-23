@@ -16,16 +16,18 @@
   $ git add .
   $ git commit -m "add file2" 1> /dev/null
 
-  $ tree
+  $ git-tree-pretty .
   .
-  |-- rootfile
-  |-- sub2
-  |   |-- file1
-  |   `-- file2
-  `-- subx
-      `-- filex
-  
-  3 directories, 4 files
+  ├── rootfile
+  │   ┆  contentsroot
+  ├── sub2/
+  │   ├── file1
+  │   │   ┆  contents1
+  │   └── file2
+  │       ┆  contents2
+  └── subx/
+      └── filex
+          ┆  contentsx
 
   $ josh-filter -s :exclude[::sub2/] master --update refs/heads/hidden
   e736ad9e31a359186cd09c3a234bc497d5de7462
@@ -34,13 +36,13 @@
   [2] sequence_number
   $ git checkout hidden 1> /dev/null
   Switched to branch 'hidden'
-  $ tree
+  $ git-tree-pretty .
   .
-  |-- rootfile
-  `-- subx
-      `-- filex
-  
-  2 directories, 2 files
+  ├── rootfile
+  │   ┆  contentsroot
+  └── subx/
+      └── filex
+          ┆  contentsx
   $ git log --graph --pretty=%s
   * add file1
 
@@ -81,14 +83,17 @@
    contentsx
   +new_x
 
-  $ tree
+  $ git-tree-pretty .
   .
-  |-- rootfile
-  |-- sub2
-  |   |-- file1
-  |   `-- file2
-  `-- subx
-      `-- filex
-  
-  3 directories, 4 files
+  ├── rootfile
+  │   ┆  new_root
+  ├── sub2/
+  │   ├── file1
+  │   │   ┆  contents1
+  │   └── file2
+  │       ┆  contents2
+  └── subx/
+      └── filex
+          ┆  contentsx
+          ┆  new_x
 

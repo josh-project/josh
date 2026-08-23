@@ -33,15 +33,15 @@
   * add sub2
   * add sub1
 
-  $ git checkout refs/josh/master 2> /dev/null
-  $ git ls-tree -r HEAD
+  $ git ls-tree -r refs/josh/master
   100644 blob a024003ee1acc6bf70318a46e7b6df651b9dc246\tfile1 (esc)
   100644 blob f34a2bbfa250847f10a4102e093b48be1d2873a1\tst/config.star (esc)
-  $ tree
+  $ git-tree-pretty refs/josh/master
   .
-  |-- file1
-  `-- st
-      `-- config.star
-  
-  2 directories, 2 files
+  ├── file1
+  │   ┆  contents1
+  └── st/
+      └── config.star
+          ┆  # Simple starlark filter: keep only sub1
+          ┆  filter = filter.subdir("sub1")
 

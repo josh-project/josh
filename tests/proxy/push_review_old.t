@@ -55,13 +55,13 @@ Flushed credential cache
   * add file3
   * add file1
 
-  $ tree
+  $ git-tree-pretty .
   .
-  `-- sub1
-      |-- file1
-      `-- file3
-  
-  2 directories, 2 files
+  └── sub1/
+      ├── file1
+      │   ┆  contents1
+      └── file3
+          ┆  contents3
 
   $ git rebase master -q
   $ git log --graph --pretty=%s
@@ -69,14 +69,15 @@ Flushed credential cache
   * add file2
   * add file1
 
-  $ tree
+  $ git-tree-pretty .
   .
-  `-- sub1
-      |-- file1
-      |-- file2
-      `-- file3
-  
-  2 directories, 3 files
+  └── sub1/
+      ├── file1
+      │   ┆  contents1
+      ├── file2
+      │   ┆  contents2
+      └── file3
+          ┆  contents3
 
   $ bash ${TESTDIR}/destroy_test_env.sh
   "real_repo.git" = [

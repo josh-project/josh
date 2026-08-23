@@ -21,12 +21,11 @@
   [2] sequence_number
   $ git checkout hidden 1> /dev/null
   Switched to branch 'hidden'
-  $ tree
+  $ git-tree-pretty .
   .
-  `-- sub1
-      `-- file1
-  
-  2 directories, 1 file
+  └── sub1/
+      └── file1
+          ┆  contents1
   $ git log --graph --pretty=%s
   * add file1
 
@@ -59,12 +58,13 @@
    contents1
   +contents3
 
-  $ tree
+  $ git-tree-pretty .
   .
-  |-- sub1
-  |   `-- file1
-  `-- sub2
-      `-- file2
-  
-  3 directories, 2 files
+  ├── sub1/
+  │   └── file1
+  │       ┆  contents1
+  │       ┆  contents3
+  └── sub2/
+      └── file2
+          ┆  contents1
 

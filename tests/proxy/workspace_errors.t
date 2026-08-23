@@ -34,11 +34,10 @@
 
   $ git clone -q http://localhost:8002/real_repo.git:workspace=ws.git ws
   $ cd ws
-  $ tree
+  $ git-tree-pretty .
   .
-  `-- file1
-  
-  1 directory, 1 file
+  └── file1
+      ┆  content
 
 Error: comment in the middle
   $ cat > workspace.josh <<EOF

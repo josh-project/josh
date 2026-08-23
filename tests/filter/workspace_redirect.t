@@ -85,96 +85,46 @@
   * add file2
   * add file1
 
-  $ git diff ${EMPTY_TREE}..refs/heads/filtered
-  diff --git a/a/file1 b/a/file1
-  new file mode 100644
-  index 0000000..a024003
-  --- /dev/null
-  +++ b/a/file1
-  @@ -0,0 +1 @@
-  +contents1
-  diff --git a/a/file4 b/a/file4
-  new file mode 100644
-  index 0000000..288746e
-  --- /dev/null
-  +++ b/a/file4
-  @@ -0,0 +1 @@
-  +contents4
-  diff --git a/b/file4 b/b/file4
-  new file mode 100644
-  index 0000000..1cb5d64
-  --- /dev/null
-  +++ b/b/file4
-  @@ -0,0 +1 @@
-  +contents3
-  diff --git a/extra_file b/extra_file
-  new file mode 100644
-  index 0000000..323fae0
-  --- /dev/null
-  +++ b/extra_file
-  @@ -0,0 +1 @@
-  +foobar
-  diff --git a/sub2/subsub/file2 b/sub2/subsub/file2
-  new file mode 100644
-  index 0000000..a024003
-  --- /dev/null
-  +++ b/sub2/subsub/file2
-  @@ -0,0 +1 @@
-  +contents1
-  diff --git a/workspace.josh b/workspace.josh
-  new file mode 100644
-  index 0000000..795cb6d
-  --- /dev/null
-  +++ b/workspace.josh
-  @@ -0,0 +1,3 @@
-  +::sub2/subsub/
-  +a = :/sub1
-  +b = :/sub3
-  $ git diff ${EMPTY_TREE}..refs/heads/filtered_new
-  diff --git a/a/file1 b/a/file1
-  new file mode 100644
-  index 0000000..a024003
-  --- /dev/null
-  +++ b/a/file1
-  @@ -0,0 +1 @@
-  +contents1
-  diff --git a/a/file4 b/a/file4
-  new file mode 100644
-  index 0000000..288746e
-  --- /dev/null
-  +++ b/a/file4
-  @@ -0,0 +1 @@
-  +contents4
-  diff --git a/b/file4 b/b/file4
-  new file mode 100644
-  index 0000000..1cb5d64
-  --- /dev/null
-  +++ b/b/file4
-  @@ -0,0 +1 @@
-  +contents3
-  diff --git a/extra_file b/extra_file
-  new file mode 100644
-  index 0000000..323fae0
-  --- /dev/null
-  +++ b/extra_file
-  @@ -0,0 +1 @@
-  +foobar
-  diff --git a/sub2/subsub/file2 b/sub2/subsub/file2
-  new file mode 100644
-  index 0000000..a024003
-  --- /dev/null
-  +++ b/sub2/subsub/file2
-  @@ -0,0 +1 @@
-  +contents1
-  diff --git a/workspace.josh b/workspace.josh
-  new file mode 100644
-  index 0000000..795cb6d
-  --- /dev/null
-  +++ b/workspace.josh
-  @@ -0,0 +1,3 @@
-  +::sub2/subsub/
-  +a = :/sub1
-  +b = :/sub3
+  $ git-tree-pretty refs/heads/filtered
+  .
+  ├── a/
+  │   ├── file1
+  │   │   ┆  contents1
+  │   └── file4
+  │       ┆  contents4
+  ├── b/
+  │   └── file4
+  │       ┆  contents3
+  ├── extra_file
+  │   ┆  foobar
+  ├── sub2/
+  │   └── subsub/
+  │       └── file2
+  │           ┆  contents1
+  └── workspace.josh
+      ┆  ::sub2/subsub/
+      ┆  a = :/sub1
+      ┆  b = :/sub3
+  $ git-tree-pretty refs/heads/filtered_new
+  .
+  ├── a/
+  │   ├── file1
+  │   │   ┆  contents1
+  │   └── file4
+  │       ┆  contents4
+  ├── b/
+  │   └── file4
+  │       ┆  contents3
+  ├── extra_file
+  │   ┆  foobar
+  ├── sub2/
+  │   └── subsub/
+  │       └── file2
+  │           ┆  contents1
+  └── workspace.josh
+      ┆  ::sub2/subsub/
+      ┆  a = :/sub1
+      ┆  b = :/sub3
 
 
   $ cat > ws/workspace.josh <<EOF

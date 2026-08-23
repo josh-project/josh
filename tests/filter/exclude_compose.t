@@ -25,14 +25,14 @@
   [3] reachable_roots
   [3] sequence_number
   $ git checkout -q hidden 1> /dev/null
-  $ tree
+  $ git-tree-pretty .
   .
-  |-- sub1
-  |   `-- file1
-  `-- sub3
-      `-- file1
-  
-  3 directories, 2 files
+  ├── sub1/
+  │   └── file1
+  │       ┆  contents1
+  └── sub3/
+      └── file1
+          ┆  contents1
   $ git log --graph --pretty=%s
   * add file3
   * add file1
@@ -51,13 +51,11 @@
   [3] reachable_roots
   [3] sequence_number
 
-  $ git checkout -q refs/josh/filtered
-  $ tree
+  $ git-tree-pretty refs/josh/filtered
   .
-  `-- sub3
-      `-- file1
-  
-  2 directories, 1 file
+  └── sub3/
+      └── file1
+          ┆  contents1
 
   $ josh-filter -s :exclude[sub1=:/sub3] master --update refs/josh/filtered
   990f678a016ea2e798f1341ac1049993a0fab726
@@ -70,12 +68,11 @@
   [3] reachable_roots
   [3] sequence_number
 
-  $ git checkout -q refs/josh/filtered
-  $ tree
+  $ git-tree-pretty refs/josh/filtered
   .
-  |-- sub2
-  |   `-- file2
-  `-- sub3
-      `-- file1
-  
-  3 directories, 2 files
+  ├── sub2/
+  │   └── file2
+  │       ┆  contents1
+  └── sub3/
+      └── file1
+          ┆  contents1

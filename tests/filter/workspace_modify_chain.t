@@ -38,12 +38,11 @@
 
   $ git checkout filtered
   Switched to branch 'filtered'
-  $ tree
+  $ git-tree-pretty .
   .
-  `-- subsub
-      `-- file2
-  
-  2 directories, 1 file
+  └── subsub/
+      └── file2
+          ┆  contents1
 
   $ echo ws_content > subsub/fileX
   $ echo ws_content > subsub/file1
@@ -71,23 +70,21 @@
   $ git checkout master
   Switched to branch 'master'
 
-  $ tree
+  $ git-tree-pretty .
   .
-  |-- sub1
-  |   |-- file1
-  |   `-- file4
-  |-- sub2
-  |   `-- subsub
-  |       |-- file1
-  |       |-- file2
-  |       `-- fileX
-  `-- ws
-      `-- workspace.josh
-  
-  5 directories, 6 files
-
-  $ cat ws/file1
-  *: No such file or directory (glob)
-  [1]
-  $ cat sub1/file1
-  contents1
+  ├── sub1/
+  │   ├── file1
+  │   │   ┆  contents1
+  │   └── file4
+  │       ┆  contents4
+  ├── sub2/
+  │   └── subsub/
+  │       ├── file1
+  │       │   ┆  ws_content
+  │       ├── file2
+  │       │   ┆  contents1
+  │       └── fileX
+  │           ┆  ws_content
+  └── ws/
+      └── workspace.josh
+          ┆  ::sub2/subsub/
