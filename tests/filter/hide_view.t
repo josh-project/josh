@@ -23,15 +23,16 @@
   * add file2
   * add file1
 
-  $ tree
+  $ git-tree-pretty .
   .
-  |-- sub1
-  |   |-- file1
-  |   `-- file2
-  `-- sub2
-      `-- file3
-  
-  3 directories, 3 files
+  ├── sub1/
+  │   ├── file1
+  │   │   ┆  contents1
+  │   └── file2
+  │       ┆  contents2
+  └── sub2/
+      └── file3
+          ┆  contents1
 
   $ josh-filter -s c=:exclude[::sub1/] master --update refs/josh/filter/master
   ba6cff78351dfd8135eb25c543f17fcb80b79e2e
@@ -42,13 +43,12 @@
   $ git checkout josh/filter/master 2> /dev/null
   $ git log --graph --pretty=%s
   * add file3
-  $ tree
+  $ git-tree-pretty .
   .
-  `-- c
-      `-- sub2
-          `-- file3
-  
-  3 directories, 1 file
+  └── c/
+      └── sub2/
+          └── file3
+              ┆  contents1
 
   $ josh-filter -s c=:exclude[::sub1/file2] master --update refs/josh/filter/master
   d407c3a1d5fc72fb0e001795b08d76c4b246f8d0
@@ -61,15 +61,15 @@
   $ git log --graph --pretty=%s
   * add file3
   * add file1
-  $ tree
+  $ git-tree-pretty .
   .
-  `-- c
-      |-- sub1
-      |   `-- file1
-      `-- sub2
-          `-- file3
-  
-  4 directories, 2 files
+  └── c/
+      ├── sub1/
+      │   └── file1
+      │       ┆  contents1
+      └── sub2/
+          └── file3
+              ┆  contents1
 
   $ josh-filter -s c=:exclude[::sub2/file3] master --update refs/josh/filter/master
   04cda64def8cdb4ef3c4507362e5d66c58bd935e
@@ -83,11 +83,11 @@
   $ git log --graph --pretty=%s
   * add file2
   * add file1
-  $ tree
+  $ git-tree-pretty .
   .
-  `-- c
-      `-- sub1
-          |-- file1
-          `-- file2
-  
-  3 directories, 2 files
+  └── c/
+      └── sub1/
+          ├── file1
+          │   ┆  contents1
+          └── file2
+              ┆  contents2

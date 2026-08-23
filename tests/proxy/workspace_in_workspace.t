@@ -82,21 +82,20 @@
 
   $ git clone -q http://localhost:8002/real_repo.git:workspace=ws.git ws
   $ cd ws
-  $ tree
+  $ git-tree-pretty .
   .
-  |-- a
-  |   `-- b
-  |       `-- file2
-  |-- c
-  |   `-- subsub
-  |       `-- file1
-  `-- workspace.josh
-  
-  5 directories, 3 files
+  ├── a/
+  │   └── b/
+  │       └── file2
+  │           ┆  contents1
+  ├── c/
+  │   └── subsub/
+  │       └── file1
+  │           ┆  contents1
+  └── workspace.josh
+      ┆  a/b = :/sub2
+      ┆  c = :/sub1
 
-  $ cat workspace.josh
-  a/b = :/sub2
-  c = :/sub1
 
   $ git log --graph --pretty=%s
   * add file2
@@ -105,14 +104,15 @@
 
   $ git checkout -q HEAD~1 1> /dev/null
 
-  $ tree
+  $ git-tree-pretty .
   .
-  |-- c
-  |   `-- subsub
-  |       `-- file1
-  `-- workspace.josh
-  
-  3 directories, 2 files
+  ├── c/
+  │   └── subsub/
+  │       └── file1
+  │           ┆  contents1
+  └── workspace.josh
+      ┆  a/b = :/sub2
+      ┆  c = :/sub1
 
   $ git checkout master 1> /dev/null
   Previous HEAD position was 833812f add file1
@@ -144,28 +144,30 @@
 
   $ git clean -ffdx 1> /dev/null
 
-  $ tree
+  $ git-tree-pretty .
   .
-  |-- file1
-  |-- newfile1
-  |-- newfile_master
-  |-- sub1
-  |   `-- subsub
-  |       |-- file1
-  |       `-- newfile_1
-  |-- sub2
-  |   |-- file2
-  |   `-- newfile_2
-  |-- sub3
-  |   `-- file3
-  `-- ws
-      `-- workspace.josh
-  
-  6 directories, 9 files
+  ├── file1
+  ├── newfile1
+  ├── newfile_master
+  ├── sub1/
+  │   └── subsub/
+  │       ├── file1
+  │       │   ┆  contents1
+  │       └── newfile_1
+  │           ┆  newfile_1_contents
+  ├── sub2/
+  │   ├── file2
+  │   │   ┆  contents1
+  │   └── newfile_2
+  │       ┆  newfile_2_contents
+  ├── sub3/
+  │   └── file3
+  │       ┆  contents3
+  └── ws/
+      └── workspace.josh
+          ┆  c = :/sub1
+          ┆  a/b = :/sub2
 
-  $ cat ws/workspace.josh
-  c = :/sub1
-  a/b = :/sub2
 
   $ git log --graph --pretty=%s
   * add in filter

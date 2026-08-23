@@ -46,12 +46,10 @@ Flushed credential cache
   Switched to branch 'repo1_in_subdir'
   $ git log --graph --pretty=%s
   * initial1
-  $ tree
+  $ git-tree-pretty .
   .
-  `-- repo1
-      `-- file1
-  
-  2 directories, 1 file
+  └── repo1/
+      └── file1
 
 $ curl -s http://localhost:8002/flush
 Flushed credential cache
@@ -65,14 +63,12 @@ Flushed credential cache
   |\  
   | * initial2
   * initial1
-  $ tree
+  $ git-tree-pretty .
   .
-  |-- repo1
-  |   `-- file1
-  `-- repo2
-      `-- file2
-  
-  3 directories, 2 files
+  ├── repo1/
+  │   └── file1
+  └── repo2/
+      └── file2
 
   $ git checkout master
   Switched to branch 'master'
@@ -93,15 +89,13 @@ Flushed credential cache
   $ git add repo1
   $ git commit -m "add new_file1" 1> /dev/null
 
-  $ tree
+  $ git-tree-pretty .
   .
-  |-- repo1
-  |   |-- file1
-  |   `-- new_file1
-  `-- repo2
-      `-- file2
-  
-  3 directories, 3 files
+  ├── repo1/
+  │   ├── file1
+  │   └── new_file1
+  └── repo2/
+      └── file2
 
   $ git push 2> /dev/null
 
@@ -113,12 +107,10 @@ Flushed credential cache
   * add new_file1
   * initial1
 
-  $ tree
+  $ git-tree-pretty .
   .
-  |-- file1
-  `-- new_file1
-  
-  1 directory, 2 files
+  ├── file1
+  └── new_file1
 
   $ cd ${TESTTMP}/repo1
   $ echo new_content2 > new_file2 1> /dev/null
@@ -139,16 +131,14 @@ Flushed credential cache
   * initial1
 
   $ git merge -m "Import 2" repo1_in_subdir --allow-unrelated-histories 1> /dev/null
-  $ tree
+  $ git-tree-pretty .
   .
-  |-- repo1
-  |   |-- file1
-  |   |-- new_file1
-  |   `-- new_file2
-  `-- repo2
-      `-- file2
-  
-  3 directories, 4 files
+  ├── repo1/
+  │   ├── file1
+  │   ├── new_file1
+  │   └── new_file2
+  └── repo2/
+      └── file2
 
   $ git log --graph --pretty=%s
   *   Import 2
@@ -176,13 +166,11 @@ Flushed credential cache
    new_file2 | 0
    1 file changed, 0 insertions(+), 0 deletions(-)
    create mode 100644 new_file2
-  $ tree
+  $ git-tree-pretty .
   .
-  |-- file1
-  |-- new_file1
-  `-- new_file2
-  
-  1 directory, 3 files
+  ├── file1
+  ├── new_file1
+  └── new_file2
   $ git log --graph --pretty=%s
   *   Import 2
   |\  
@@ -236,13 +224,11 @@ Flushed credential cache
   $ git pull --rebase 2> /dev/null
   Updating 6fe45a9..8047211
   Fast-forward
-  $ tree
+  $ git-tree-pretty .
   .
-  |-- file1
-  |-- new_file1
-  `-- new_file2
-  
-  1 directory, 3 files
+  ├── file1
+  ├── new_file1
+  └── new_file2
   $ git log --graph --pretty=%s
   *   Import 3
   |\  
@@ -280,16 +266,14 @@ Flushed credential cache
   | | * initial2
   | * initial1
   * initial
-  $ tree
+  $ git-tree-pretty .
   .
-  |-- repo1
-  |   |-- file1
-  |   |-- new_file1
-  |   `-- new_file2
-  `-- repo2
-      `-- file2
-  
-  3 directories, 4 files
+  ├── repo1/
+  │   ├── file1
+  │   ├── new_file1
+  │   └── new_file2
+  └── repo2/
+      └── file2
 
   $ bash ${TESTDIR}/destroy_test_env.sh
   "real_repo.git" = [

@@ -68,16 +68,14 @@ Flushed credential cache
    1 file changed, 1 insertion(+)
    create mode 100644 sub1/file2
 
-  $ tree
+  $ git-tree-pretty .
   .
-  `-- sub1
-      |-- file1
-      `-- file2
-  
-  2 directories, 2 files
+  └── sub1/
+      ├── file1
+      │   ┆  contents1
+      └── file2
+          ┆  contents2
 
-  $ cat sub1/file2
-  contents2
 
 Make sure all temporary namespace got removed
   $ tree ${TESTTMP}/remote/scratch/real_repo.git/refs/ | grep request_

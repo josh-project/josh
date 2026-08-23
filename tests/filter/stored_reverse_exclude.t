@@ -44,17 +44,19 @@
 
   $ git checkout filtered
   Switched to branch 'filtered'
-  $ tree
+  $ git-tree-pretty .
   .
-  |-- a
-  |   `-- file4
-  |-- st
-  |   `-- config.josh
-  `-- sub2
-      `-- subsub
-          `-- file2
-  
-  5 directories, 3 files
+  ├── a/
+  │   └── file4
+  │       ┆  contents4
+  ├── st/
+  │   └── config.josh
+  │       ┆  ::sub2/subsub/
+  │       ┆  a = :/sub1:exclude[::file1]
+  └── sub2/
+      └── subsub/
+          └── file2
+              ┆  contents1
 
   $ echo ws_content > fileX
   $ echo ws_content > file1
@@ -77,22 +79,18 @@
   $ git checkout master
   Switched to branch 'master'
 
-  $ tree
+  $ git-tree-pretty .
   .
-  |-- st
-  |   `-- config.josh
-  |-- sub1
-  |   |-- file1
-  |   `-- file4
-  `-- sub2
-      `-- subsub
-          `-- file2
-  
-  5 directories, 4 files
-
-  $ cat file1
-  cat: file1: No such file or directory
-  [1]
-  $ cat sub1/file1
-  contents1
-
+  ├── st/
+  │   └── config.josh
+  │       ┆  ::sub2/subsub/
+  │       ┆  a = :/sub1:exclude[::file1]
+  ├── sub1/
+  │   ├── file1
+  │   │   ┆  contents1
+  │   └── file4
+  │       ┆  contents4
+  └── sub2/
+      └── subsub/
+          └── file2
+              ┆  contents1

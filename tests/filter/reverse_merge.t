@@ -31,12 +31,11 @@
   [2] sequence_number
   $ git checkout hidden_branch1
   Switched to branch 'hidden_branch1'
-  $ tree
+  $ git-tree-pretty .
   .
-  `-- sub1
-      `-- file1
-  
-  2 directories, 1 file
+  └── sub1/
+      └── file1
+          ┆  contents1
   $ echo contents3 > sub1/file3
   $ git add sub1/file3
   $ git commit -m "add file3" 1> /dev/null
@@ -48,13 +47,13 @@
   [3] sequence_number
   $ git checkout hidden_master
   Switched to branch 'hidden_master'
-  $ tree
+  $ git-tree-pretty .
   .
-  `-- sub1
-      |-- file1
-      `-- file2
-  
-  2 directories, 2 files
+  └── sub1/
+      ├── file1
+      │   ┆  contents1
+      └── file2
+          ┆  contents1
   $ echo contents4 > sub1/file4
   $ git add sub1/file4
   $ git commit -m "add file4" 1> /dev/null
@@ -86,17 +85,20 @@
   $ git checkout master
   Switched to branch 'master'
 
-  $ tree
+  $ git-tree-pretty .
   .
-  |-- sub1
-  |   |-- file1
-  |   |-- file2
-  |   |-- file3
-  |   `-- file4
-  `-- sub2
-      `-- file2
-  
-  3 directories, 5 files
+  ├── sub1/
+  │   ├── file1
+  │   │   ┆  contents1
+  │   ├── file2
+  │   │   ┆  contents1
+  │   ├── file3
+  │   │   ┆  contents3
+  │   └── file4
+  │       ┆  contents4
+  └── sub2/
+      └── file2
+          ┆  contents1
 
 
 

@@ -61,16 +61,19 @@ Empty root commits from unrelated parts of the tree should not be included
   Switched to branch 'master'
   $ git merge -q other --no-ff --allow-unrelated
 
-  $ tree
+  $ git-tree-pretty .
   .
-  |-- some_file
-  |-- some_other_file
-  `-- sub1
-      |-- file1
-      |-- file2
-      `-- file3
-  
-  2 directories, 5 files
+  ├── some_file
+  │   ┆  contents2
+  ├── some_other_file
+  │   ┆  contents2
+  └── sub1/
+      ├── file1
+      │   ┆  contents1
+      ├── file2
+      │   ┆  contents2
+      └── file3
+          ┆  contents2
 
   $ git log master --graph --pretty=%s
   *   Merge branch 'other'

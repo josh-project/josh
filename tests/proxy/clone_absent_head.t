@@ -28,12 +28,11 @@
    1 file changed, 1 insertion(+)
    create mode 100644 sub1/file1
 
-  $ tree
+  $ git-tree-pretty .
   .
-  `-- sub1
-      `-- file1
-  
-  2 directories, 1 file
+  └── sub1/
+      └── file1
+          ┆  contents1
 
   $ git push
   To http://localhost:8001/real_repo.git
@@ -62,15 +61,12 @@
 
   $ cd full_repo
 
-  $ tree
+  $ git-tree-pretty .
   .
-  `-- sub1
-      `-- file1
-  
-  2 directories, 1 file
+  └── sub1/
+      └── file1
+          ┆  contents1
 
-  $ cat sub1/file1
-  contents1
 
   $ cd ${TESTTMP}/remote/real_repo.git
 

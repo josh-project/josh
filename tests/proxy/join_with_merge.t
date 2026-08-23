@@ -45,14 +45,12 @@
   |/  
   * initial
 
-  $ tree
+  $ git-tree-pretty .
   .
-  `-- sub1
-      |-- file1
-      |-- newfile1
-      `-- newfile_master
-  
-  2 directories, 3 files
+  └── sub1/
+      ├── file1
+      ├── newfile1
+      └── newfile_master
 
 
   $ bash ${TESTDIR}/destroy_test_env.sh

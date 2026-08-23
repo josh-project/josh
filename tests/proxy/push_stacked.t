@@ -113,13 +113,13 @@
   $ git log --decorate --graph --pretty="%s %d"
   * add file1  (HEAD -> master, origin/master, origin/HEAD, origin/@base/master/josh@example.com/foo7, origin/@base/master/josh@example.com/1234)
 
-  $ tree
+  $ git-tree-pretty .
   .
-  |-- file7
-  `-- sub1
-      `-- file1
-  
-  2 directories, 2 files
+  ├── file7
+  │   ┆  before
+  └── sub1/
+      └── file1
+          ┆  contents1
 
 To avoid stacked changes to cause excessive amounts of refs, refs get filtered to only
 get listed if they differ from HEAD

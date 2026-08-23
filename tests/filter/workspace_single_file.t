@@ -55,22 +55,25 @@
   * add file2
   * add file1
 
-  $ git checkout refs/josh/master 2> /dev/null
-  $ git ls-tree HEAD
+  $ git ls-tree refs/josh/master
   100644 blob a024003ee1acc6bf70318a46e7b6df651b9dc246\tfile1 (esc)
   100755 blob a024003ee1acc6bf70318a46e7b6df651b9dc246\tfile2 (esc)
   040000 tree 81b2a24c53f9090c6f6a23176a2a5660e6f48317\tsub2 (esc)
   100644 blob 63f07c908400fab3a663e52e480970d8458bc86a\tworkspace.josh (esc)
-  $ tree
+  $ git-tree-pretty refs/josh/master
   .
-  |-- file1
-  |-- file2
-  |-- sub2
-  |   `-- subsub
-  |       `-- file2
-  `-- workspace.josh
-  
-  3 directories, 4 files
+  ├── file1
+  │   ┆  contents1
+  ├── file2
+  │   ┆  contents1
+  ├── sub2/
+  │   └── subsub/
+  │       └── file2
+  │           ┆  contents1
+  └── workspace.josh
+      ┆  :/sub1::file1
+      ┆  :/sub1::file2
+      ┆  ::sub2/subsub/
 
   $ josh-filter -s :workspace=ws2 master --update refs/josh/master
   be20e659999253f02308f34dbfc697f0cd5ae514
@@ -98,19 +101,22 @@
   * add file2
   * add file1
 
-  $ git checkout refs/josh/master 2> /dev/null
-  $ git ls-tree HEAD
+  $ git ls-tree refs/josh/master
   100644 blob a024003ee1acc6bf70318a46e7b6df651b9dc246\tfile1 (esc)
   100755 blob a024003ee1acc6bf70318a46e7b6df651b9dc246\tfile2 (esc)
   040000 tree 81b2a24c53f9090c6f6a23176a2a5660e6f48317\tsub2 (esc)
   100644 blob f7863ebb4c21391857fe5d27bc381553a2056223\tworkspace.josh (esc)
-  $ tree
+  $ git-tree-pretty refs/josh/master
   .
-  |-- file1
-  |-- file2
-  |-- sub2
-  |   `-- subsub
-  |       `-- file2
-  `-- workspace.josh
-  
-  3 directories, 4 files
+  ├── file1
+  │   ┆  contents1
+  ├── file2
+  │   ┆  contents1
+  ├── sub2/
+  │   └── subsub/
+  │       └── file2
+  │           ┆  contents1
+  └── workspace.josh
+      ┆  :/sub1::file1
+      ┆  :/sub1::file2
+      ┆  ::sub2/subsub

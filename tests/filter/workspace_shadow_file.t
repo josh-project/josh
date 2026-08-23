@@ -34,23 +34,22 @@
   * add ws
   * add file2
   * add file1
-  $ tree
+  $ git-tree-pretty .
   .
-  |-- sub1
-  |   `-- file1
-  |-- sub2
-  |   `-- file2
-  `-- ws
-      |-- c
-      |   `-- file1
-      `-- workspace.josh
-  
-  5 directories, 4 files
+  ├── sub1/
+  │   └── file1
+  │       ┆  contents1
+  ├── sub2/
+  │   └── file2
+  │       ┆  contents1
+  └── ws/
+      ├── c/
+      │   └── file1
+      │       ┆  ws_content
+      └── workspace.josh
+          ┆  a/b = :/sub2
+          ┆  c = :/sub1
 
-  $ cat sub1/file1
-  contents1
-  $ cat ws/c/file1
-  ws_content
 
   $ josh-filter :workspace=ws master --update refs/heads/ws
   4da312ea25eac6a97c651e185ff76f9bc488b963
@@ -60,19 +59,19 @@
   * add ws
   * add file2
   * add file1
-  $ tree
+  $ git-tree-pretty .
   .
-  |-- a
-  |   `-- b
-  |       `-- file2
-  |-- c
-  |   `-- file1
-  `-- workspace.josh
-  
-  4 directories, 3 files
+  ├── a/
+  │   └── b/
+  │       └── file2
+  │           ┆  contents1
+  ├── c/
+  │   └── file1
+  │       ┆  ws_content
+  └── workspace.josh
+      ┆  a/b = :/sub2
+      ┆  c = :/sub1
 
-  $ cat c/file1
-  ws_content
 
   $ echo contents3 > ws_created_file
   $ git add ws_created_file
@@ -86,22 +85,24 @@
   $ git checkout master
   Switched to branch 'master'
 
-  $ tree
+  $ git-tree-pretty .
   .
-  |-- sub1
-  |   `-- file1
-  |-- sub2
-  |   `-- file2
-  `-- ws
-      |-- c
-      |   `-- file1
-      |-- workspace.josh
-      `-- ws_created_file
-  
-  5 directories, 5 files
+  ├── sub1/
+  │   └── file1
+  │       ┆  ws_content
+  ├── sub2/
+  │   └── file2
+  │       ┆  contents1
+  └── ws/
+      ├── c/
+      │   └── file1
+      │       ┆  ws_content
+      ├── workspace.josh
+      │   ┆  c = :/sub1
+      │   ┆  a/b = :/sub2
+      └── ws_created_file
+          ┆  contents3
 
-  $ cat sub1/file1
-  ws_content
 
   $ git log --graph --pretty=%s
   * add ws_created_file

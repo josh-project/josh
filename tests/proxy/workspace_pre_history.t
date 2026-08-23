@@ -55,15 +55,16 @@ file was created
 
   $ git clone -q http://localhost:8002/real_repo.git:workspace=ws.git ws
   $ cd ws
-  $ tree
+  $ git-tree-pretty .
   .
-  |-- c
-  |   `-- subsub
-  |       `-- file1
-  |-- file1
-  `-- workspace.josh
-  
-  3 directories, 3 files
+  ├── c/
+  │   └── subsub/
+  │       └── file1
+  │           ┆  contents1
+  ├── file1
+  └── workspace.josh
+      ┆  a/b = :/sub2
+      ┆  c = :/sub1
 
   $ git log --graph --pretty=%s
   * add file1
@@ -72,12 +73,12 @@ file was created
 
   $ git checkout -q HEAD~1 1> /dev/null
 
-  $ tree
+  $ git-tree-pretty .
   .
-  |-- file1
-  `-- workspace.josh
-  
-  1 directory, 2 files
+  ├── file1
+  └── workspace.josh
+      ┆  a/b = :/sub2
+      ┆  c = :/sub1
 
   $ bash ${TESTDIR}/destroy_test_env.sh
   "real_repo.git" = [

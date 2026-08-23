@@ -36,12 +36,12 @@
 
   $ cd libs
 
-  $ tree
+  $ git-tree-pretty .
   .
-  |-- file1
-  `-- file2
-  
-  1 directory, 2 files
+  ├── file1
+  │   ┆  contents1
+  └── file2
+      ┆  contents2
 
   $ cd ${TESTTMP}/remote/libs
 
@@ -55,22 +55,23 @@
   updated master (d8388f5..0974639)
   Fast-forwarded master
 
-  $ tree
+  $ git-tree-pretty .
   .
-  |-- file1
-  |-- file2
-  `-- newfile
-  
-  1 directory, 3 files
+  ├── file1
+  │   ┆  contents1
+  ├── file2
+  │   ┆  contents2
+  └── newfile
+      ┆  new_content
 
   $ git checkout feature
   branch 'feature' set up to track 'origin/feature'.
   Switched to a new branch 'feature'
 
-  $ tree
+  $ git-tree-pretty .
   .
-  |-- file1
-  `-- file2
-  
-  1 directory, 2 files
+  ├── file1
+  │   ┆  contents1
+  └── file2
+      ┆  contents2
 

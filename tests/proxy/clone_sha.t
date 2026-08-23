@@ -21,12 +21,11 @@
    1 file changed, 1 insertion(+)
    create mode 100644 sub1/file1
 
-  $ tree
+  $ git-tree-pretty .
   .
-  `-- sub1
-      `-- file1
-  
-  2 directories, 1 file
+  └── sub1/
+      └── file1
+          ┆  contents1
 
   $ git push -q
 
@@ -78,15 +77,12 @@ Check (2) and (3) but with a branch ref
 
   $ cd full_repo
 
-  $ tree
+  $ git-tree-pretty .
   .
-  `-- sub1
-      `-- file1
-  
-  2 directories, 1 file
+  └── sub1/
+      └── file1
+          ┆  contents1
 
-  $ cat sub1/file1
-  contents1
 
 
   $ bash ${TESTDIR}/destroy_test_env.sh

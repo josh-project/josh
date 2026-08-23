@@ -21,14 +21,10 @@ Test File filter with destination path
   [3] reachable_roots
   [3] sequence_number
 
-  $ git checkout refs/josh/master 2> /dev/null
-  $ tree
+  $ git-tree-pretty refs/josh/master
   .
-  `-- renamed.txt
-  
-  1 directory, 1 file
-  $ cat renamed.txt
-  source content
+  └── renamed.txt
+      ┆  source content
 
 Test File filter with destination path in subdirectory
   $ cd ${TESTTMP}
@@ -53,16 +49,12 @@ Test File filter with destination path in subdirectory
   [5] reachable_roots
   [5] sequence_number
 
-  $ git checkout refs/josh/master 2> /dev/null
-  $ tree
+  $ git-tree-pretty refs/josh/master
   .
-  `-- dest
-      `-- subdir
-          `-- renamed.txt
-  
-  3 directories, 1 file
-  $ cat dest/subdir/renamed.txt
-  source content
+  └── dest/
+      └── subdir/
+          └── renamed.txt
+              ┆  source content
 
 Test File filter spec formatting with destination path
   $ josh-filter -p ::dest/renamed.txt=src/file.txt
@@ -91,16 +83,12 @@ Test File filter backward compatibility (no destination path - keeps same path)
   [5] reachable_roots
   [5] sequence_number
 
-  $ git checkout refs/josh/master 2> /dev/null
-  $ tree
+  $ git-tree-pretty refs/josh/master
   .
-  `-- src
-      `-- subdir
-          `-- file.txt
-  
-  3 directories, 1 file
-  $ cat src/subdir/file.txt
-  content
+  └── src/
+      └── subdir/
+          └── file.txt
+              ┆  content
 
 Test File filter with destination path --reverse
   $ cd ${TESTTMP}
@@ -136,21 +124,18 @@ Test File filter with destination path --reverse
   [3] reachable_roots
   [3] sequence_number
 
-  $ git checkout master 2> /dev/null
-  $ cat src/subdir/original.txt
-  source content
-  $ cat src/subdir/other.txt
-  other file
-  $ tree
+  $ git-tree-pretty master
   .
-  |-- another.txt
-  `-- src
-      |-- root.txt
-      `-- subdir
-          |-- original.txt
-          `-- other.txt
-  
-  3 directories, 4 files
+  ├── another.txt
+  │   ┆  another
+  └── src/
+      ├── root.txt
+      │   ┆  root file
+      └── subdir/
+          ├── original.txt
+          │   ┆  source content
+          └── other.txt
+              ┆  other file
 
 Test File filter backward compatibility --reverse
   $ cd ${TESTTMP}
@@ -190,19 +175,16 @@ Test File filter backward compatibility --reverse
   [5] reachable_roots
   [5] sequence_number
 
-  $ git checkout master 2> /dev/null
-  $ cat src/subdir/file.txt
-  content
-  $ cat src/subdir/other.txt
-  other file
-  $ tree
+  $ git-tree-pretty master
   .
-  |-- another.txt
-  `-- src
-      |-- root.txt
-      `-- subdir
-          |-- file.txt
-          `-- other.txt
-  
-  3 directories, 4 files
+  ├── another.txt
+  │   ┆  another
+  └── src/
+      ├── root.txt
+      │   ┆  root file
+      └── subdir/
+          ├── file.txt
+          │   ┆  content
+          └── other.txt
+              ┆  other file
 

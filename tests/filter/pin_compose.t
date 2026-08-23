@@ -37,22 +37,28 @@ will take priority over the next tree in the composition filter
 
 Here's the repo layout at this point:
 
-  $ tree .
+  $ git add .
+  $ git-tree-pretty +
   .
-  |-- code
-  |   |-- app.js
-  |   `-- lib.js
-  |-- josh
-  |   `-- overlay
-  `-- workspaces
-      `-- overlay
-          `-- workspace.josh
-  
-  6 directories, 3 files
+  ├── code/
+  │   ├── app.js
+  │   │   ┆  async fn main() {
+  │   │   ┆    await fetch("http://127.0.0.1");
+  │   │   ┆  }
+  │   └── lib.js
+  │       ┆  fn log() {
+  │       ┆    console.log("logged!");
+  │       ┆  }
+  └── workspaces/
+      └── overlay/
+          └── workspace.josh
+              ┆  :[
+              ┆    :/code
+              ┆    :/josh/overlay
+              ┆  ]
 
 Commit this:
 
-  $ git add .
   $ git commit -q -m "first commit"
 
 Now, filter the ws and check the result

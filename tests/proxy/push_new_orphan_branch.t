@@ -102,17 +102,16 @@ Flushed credential cache
   * add file2
   * add file1
 
-  $ tree
+  $ git-tree-pretty .
   .
-  `-- sub1
-      |-- file1
-      |-- file2
-      `-- orphan_file
-  
-  2 directories, 3 files
+  └── sub1/
+      ├── file1
+      │   ┆  contents1
+      ├── file2
+      │   ┆  contents2
+      └── orphan_file
+          ┆  unrelated
 
-  $ cat sub1/file2
-  contents2
 
 Make sure all temporary namespace got removed
   $ tree ${TESTTMP}/remote/scratch/real_repo.git/refs/ | grep request_

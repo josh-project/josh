@@ -43,15 +43,16 @@
   $ git describe --tags
   a_tag_object-1-gbbc3f80
 
-  $ tree
+  $ git-tree-pretty .
   .
-  |-- sub1
-  |   |-- file1
-  |   `-- file12
-  `-- sub2
-      `-- file2
-  
-  3 directories, 3 files
+  ├── sub1/
+  │   ├── file1
+  │   │   ┆  contents1
+  │   └── file12
+  │       ┆  contents1
+  └── sub2/
+      └── file2
+          ┆  contents1
 
   $ git log --graph --pretty=%s
   * add file2
@@ -74,12 +75,12 @@
 
   $ cd sub1
 
-  $ tree
+  $ git-tree-pretty .
   .
-  |-- file1
-  `-- file12
-  
-  1 directory, 2 files
+  ├── file1
+  │   ┆  contents1
+  └── file12
+      ┆  contents1
 
   $ git log --graph --pretty=%s
   * add file12
@@ -97,11 +98,10 @@
 
   $ git checkout FETCH_HEAD 2> /dev/null
 
-  $ tree
+  $ git-tree-pretty .
   .
-  `-- file1
-  
-  1 directory, 1 file
+  └── file1
+      ┆  contents1
 
   $ git log --graph --pretty=%s
   * add file1

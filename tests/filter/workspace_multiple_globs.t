@@ -42,22 +42,24 @@
   * add file2
   * add file1
 
-  $ git checkout refs/josh/master 2> /dev/null
-  $ git ls-tree HEAD
+  $ git ls-tree refs/josh/master
   040000 tree 911c4952e2ea6662b24ba38f173bd25a0ea30f25\ta (esc)
   040000 tree c82fc150c43f13cc56c0e9caeba01b58ec612022\tb (esc)
   100644 blob ad7c87a358d35432edbe44a052b7b7731ca3103f\tworkspace.josh (esc)
-  $ tree
+  $ git-tree-pretty refs/josh/master
   .
-  |-- a
-  |   |-- sub1
-  |   |   `-- file2
-  |   `-- sub2
-  |       `-- subsub
-  |           `-- file2
-  |-- b
-  |   `-- sub1
-  |       `-- file1
-  `-- workspace.josh
-  
-  7 directories, 4 files
+  ├── a/
+  │   ├── sub1/
+  │   │   └── file2
+  │   │       ┆  contents1
+  │   └── sub2/
+  │       └── subsub/
+  │           └── file2
+  │               ┆  contents1
+  ├── b/
+  │   └── sub1/
+  │       └── file1
+  │           ┆  contents1
+  └── workspace.josh
+      ┆  a = ::**/file2
+      ┆  b = ::**/file1

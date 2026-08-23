@@ -17,24 +17,21 @@ Test basic scope filter syntax :<X>[Y]
   $ FILTER_HASH=$(josh-filter -i ':<:/sub1>[:/file1]')
   $ josh-filter -p ${FILTER_HASH}
   sub1 = :/sub1/file1
-  $ git read-tree --reset -u ${FILTER_HASH}
-  $ tree
+  $ git-tree-pretty ${FILTER_HASH}
   .
-  `-- chain
-      |-- 0
-      |   `-- subdir
-      |       `-- 0
-      |-- 1
-      |   `-- subdir
-      |       `-- 0
-      `-- 2
-          `-- prefix
-              `-- 0
-  
-  8 directories, 3 files
-  $ cat sub1/file1
-  cat: sub1/file1: No such file or directory
-  [1]
+  └── chain/
+      ├── 0/
+      │   └── subdir/
+      │       └── 0
+      │           ╵  sub1
+      ├── 1/
+      │   └── subdir/
+      │       └── 0
+      │           ╵  file1
+      └── 2/
+          └── prefix/
+              └── 0
+                  ╵  sub1
 
 Test scope filter with multiple filters in compose
   $ FILTER_HASH=$(josh-filter -i ':<:/sub1>[:/file1,:/sub2/file2]')
@@ -43,65 +40,65 @@ Test scope filter with multiple filters in compose
       :/file1
       :/sub2/file2
   ]
-  $ git read-tree --reset -u ${FILTER_HASH}
-  $ tree
+  $ git-tree-pretty ${FILTER_HASH}
   .
-  `-- chain
-      |-- 0
-      |   `-- subdir
-      |       `-- 0
-      |-- 1
-      |   `-- compose
-      |       |-- 0
-      |       |   `-- subdir
-      |       |       `-- 0
-      |       `-- 1
-      |           `-- chain
-      |               |-- 0
-      |               |   `-- subdir
-      |               |       `-- 0
-      |               `-- 1
-      |                   `-- subdir
-      |                       `-- 0
-      `-- 2
-          `-- prefix
-              `-- 0
-  
-  16 directories, 5 files
+  └── chain/
+      ├── 0/
+      │   └── subdir/
+      │       └── 0
+      │           ╵  sub1
+      ├── 1/
+      │   └── compose/
+      │       ├── 0/
+      │       │   └── subdir/
+      │       │       └── 0
+      │       │           ╵  file1
+      │       └── 1/
+      │           └── chain/
+      │               ├── 0/
+      │               │   └── subdir/
+      │               │       └── 0
+      │               │           ╵  sub2
+      │               └── 1/
+      │                   └── subdir/
+      │                       └── 0
+      │                           ╵  file2
+      └── 2/
+          └── prefix/
+              └── 0
+                  ╵  sub1
 
 Test scope filter with prefix filter
   $ FILTER_HASH=$(josh-filter -i ':<:prefix=sub1>[:prefix=file1]')
   $ josh-filter -p ${FILTER_HASH}
   :empty
-  $ git read-tree --reset -u ${FILTER_HASH}
-  $ tree
+  $ git-tree-pretty ${FILTER_HASH}
   .
-  `-- empty
-  
-  1 directory, 1 file
+  └── empty
 
 Test scope filter with subdir and exclude
   $ FILTER_HASH=$(josh-filter -i ':<:/sub1>[:exclude[::file1]]')
   $ josh-filter -p ${FILTER_HASH}
   sub1 = :/sub1:exclude[::file1]
-  $ git read-tree --reset -u ${FILTER_HASH}
-  $ tree
+  $ git-tree-pretty ${FILTER_HASH}
   .
-  `-- chain
-      |-- 0
-      |   `-- subdir
-      |       `-- 0
-      |-- 1
-      |   `-- exclude
-      |       `-- 0
-      |           `-- file
-      |               |-- 0
-      |               `-- 1
-      `-- 2
-          `-- prefix
-              `-- 0
-  
-  10 directories, 4 files
+  └── chain/
+      ├── 0/
+      │   └── subdir/
+      │       └── 0
+      │           ╵  sub1
+      ├── 1/
+      │   └── exclude/
+      │       └── 0/
+      │           └── file/
+      │               ├── 0
+      │               │   ╵  file1
+      │               └── 1
+      │                   ╵  file1
+      └── 2/
+          └── prefix/
+              └── 0
+                  ╵  sub1
 
 Test scope filter verifies it expands to chain(X, chain(Y, invert(X)))
   $ FILTER_HASH=$(josh-filter -i ':<:/sub1>[:/file1]')
@@ -116,29 +113,31 @@ Test scope filter with nested filters
       :/file1
       :/sub2/file2
   ]
-  $ git read-tree --reset -u ${FILTER_HASH}
-  $ tree
+  $ git-tree-pretty ${FILTER_HASH}
   .
-  `-- chain
-      |-- 0
-      |   `-- subdir
-      |       `-- 0
-      |-- 1
-      |   `-- compose
-      |       |-- 0
-      |       |   `-- subdir
-      |       |       `-- 0
-      |       `-- 1
-      |           `-- chain
-      |               |-- 0
-      |               |   `-- subdir
-      |               |       `-- 0
-      |               `-- 1
-      |                   `-- subdir
-      |                       `-- 0
-      `-- 2
-          `-- prefix
-              `-- 0
-  
-  16 directories, 5 files
+  └── chain/
+      ├── 0/
+      │   └── subdir/
+      │       └── 0
+      │           ╵  sub1
+      ├── 1/
+      │   └── compose/
+      │       ├── 0/
+      │       │   └── subdir/
+      │       │       └── 0
+      │       │           ╵  file1
+      │       └── 1/
+      │           └── chain/
+      │               ├── 0/
+      │               │   └── subdir/
+      │               │       └── 0
+      │               │           ╵  sub2
+      │               └── 1/
+      │                   └── subdir/
+      │                       └── 0
+      │                           ╵  file2
+      └── 2/
+          └── prefix/
+              └── 0
+                  ╵  sub1
 

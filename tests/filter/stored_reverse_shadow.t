@@ -28,23 +28,22 @@
   * add st
   * add file2
   * add file1
-  $ tree
+  $ git-tree-pretty .
   .
-  |-- st
-  |   |-- c
-  |   |   `-- file1
-  |   `-- config.josh
-  |-- sub1
-  |   `-- file1
-  `-- sub2
-      `-- file2
-  
-  5 directories, 4 files
+  ├── st/
+  │   ├── c/
+  │   │   └── file1
+  │   │       ┆  st_content
+  │   └── config.josh
+  │       ┆  a/b = :/sub2
+  │       ┆  c = :/sub1
+  ├── sub1/
+  │   └── file1
+  │       ┆  contents1
+  └── sub2/
+      └── file2
+          ┆  contents1
 
-  $ cat sub1/file1
-  contents1
-  $ cat st/c/file1
-  st_content
 
   $ josh-filter :+st/config master --update refs/heads/st
   99b3384cb31ab9d642bd2e5e4050d57f97fe2862
@@ -54,20 +53,20 @@
   * add st
   * add file2
   * add file1
-  $ tree
+  $ git-tree-pretty .
   .
-  |-- a
-  |   `-- b
-  |       `-- file2
-  |-- c
-  |   `-- file1
-  `-- st
-      `-- config.josh
-  
-  5 directories, 3 files
+  ├── a/
+  │   └── b/
+  │       └── file2
+  │           ┆  contents1
+  ├── c/
+  │   └── file1
+  │       ┆  contents1
+  └── st/
+      └── config.josh
+          ┆  a/b = :/sub2
+          ┆  c = :/sub1
 
-  $ cat c/file1
-  contents1
 
   $ echo modified_content > c/file1
   $ echo contents3 > st_created_file
@@ -80,24 +79,22 @@
   $ git checkout master
   Switched to branch 'master'
 
-  $ tree
+  $ git-tree-pretty .
   .
-  |-- st
-  |   |-- c
-  |   |   `-- file1
-  |   `-- config.josh
-  |-- sub1
-  |   `-- file1
-  `-- sub2
-      `-- file2
-  
-  5 directories, 4 files
+  ├── st/
+  │   ├── c/
+  │   │   └── file1
+  │   │       ┆  st_content
+  │   └── config.josh
+  │       ┆  a/b = :/sub2
+  │       ┆  c = :/sub1
+  ├── sub1/
+  │   └── file1
+  │       ┆  modified_content
+  └── sub2/
+      └── file2
+          ┆  contents1
 
-  $ cat sub1/file1
-  modified_content
-  $ cat st/st_created_file
-  cat: st/st_created_file: No such file or directory
-  [1]
 
   $ git log --graph --pretty=%s
   * modify and add files

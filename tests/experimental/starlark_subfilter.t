@@ -34,16 +34,17 @@
   * add sub2
   * add sub1
 
-  $ git checkout refs/josh/master 2> /dev/null
-  $ git ls-tree -r HEAD
+  $ git ls-tree -r refs/josh/master
   100644 blob 17a02eede77454427c80e6fdf862f924f9c13ae9\tst/config.star (esc)
   100644 blob a024003ee1acc6bf70318a46e7b6df651b9dc246\tsub1/file1 (esc)
-  $ tree
+  $ git-tree-pretty refs/josh/master
   .
-  |-- st
-  |   `-- config.star
-  `-- sub1
-      `-- file1
-  
-  3 directories, 2 files
+  ├── st/
+  │   └── config.star
+  │       ┆  # With subfilter ::sub1/, the tree passed to the script has sub1 at root (just file1).
+  │       ┆  # Include that file in the result.
+  │       ┆  filter = filter.file("file1")
+  └── sub1/
+      └── file1
+          ┆  contents1
 

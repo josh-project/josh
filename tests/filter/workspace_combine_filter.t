@@ -33,21 +33,27 @@
   $ git add .
   $ git commit -m "add ws" 1> /dev/null
 
-  $ tree
+  $ git-tree-pretty .
   .
-  |-- sub1
-  |   `-- file1
-  |-- sub2
-  |   `-- subsub
-  |       `-- file2
-  |-- sub3
-  |   `-- sub_file
-  |-- ws
-  |   `-- workspace.josh
-  `-- ws2
-      `-- workspace.josh
-  
-  7 directories, 5 files
+  ├── sub1/
+  │   └── file1
+  │       ┆  contents1
+  ├── sub2/
+  │   └── subsub/
+  │       └── file2
+  │           ┆  contents1
+  ├── sub3/
+  │   └── sub_file
+  │       ┆  contents1
+  ├── ws/
+  │   └── workspace.josh
+  │       ┆  x = :[::sub2/subsub/,::sub1/]
+  └── ws2/
+      └── workspace.josh
+          ┆  :[
+          ┆    a = :[::sub2/subsub/,::sub3/]
+          ┆    :/sub1:prefix=blub
+          ┆  ]:prefix=xyz
 
   $ josh-filter -s :workspace=ws
   0fe13f59da8ba3f49ca610f2354254747502fa40
@@ -65,20 +71,19 @@
   * add file2
   * add file1
 
-  $ git checkout FILTERED_HEAD 2> /dev/null
-  $ tree
+  $ git-tree-pretty FILTERED_HEAD
   .
-  |-- workspace.josh
-  `-- x
-      |-- sub1
-      |   `-- file1
-      `-- sub2
-          `-- subsub
-              `-- file2
-  
-  5 directories, 3 files
+  ├── workspace.josh
+  │   ┆  x = :[::sub2/subsub/,::sub1/]
+  └── x/
+      ├── sub1/
+      │   └── file1
+      │       ┆  contents1
+      └── sub2/
+          └── subsub/
+              └── file2
+                  ┆  contents1
 
-  $ git checkout master 2> /dev/null
   $ josh-filter -s :workspace=ws2
   8a0812406d4c375a5f173abc839b00ad3b7fc30d
   [2] :[
@@ -105,18 +110,22 @@
   * add file2
   * add file1
 
-  $ git checkout FILTERED_HEAD 2> /dev/null
-  $ tree
+  $ git-tree-pretty FILTERED_HEAD
   .
-  |-- workspace.josh
-  `-- xyz
-      |-- a
-      |   |-- sub2
-      |   |   `-- subsub
-      |   |       `-- file2
-      |   `-- sub3
-      |       `-- sub_file
-      `-- blub
-          `-- file1
-  
-  7 directories, 4 files
+  ├── workspace.josh
+  │   ┆  :[
+  │   ┆    a = :[::sub2/subsub/,::sub3/]
+  │   ┆    :/sub1:prefix=blub
+  │   ┆  ]:prefix=xyz
+  └── xyz/
+      ├── a/
+      │   ├── sub2/
+      │   │   └── subsub/
+      │   │       └── file2
+      │   │           ┆  contents1
+      │   └── sub3/
+      │       └── sub_file
+      │           ┆  contents1
+      └── blub/
+          └── file1
+              ┆  contents1

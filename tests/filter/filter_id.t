@@ -9,35 +9,17 @@
       :/a
       :/b
   ]
-  $ git read-tree --reset -u ${FILTER_HASH}
-  $ tree
+  $ git-tree-pretty ${FILTER_HASH}
   .
-  `-- compose
-      |-- 0
-      |   `-- subdir
-      |       `-- 0
-      `-- 1
-          `-- subdir
-              `-- 0
-  
-  6 directories, 2 files
-  $ git diff ${EMPTY_TREE}..${FILTER_HASH}
-  diff --git a/compose/0/subdir/0 b/compose/0/subdir/0
-  new file mode 100644
-  index 0000000..2e65efe
-  --- /dev/null
-  +++ b/compose/0/subdir/0
-  @@ -0,0 +1 @@
-  +a
-  \ No newline at end of file
-  diff --git a/compose/1/subdir/0 b/compose/1/subdir/0
-  new file mode 100644
-  index 0000000..63d8dbd
-  --- /dev/null
-  +++ b/compose/1/subdir/0
-  @@ -0,0 +1 @@
-  +b
-  \ No newline at end of file
+  └── compose/
+      ├── 0/
+      │   └── subdir/
+      │       └── 0
+      │           ╵  a
+      └── 1/
+          └── subdir/
+              └── 0
+                  ╵  b
   $ josh-filter -p :/"a"
   :/a
   $ josh-filter --reverse -p :/a
@@ -62,96 +44,43 @@
       x = :/b/d
       y = :/c/d
   ]
-  $ git read-tree --reset -u ${FILTER_HASH}
-  $ tree
+  $ git-tree-pretty ${FILTER_HASH}
   .
-  `-- chain
-      |-- 0
-      |   `-- subdir
-      |       `-- 0
-      `-- 1
-          `-- compose
-              |-- 0
-              |   `-- chain
-              |       |-- 0
-              |       |   `-- subdir
-              |       |       `-- 0
-              |       |-- 1
-              |       |   `-- subdir
-              |       |       `-- 0
-              |       `-- 2
-              |           `-- prefix
-              |               `-- 0
-              `-- 1
-                  `-- chain
-                      |-- 0
-                      |   `-- subdir
-                      |       `-- 0
-                      |-- 1
-                      |   `-- subdir
-                      |       `-- 0
-                      `-- 2
-                          `-- prefix
-                              `-- 0
-  
-  22 directories, 7 files
-  $ git diff ${EMPTY_TREE}..${FILTER_HASH}
-  diff --git a/chain/0/subdir/0 b/chain/0/subdir/0
-  new file mode 100644
-  index 0000000..2e65efe
-  --- /dev/null
-  +++ b/chain/0/subdir/0
-  @@ -0,0 +1 @@
-  +a
-  \ No newline at end of file
-  diff --git a/chain/1/compose/0/chain/0/subdir/0 b/chain/1/compose/0/chain/0/subdir/0
-  new file mode 100644
-  index 0000000..63d8dbd
-  --- /dev/null
-  +++ b/chain/1/compose/0/chain/0/subdir/0
-  @@ -0,0 +1 @@
-  +b
-  \ No newline at end of file
-  diff --git a/chain/1/compose/0/chain/1/subdir/0 b/chain/1/compose/0/chain/1/subdir/0
-  new file mode 100644
-  index 0000000..c59d9b6
-  --- /dev/null
-  +++ b/chain/1/compose/0/chain/1/subdir/0
-  @@ -0,0 +1 @@
-  +d
-  \ No newline at end of file
-  diff --git a/chain/1/compose/0/chain/2/prefix/0 b/chain/1/compose/0/chain/2/prefix/0
-  new file mode 100644
-  index 0000000..c1b0730
-  --- /dev/null
-  +++ b/chain/1/compose/0/chain/2/prefix/0
-  @@ -0,0 +1 @@
-  +x
-  \ No newline at end of file
-  diff --git a/chain/1/compose/1/chain/0/subdir/0 b/chain/1/compose/1/chain/0/subdir/0
-  new file mode 100644
-  index 0000000..3410062
-  --- /dev/null
-  +++ b/chain/1/compose/1/chain/0/subdir/0
-  @@ -0,0 +1 @@
-  +c
-  \ No newline at end of file
-  diff --git a/chain/1/compose/1/chain/1/subdir/0 b/chain/1/compose/1/chain/1/subdir/0
-  new file mode 100644
-  index 0000000..c59d9b6
-  --- /dev/null
-  +++ b/chain/1/compose/1/chain/1/subdir/0
-  @@ -0,0 +1 @@
-  +d
-  \ No newline at end of file
-  diff --git a/chain/1/compose/1/chain/2/prefix/0 b/chain/1/compose/1/chain/2/prefix/0
-  new file mode 100644
-  index 0000000..e25f181
-  --- /dev/null
-  +++ b/chain/1/compose/1/chain/2/prefix/0
-  @@ -0,0 +1 @@
-  +y
-  \ No newline at end of file
+  └── chain/
+      ├── 0/
+      │   └── subdir/
+      │       └── 0
+      │           ╵  a
+      └── 1/
+          └── compose/
+              ├── 0/
+              │   └── chain/
+              │       ├── 0/
+              │       │   └── subdir/
+              │       │       └── 0
+              │       │           ╵  b
+              │       ├── 1/
+              │       │   └── subdir/
+              │       │       └── 0
+              │       │           ╵  d
+              │       └── 2/
+              │           └── prefix/
+              │               └── 0
+              │                   ╵  x
+              └── 1/
+                  └── chain/
+                      ├── 0/
+                      │   └── subdir/
+                      │       └── 0
+                      │           ╵  c
+                      ├── 1/
+                      │   └── subdir/
+                      │       └── 0
+                      │           ╵  d
+                      └── 2/
+                          └── prefix/
+                              └── 0
+                                  ╵  y
   $ josh-filter --reverse -p :[x=:/a:/b:/d,y=:/a:/c:/d]
   a = :[
       b/d = :/x
@@ -419,14 +348,13 @@ Test ::file.txt (single argument, no trailing slash, no =, no *)
   $ FILTER_HASH=$(josh-filter -i ::file.txt)
   $ josh-filter -p ${FILTER_HASH}
   ::file.txt
-  $ git read-tree --reset -u ${FILTER_HASH}
-  $ tree
+  $ git-tree-pretty ${FILTER_HASH}
   .
-  `-- file
-      |-- 0
-      `-- 1
-  
-  2 directories, 2 files
+  └── file/
+      ├── 0
+      │   ╵  file.txt
+      └── 1
+          ╵  file.txt
   $ git diff 4b825dc642cb6eb9a060e54bf8d69288fbee4904..${FILTER_HASH}
   diff --git a/file/0 b/file/0
   new file mode 100644
@@ -449,14 +377,13 @@ Test ::dest.txt=src.txt (with =, destination=source)
   $ FILTER_HASH=$(josh-filter -i ::dest.txt=src.txt)
   $ josh-filter -p ${FILTER_HASH}
   ::dest.txt=src.txt
-  $ git read-tree --reset -u ${FILTER_HASH}
-  $ tree
+  $ git-tree-pretty ${FILTER_HASH}
   .
-  `-- file
-      |-- 0
-      `-- 1
-  
-  2 directories, 2 files
+  └── file/
+      ├── 0
+      │   ╵  dest.txt
+      └── 1
+          ╵  src.txt
   $ git diff 4b825dc642cb6eb9a060e54bf8d69288fbee4904..${FILTER_HASH}
   diff --git a/file/0 b/file/0
   new file mode 100644
@@ -479,13 +406,11 @@ Test ::*.txt (with *, pattern)
   $ FILTER_HASH=$(josh-filter -i ::*.txt)
   $ josh-filter -p ${FILTER_HASH}
   ::*.txt
-  $ git read-tree --reset -u ${FILTER_HASH}
-  $ tree
+  $ git-tree-pretty ${FILTER_HASH}
   .
-  `-- pattern
-      `-- 0
-  
-  2 directories, 1 file
+  └── pattern/
+      └── 0
+          ╵  *.txt
   $ git diff 4b825dc642cb6eb9a060e54bf8d69288fbee4904..${FILTER_HASH}
   diff --git a/pattern/0 b/pattern/0
   new file mode 100644
@@ -500,18 +425,17 @@ Test ::dir/ (with trailing slash, directory)
   $ FILTER_HASH=$(josh-filter -i ::dir/)
   $ josh-filter -p ${FILTER_HASH}
   ::dir/
-  $ git read-tree --reset -u ${FILTER_HASH}
-  $ tree
+  $ git-tree-pretty ${FILTER_HASH}
   .
-  `-- chain
-      |-- 0
-      |   `-- subdir
-      |       `-- 0
-      `-- 1
-          `-- prefix
-              `-- 0
-  
-  6 directories, 2 files
+  └── chain/
+      ├── 0/
+      │   └── subdir/
+      │       └── 0
+      │           ╵  dir
+      └── 1/
+          └── prefix/
+              └── 0
+                  ╵  dir
   $ git diff 4b825dc642cb6eb9a060e54bf8d69288fbee4904..${FILTER_HASH}
   diff --git a/chain/0/subdir/0 b/chain/0/subdir/0
   new file mode 100644
@@ -534,30 +458,33 @@ Test ::a/b/c/ (nested directory path with trailing slash)
   $ FILTER_HASH=$(josh-filter -i ::a/b/c/)
   $ josh-filter -p ${FILTER_HASH}
   ::a/b/c/
-  $ git read-tree --reset -u ${FILTER_HASH}
-  $ tree
+  $ git-tree-pretty ${FILTER_HASH}
   .
-  `-- chain
-      |-- 0
-      |   `-- subdir
-      |       `-- 0
-      |-- 1
-      |   `-- subdir
-      |       `-- 0
-      |-- 2
-      |   `-- subdir
-      |       `-- 0
-      |-- 3
-      |   `-- prefix
-      |       `-- 0
-      |-- 4
-      |   `-- prefix
-      |       `-- 0
-      `-- 5
-          `-- prefix
-              `-- 0
-  
-  14 directories, 6 files
+  └── chain/
+      ├── 0/
+      │   └── subdir/
+      │       └── 0
+      │           ╵  a
+      ├── 1/
+      │   └── subdir/
+      │       └── 0
+      │           ╵  b
+      ├── 2/
+      │   └── subdir/
+      │       └── 0
+      │           ╵  c
+      ├── 3/
+      │   └── prefix/
+      │       └── 0
+      │           ╵  c
+      ├── 4/
+      │   └── prefix/
+      │       └── 0
+      │           ╵  b
+      └── 5/
+          └── prefix/
+              └── 0
+                  ╵  a
   $ git diff 4b825dc642cb6eb9a060e54bf8d69288fbee4904..${FILTER_HASH}
   diff --git a/chain/0/subdir/0 b/chain/0/subdir/0
   new file mode 100644
@@ -633,23 +560,17 @@ Test :FOLD
   $ FILTER_HASH=$(josh-filter -i ':FOLD')
   $ josh-filter -p ${FILTER_HASH}
   :FOLD
-  $ git read-tree --reset -u ${FILTER_HASH}
-  $ tree
+  $ git-tree-pretty ${FILTER_HASH}
   .
-  `-- fold
-  
-  1 directory, 1 file
+  └── fold
 
 Test :PATHS
   $ FILTER_HASH=$(josh-filter -i ':PATHS')
   $ josh-filter -p ${FILTER_HASH}
   :PATHS
-  $ git read-tree --reset -u ${FILTER_HASH}
-  $ tree
+  $ git-tree-pretty ${FILTER_HASH}
   .
-  `-- paths
-  
-  1 directory, 1 file
+  └── paths
 
 Test :INDEX (the filter is experimental; parsing it needs the opt-in)
   $ josh-filter -i ':INDEX' 2>&1 | head -1
@@ -657,23 +578,17 @@ Test :INDEX (the filter is experimental; parsing it needs the opt-in)
   $ FILTER_HASH=$(JOSH_EXPERIMENTAL_FEATURES=1 josh-filter -i ':INDEX')
   $ josh-filter -p ${FILTER_HASH}
   :INDEX
-  $ git read-tree --reset -u ${FILTER_HASH}
-  $ tree
+  $ git-tree-pretty ${FILTER_HASH}
   .
-  `-- index
-  
-  1 directory, 1 file
+  └── index
 
 Test :INVERT
   $ FILTER_HASH=$(josh-filter -i ':INVERT')
   $ josh-filter -p ${FILTER_HASH}
   :INVERT
-  $ git read-tree --reset -u ${FILTER_HASH}
-  $ tree
+  $ git-tree-pretty ${FILTER_HASH}
   .
-  `-- invert
-  
-  1 directory, 1 file
+  └── invert
 
 Test :linear
   $ FILTER_HASH=$(josh-filter -i ':linear')
@@ -683,15 +598,13 @@ Test :linear
   )[
       :/
   ]
-  $ git read-tree --reset -u ${FILTER_HASH}
-  $ tree
+  $ git-tree-pretty ${FILTER_HASH}
   .
-  `-- meta
-      |-- 0
-      |   `-- nop
-      `-- history
-  
-  3 directories, 2 files
+  └── meta/
+      ├── 0/
+      │   └── nop
+      └── history
+          ╵  linear
 
   $ FILTER_HASH=$(josh-filter -i ':linear[::x/]')
   $ josh-filter -p ${FILTER_HASH}
@@ -700,34 +613,32 @@ Test :linear
   )[
       ::x/
   ]
-  $ git read-tree --reset -u ${FILTER_HASH}
-  $ tree
+  $ git-tree-pretty ${FILTER_HASH}
   .
-  `-- meta
-      |-- 0
-      |   `-- compose
-      |       `-- 0
-      |           `-- chain
-      |               |-- 0
-      |               |   `-- subdir
-      |               |       `-- 0
-      |               `-- 1
-      |                   `-- prefix
-      |                       `-- 0
-      `-- history
-  
-  10 directories, 3 files
+  └── meta/
+      ├── 0/
+      │   └── compose/
+      │       └── 0/
+      │           └── chain/
+      │               ├── 0/
+      │               │   └── subdir/
+      │               │       └── 0
+      │               │           ╵  x
+      │               └── 1/
+      │                   └── prefix/
+      │                       └── 0
+      │                           ╵  x
+      └── history
+          ╵  linear
 
 Test :prune=trivial-merge
   $ FILTER_HASH=$(josh-filter -i ':prune=trivial-merge')
   $ josh-filter -p ${FILTER_HASH}
   :prune=trivial-merge
-  $ git read-tree --reset -u ${FILTER_HASH}
-  $ tree
+  $ git-tree-pretty ${FILTER_HASH}
   .
-  `-- prune
-  
-  1 directory, 1 file
+  └── prune
+      ╵  trivial-merge
 
 Test :unsign
   $ FILTER_HASH=$(josh-filter -i ':unsign')
@@ -737,128 +648,111 @@ Test :unsign
   )[
       :/
   ]
-  $ git read-tree --reset -u ${FILTER_HASH}
-  $ tree
+  $ git-tree-pretty ${FILTER_HASH}
   .
-  `-- meta
-      |-- 0
-      |   `-- nop
-      `-- gpgsig
-  
-  3 directories, 2 files
+  └── meta/
+      ├── 0/
+      │   └── nop
+      └── gpgsig
+          ╵  remove
 
 Test :workspace=path/to/workspace
   $ FILTER_HASH=$(josh-filter -i ':workspace=path/to/workspace')
   $ josh-filter -p ${FILTER_HASH}
   :workspace=path/to/workspace
-  $ git read-tree --reset -u ${FILTER_HASH}
-  $ tree
+  $ git-tree-pretty ${FILTER_HASH}
   .
-  `-- workspace
-      `-- 0
-  
-  2 directories, 1 file
+  └── workspace/
+      └── 0
+          ╵  path/to/workspace
 
 Test :+path/to/stored
   $ FILTER_HASH=$(josh-filter -i ':+path/to/stored')
   $ josh-filter -p ${FILTER_HASH}
   :+path/to/stored
-  $ git read-tree --reset -u ${FILTER_HASH}
-  $ tree
+  $ git-tree-pretty ${FILTER_HASH}
   .
-  `-- stored
-      `-- 0
-  
-  2 directories, 1 file
+  └── stored/
+      └── 0
+          ╵  path/to/stored
 
 Test :hook=hookname
   $ FILTER_HASH=$(josh-filter -i ':hook=hookname')
   $ josh-filter -p ${FILTER_HASH}
   :hook="hookname"
-  $ git read-tree --reset -u ${FILTER_HASH}
-  $ tree
+  $ git-tree-pretty ${FILTER_HASH}
   .
-  `-- hook
-      `-- 0
-  
-  2 directories, 1 file
+  └── hook/
+      └── 0
+          ╵  hookname
 
 Test :author=Name;email@example.com
   $ FILTER_HASH=$(josh-filter -i ':author="Name";"email@example.com"')
   $ josh-filter -p ${FILTER_HASH}
   :author="Name";"email@example.com"
-  $ git read-tree --reset -u ${FILTER_HASH}
-  $ tree
+  $ git-tree-pretty ${FILTER_HASH}
   .
-  `-- author
-      |-- 0
-      `-- 1
-  
-  2 directories, 2 files
+  └── author/
+      ├── 0
+      │   ╵  Name
+      └── 1
+          ╵  email@example.com
 
 Test :committer=Name;email@example.com
   $ FILTER_HASH=$(josh-filter -i ':committer="Name";"email@example.com"')
   $ josh-filter -p ${FILTER_HASH}
   :committer="Name";"email@example.com"
-  $ git read-tree --reset -u ${FILTER_HASH}
-  $ tree
+  $ git-tree-pretty ${FILTER_HASH}
   .
-  `-- committer
-      |-- 0
-      `-- 1
-  
-  2 directories, 2 files
+  └── committer/
+      ├── 0
+      │   ╵  Name
+      └── 1
+          ╵  email@example.com
 
 Test :"commit message"
   $ FILTER_HASH=$(josh-filter -i ':"commit message"')
   $ josh-filter -p ${FILTER_HASH}
   :"commit message"
-  $ git read-tree --reset -u ${FILTER_HASH}
-  $ tree
+  $ git-tree-pretty ${FILTER_HASH}
   .
-  `-- message
-      |-- 0
-      `-- 1
-  
-  2 directories, 2 files
+  └── message/
+      ├── 0
+      │   ╵  commit message
+      └── 1
+          ╵  (?s)^.*$
 
 Test :"commit message";".*"
   $ FILTER_HASH=$(josh-filter -i ':"commit message";".*"')
   $ josh-filter -p ${FILTER_HASH}
   :"commit message";".*"
-  $ git read-tree --reset -u ${FILTER_HASH}
-  $ tree
+  $ git-tree-pretty ${FILTER_HASH}
   .
-  `-- message
-      |-- 0
-      `-- 1
-  
-  2 directories, 2 files
+  └── message/
+      ├── 0
+      │   ╵  commit message
+      └── 1
+          ╵  .*
 
 Test :pin[:/a]
   $ FILTER_HASH=$(josh-filter -i ':pin[:/a]')
   $ josh-filter -p ${FILTER_HASH}
   :pin[:/a]
-  $ git read-tree --reset -u ${FILTER_HASH}
-  $ tree
+  $ git-tree-pretty ${FILTER_HASH}
   .
-  `-- pin
-      `-- 0
-          `-- subdir
-              `-- 0
-  
-  4 directories, 1 file
+  └── pin/
+      └── 0/
+          └── subdir/
+              └── 0
+                  ╵  a
 
 Test :SQUASH
   $ FILTER_HASH=$(josh-filter -i ':SQUASH')
   $ josh-filter -p ${FILTER_HASH}
   :SQUASH
-  $ git read-tree --reset -u ${FILTER_HASH}
-  $ tree
+  $ git-tree-pretty ${FILTER_HASH}
   .
-  `-- squash
-  
-  1 directory, 1 file
+  └── squash
 
 Test :replace("pattern":"replacement")
   $ FILTER_HASH=$(josh-filter -i ':replace("pattern":"replacement")')
@@ -866,31 +760,29 @@ Test :replace("pattern":"replacement")
   :replace(
       "pattern":"replacement"
   )
-  $ git read-tree --reset -u ${FILTER_HASH}
-  $ tree
+  $ git-tree-pretty ${FILTER_HASH}
   .
-  `-- regex_replace
-      `-- 0
-          |-- p
-          `-- r
-  
-  3 directories, 2 files
+  └── regex_replace/
+      └── 0/
+          ├── p
+          │   ╵  pattern
+          └── r
+              ╵  replacement
 
 Test :rev(_:/a)
   $ FILTER_HASH=$(josh-filter -i ':rev(_:/a)')
   $ josh-filter -p ${FILTER_HASH}
   :rev(_:/a)
-  $ git read-tree --reset -u ${FILTER_HASH}
-  $ tree
+  $ git-tree-pretty ${FILTER_HASH}
   .
-  `-- rev
-      `-- 0
-          |-- f
-          |   `-- subdir
-          |       `-- 0
-          `-- o
-  
-  5 directories, 2 files
+  └── rev/
+      └── 0/
+          ├── f/
+          │   └── subdir/
+          │       └── 0
+          │           ╵  a
+          └── o
+              ╵  _
 
 
   $ FILTER_HASH=$(josh-filter -i ':~(key1="value1",key2="value2",a="b")[:/sub1]')
@@ -902,15 +794,16 @@ Test :rev(_:/a)
   )[
       :/sub1
   ]
-  $ git read-tree --reset -u ${FILTER_HASH}
-  $ tree
+  $ git-tree-pretty ${FILTER_HASH}
   .
-  `-- meta
-      |-- 0
-      |   `-- subdir
-      |       `-- 0
-      |-- a
-      |-- key1
-      `-- key2
-  
-  4 directories, 4 files
+  └── meta/
+      ├── 0/
+      │   └── subdir/
+      │       └── 0
+      │           ╵  sub1
+      ├── a
+      │   ╵  b
+      ├── key1
+      │   ╵  value1
+      └── key2
+          ╵  value2

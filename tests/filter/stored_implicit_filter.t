@@ -41,16 +41,17 @@
   * add file2
   * add file1
 
-  $ git checkout refs/josh/master 2> /dev/null
-  $ tree
+  $ git-tree-pretty refs/josh/master
   .
-  |-- st
-  |   `-- config.josh
-  |-- sub1
-  |   `-- file1
-  `-- sub2
-      `-- subsub
-          `-- file2
-  
-  5 directories, 3 files
+  ├── st/
+  │   └── config.josh
+  │       ┆  ::sub2/subsub/
+  │       ┆  ::sub1/
+  ├── sub1/
+  │   └── file1
+  │       ┆  contents1
+  └── sub2/
+      └── subsub/
+          └── file2
+              ┆  contents1
 

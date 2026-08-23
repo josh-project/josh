@@ -89,19 +89,23 @@
 
   $ git clone -q http://localhost:8002/real_repo.git:workspace=ws:prefix=pre:/pre.git ws
   $ cd ws
-  $ tree
+  $ git-tree-pretty .
   .
-  |-- a
-  |   `-- b
-  |       `-- file2
-  |-- c
-  |   `-- subsub
-  |       `-- file1
-  |-- d
-  |   `-- file3
-  `-- workspace.josh
-  
-  6 directories, 4 files
+  ├── a/
+  │   └── b/
+  │       └── file2
+  │           ┆  contents1
+  ├── c/
+  │   └── subsub/
+  │       └── file1
+  │           ┆  contents1
+  ├── d/
+  │   └── file3
+  │       ┆  contents3
+  └── workspace.josh
+      ┆  a/b = :/sub2
+      ┆  c = :/sub1
+      ┆  d = :/sub3
 
   $ git log --graph --pretty=%s
   *   mod workspace
@@ -111,32 +115,31 @@
   * add file2
   * add file1
 
-  $ git checkout -q HEAD~1 1> /dev/null
-  $ tree
+  $ git-tree-pretty HEAD~1
   .
-  |-- a
-  |   `-- b
-  |       `-- file2
-  |-- c
-  |   `-- subsub
-  |       `-- file1
-  `-- workspace.josh
-  
-  5 directories, 3 files
+  ├── a/
+  │   └── b/
+  │       └── file2
+  │           ┆  contents1
+  ├── c/
+  │   └── subsub/
+  │       └── file1
+  │           ┆  contents1
+  └── workspace.josh
+      ┆  a/b = :/sub2
+      ┆  c = :/sub1
 
-  $ git checkout -q HEAD~1 1> /dev/null
-  $ tree
+  $ git-tree-pretty HEAD~2
   .
-  |-- a
-  |   `-- b
-  |       `-- file2
-  `-- c
-      `-- subsub
-          `-- file1
-  
-  5 directories, 2 files
+  ├── a/
+  │   └── b/
+  │       └── file2
+  │           ┆  contents1
+  └── c/
+      └── subsub/
+          └── file1
+              ┆  contents1
 
-  $ git checkout -q master 1> /dev/null
 
   $ echo newfile_1_contents > c/subsub/newfile_1
   $ git rm c/subsub/file1
@@ -186,21 +189,27 @@ Flushed credential cache
   $ git pull --rebase 2> /dev/null
 
 Note that d/ is still in the tree but now it is not overlayed
-  $ tree
+  $ git-tree-pretty .
   .
-  |-- a
-  |   `-- b
-  |       |-- file2
-  |       `-- newfile_2
-  |-- c
-  |   `-- subsub
-  |       `-- newfile_1
-  |-- w
-  |   `-- file3
-  |-- workspace.josh
-  `-- ws_file
-  
-  6 directories, 6 files
+  ├── a/
+  │   └── b/
+  │       ├── file2
+  │       │   ┆  contents1
+  │       └── newfile_2
+  │           ┆  newfile_2_contents
+  ├── c/
+  │   └── subsub/
+  │       └── newfile_1
+  │           ┆  newfile_1_contents
+  ├── w/
+  │   └── file3
+  │       ┆  contents3
+  ├── workspace.josh
+  │   ┆  c = :/sub1
+  │   ┆  a/b = :/sub2
+  │   ┆  w = :/sub3
+  └── ws_file
+      ┆  ws_file_contents
 
 
 
@@ -215,24 +224,30 @@ Flushed credential cache
   $ git clean -ffdx 1> /dev/null
 
 Note that ws/d/ is now present in the ws
-  $ tree
+  $ git-tree-pretty .
   .
-  |-- file1
-  |-- newfile1
-  |-- newfile_master
-  |-- sub1
-  |   `-- subsub
-  |       `-- newfile_1
-  |-- sub2
-  |   |-- file2
-  |   `-- newfile_2
-  |-- sub3
-  |   `-- file3
-  `-- ws
-      |-- workspace.josh
-      `-- ws_file
-  
-  6 directories, 9 files
+  ├── file1
+  ├── newfile1
+  ├── newfile_master
+  ├── sub1/
+  │   └── subsub/
+  │       └── newfile_1
+  │           ┆  newfile_1_contents
+  ├── sub2/
+  │   ├── file2
+  │   │   ┆  contents1
+  │   └── newfile_2
+  │       ┆  newfile_2_contents
+  ├── sub3/
+  │   └── file3
+  │       ┆  contents3
+  └── ws/
+      ├── workspace.josh
+      │   ┆  c = :/sub1
+      │   ┆  a/b = :/sub2
+      │   ┆  w = :/sub3
+      └── ws_file
+          ┆  ws_file_contents
   $ git log --graph --pretty=%s
   * try to modify ws
   * add in filter
@@ -254,43 +269,53 @@ Note that ws/d/ is now present in the ws
 
   $ git checkout -q HEAD~1 1> /dev/null
   $ git clean -ffdx 1> /dev/null
-  $ tree
+  $ git-tree-pretty .
   .
-  |-- file1
-  |-- newfile1
-  |-- newfile_master
-  |-- sub1
-  |   `-- subsub
-  |       `-- newfile_1
-  |-- sub2
-  |   |-- file2
-  |   `-- newfile_2
-  |-- sub3
-  |   `-- file3
-  `-- ws
-      |-- workspace.josh
-      `-- ws_file
-  
-  6 directories, 9 files
+  ├── file1
+  ├── newfile1
+  ├── newfile_master
+  ├── sub1/
+  │   └── subsub/
+  │       └── newfile_1
+  │           ┆  newfile_1_contents
+  ├── sub2/
+  │   ├── file2
+  │   │   ┆  contents1
+  │   └── newfile_2
+  │       ┆  newfile_2_contents
+  ├── sub3/
+  │   └── file3
+  │       ┆  contents3
+  └── ws/
+      ├── workspace.josh
+      │   ┆  c = :/sub1
+      │   ┆  a/b = :/sub2
+      │   ┆  d = :/sub3
+      └── ws_file
+          ┆  ws_file_contents
 
   $ git checkout -q HEAD~1 1> /dev/null
   $ git clean -ffdx 1> /dev/null
-  $ tree
+  $ git-tree-pretty .
   .
-  |-- file1
-  |-- newfile1
-  |-- newfile_master
-  |-- sub1
-  |   `-- subsub
-  |       `-- file1
-  |-- sub2
-  |   `-- file2
-  |-- sub3
-  |   `-- file3
-  `-- ws
-      `-- workspace.josh
-  
-  6 directories, 7 files
+  ├── file1
+  ├── newfile1
+  ├── newfile_master
+  ├── sub1/
+  │   └── subsub/
+  │       └── file1
+  │           ┆  contents1
+  ├── sub2/
+  │   └── file2
+  │       ┆  contents1
+  ├── sub3/
+  │   └── file3
+  │       ┆  contents3
+  └── ws/
+      └── workspace.josh
+          ┆  a/b = :/sub2
+          ┆  c = :/sub1
+          ┆  d = :/sub3
 
 
   $ bash ${TESTDIR}/destroy_test_env.sh

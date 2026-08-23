@@ -31,15 +31,15 @@
    1 file changed, 1 insertion(+)
    create mode 100644 sub2/file2
 
-  $ tree
+  $ git-tree-pretty .
   .
-  |-- sub1
-  |   `-- subsub
-  |       `-- file1
-  `-- sub2
-      `-- file2
-  
-  4 directories, 2 files
+  ├── sub1/
+  │   └── subsub/
+  │       └── file1
+  │           ┆  contents1
+  └── sub2/
+      └── file2
+          ┆  contents1
 
   $ git log --graph --pretty=%s
   * add file2

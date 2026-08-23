@@ -53,21 +53,24 @@ by ".josh" but rather kept and extended
   * add file2
   * add file1
 
-  $ git checkout refs/josh/master 2> /dev/null
-  $ git ls-tree HEAD
+  $ git ls-tree refs/josh/master
   100644 blob a024003ee1acc6bf70318a46e7b6df651b9dc246\tfile1 (esc)
   100755 blob a024003ee1acc6bf70318a46e7b6df651b9dc246\tfile2 (esc)
   040000 tree 708c21a7d31d142c2d1030810e573154134f32e6\tst (esc)
   040000 tree 81b2a24c53f9090c6f6a23176a2a5660e6f48317\tsub2 (esc)
-  $ tree
+  $ git-tree-pretty refs/josh/master
   .
-  |-- file1
-  |-- file2
-  |-- st
-  |   `-- config.filter.josh
-  `-- sub2
-      `-- subsub
-          `-- file2
-  
-  4 directories, 4 files
+  ├── file1
+  │   ┆  contents1
+  ├── file2
+  │   ┆  contents1
+  ├── st/
+  │   └── config.filter.josh
+  │       ┆  :/sub1::file1
+  │       ┆  :/sub1::file2
+  │       ┆  ::sub2/subsub/
+  └── sub2/
+      └── subsub/
+          └── file2
+              ┆  contents1
 

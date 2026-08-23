@@ -41,13 +41,13 @@
    1 file changed, 1 insertion(+)
    create mode 100644 file2
 
-  $ tree
+  $ git-tree-pretty .
   .
-  |-- file2
-  `-- sub1
-      `-- file1
-  
-  2 directories, 2 files
+  ├── file2
+  │   ┆  contents2
+  └── sub1/
+      └── file1
+          ┆  contents1
 
   $ bash ${TESTDIR}/destroy_test_env.sh
   "real_repo.git" = [

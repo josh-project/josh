@@ -82,21 +82,20 @@
 
   $ git clone -q http://localhost:8002/real_repo.git:workspace=ws.git ws
   $ cd ws
-  $ tree
+  $ git-tree-pretty .
   .
-  |-- a
-  |   `-- b
-  |       `-- file2
-  |-- c
-  |   `-- subsub
-  |       `-- file1
-  `-- workspace.josh
-  
-  5 directories, 3 files
+  ├── a/
+  │   └── b/
+  │       └── file2
+  │           ┆  contents1
+  ├── c/
+  │   └── subsub/
+  │       └── file1
+  │           ┆  contents1
+  └── workspace.josh
+      ┆  a/b = :/sub2
+      ┆  c = :/sub1
 
-  $ cat workspace.josh
-  a/b = :/sub2
-  c = :/sub1
 
   $ git log --graph --pretty=%s
   * add file2

@@ -178,18 +178,24 @@
   * e707f76bb6a1390f28b2162da5b5eb6933009070:5d8a699f74b48c9c595f4615dd3755244e11d176
   * 0b4cf6c9efbbda1eada39fa9c1d21d2525b027bb:3d77ff51363c9825cc2a221fc0ba5a883a1a2c72
 
-  $ git diff --stat ${EMPTY_TREE}..f8e8bc9daf54340c9fce647be467d2577b623bbe
-   file1 | 1 +
-   file2 | 1 +
-   file3 | 1 +
-   3 files changed, 3 insertions(+)
-  $ git diff --stat ${EMPTY_TREE}..e707f76bb6a1390f28b2162da5b5eb6933009070
-   file1 | 1 +
-   file2 | 1 +
-   2 files changed, 2 insertions(+)
-  $ git diff --stat ${EMPTY_TREE}..0b4cf6c9efbbda1eada39fa9c1d21d2525b027bb
-   file1 | 1 +
-   1 file changed, 1 insertion(+)
+  $ git-tree-pretty f8e8bc9daf54340c9fce647be467d2577b623bbe
+  .
+  ├── file1
+  │   ┆  contents2
+  ├── file2
+  │   ┆  contents3
+  └── file3
+      ┆  contents3
+  $ git-tree-pretty e707f76bb6a1390f28b2162da5b5eb6933009070
+  .
+  ├── file1
+  │   ┆  contents1
+  └── file2
+      ┆  contents3
+  $ git-tree-pretty 0b4cf6c9efbbda1eada39fa9c1d21d2525b027bb
+  .
+  └── file1
+      ┆  contents1
 
   $ cat > filter.josh <<EOF
   > :linear:rev(
@@ -219,15 +225,24 @@
   * f3378cf22f8de05bd2b411b640df4096e0fcf4d2:3440aebdbc752b9f2671b57f02df3a023788d849
   * 902467f53eaa9c352159cf8a81c72715bdb3a4c3:cf77b08d2fe1c0530a1bcd10c5d3434737a80cc5
 
-  $ git diff --stat ${EMPTY_TREE}..refs/heads/filtered
-   x/file1 | 1 +
-   x/file2 | 1 +
-   x/file3 | 1 +
-   3 files changed, 3 insertions(+)
-  $ git diff --stat ${EMPTY_TREE}..refs/heads/filtered~1
-   x/file1 | 1 +
-   x/file2 | 1 +
-   2 files changed, 2 insertions(+)
-  $ git diff --stat ${EMPTY_TREE}..refs/heads/filtered~2
-   x/file1 | 1 +
-   1 file changed, 1 insertion(+)
+  $ git-tree-pretty refs/heads/filtered
+  .
+  └── x/
+      ├── file1
+      │   ┆  contents2
+      ├── file2
+      │   ┆  contents3
+      └── file3
+          ┆  contents3
+  $ git-tree-pretty refs/heads/filtered~1
+  .
+  └── x/
+      ├── file1
+      │   ┆  contents1
+      └── file2
+          ┆  contents3
+  $ git-tree-pretty refs/heads/filtered~2
+  .
+  └── x/
+      └── file1
+          ┆  contents1

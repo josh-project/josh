@@ -22,12 +22,11 @@
    1 file changed, 1 insertion(+)
    create mode 100644 sub1/file1
 
-  $ tree
+  $ git-tree-pretty .
   .
-  `-- sub1
-      `-- file1
-  
-  2 directories, 1 file
+  └── sub1/
+      └── file1
+          ┆  contents1
 
   $ git push
   To http://localhost:8001/real_repo.git
@@ -70,15 +69,12 @@
   $ git clone -q http://testuser:${TESTPASS}@localhost:8002/real_repo.git full_repo
 
   $ cd full_repo
-  $ tree
+  $ git-tree-pretty .
   .
-  `-- sub1
-      `-- file1
-  
-  2 directories, 1 file
+  └── sub1/
+      └── file1
+          ┆  contents1
 
-  $ cat sub1/file1
-  contents1
 
   $ echo contents1 > file2
   $ git add .
@@ -100,13 +96,13 @@
   $ git clone -q http://x\':bla@localhost:8002/real_repo.git full_repo
   fatal: Authentication failed for 'http://localhost:8002/real_repo.git/'
   [128]
-  $ tree
+  $ git-tree-pretty .
   .
-  |-- file2
-  `-- sub1
-      `-- file1
-  
-  2 directories, 2 files
+  ├── file2
+  │   ┆  contents1
+  └── sub1/
+      └── file1
+          ┆  contents1
 
   $ cd ${TESTTMP}/real_repo
   $ curl -s http://localhost:8001/_noauth

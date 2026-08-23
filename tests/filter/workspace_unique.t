@@ -47,15 +47,19 @@ so the workspace.josh will still appear in the root of the workspace
   * add file2
   * add file1
 
-  $ git checkout refs/josh/master 2> /dev/null
-  $ tree
+  $ git-tree-pretty refs/josh/master
   .
-  |-- a
-  |   `-- file4
-  |-- file1
-  |-- sub2
-  |   `-- subsub
-  |       `-- file2
-  `-- workspace.josh
-  
-  4 directories, 4 files
+  ├── a/
+  │   └── file4
+  │       ┆  contents4
+  ├── file1
+  │   ┆  contents1
+  ├── sub2/
+  │   └── subsub/
+  │       └── file2
+  │           ┆  contents1
+  └── workspace.josh
+      ┆  :/sub1::file1
+      ┆  ::sub2/subsub/
+      ┆  a = :/sub1
+      ┆  b = ::ws/workspace.josh

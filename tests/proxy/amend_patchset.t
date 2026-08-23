@@ -38,13 +38,12 @@
 
   $ git clone -q http://localhost:8002/real_repo.git full
   $ cd ${TESTTMP}/full
-  $ tree
+  $ git-tree-pretty .
   .
-  |-- file1
-  `-- sub3
-      `-- file3
-  
-  2 directories, 2 files
+  ├── file1
+  └── sub3/
+      └── file3
+          ┆  contents3
 
   $ git log --graph --pretty=%s
   * add file3
@@ -81,12 +80,11 @@
   $ git log --graph --pretty=%s
   * Add in full
   * add file3
-  $ tree
+  $ git-tree-pretty .
   .
-  |-- file2x
-  `-- file3
-  
-  1 directory, 2 files
+  ├── file2x
+  └── file3
+      ┆  contents3
 
   $ echo content4 > file_new 1> /dev/null
   $ git add .
@@ -107,15 +105,14 @@
   * Add in full
   * add file3
   * initial
-  $ tree
+  $ git-tree-pretty .
   .
-  |-- file1
-  `-- sub3
-      |-- file2x
-      |-- file3
-      `-- file_new
-  
-  2 directories, 4 files
+  ├── file1
+  └── sub3/
+      ├── file2x
+      ├── file3
+      │   ┆  contents3
+      └── file_new
 
   $ bash ${TESTDIR}/destroy_test_env.sh
   "real_repo.git" = [

@@ -93,13 +93,13 @@
   $ git log --decorate --graph --pretty="%s %d"
   * add file1  (HEAD -> master, origin/master, origin/HEAD)
 
-  $ tree
+  $ git-tree-pretty .
   .
-  |-- file7
-  `-- sub1
-      `-- file1
-  
-  2 directories, 2 files
+  ├── file7
+  │   ┆  before
+  └── sub1/
+      └── file1
+          ┆  contents1
 
 Make sure all temporary namespace got removed
   $ tree ${TESTTMP}/remote/scratch/real_repo.git/refs/ | grep request_

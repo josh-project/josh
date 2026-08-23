@@ -89,10 +89,18 @@
   * update some docs:49451f0ceb13b6e4130217b4db23e114b529e15b
   * Initial commit:0d24cd27434a19674c17b21e47f176f7151a0260
 
-  $ tree
+  $ git-tree-pretty .
   .
-  `-- some_prefix
-      `-- readme.txt
-  
-  2 directories, 1 file
+  └── some_prefix/
+      ├── .link.josh
+      │   ┆  :~(
+      │   ┆      commit="49451f0ceb13b6e4130217b4db23e114b529e15b"
+      │   ┆      mode="snapshot"
+      │   ┆      remote="../docs_repo.git"
+      │   ┆      target="HEAD"
+      │   ┆  )[
+      │   ┆      docs = :/some_prefix
+      │   ┆  ]
+      └── readme.txt
+          ┆  updated documentation
 

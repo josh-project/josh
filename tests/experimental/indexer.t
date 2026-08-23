@@ -114,232 +114,221 @@
     }
   }
 
-  $ git diff ${EMPTY_TREE}..refs/heads/index
-  diff --git a/20/20/20/sub1 b/20/20/20/sub1
-  new file mode 100644
-  index 0000000..e69de29
-  diff --git a/20/20/6f/sub1 b/20/20/6f/sub1
-  new file mode 100644
-  index 0000000..e69de29
-  diff --git a/20/20/74/sub1 b/20/20/74/sub1
-  new file mode 100644
-  index 0000000..e69de29
-  diff --git a/20/64/6f/sub1 b/20/64/6f/sub1
-  new file mode 100644
-  index 0000000..e69de29
-  diff --git a/20/68/61/sub2 b/20/68/61/sub2
-  new file mode 100644
-  index 0000000..e69de29
-  diff --git a/20/6c/69/sub1 b/20/6c/69/sub1
-  new file mode 100644
-  index 0000000..e69de29
-  diff --git a/20/6d/6f/sub1 b/20/6d/6f/sub1
-  new file mode 100644
-  index 0000000..e69de29
-  diff --git a/20/6d/6f/sub2 b/20/6d/6f/sub2
-  new file mode 100644
-  index 0000000..e69de29
-  diff --git a/20/6f/6e/sub1 b/20/6f/6e/sub1
-  new file mode 100644
-  index 0000000..e69de29
-  diff --git a/20/73/65/sub2 b/20/73/65/sub2
-  new file mode 100644
-  index 0000000..e69de29
-  diff --git a/20/74/65/sub1 b/20/74/65/sub1
-  new file mode 100644
-  index 0000000..e69de29
-  diff --git a/20/74/68/sub1 b/20/74/68/sub1
-  new file mode 100644
-  index 0000000..e69de29
-  diff --git a/20/74/6f/sub2 b/20/74/6f/sub2
-  new file mode 100644
-  index 0000000..e69de29
-  diff --git a/20/77/68/sub2 b/20/77/68/sub2
-  new file mode 100644
-  index 0000000..e69de29
-  diff --git a/20/77/69/sub1 b/20/77/69/sub1
-  new file mode 100644
-  index 0000000..e69de29
-  diff --git a/61/6e/20/sub1 b/61/6e/20/sub1
-  new file mode 100644
-  index 0000000..e69de29
-  diff --git a/61/6e/6f/sub1 b/61/6e/6f/sub1
-  new file mode 100644
-  index 0000000..e69de29
-  diff --git a/61/70/70/sub2 b/61/70/70/sub2
-  new file mode 100644
-  index 0000000..e69de29
-  diff --git a/61/74/20/sub2 b/61/74/20/sub2
-  new file mode 100644
-  index 0000000..e69de29
-  diff --git a/63/75/6d/sub1 b/63/75/6d/sub1
-  new file mode 100644
-  index 0000000..e69de29
-  diff --git a/64/6f/63/sub1 b/64/6f/63/sub1
-  new file mode 100644
-  index 0000000..e69de29
-  diff --git a/65/20/20/sub1 b/65/20/20/sub1
-  new file mode 100644
-  index 0000000..e69de29
-  diff --git a/65/20/6c/sub1 b/65/20/6c/sub1
-  new file mode 100644
-  index 0000000..e69de29
-  diff --git a/65/20/6d/sub2 b/65/20/6d/sub2
-  new file mode 100644
-  index 0000000..e69de29
-  diff --git a/65/20/74/sub2 b/65/20/74/sub2
-  new file mode 100644
-  index 0000000..e69de29
-  diff --git a/65/20/77/sub2 b/65/20/77/sub2
-  new file mode 100644
-  index 0000000..e69de29
-  diff --git a/65/65/20/sub2 b/65/65/20/sub2
-  new file mode 100644
-  index 0000000..e69de29
-  diff --git a/65/6e/73/sub2 b/65/6e/73/sub2
-  new file mode 100644
-  index 0000000..e69de29
-  diff --git a/65/6e/74/sub1 b/65/6e/74/sub1
-  new file mode 100644
-  index 0000000..e69de29
-  diff --git a/65/72/20/sub1 b/65/72/20/sub1
-  new file mode 100644
-  index 0000000..e69de29
-  diff --git a/65/73/74/sub1 b/65/73/74/sub1
-  new file mode 100644
-  index 0000000..e69de29
-  diff --git a/66/69/72/sub1 b/66/69/72/sub1
-  new file mode 100644
-  index 0000000..e69de29
-  diff --git a/68/20/6d/sub1 b/68/20/6d/sub1
-  new file mode 100644
-  index 0000000..e69de29
-  diff --git a/68/61/6e/sub1 b/68/61/6e/sub1
-  new file mode 100644
-  index 0000000..e69de29
-  diff --git a/68/61/70/sub2 b/68/61/70/sub2
-  new file mode 100644
-  index 0000000..e69de29
-  diff --git a/68/61/74/sub2 b/68/61/74/sub2
-  new file mode 100644
-  index 0000000..e69de29
-  diff --git a/68/65/72/sub1 b/68/65/72/sub1
-  new file mode 100644
-  index 0000000..e69de29
-  diff --git a/69/6e/65/sub1 b/69/6e/65/sub1
-  new file mode 100644
-  index 0000000..e69de29
-  diff --git a/69/72/73/sub1 b/69/72/73/sub1
-  new file mode 100644
-  index 0000000..e69de29
-  diff --git a/69/74/68/sub1 b/69/74/68/sub1
-  new file mode 100644
-  index 0000000..e69de29
-  diff --git a/6c/69/6e/sub1 b/6c/69/6e/sub1
-  new file mode 100644
-  index 0000000..e69de29
-  diff --git a/6d/65/6e/sub1 b/6d/65/6e/sub1
-  new file mode 100644
-  index 0000000..e69de29
-  diff --git a/6d/6f/72/sub1 b/6d/6f/72/sub1
-  new file mode 100644
-  index 0000000..e69de29
-  diff --git a/6d/6f/72/sub2 b/6d/6f/72/sub2
-  new file mode 100644
-  index 0000000..e69de29
-  diff --git a/6e/20/20/sub1 b/6e/20/20/sub1
-  new file mode 100644
-  index 0000000..e69de29
-  diff --git a/6e/65/20/sub1 b/6e/65/20/sub1
-  new file mode 100644
-  index 0000000..e69de29
-  diff --git a/6e/65/20/sub2 b/6e/65/20/sub2
-  new file mode 100644
-  index 0000000..e69de29
-  diff --git a/6e/6f/74/sub1 b/6e/6f/74/sub1
-  new file mode 100644
-  index 0000000..e69de29
-  diff --git a/6e/74/20/sub1 b/6e/74/20/sub1
-  new file mode 100644
-  index 0000000..e69de29
-  diff --git a/6f/20/73/sub2 b/6f/20/73/sub2
-  new file mode 100644
-  index 0000000..e69de29
-  diff --git a/6f/63/75/sub1 b/6f/63/75/sub1
-  new file mode 100644
-  index 0000000..e69de29
-  diff --git a/6f/6e/65/sub1 b/6f/6e/65/sub1
-  new file mode 100644
-  index 0000000..e69de29
-  diff --git a/6f/6e/65/sub2 b/6f/6e/65/sub2
-  new file mode 100644
-  index 0000000..e69de29
-  diff --git a/6f/72/65/sub1 b/6f/72/65/sub1
-  new file mode 100644
-  index 0000000..e69de29
-  diff --git a/6f/72/65/sub2 b/6f/72/65/sub2
-  new file mode 100644
-  index 0000000..e69de29
-  diff --git a/6f/74/68/sub1 b/6f/74/68/sub1
-  new file mode 100644
-  index 0000000..e69de29
-  diff --git a/70/65/6e/sub2 b/70/65/6e/sub2
-  new file mode 100644
-  index 0000000..e69de29
-  diff --git a/70/70/65/sub2 b/70/70/65/sub2
-  new file mode 100644
-  index 0000000..e69de29
-  diff --git a/72/20/64/sub1 b/72/20/64/sub1
-  new file mode 100644
-  index 0000000..e69de29
-  diff --git a/72/65/20/sub1 b/72/65/20/sub1
-  new file mode 100644
-  index 0000000..e69de29
-  diff --git a/72/65/20/sub2 b/72/65/20/sub2
-  new file mode 100644
-  index 0000000..e69de29
-  diff --git a/72/73/74/sub1 b/72/73/74/sub1
-  new file mode 100644
-  index 0000000..e69de29
-  diff --git a/73/65/65/sub2 b/73/65/65/sub2
-  new file mode 100644
-  index 0000000..e69de29
-  diff --git a/73/74/20/sub1 b/73/74/20/sub1
-  new file mode 100644
-  index 0000000..e69de29
-  diff --git a/74/20/64/sub1 b/74/20/64/sub1
-  new file mode 100644
-  index 0000000..e69de29
-  diff --git a/74/20/68/sub2 b/74/20/68/sub2
-  new file mode 100644
-  index 0000000..e69de29
-  diff --git a/74/20/74/sub1 b/74/20/74/sub1
-  new file mode 100644
-  index 0000000..e69de29
-  diff --git a/74/20/77/sub1 b/74/20/77/sub1
-  new file mode 100644
-  index 0000000..e69de29
-  diff --git a/74/65/73/sub1 b/74/65/73/sub1
-  new file mode 100644
-  index 0000000..e69de29
-  diff --git a/74/68/20/sub1 b/74/68/20/sub1
-  new file mode 100644
-  index 0000000..e69de29
-  diff --git a/74/68/61/sub1 b/74/68/61/sub1
-  new file mode 100644
-  index 0000000..e69de29
-  diff --git a/74/68/65/sub1 b/74/68/65/sub1
-  new file mode 100644
-  index 0000000..e69de29
-  diff --git a/74/6f/20/sub2 b/74/6f/20/sub2
-  new file mode 100644
-  index 0000000..e69de29
-  diff --git a/75/6d/65/sub1 b/75/6d/65/sub1
-  new file mode 100644
-  index 0000000..e69de29
-  diff --git a/77/68/61/sub2 b/77/68/61/sub2
-  new file mode 100644
-  index 0000000..e69de29
-  diff --git a/77/69/74/sub1 b/77/69/74/sub1
-  new file mode 100644
-  index 0000000..e69de29
+  $ git-tree-pretty refs/heads/index
+  .
+  ├── 20/
+  │   ├── 20/
+  │   │   ├── 20/
+  │   │   │   └── sub1
+  │   │   ├── 6f/
+  │   │   │   └── sub1
+  │   │   └── 74/
+  │   │       └── sub1
+  │   ├── 64/
+  │   │   └── 6f/
+  │   │       └── sub1
+  │   ├── 68/
+  │   │   └── 61/
+  │   │       └── sub2
+  │   ├── 6c/
+  │   │   └── 69/
+  │   │       └── sub1
+  │   ├── 6d/
+  │   │   └── 6f/
+  │   │       ├── sub1
+  │   │       └── sub2
+  │   ├── 6f/
+  │   │   └── 6e/
+  │   │       └── sub1
+  │   ├── 73/
+  │   │   └── 65/
+  │   │       └── sub2
+  │   ├── 74/
+  │   │   ├── 65/
+  │   │   │   └── sub1
+  │   │   ├── 68/
+  │   │   │   └── sub1
+  │   │   └── 6f/
+  │   │       └── sub2
+  │   └── 77/
+  │       ├── 68/
+  │       │   └── sub2
+  │       └── 69/
+  │           └── sub1
+  ├── 61/
+  │   ├── 6e/
+  │   │   ├── 20/
+  │   │   │   └── sub1
+  │   │   └── 6f/
+  │   │       └── sub1
+  │   ├── 70/
+  │   │   └── 70/
+  │   │       └── sub2
+  │   └── 74/
+  │       └── 20/
+  │           └── sub2
+  ├── 63/
+  │   └── 75/
+  │       └── 6d/
+  │           └── sub1
+  ├── 64/
+  │   └── 6f/
+  │       └── 63/
+  │           └── sub1
+  ├── 65/
+  │   ├── 20/
+  │   │   ├── 20/
+  │   │   │   └── sub1
+  │   │   ├── 6c/
+  │   │   │   └── sub1
+  │   │   ├── 6d/
+  │   │   │   └── sub2
+  │   │   ├── 74/
+  │   │   │   └── sub2
+  │   │   └── 77/
+  │   │       └── sub2
+  │   ├── 65/
+  │   │   └── 20/
+  │   │       └── sub2
+  │   ├── 6e/
+  │   │   ├── 73/
+  │   │   │   └── sub2
+  │   │   └── 74/
+  │   │       └── sub1
+  │   ├── 72/
+  │   │   └── 20/
+  │   │       └── sub1
+  │   └── 73/
+  │       └── 74/
+  │           └── sub1
+  ├── 66/
+  │   └── 69/
+  │       └── 72/
+  │           └── sub1
+  ├── 68/
+  │   ├── 20/
+  │   │   └── 6d/
+  │   │       └── sub1
+  │   ├── 61/
+  │   │   ├── 6e/
+  │   │   │   └── sub1
+  │   │   ├── 70/
+  │   │   │   └── sub2
+  │   │   └── 74/
+  │   │       └── sub2
+  │   └── 65/
+  │       └── 72/
+  │           └── sub1
+  ├── 69/
+  │   ├── 6e/
+  │   │   └── 65/
+  │   │       └── sub1
+  │   ├── 72/
+  │   │   └── 73/
+  │   │       └── sub1
+  │   └── 74/
+  │       └── 68/
+  │           └── sub1
+  ├── 6c/
+  │   └── 69/
+  │       └── 6e/
+  │           └── sub1
+  ├── 6d/
+  │   ├── 65/
+  │   │   └── 6e/
+  │   │       └── sub1
+  │   └── 6f/
+  │       └── 72/
+  │           ├── sub1
+  │           └── sub2
+  ├── 6e/
+  │   ├── 20/
+  │   │   └── 20/
+  │   │       └── sub1
+  │   ├── 65/
+  │   │   └── 20/
+  │   │       ├── sub1
+  │   │       └── sub2
+  │   ├── 6f/
+  │   │   └── 74/
+  │   │       └── sub1
+  │   └── 74/
+  │       └── 20/
+  │           └── sub1
+  ├── 6f/
+  │   ├── 20/
+  │   │   └── 73/
+  │   │       └── sub2
+  │   ├── 63/
+  │   │   └── 75/
+  │   │       └── sub1
+  │   ├── 6e/
+  │   │   └── 65/
+  │   │       ├── sub1
+  │   │       └── sub2
+  │   ├── 72/
+  │   │   └── 65/
+  │   │       ├── sub1
+  │   │       └── sub2
+  │   └── 74/
+  │       └── 68/
+  │           └── sub1
+  ├── 70/
+  │   ├── 65/
+  │   │   └── 6e/
+  │   │       └── sub2
+  │   └── 70/
+  │       └── 65/
+  │           └── sub2
+  ├── 72/
+  │   ├── 20/
+  │   │   └── 64/
+  │   │       └── sub1
+  │   ├── 65/
+  │   │   └── 20/
+  │   │       ├── sub1
+  │   │       └── sub2
+  │   └── 73/
+  │       └── 74/
+  │           └── sub1
+  ├── 73/
+  │   ├── 65/
+  │   │   └── 65/
+  │   │       └── sub2
+  │   └── 74/
+  │       └── 20/
+  │           └── sub1
+  ├── 74/
+  │   ├── 20/
+  │   │   ├── 64/
+  │   │   │   └── sub1
+  │   │   ├── 68/
+  │   │   │   └── sub2
+  │   │   ├── 74/
+  │   │   │   └── sub1
+  │   │   └── 77/
+  │   │       └── sub1
+  │   ├── 65/
+  │   │   └── 73/
+  │   │       └── sub1
+  │   ├── 68/
+  │   │   ├── 20/
+  │   │   │   └── sub1
+  │   │   ├── 61/
+  │   │   │   └── sub1
+  │   │   └── 65/
+  │   │       └── sub1
+  │   └── 6f/
+  │       └── 20/
+  │           └── sub2
+  ├── 75/
+  │   └── 6d/
+  │       └── 65/
+  │           └── sub1
+  └── 77/
+      ├── 68/
+      │   └── 61/
+      │       └── sub2
+      └── 69/
+          └── 74/
+              └── sub1

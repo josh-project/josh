@@ -244,22 +244,20 @@ Test Adapt with submodule changes - add commits to submodule and update
   $ git add libs
   $ git commit -m "update libs submodule" 1> /dev/null
 
-  $ tree
+  $ git-tree-pretty .
   .
-  |-- libs
-  |   |-- bar
-  |   |   |-- file3.txt
-  |   |   `-- file4.txt
-  |   `-- foo
-  |       |-- file1.txt
-  |       |-- file2.txt
-  |       `-- file3.txt
-  |-- main.txt
-  `-- modules
-      `-- another
-          `-- another.txt
-  
-  6 directories, 7 files
+  ├── .gitmodules
+  │   ┆  [submodule "libs"]
+  │   ┆  	path = libs
+  │   ┆  	url = ../submodule-repo
+  │   ┆  [submodule "modules/another"]
+  │   ┆  	path = modules/another
+  │   ┆  	url = ../another-submodule
+  ├── libs (submodule)
+  ├── main.txt
+  │   ┆  main content
+  └── modules/
+      └── another (submodule)
 
 
   $ josh-filter -s :adapt=submodules:link=embedded master --update refs/josh/filter/master
