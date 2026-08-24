@@ -752,15 +752,14 @@ impl Transaction {
     /// `expected`: with `Expected::Any` an existing ref is overwritten unconditionally
     /// (updating to the value a ref already has is a no-op); `Expected::At(oid)` asserts
     /// the ref currently points at `oid`; `Expected::Absent` asserts it does not exist.
-    /// An assertion already false when called returns an error and leaves the pending state
-    /// unchanged. Writers that derive `target` from the ref's old value pass `At`/`Absent`
-    /// so they never overwrite a concurrent update.
+    /// Writers that derive `target` from the ref's old value pass `At`/`Absent` so they
+    /// never overwrite a concurrent update.
     ///
     /// The write itself is deferred: the edit is collected and applied once this
     /// transaction's objects are durable (see [`Transaction::pending_refs`]), so a ref can
-    /// never appear on disk while its target is memory-only. gix rechecks the guard when the
-    /// edit lands; a race after this method returns therefore fails the explicit boundary or
-    /// is logged by drop rather than overwriting the other writer.
+    /// never appear on disk while its target is memory-only. Guard checks happen when the
+    /// edit lands, avoiding an eager ref read and closing the race between checking and
+    /// writing. A failed guard therefore fails the explicit boundary or is logged by drop.
     pub fn update_ref(
         &self,
         refname: &str,
@@ -783,28 +782,6 @@ impl Transaction {
             && reference.target == gix::refs::Target::Object(crate::objects::gix_oid(target))
         {
             return Ok(());
-        }
-        match expected {
-            Expected::Any => {}
-            Expected::Absent => {
-                if self.find_ref(&name)?.is_some() {
-                    return Err(anyhow!(
-                        "ref '{}' exists but was expected to be absent",
-                        refname
-                    ));
-                }
-            }
-            Expected::At(old) => match self.find_ref(&name)? {
-                Some(reference)
-                    if reference.target
-                        == gix::refs::Target::Object(crate::objects::gix_oid(old)) => {}
-                _ => {
-                    return Err(anyhow!(
-                        "ref '{}' does not point at the expected value {old}",
-                        refname
-                    ));
-                }
-            },
         }
         self.pending_refs
             .borrow_mut()
@@ -1524,19 +1501,30 @@ mod tests {
     }
 
     #[test]
-    fn update_ref_absent_fails_on_existing_ref() {
-        let (_dir, transaction) = test_transaction();
+    fn update_ref_absent_fails_when_pending_refs_are_written() {
+        let (dir, transaction) = test_transaction();
         let a = commit(&transaction, "a");
         let b = commit(&transaction, "b");
         transaction
             .update_ref("refs/heads/main", Expected::Any, a, "test")
             .unwrap();
-        assert!(
-            transaction
-                .update_ref("refs/heads/main", Expected::Absent, b, "test")
-                .is_err()
-        );
+        transaction.apply_pending_refs().unwrap();
+
+        transaction
+            .update_ref("refs/heads/main", Expected::Absent, b, "test")
+            .unwrap();
+        assert_eq!(transaction.resolve_ref("refs/heads/main").unwrap(), Some(b));
+        assert!(transaction.apply_pending_refs().is_err());
+
         assert_eq!(transaction.resolve_ref("refs/heads/main").unwrap(), Some(a));
+        assert_eq!(
+            git2::Repository::open(dir.path())
+                .unwrap()
+                .find_reference("refs/heads/main")
+                .unwrap()
+                .target(),
+            Some(a)
+        );
     }
 
     #[test]
@@ -1550,11 +1538,12 @@ mod tests {
         transaction
             .update_ref("refs/heads/main", Expected::At(a), b, "test")
             .unwrap();
+        transaction.apply_pending_refs().unwrap();
         assert_eq!(transaction.resolve_ref("refs/heads/main").unwrap(), Some(b));
     }
 
     #[test]
-    fn update_ref_at_fails_on_mismatch() {
+    fn update_ref_at_fails_on_mismatch_when_pending_refs_are_written() {
         let (_dir, transaction) = test_transaction();
         let a = commit(&transaction, "a");
         let b = commit(&transaction, "b");
@@ -1562,24 +1551,27 @@ mod tests {
         transaction
             .update_ref("refs/heads/main", Expected::Any, a, "test")
             .unwrap();
-        assert!(
-            transaction
-                .update_ref("refs/heads/main", Expected::At(b), c, "test")
-                .is_err()
-        );
+        transaction
+            .update_ref("refs/heads/main", Expected::At(b), c, "test")
+            .unwrap();
+        assert_eq!(transaction.resolve_ref("refs/heads/main").unwrap(), Some(c));
+        assert!(transaction.apply_pending_refs().is_err());
         assert_eq!(transaction.resolve_ref("refs/heads/main").unwrap(), Some(a));
     }
 
     #[test]
-    fn update_ref_at_fails_on_missing_ref() {
+    fn update_ref_at_fails_on_missing_ref_when_pending_refs_are_written() {
         let (_dir, transaction) = test_transaction();
         let a = commit(&transaction, "a");
         let b = commit(&transaction, "b");
-        assert!(
-            transaction
-                .update_ref("refs/heads/missing", Expected::At(a), b, "test")
-                .is_err()
+        transaction
+            .update_ref("refs/heads/missing", Expected::At(a), b, "test")
+            .unwrap();
+        assert_eq!(
+            transaction.resolve_ref("refs/heads/missing").unwrap(),
+            Some(b)
         );
+        assert!(transaction.apply_pending_refs().is_err());
         assert_eq!(transaction.resolve_ref("refs/heads/missing").unwrap(), None);
     }
 
@@ -1607,6 +1599,7 @@ mod tests {
         transaction
             .update_ref("refs/josh/a", Expected::At(a), b, "test")
             .unwrap();
+        transaction.apply_pending_refs().unwrap();
         assert_eq!(transaction.resolve_ref("refs/josh/a").unwrap(), Some(b));
     }
 
@@ -1792,11 +1785,10 @@ mod tests {
             .unwrap();
         assert_eq!(inode(), before);
 
-        assert!(
-            transaction
-                .update_ref("refs/heads/main", Expected::At(b), b, "test")
-                .is_err()
-        );
+        transaction
+            .update_ref("refs/heads/main", Expected::At(b), b, "test")
+            .unwrap();
+        assert!(transaction.apply_pending_refs().is_err());
         assert_eq!(inode(), before);
         transaction
             .update_ref("refs/heads/main", Expected::Any, b, "test")
