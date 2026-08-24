@@ -60,8 +60,8 @@ fn full_ref_name(refname: &str) -> anyhow::Result<gix::refs::FullName> {
         .map_err(|e| anyhow!("'{}' is not a valid refname: {}", refname, e))
 }
 
-/// Who a reflog entry names. gix refuses to append to a reflog without a committer, where
-/// libgit2 fell back to `unknown <unknown>` rather than fail the ref update; so does this.
+/// Who a reflog entry names. A missing configured identity must not prevent ref updates from
+/// writing their reflogs.
 fn reflog_committer(
     signature: Option<&git2::Signature<'_>>,
 ) -> anyhow::Result<gix_actor::Signature> {
@@ -160,13 +160,16 @@ fn shared_gix_repo(
         return Ok(repo.clone());
     }
 
-    // Isolated: the repository's own configuration only, no environment or system-wide
-    // overrides, so a transaction resolves the same objects and refs whatever the process it
-    // runs in.
-    let repo = std::sync::Arc::new(gix::ThreadSafeRepository::open_opts(
-        path,
-        gix::open::Options::isolated(),
-    )?);
+    // Object-database environment overrides must not affect a transaction opened for an
+    // explicit path. System, user and repository configuration plus identity environment
+    // variables remain available to configuration and identity queries.
+    let mut options = gix::open::Options::isolated();
+    options.permissions.config = gix::open::permissions::Config::all();
+    options.permissions.config.env = false;
+    options.permissions.env.xdg_config_home = gix::sec::Permission::Allow;
+    options.permissions.env.home = gix::sec::Permission::Allow;
+    options.permissions.env.identity = gix::sec::Permission::Allow;
+    let repo = std::sync::Arc::new(gix::ThreadSafeRepository::open_opts(path, options)?);
     repos.insert(path.to_owned(), repo.clone());
 
     Ok(repo)
@@ -264,9 +267,8 @@ pub struct Transaction {
     /// borrows it for the entire call while also borrowing other caches through `t2`.
     trigram_indexer: std::cell::RefCell<josh_search::Indexer>,
     repo: git2::Repository,
-    /// The gitoxide view of the same repository, and the one josh reads objects and refs
-    /// through as each of those moves off libgit2. Held in its thread-safe form: a
-    /// transaction crosses threads (josh-graphql requires `Send`) while a `gix::Repository`
+    /// The primary repository view for object and ref reads. Held in its thread-safe form:
+    /// a transaction crosses threads (josh-graphql requires `Send`) while a `gix::Repository`
     /// holds `Rc` snapshots of packed-refs and shallow state and does not.
     gix_repo: std::sync::Arc<gix::ThreadSafeRepository>,
     /// The in-memory object store of this transaction's repository, shared with every other
@@ -332,18 +334,13 @@ impl Transaction {
         mem_odb_limit: Option<usize>,
         ephemeral: bool,
     ) -> Transaction {
-        // Turn off libgit2's strictness checks. These are process-wide C globals, set
-        // exactly once.
+        // Configure the remaining porcelain handle once; these options are process-wide.
         static GIT2_OPTIONS: std::sync::Once = std::sync::Once::new();
         GIT2_OPTIONS.call_once(|| {
-            // Don't check per write that referenced objects exist: josh only ever writes
-            // objects whose referenced objects it has just produced or read, so the checks
-            // are pure overhead.
+            // Josh only writes objects whose references it has just produced or read.
             git2::opts::strict_object_creation(false);
-            // Don't re-hash objects on every read: libgit2 defaults to verifying each
-            // object against its id with collision-detecting SHA1 on every lookup. josh
-            // only reads objects it wrote itself or that git verified on transfer, so this
-            // costs a full hash pass per object read and buys nothing.
+            // Objects are produced locally or verified on transfer, so hashing every read adds
+            // work without strengthening this trust boundary.
             git2::opts::strict_hash_verification(false);
         });
 
@@ -401,7 +398,7 @@ impl Transaction {
     pub fn try_clone(&self) -> anyhow::Result<Transaction> {
         let context = TransactionContext {
             cache: self.t2.borrow().cache.clone(),
-            path: self.repo.path().to_owned(),
+            path: self.gix_repo.path().to_owned(),
             ref_prefix: self.ref_prefix.clone(),
             mem_odb_limit: self.mem_odb_limit,
             ephemeral: self.ephemeral,
@@ -417,11 +414,9 @@ impl Transaction {
         self.gix_repo.to_thread_local()
     }
 
-    /// The libgit2 handle on this repository, for the porcelain josh has not moved to gix:
-    /// worktree and index operations, `FETCH_HEAD`'s multi-entry semantics, notes, revision
-    /// syntax and configuration. It must never read or write objects josh produces --
-    /// those live in this transaction's store until it flushes, and this handle cannot see
-    /// them (use [`Transaction::odb`]).
+    /// The porcelain repository handle, limited to worktree and index operations,
+    /// `FETCH_HEAD`'s multi-entry semantics and notes. It must not read or write objects Josh
+    /// produces; those can remain buffered in the transaction store (use [`Transaction::odb`]).
     pub fn git2_repo(&self) -> &git2::Repository {
         &self.repo
     }
@@ -496,7 +491,7 @@ impl Transaction {
     ) -> anyhow::Result<crate::git::GitCommand> {
         self.flush_mem_odb()?;
         Ok(crate::git::GitCommand::new(
-            self.repo.path(),
+            self.gix_repo.path(),
             args,
             env.iter().copied(),
         ))
@@ -652,7 +647,7 @@ impl Transaction {
     /// The repository's git directory, for the callers that build paths beside it or hand
     /// it to a `git` subprocess.
     pub fn path(&self) -> &std::path::Path {
-        self.repo.path()
+        self.gix_repo.path()
     }
 
     /// Where HEAD points. Errors when HEAD is unborn (a repository whose HEAD names a
@@ -686,13 +681,26 @@ impl Transaction {
     /// Resolve a user-supplied revision -- a ref name, a short or full oid, or rev syntax
     /// like `master~2` -- to the object it names, unpeeled. `Ok(None)` when it resolves to
     /// nothing, which covers both a malformed spec and one naming something absent: a
-    /// revision a user typed is input, not a contract. (gix mapping: `rev_parse_single`.)
+    /// revision a user typed is input, not a contract.
     pub fn rev_parse(&self, spec: &str) -> anyhow::Result<Option<git2::Oid>> {
-        match self.repo.revparse_single(spec) {
-            Ok(object) => Ok(Some(object.id())),
-            Err(e) if e.code() == git2::ErrorCode::NotFound => Ok(None),
-            Err(e) if e.code() == git2::ErrorCode::InvalidSpec => Ok(None),
-            Err(e) => Err(e.into()),
+        let repo = self.repo();
+        match repo.rev_parse_single(spec) {
+            Ok(id) => Ok(Some(crate::objects::git2_oid(&id))),
+            Err(gix::revision::spec::parse::single::Error::RangedRev { .. }) => Ok(None),
+            Err(gix::revision::spec::parse::single::Error::Parse(error)) => {
+                let operational_error = error.sources().any(|source| {
+                    matches!(
+                        source.downcast_ref::<gix_object::find::existing::Error>(),
+                        Some(gix_object::find::existing::Error::Find(_))
+                    ) || source.is::<gix_object::decode::Error>()
+                        || source.is::<std::io::Error>()
+                });
+                if operational_error {
+                    Err(error.into())
+                } else {
+                    Ok(None)
+                }
+            }
         }
     }
 
@@ -722,30 +730,50 @@ impl Transaction {
 
     /// The remote-tracking ref that `branch_ref` is configured to track, from
     /// `branch.<name>.remote` and `branch.<name>.merge`. `Ok(None)` when the branch has no
-    /// upstream configured. (gix mapping: `branch_remote_tracking_ref_name`.)
+    /// upstream configured.
     pub fn upstream_ref(&self, branch_ref: &str) -> anyhow::Result<Option<String>> {
-        match self.repo.branch_upstream_name(branch_ref) {
-            Ok(buf) => Ok(buf.as_str().ok().map(|name| name.to_string())),
-            Err(e) if e.code() == git2::ErrorCode::NotFound => Ok(None),
-            Err(e) => Err(e.into()),
-        }
+        let branch = gix::refs::FullName::try_from(branch_ref)?;
+        let repo = self.repo();
+        let Some(upstream) =
+            repo.branch_remote_tracking_ref_name(branch.as_ref(), gix::remote::Direction::Fetch)
+        else {
+            return Ok(None);
+        };
+        let upstream = upstream?;
+        Ok(std::str::from_utf8(upstream.as_bstr())
+            .ok()
+            .map(ToOwned::to_owned))
     }
 
     /// A string value from the repository's configuration, `None` when the key is unset.
-    /// (gix mapping: `config_snapshot().string()`.)
     pub fn config_string(&self, key: &str) -> anyhow::Result<Option<String>> {
-        match self.repo.config()?.get_string(key) {
-            Ok(value) => Ok(Some(value)),
-            Err(e) if e.code() == git2::ErrorCode::NotFound => Ok(None),
-            Err(e) => Err(e.into()),
-        }
+        self.repo()
+            .config_snapshot()
+            .string(key)
+            .map(|value| {
+                std::str::from_utf8(value.as_ref())
+                    .map(ToOwned::to_owned)
+                    .map_err(Into::into)
+            })
+            .transpose()
     }
 
     /// The identity to record as author and committer, from the repository's configuration
     /// with the usual environment overrides. Errors when no identity is configured.
-    /// (gix mapping: `committer()`.)
     pub fn signature(&self) -> anyhow::Result<git2::Signature<'static>> {
-        Ok(self.repo.signature()?)
+        let repo = self.repo();
+        let signature = repo
+            .committer()
+            .ok_or_else(|| anyhow!("no committer identity is configured"))??;
+        let time = gix_actor::date::parse_header(signature.time)
+            .ok_or_else(|| anyhow!("committer date is invalid"))?;
+        let name = std::str::from_utf8(signature.name.as_ref())?;
+        let email = std::str::from_utf8(signature.email.as_ref())?;
+        Ok(git2::Signature::new(
+            name,
+            email,
+            &git2::Time::new(time.seconds, time.offset / 60),
+        )?)
     }
 
     /// Create or update the direct ref `refname` to point at `target`, guarded by
@@ -808,7 +836,7 @@ impl Transaction {
         edits: Vec<gix::refs::transaction::RefEdit>,
     ) -> anyhow::Result<Vec<gix::refs::transaction::RefEdit>> {
         use gix::lock::acquire::Fail;
-        let committer = reflog_committer(self.repo.signature().ok().as_ref())?;
+        let committer = reflog_committer(self.signature().ok().as_ref())?;
         let mut time_buf = gix_actor::date::parse::TimeBuf::default();
         Ok(self
             .refs()
@@ -878,8 +906,7 @@ impl Transaction {
     /// currently points at `oid` and errors, leaving the ref in place, on mismatch or
     /// absence. `Expected::Absent` is a contract error. The ref entry itself is deleted
     /// (a symbolic ref is deleted, not followed); loose and packed entries and the reflog
-    /// are removed. An `Any` delete does not mind a ref moving concurrently, where libgit2
-    /// CAS'd against the value it read at find time and could fail.
+    /// are removed. `Expected::Any` deliberately carries no concurrency guard.
     pub fn delete_ref(&self, refname: &str, expected: Expected) -> anyhow::Result<()> {
         if expected == Expected::Absent {
             return Err(anyhow!("delete_ref: Expected::Absent is not a valid guard"));
@@ -915,7 +942,7 @@ impl Transaction {
     /// `target`, which is validated for refname format but need not exist (dangling
     /// symrefs are allowed). Always overwrites, like `Expected::Any`; grow a guard
     /// parameter only when a consumer needs one (as update_ref did). No reflog entry is
-    /// written -- a symbolic update records no oid -- where libgit2 wrote one.
+    /// written because a symbolic update has no oid to record.
     pub fn create_symref(
         &self,
         refname: &str,
@@ -1584,8 +1611,7 @@ mod tests {
             .update_ref("refs/josh/a", Expected::Any, a, "test")
             .unwrap();
         transaction.apply_pending_refs().unwrap();
-        // Pack the ref by hand (git2 exposes no pack-refs API): the CAS must see the
-        // packed value, not conclude the ref is absent.
+        // Write a packed ref directly so the CAS must find it there.
         std::fs::write(
             dir.path().join("packed-refs"),
             format!(
@@ -1823,6 +1849,73 @@ mod tests {
     }
 
     #[test]
+    fn rev_parse_resolves_revision_syntax_and_rejects_user_input() {
+        let (_dir, transaction) = test_transaction();
+        let parent = commit(&transaction, "parent");
+        let repo = transaction.git2_repo();
+        let tree = repo
+            .find_tree(repo.treebuilder(None).unwrap().write().unwrap())
+            .unwrap();
+        let sig = git2::Signature::new("t", "t@example.com", &git2::Time::new(0, 0)).unwrap();
+        let parent_commit = repo.find_commit(parent).unwrap();
+        let tip = repo
+            .commit(None, &sig, &sig, "tip", &tree, &[&parent_commit])
+            .unwrap();
+        transaction
+            .update_ref("refs/heads/main", Expected::Any, tip, "test")
+            .unwrap();
+        transaction.apply_pending_refs().unwrap();
+
+        assert_eq!(transaction.rev_parse("main").unwrap(), Some(tip));
+        assert_eq!(transaction.rev_parse("main~1").unwrap(), Some(parent));
+        assert_eq!(transaction.rev_parse("missing").unwrap(), None);
+        assert_eq!(transaction.rev_parse("main~nope").unwrap(), None);
+        assert_eq!(transaction.rev_parse("main..main").unwrap(), None);
+    }
+
+    #[test]
+    fn configuration_methods_use_repository_configuration() {
+        let dir = tempfile::tempdir().unwrap();
+        let repo = git2::Repository::init_bare(dir.path()).unwrap();
+        let mut config = repo.config().unwrap();
+        config.set_str("user.name", "Configured User").unwrap();
+        config
+            .set_str("user.email", "configured@example.com")
+            .unwrap();
+        config.set_str("branch.main.remote", "origin").unwrap();
+        config
+            .set_str("branch.main.merge", "refs/heads/main")
+            .unwrap();
+        config
+            .set_str("remote.origin.fetch", "+refs/heads/*:refs/remotes/origin/*")
+            .unwrap();
+        drop(config);
+        drop(repo);
+
+        let context = TransactionContext::new(
+            dir.path(),
+            std::sync::Arc::new(crate::cache::CacheStack::new()),
+        );
+        let transaction = context.open().unwrap();
+
+        assert_eq!(
+            transaction.config_string("user.email").unwrap().as_deref(),
+            Some("configured@example.com")
+        );
+        assert_eq!(
+            transaction
+                .upstream_ref("refs/heads/main")
+                .unwrap()
+                .as_deref(),
+            Some("refs/remotes/origin/main")
+        );
+        assert_eq!(transaction.upstream_ref("refs/heads/other").unwrap(), None);
+        let signature = transaction.signature().unwrap();
+        assert_eq!(signature.name().unwrap(), "Configured User");
+        assert_eq!(signature.email().unwrap(), "configured@example.com");
+    }
+
+    #[test]
     fn update_ref_writes_a_reflog_entry() {
         // The one thing a bare test repository cannot show: gix appends to the reflog where
         // git does, and refuses to do it without a committer.
@@ -1940,8 +2033,7 @@ mod tests {
             .update_ref("refs/josh/a", Expected::Any, a, "test")
             .unwrap();
         transaction.apply_pending_refs().unwrap();
-        // Pack the ref by hand (git2 exposes no pack-refs API): delete must remove the
-        // packed entry, not conclude the ref is absent.
+        // Write a packed ref directly so deletion must find it there.
         std::fs::write(
             dir.path().join("packed-refs"),
             format!(
