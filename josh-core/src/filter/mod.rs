@@ -1631,25 +1631,23 @@ fn apply_impl(
             apply_impl(transaction, odb, f, x)
         }
         Op::TreeId(path, subfilter) => {
-            let applied = apply_impl(transaction, odb, *subfilter, x.clone())?;
-            let oid_str = applied.tree_id().to_string();
-            apply_impl(
-                transaction,
+            let tree_oid = apply_impl(transaction, odb, *subfilter, x.clone())?.tree_id();
+            Ok(x.with_tree(tree::insert_oid(
                 odb,
-                to_filter(Op::Insert(path.clone(), InsertContent::Inline(oid_str))),
-                x,
-            )
+                tree::empty_id(),
+                path,
+                tree_oid,
+                0o160000,
+            )?))
         }
         Op::ObjectRef(path) => {
             if let Ok(Some(entry)) = tree::get_path_entry(transaction, odb, x.tree_id(), path) {
-                let oid_str = entry.oid.to_string();
-                let blob_oid = odb.write(gix_object::Kind::Blob, oid_str.as_bytes());
                 Ok(x.with_tree(tree::insert_oid(
                     odb,
                     tree::empty_id(),
                     path,
-                    blob_oid,
-                    0o100644,
+                    entry.oid,
+                    0o160000,
                 )?))
             } else {
                 Ok(x)
@@ -1661,39 +1659,22 @@ fn apply_impl(
                 Ok(Some(e)) => e,
                 _ => return Ok(x),
             };
-            // Path exists: read OID string from blob content.
-            let oid_str = if let Some(blob) = tree::blob_bytes(odb, entry.oid) {
-                std::str::from_utf8(&blob)?
-                    .lines()
-                    .next()
-                    .unwrap_or("")
-                    .trim()
-                    .to_string()
-            } else {
-                String::new()
-            };
-            if let Ok(oid) = gix_hash::ObjectId::from_str(&oid_str) {
-                // Kind by header, never by `contains`: `read_header`'s disk fallback
-                // virtualizes the empty tree, `exists` does not.
-                let (oid, mode) = match odb.try_kind(oid) {
-                    Ok(Some(gix_object::Kind::Tree)) => (oid, 0o040000),
-                    Ok(Some(gix_object::Kind::Blob)) => (oid, 0o100644),
-                    _ => {
-                        return Err(anyhow::anyhow!(":#: object not found in repo: {}", oid));
-                    }
-                };
-                Ok(x.with_tree(tree::insert_oid(odb, tree::empty_id(), path, oid, mode)?))
-            } else {
-                // Content is not a valid OID: insert empty blob at path.
-                let empty_blob = odb.write(gix_object::Kind::Blob, b"");
-                Ok(x.with_tree(tree::insert_oid(
-                    odb,
-                    tree::empty_id(),
-                    path,
-                    empty_blob,
-                    0o100644,
-                )?))
+            if !entry.mode.is_commit() {
+                return Err(anyhow::anyhow!(
+                    ":#: expected gitlink at path: {}",
+                    path.display()
+                ));
             }
+            let oid = entry.oid;
+            // Header lookup can resolve the virtual empty tree; existence checks cannot.
+            let mode = match odb.try_kind(oid) {
+                Ok(Some(gix_object::Kind::Tree)) => 0o040000,
+                Ok(Some(gix_object::Kind::Blob)) => 0o100644,
+                _ => {
+                    return Err(anyhow::anyhow!(":#: object not found in repo: {}", oid));
+                }
+            };
+            Ok(x.with_tree(tree::insert_oid(odb, tree::empty_id(), path, oid, mode)?))
         }
 
         Op::Compose(filters) => {

@@ -166,6 +166,10 @@ A workspace is defined by a `.josh` file, typically under `ws/`. The file uses j
 | `inputs = :[...]` | Dependency workspaces; each named entry is run first and its output is mounted inside the container |
 | `env = :[...]` | Environment variables injected into the container |
 
+The reference-bearing entries created with `:#` (`image`, named `inputs`, image `bases`, and
+`sidecars`) are stored as gitlinks. `josh compose` reads their object IDs directly from the tree
+entries; the referenced objects remain ordinary josh workspace or image trees.
+
 ### Example: `ws/fetch.josh`
 
 ```

@@ -7,42 +7,43 @@ may change in future releases.
 ## Filters
 
 ### Object reference **`:&path`**
-Reads the git object at `path` (a file or directory) and replaces its content with a text blob
-containing the object's SHA-1 hash. This turns a real file or tree into a lightweight pointer.
+Reads the git object at `path` (a file or directory) and replaces it with a gitlink carrying
+the object's ID. Although gitlinks normally identify submodule commits, this filter may store a
+blob or tree ID in one so the reference does not require a separate pointer blob.
 
 If `path` does not exist in the input tree, the filter is a no-op.
 
-Example: `:&sub1` on a commit where `sub1` is a directory produces a file `sub1` whose content
-is the 40-character SHA of that directory tree.
+Example: `:&sub1` on a commit where `sub1` is a directory produces a gitlink `sub1` whose object
+ID is the ID of that directory tree.
 
 ### Object dereference **`:#path`**
-Reads the SHA-1 hash stored as text in the file at `path` and replaces that file with the git
-object the hash points to (a file or a directory tree). This follows the pointer written by
+Reads the object ID stored directly in the gitlink at `path` and replaces the gitlink with the
+git object it identifies (a file or a directory tree). This follows the pointer written by
 `:&path`.
 
-If `path` does not exist the filter is a no-op. If the content is not a valid SHA or the object
-is not present in the repository, an error is returned.
+If `path` does not exist the filter is a no-op. If the entry is not a gitlink or the referenced
+object is not present in the repository, an error is returned.
 
-Example: given a file `sub1` whose content is the SHA of a directory tree, `:#sub1` replaces
-that file with the actual directory tree at `sub1`.
+Example: given a gitlink `sub1` carrying the ID of a directory tree, `:#sub1` replaces that
+gitlink with the actual directory tree at `sub1`.
 
 ### Object dereference into subdirectory **`:#/path`**
-Dereferences the pointer stored at `path` and then extracts the resulting object directly at the
+Dereferences the gitlink stored at `path` and then extracts the resulting object directly at the
 repository root, discarding the `path` prefix. This is the typical way to restore content that
 was previously stored with `:&path`.
 
 Expands to `:#path:/path`. The canonical printed form is the expanded syntax.
 
-Example: `:#/sub1` on a tree where `sub1` holds a SHA of a directory returns that directory's
+Example: `:#/sub1` on a tree where `sub1` is a gitlink to a directory returns that directory's
 contents at the root, as if `sub1` never existed.
 
 ### Tree ID capture **`:#path[filter]`**
-Applies `filter` to the current tree and writes the SHA-1 hash of the resulting tree as a text
-file at `path`. The filter itself does not appear in the output — only the hash it produces.
+Applies `filter` to the current tree and writes a gitlink carrying the resulting tree's object ID
+at `path`. The filter itself does not appear in the output — only the reference it produces.
 
-This lets you record a stable, content-addressed reference to a subtree alongside other files.
+This lets you record a stable, content-addressed reference to a subtree alongside other entries.
 
-Example: `:#version.txt[:/sub1]` writes the SHA of the `sub1` directory tree into `version.txt`.
+Example: `:#version[:/sub1]` writes the ID of the `sub1` directory tree into the gitlink `version`.
 
 ### Starlark filter **`:!path/to/script[context filter]`**
 Evaluates a [Starlark](https://github.com/bazelbuild/starlark) script stored in the repository
