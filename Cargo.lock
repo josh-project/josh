@@ -3300,11 +3300,14 @@ version = "26.8.28"
 dependencies = [
  "anyhow",
  "chrono",
+ "gix",
  "gix-actor",
  "gix-hash",
  "josh-core",
  "josh-git-serde",
+ "josh-gix-ext",
  "serde",
+ "tempfile",
 ]
 
 [[package]]
@@ -3531,6 +3534,7 @@ name = "josh-github-changes"
 version = "26.8.28"
 dependencies = [
  "anyhow",
+ "gix",
  "gix-hash",
  "josh-changes",
  "josh-core",
@@ -3538,6 +3542,7 @@ dependencies = [
  "josh-github-graphql",
  "josh-github-webhooks",
  "serde",
+ "tempfile",
  "url",
 ]
 

@@ -3,15 +3,13 @@
 //! Persisted as a josh-git-serde tree at `gh_cache/<change-id>/fingerprint` --
 //! the path is part of the on-disk format and must not change.
 
-use josh_changes::{encode_change_id_path, ChangesRef};
+use josh_changes::ChangesRef;
 
-use crate::layout::{GithubChangesRefData, GITHUB_CACHE_PATH};
+use crate::layout::{GithubChangesRefData, SyncCache, GITHUB_CACHE_PATH};
 use josh_core::cache::Transaction;
 use josh_github_graphql::operations::pull_request::PrSummary;
 
 use serde::{Deserialize, Serialize};
-
-const LEAF: &str = "fingerprint";
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SyncFingerprint {
@@ -75,10 +73,24 @@ pub fn store_sync_fingerprint(
     fingerprint: &SyncFingerprint,
     scope: &ChangesRef,
 ) -> anyhow::Result<()> {
-    let path = std::path::Path::new(GITHUB_CACHE_PATH)
-        .join(encode_change_id_path(change_id))
-        .join(LEAF);
-    josh_changes::write_value(transaction, &path, fingerprint, None, None, scope)?;
+    let data = GithubChangesRefData {
+        gh_cache: [(
+            change_id.to_string(),
+            SyncCache {
+                fingerprint: fingerprint.clone(),
+            },
+        )]
+        .into(),
+        ..Default::default()
+    };
+    josh_changes::write_filtered(
+        transaction,
+        scope,
+        josh_changes::namespace_filter(GITHUB_CACHE_PATH),
+        &data,
+        None,
+        None,
+    )?;
     Ok(())
 }
 

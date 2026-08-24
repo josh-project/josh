@@ -289,7 +289,7 @@ fn print_comment_threads(comments: &[josh_changes::Comment]) {
     let mut roots: Vec<usize> = comments
         .iter()
         .enumerate()
-        .filter(|(_, c)| c.reply_to.is_none())
+        .filter(|(_, c)| c.meta.reply_to.is_none())
         .map(|(i, _)| i)
         .collect();
     roots.sort_by(|&a, &b| {
@@ -316,10 +316,12 @@ fn print_comment(comments: &[josh_changes::Comment], idx: usize, depth: usize) {
         .map(|dt| dt.format("%Y-%m-%d %H:%M").to_string())
         .unwrap_or_default();
     let loc = c
+        .meta
         .file
         .as_deref()
         .map(|f| {
             let line = c
+                .meta
                 .location
                 .as_ref()
                 .map(|l| format!(":{}", l.start_line))
@@ -328,13 +330,13 @@ fn print_comment(comments: &[josh_changes::Comment], idx: usize, depth: usize) {
         })
         .unwrap_or_default();
     println!("{}[{}] {}{}", indent, author, ts, loc);
-    for line in c.message.lines() {
+    for line in c.meta.message.lines() {
         println!("{}  {}", indent, line);
     }
     let children: Vec<usize> = comments
         .iter()
         .enumerate()
-        .filter(|(_, child)| child.reply_to.as_deref() == Some(&c.id))
+        .filter(|(_, child)| child.meta.reply_to.as_deref() == Some(&c.id))
         .map(|(i, _)| i)
         .collect();
     for child in children {

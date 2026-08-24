@@ -194,7 +194,7 @@ pub fn list_changes(
     let Some(data) = crate::store::read_filtered::<crate::layout::ChangesRefData>(
         transaction,
         scope,
-        crate::store::namespace_filter("diffs"),
+        crate::store::namespace_filter(crate::layout::DIFFS_PATH),
     )
     .with_context(|| "undecodable diff data; run `josh changes sync --clean` to rebuild the ref")?
     else {

@@ -12,13 +12,13 @@ use josh_github_codegen_graphql::{
     GetPrReviews, GetPrsBySha, ListOpenPRs, MarkPullRequestReadyForReview, UpdatePullRequest,
 };
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PrLabel {
     pub name: String,
     pub color: String,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct PrComment {
     pub id: String,
     pub author: String,
@@ -30,7 +30,7 @@ pub struct PrComment {
     pub commit_oid: Option<String>,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PrData {
     pub title: String,
     pub body: Option<String>,
@@ -364,7 +364,7 @@ impl GithubApiConnection {
                 id: node.id.clone(),
                 author: node.author.map(|a| a.login).unwrap_or_default(),
                 body: node.body,
-                timestamp: format!("{}", node.created_at),
+                timestamp: node.created_at.to_rfc3339(),
                 path: None,
                 line: None,
                 reply_to: None,
@@ -389,7 +389,7 @@ impl GithubApiConnection {
                         .map(|a| a.login.clone())
                         .unwrap_or_default(),
                     body: review.body,
-                    timestamp: format!("{}", review.created_at),
+                    timestamp: review.created_at.to_rfc3339(),
                     path: None,
                     line: None,
                     reply_to: None,
@@ -408,7 +408,7 @@ impl GithubApiConnection {
                     id: node.id.clone(),
                     author: node.author.map(|a| a.login).unwrap_or_default(),
                     body: node.body,
-                    timestamp: format!("{}", node.created_at),
+                    timestamp: node.created_at.to_rfc3339(),
                     path: Some(node.path),
                     line: node.line,
                     reply_to: node.reply_to.map(|r| r.id),

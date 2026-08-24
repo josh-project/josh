@@ -1,10 +1,13 @@
 use crate::change::{Change, encode_change_id_path};
 use crate::refs::ChangesRef;
-use josh_core::objects;
+use crate::store::DiffData;
 
+/// One stored state of a change: the diff metadata plus the author and time
+/// of the ref write that introduced it. Identity is the serialized `diff`'s
+/// tree id (content-addressed, so identical diffs collapse).
 #[derive(Debug, Clone)]
 pub struct Revision {
-    pub commit_oid: String,
+    pub diff: DiffData,
     pub author: String,
     pub timestamp: String,
 }
@@ -31,42 +34,35 @@ pub fn read_revisions(
             transaction,
             odb,
             tree,
-            &std::path::Path::new("diffs").join(encode_change_id_path(change_id)),
+            &std::path::Path::new(crate::layout::DIFFS_PATH).join(encode_change_id_path(change_id)),
         )
     };
 
     let mut revs: Vec<Revision> = Vec::new();
-    let mut seen: std::collections::HashSet<String> = std::collections::HashSet::new();
-    let mut walk = objects::RevWalk::new(odb);
-    walk.simplify_first_parent();
-    walk.push(head)?;
+    let mut seen: std::collections::HashSet<gix_hash::ObjectId> = std::collections::HashSet::new();
 
-    for oid in walk.into_topo_vec(|_| false)? {
-        let commit = objects::CommitData::read(odb, oid)?;
-        let Ok(cur_tree) = commit.tree_id() else {
+    for entry in crate::store::walk_ref_history(transaction, head)? {
+        let Some(cid_tree) = diffs_of(entry.tree) else {
             continue;
         };
-        let cid_tree = match diffs_of(cur_tree) {
-            Some(t) => t,
-            None => continue,
-        };
-        let parent_cid_tree = commit
-            .first_parent_id()
-            .and_then(|p| josh_core::git::read_tree_id(odb, p).ok())
-            .and_then(diffs_of);
-        if parent_cid_tree == Some(cid_tree) {
+        if entry.parent_tree.and_then(diffs_of) == Some(cid_tree) {
             continue;
         }
-        let Ok(parsed) = commit.parsed() else {
-            continue;
-        };
         // The subtree is content-addressed by the (commit, base) pair, so its
         // oid identifies the revision.
-        if !seen.insert(cid_tree.to_string()) {
+        if !seen.insert(cid_tree) {
             continue;
         }
+        let Ok(parsed) = entry.commit.parsed() else {
+            continue;
+        };
+        // Advisory display data: an undecodable historical entry is skipped,
+        // not fatal.
+        let Ok(diff) = crate::store::deserialize_tree::<DiffData>(transaction, cid_tree) else {
+            continue;
+        };
         revs.push(Revision {
-            commit_oid: cid_tree.to_string(),
+            diff,
             author: parsed
                 .author()
                 .map(|a| String::from_utf8_lossy(a.email).into_owned())

@@ -86,7 +86,7 @@ secret-vault-value = "^1"
 hmac = "^0.13"
 sha2 = "^0.11"
 http = "^1"
-chrono = { version = "^0", default-features = false, features = ["serde"] }
+chrono = { version = "^0", default-features = false, features = ["serde", "alloc"] }
 dirs = "6"
 jsonwebtoken = "11"
 bytes = "1.12.1"

@@ -18,3 +18,8 @@ serde.workspace = true
 
 josh-core.workspace = true
 josh-git-serde.workspace = true
+
+[dev-dependencies]
+gix.workspace = true
+josh-gix-ext.workspace = true
+tempfile.workspace = true

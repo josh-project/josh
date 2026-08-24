@@ -9,6 +9,29 @@ use josh_github_graphql::operations::pull_request::PrData;
 use crate::display::pr_link;
 use crate::layout::{GithubChangesRefData, GITHUB_PR_DATA_PATH};
 
+/// Store the PR data for a change: a sparse `GithubChangesRefData` carrying
+/// only the `gh/<change-id>` entry, merged into the ref.
+pub fn store_pr_data(
+    transaction: &josh_core::cache::Transaction,
+    change_id: &str,
+    data: &PrData,
+    scope: &josh_changes::ChangesRef,
+) -> anyhow::Result<()> {
+    let sparse = GithubChangesRefData {
+        gh: [(change_id.to_string(), data.clone())].into(),
+        ..Default::default()
+    };
+    josh_changes::write_filtered(
+        transaction,
+        scope,
+        josh_changes::namespace_filter(GITHUB_PR_DATA_PATH),
+        &sparse,
+        None,
+        None,
+    )?;
+    Ok(())
+}
+
 /// Read the stored PR data for a change, if present. Fails when the stored
 /// tree does not decode (`sync --clean` rebuilds the ref).
 pub fn read_pr_data(

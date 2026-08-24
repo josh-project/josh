@@ -1,13 +1,10 @@
 use crate::change::{Change, encode_change_id_path};
+use crate::layout::{ChangesRefData, CommentsByChange};
 use crate::refs::ChangesRef;
-use crate::store::{get_tree, place_oid, value_oid};
-use anyhow::{Context, anyhow};
-use josh_core::cache::{Expected, Transaction};
+use crate::store::{get_tree, namespace_filter, value_oid};
+use anyhow::anyhow;
+use josh_core::cache::Transaction;
 use josh_core::filter::tree;
-use josh_core::memodb::Odb;
-use josh_core::objects;
-use josh_git_serde::{from_tree_oid, from_value};
-use std::str::FromStr;
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct Location {
@@ -17,16 +14,66 @@ pub struct Location {
     pub end_col: u32,
 }
 
-#[derive(serde::Serialize, serde::Deserialize)]
+/// The serialized form of a comment; the comment's id is the tree id of this
+/// value. `None` fields are omitted from the tree, so the id is stable across
+/// layout-irrelevant differences.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct CommentMeta {
     pub message: String,
-    #[serde(skip)]
     pub file: Option<String>,
     pub location: Option<Location>,
     pub reply_to: Option<String>,
     pub update_of: Option<String>,
 }
 
+/// Which comments namespace a write targets.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CommentNamespace {
+    /// The canonical `comments` tree.
+    Default,
+    /// The `outbox/comments` queue of a `Remote` ref: pending posts to the
+    /// remote, cleaned up on the next fetch that observes them coming back.
+    Outbox,
+}
+
+impl CommentNamespace {
+    pub(crate) fn path(self) -> &'static str {
+        match self {
+            Self::Default => "comments",
+            Self::Outbox => "outbox/comments",
+        }
+    }
+
+    /// This namespace's map inside a (possibly sparsely populated)
+    /// `ChangesRefData`.
+    fn of(self, data: &ChangesRefData) -> &CommentsByChange {
+        match self {
+            Self::Default => &data.comments,
+            Self::Outbox => &data.outbox.comments,
+        }
+    }
+
+    fn of_mut(self, data: &mut ChangesRefData) -> &mut CommentsByChange {
+        match self {
+            Self::Default => &mut data.comments,
+            Self::Outbox => &mut data.outbox.comments,
+        }
+    }
+
+    /// The write namespace for `scope`: local writes go to `Default`, remote
+    /// writes queue in `Outbox`.
+    pub fn for_scope(scope: &ChangesRef) -> Self {
+        match scope {
+            ChangesRef::Local { .. } => Self::Default,
+            ChangesRef::Remote { .. } => Self::Outbox,
+        }
+    }
+}
+
+/// Write `meta` into `namespace` on `scope`'s ref. `Outbox` requires a
+/// `Remote` scope. Returns the comment id: the tree id of the serialized
+/// meta -- content-addressed, so identical metas dedup and the fetch side
+/// recomputes the same id.
 pub fn write_comment(
     transaction: &Transaction,
     change: &Change,
@@ -34,119 +81,49 @@ pub fn write_comment(
     author: Option<&str>,
     timestamp: Option<&str>,
     scope: &ChangesRef,
+    namespace: CommentNamespace,
 ) -> anyhow::Result<String> {
-    write_comment_with_commit(transaction, change, meta, author, timestamp, None, scope)
-}
-
-pub fn write_comment_with_commit(
-    transaction: &Transaction,
-    change: &Change,
-    meta: &CommentMeta,
-    author: Option<&str>,
-    timestamp: Option<&str>,
-    blob_commit_override: Option<&str>,
-    scope: &ChangesRef,
-) -> anyhow::Result<String> {
-    write_comment_inner(
-        transaction,
-        change,
-        meta,
-        author,
-        timestamp,
-        blob_commit_override,
-        scope,
-        "comments",
-    )
-}
-
-/// Write a comment into the outbox subtree of a `Remote` ref. Comments here are
-/// pending posts to the remote; the cleanup runs on the next fetch when the
-/// posted comment is observed coming back from the remote.
-pub fn write_outbox_comment(
-    transaction: &Transaction,
-    change: &Change,
-    meta: &CommentMeta,
-    author: Option<&str>,
-    timestamp: Option<&str>,
-    scope: &ChangesRef,
-) -> anyhow::Result<String> {
-    if !matches!(scope, ChangesRef::Remote { .. }) {
-        return Err(anyhow::anyhow!(
-            "write_outbox_comment requires a Remote scope (got {})",
+    if namespace == CommentNamespace::Outbox && !matches!(scope, ChangesRef::Remote { .. }) {
+        return Err(anyhow!(
+            "outbox comments require a Remote scope (got {})",
             scope.ref_name()
         ));
     }
-    write_comment_inner(
-        transaction,
-        change,
-        meta,
-        author,
-        timestamp,
-        None,
-        scope,
-        "outbox/comments",
-    )
-}
-
-#[allow(clippy::too_many_arguments)]
-fn write_comment_inner(
-    transaction: &Transaction,
-    change: &Change,
-    meta: &CommentMeta,
-    author: Option<&str>,
-    timestamp: Option<&str>,
-    blob_commit_override: Option<&str>,
-    scope: &ChangesRef,
-    path_prefix: &str,
-) -> anyhow::Result<String> {
     if meta.message.trim().is_empty() {
-        return Err(anyhow::anyhow!("comment message must not be empty"));
+        return Err(anyhow!("comment message must not be empty"));
     }
 
     let change_id = change
         .id()
-        .ok_or_else(|| anyhow::anyhow!("commit {} has no Change-Id", change.commit()))?;
+        .ok_or_else(|| anyhow!("commit {} has no Change-Id", change.commit()))?;
 
-    let (root, mode) = value_oid(transaction, meta)?;
+    // The sparse write re-serializes deterministically, so the key matches
+    // the value's tree.
+    let root = value_oid(transaction, meta)?;
     let content_hash = root.to_string();
 
-    let odb = transaction.odb();
-    let prefix = std::path::Path::new(path_prefix);
-    let path = if let Some(ref file) = meta.file {
-        let resolve_commit = match blob_commit_override {
-            Some(s) => gix_hash::ObjectId::from_str(s)?,
-            None => change.commit(),
-        };
-        let commit_tree = objects::CommitData::read(odb, resolve_commit)?.tree_id()?;
-        let file_blob =
-            tree::get_path_entry(transaction, odb, commit_tree, std::path::Path::new(file))?
-                .ok_or_else(|| anyhow!("no such path: {}", file))?
-                .oid
-                .to_string();
-        prefix
-            .join("F")
-            .join(encode_change_id_path(&change_id))
-            .join(&file_blob)
-            .join(file)
-            .join(&content_hash)
-    } else {
-        prefix
-            .join("C")
-            .join(encode_change_id_path(&change_id))
-            .join(&content_hash)
-    };
-    place_oid(transaction, &path, root, mode, author, timestamp, scope)?;
+    let mut data = ChangesRefData::default();
+    namespace.of_mut(&mut data).insert(
+        change_id.to_string(),
+        [(content_hash.clone(), meta.clone())].into(),
+    );
+    crate::store::write_filtered(
+        transaction,
+        scope,
+        namespace_filter(namespace.path()),
+        &data,
+        author,
+        timestamp,
+    )?;
     Ok(content_hash)
 }
 
+/// A comment plus its bookkeeping: `meta` is the serialized form (whose tree
+/// id is `id`); author/timestamp are resolved from the ref history on read.
 #[derive(Debug, Clone)]
 pub struct Comment {
     pub id: String,
-    pub message: String,
-    pub file: Option<String>,
-    pub location: Option<Location>,
-    pub reply_to: Option<String>,
-    pub update_of: Option<String>,
+    pub meta: CommentMeta,
     pub author: Option<String>,
     pub timestamp: Option<String>,
     /// True when the comment was read from the `outbox/` subtree of a Remote
@@ -154,225 +131,81 @@ pub struct Comment {
     pub pending: bool,
 }
 
-pub fn comment_author(
-    transaction: &Transaction,
-    change: &Change,
-    comment_id: &str,
-    file: Option<&str>,
-    scope: &ChangesRef,
-) -> anyhow::Result<(String, String)> {
-    let change_id = match change.id() {
-        Some(id) => id,
-        None => return Err(anyhow!("change has no Change-Id")),
-    };
-
-    let odb = transaction.odb();
-    let ref_name = scope.ref_name();
-    let head = match transaction.resolve_ref(&ref_name)? {
-        Some(oid) => oid,
-        None => return Err(anyhow!("{} not found", ref_name)),
-    };
-
-    let path = if let Some(f) = file {
-        // Find the blob_id for this comment in the current tree.
-        let head_tree = objects::CommitData::read(odb, head)?.tree_id()?;
-        let cid_path = std::path::Path::new("comments")
-            .join("F")
-            .join(encode_change_id_path(change_id));
-        let mut found = None;
-        if let Some(cid_tree) = get_tree(transaction, odb, head_tree, &cid_path) {
-            for blob_entry in tree::read_tree(transaction, odb, cid_tree)?.entries() {
-                let blob_name = std::str::from_utf8(blob_entry.filename).unwrap_or("");
-                let sub = std::path::Path::new(f).join(comment_id);
-                let full = cid_path.join(blob_name).join(&sub);
-                if matches!(
-                    tree::get_path_entry(transaction, odb, head_tree, &full),
-                    Ok(Some(_))
-                ) {
-                    found = Some(full);
-                    break;
-                }
-            }
-        }
-        match found {
-            Some(p) => p,
-            None => {
-                return Err(anyhow!("comment {} not found in {}", comment_id, ref_name));
-            }
-        }
-    } else {
-        std::path::Path::new("comments")
-            .join("C")
-            .join(encode_change_id_path(change_id))
-            .join(comment_id)
-    };
-
-    let mut walk = objects::RevWalk::new(odb);
-    walk.simplify_first_parent();
-    walk.push(head)?;
-
-    for oid in walk.into_topo_vec(|_| false)? {
-        let commit = objects::CommitData::read(odb, oid)?;
-        let tree = commit.tree_id()?;
-        if let Ok(Some(entry)) = tree::get_path_entry(transaction, odb, tree, &path) {
-            // The commit that introduced or last changed this blob authored the comment.
-            let is_new = match commit.first_parent_id() {
-                Some(parent) => josh_core::git::read_tree_id(odb, parent)
-                    .ok()
-                    .and_then(|pt| {
-                        tree::get_path_entry(transaction, odb, pt, &path)
-                            .ok()
-                            .flatten()
-                    })
-                    .is_none_or(|e| e.oid != entry.oid),
-                None => true,
-            };
-            if is_new {
-                let parsed = commit.parsed()?;
-                let date = format!("{}", parsed.committer()?.seconds());
-                let email = parsed.author()?.email;
-                return Ok((String::from_utf8_lossy(email).into_owned(), date));
-            }
-        }
-    }
-
-    Err(anyhow!("comment {} not found in {}", comment_id, ref_name))
-}
-
-/// Decode the comment tree `entry_oid` into a [`Comment`]. `file` comes from
-/// the entry's path, not from the tree.
-fn read_comment(
-    odb: &Odb,
-    id: &str,
-    entry_oid: gix_hash::ObjectId,
-    file: Option<String>,
-) -> anyhow::Result<Comment> {
-    let value = from_tree_oid(odb, entry_oid)?;
-    let meta: CommentMeta = from_value(&value)?;
-    Ok(Comment {
-        id: id.to_string(),
-        message: meta.message,
-        file,
-        location: meta.location,
-        reply_to: meta.reply_to,
-        update_of: meta.update_of,
-        author: None,
-        timestamp: None,
-        pending: false,
-    })
-}
-
 pub fn read_comments(
     transaction: &Transaction,
     change_id: &str,
     scope: &ChangesRef,
 ) -> anyhow::Result<Vec<Comment>> {
-    let odb = transaction.odb();
     let ref_name = scope.ref_name();
-    let head_commit = match transaction.resolve_ref(&ref_name)? {
-        Some(oid) => oid,
-        None => return Ok(Vec::new()),
+    let Some(head_commit) = transaction.resolve_ref(&ref_name)? else {
+        return Ok(Vec::new());
     };
-    let tree = objects::CommitData::read(odb, head_commit)?.tree_id()?;
 
+    // Posted first, then pending outbox (only meaningful on Remote refs),
+    // each group ordered by comment id for stable display.
     let mut comments = Vec::new();
+    for namespace in [CommentNamespace::Default, CommentNamespace::Outbox] {
+        let Some(data) = crate::store::read_filtered::<ChangesRefData>(
+            transaction,
+            scope,
+            namespace_filter(namespace.path()),
+        )?
+        else {
+            continue;
+        };
+        let Some(per_change) = namespace.of(&data).get(change_id) else {
+            continue;
+        };
+        let mut group: Vec<_> = per_change
+            .iter()
+            .map(|(id, meta)| Comment {
+                id: id.clone(),
+                meta: meta.clone(),
+                author: None,
+                timestamp: None,
+                pending: namespace == CommentNamespace::Outbox,
+            })
+            .collect();
+        group.sort_by(|a, b| a.id.cmp(&b.id));
+        comments.extend(group);
+    }
 
-    // Posted/fetched: comments/{C,F}/...
-    collect_comments_at_prefix(
-        transaction,
-        odb,
-        tree,
-        change_id,
-        "comments",
-        false,
-        &mut comments,
-    )?;
-    // Pending outbox (only meaningful on Remote refs): outbox/comments/{C,F}/...
-    collect_comments_at_prefix(
-        transaction,
-        odb,
-        tree,
-        change_id,
-        "outbox/comments",
-        true,
-        &mut comments,
-    )?;
+    // Walk history once to resolve author/timestamp. A comment's id is the
+    // tree id of its meta, so an entry can only appear, never change: the ids
+    // a ref commit introduced are the subtract of its namespace view against
+    // its parent's.
+    let encoded = encode_change_id_path(change_id);
+    let namespaces = [CommentNamespace::Default, CommentNamespace::Outbox].map(|ns| {
+        (
+            ns,
+            namespace_filter(&format!("{}/{}", ns.path(), encoded)),
+            std::path::Path::new(ns.path()).join(&encoded),
+        )
+    });
 
-    // Walk history once to resolve author/timestamp for all comments.
-    let mut walk = objects::RevWalk::new(odb);
-    walk.simplify_first_parent();
-    let _ = walk.push(head_commit);
-    'outer: for oid in walk.into_topo_vec(|_| false)?.into_iter() {
-        if let Ok(commit) = objects::CommitData::read(odb, oid) {
-            let Ok(tree) = commit.tree_id() else { continue };
-            let parent_tree = commit
-                .first_parent_id()
-                .and_then(|p| josh_core::git::read_tree_id(odb, p).ok());
-            for c in &mut comments {
-                if c.author.is_some() {
-                    continue;
+    for entry in crate::store::walk_ref_history(transaction, head_commit)? {
+        if comments.iter().all(|c| c.author.is_some()) {
+            break;
+        }
+        let Ok(parsed) = entry.commit.parsed() else {
+            continue;
+        };
+
+        for (namespace, filter, dir) in &namespaces {
+            for id in
+                introduced_comment_ids(transaction, *filter, dir, entry.tree, entry.parent_tree)?
+            {
+                if let Some(c) = comments.iter_mut().find(|c| {
+                    c.author.is_none()
+                        && c.pending == (*namespace == CommentNamespace::Outbox)
+                        && c.id == id
+                }) {
+                    c.timestamp = parsed.committer().ok().map(|t| t.seconds().to_string());
+                    c.author = parsed
+                        .author()
+                        .ok()
+                        .map(|a| String::from_utf8_lossy(a.email).into_owned());
                 }
-                let prefix = if c.pending {
-                    "outbox/comments"
-                } else {
-                    "comments"
-                };
-                if c.file.is_none() {
-                    let p = std::path::Path::new(prefix)
-                        .join("C")
-                        .join(encode_change_id_path(change_id))
-                        .join(&c.id);
-                    if let Ok(Some(entry)) = tree::get_path_entry(transaction, odb, tree, &p) {
-                        let is_new = parent_tree
-                            .and_then(|pt| {
-                                tree::get_path_entry(transaction, odb, pt, &p)
-                                    .ok()
-                                    .flatten()
-                            })
-                            .is_none_or(|e| e.oid != entry.oid);
-                        if is_new && let Ok(parsed) = commit.parsed() {
-                            c.timestamp = parsed.committer().ok().map(|t| t.seconds().to_string());
-                            c.author = parsed
-                                .author()
-                                .ok()
-                                .map(|a| String::from_utf8_lossy(a.email).into_owned());
-                        }
-                    }
-                } else {
-                    let cid_path = std::path::Path::new(prefix)
-                        .join("F")
-                        .join(encode_change_id_path(change_id));
-                    if let Some(cid_tree) = get_tree(transaction, odb, tree, &cid_path)
-                        && let Ok(reader) = tree::read_tree(transaction, odb, cid_tree)
-                    {
-                        for blob_entry in reader.entries() {
-                            let blob_name = std::str::from_utf8(blob_entry.filename).unwrap_or("");
-                            let sub = std::path::Path::new(c.file.as_ref().unwrap()).join(&c.id);
-                            let full_path = cid_path.join(blob_name).join(&sub);
-                            if let Ok(Some(entry)) =
-                                tree::get_path_entry(transaction, odb, tree, &full_path)
-                            {
-                                let parent_entry = parent_tree.and_then(|pt| {
-                                    tree::get_path_entry(transaction, odb, pt, &full_path)
-                                        .ok()
-                                        .flatten()
-                                });
-                                let is_new = parent_entry.is_none_or(|e| e.oid != entry.oid);
-                                if is_new && let Ok(parsed) = commit.parsed() {
-                                    c.timestamp =
-                                        parsed.committer().ok().map(|t| t.seconds().to_string());
-                                    c.author = parsed
-                                        .author()
-                                        .ok()
-                                        .map(|a| String::from_utf8_lossy(a.email).into_owned());
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-            if comments.iter().all(|c| c.author.is_some()) {
-                break 'outer;
             }
         }
     }
@@ -380,182 +213,61 @@ pub fn read_comments(
     Ok(comments)
 }
 
-#[allow(clippy::too_many_arguments)]
-fn collect_comments_at_prefix(
+/// Ids of comments under `dir` that `tree` carries and `parent_tree` lacks,
+/// both narrowed by `filter`.
+fn introduced_comment_ids(
     transaction: &Transaction,
-    odb: &Odb,
+    filter: josh_core::filter::Filter,
+    dir: &std::path::Path,
     tree: gix_hash::ObjectId,
-    change_id: &str,
-    prefix: &str,
-    pending: bool,
-    out: &mut Vec<Comment>,
-) -> anyhow::Result<()> {
-    let root = match get_tree(transaction, odb, tree, std::path::Path::new(prefix)) {
-        Some(t) => t,
-        None => return Ok(()),
+    parent_tree: Option<gix_hash::ObjectId>,
+) -> anyhow::Result<Vec<String>> {
+    let view = |t: gix_hash::ObjectId| {
+        josh_core::filter::apply(
+            transaction,
+            filter,
+            josh_core::filter::Rewrite::from_tree(t),
+        )
+        .map(|r| r.tree_id())
     };
-
-    // Non-file: <prefix>/C/<change_id>/
-    if let Some(cid_tree) = get_tree(
-        transaction,
-        odb,
-        root,
-        &std::path::Path::new("C").join(encode_change_id_path(change_id)),
-    ) {
-        for entry in tree::read_tree(transaction, odb, cid_tree)?.entries() {
-            let id = String::from_utf8_lossy(entry.filename).into_owned();
-            let mut c = read_comment(odb, &id, entry.oid.to_owned(), None)
-                .with_context(|| format!("undecodable comment {} on change {}", id, change_id))?;
-            c.pending = pending;
-            out.push(c);
-        }
-    }
-
-    // File: <prefix>/F/<change_id>/<blob_id>/<path>/<to>/<file>/<content_hash>
-    if let Some(cid_tree) = get_tree(
-        transaction,
-        odb,
-        root,
-        &std::path::Path::new("F").join(encode_change_id_path(change_id)),
-    ) {
-        for blob_entry in tree::read_tree(transaction, odb, cid_tree)?.entries() {
-            let blob_name = std::str::from_utf8(blob_entry.filename).unwrap_or("");
-            if let Some(blob_tree) =
-                get_tree(transaction, odb, cid_tree, std::path::Path::new(blob_name))
-            {
-                let mut found = Vec::new();
-                collect_comments_under_into(
-                    transaction,
-                    odb,
-                    change_id,
-                    blob_tree,
-                    std::path::Path::new(""),
-                    &mut found,
-                )?;
-                for mut c in found {
-                    c.pending = pending;
-                    out.push(c);
-                }
-            }
-        }
-    }
-
-    Ok(())
-}
-
-fn collect_comments_under_into(
-    transaction: &Transaction,
-    odb: &Odb,
-    change_id: &str,
-    tree: gix_hash::ObjectId,
-    file_prefix: &std::path::Path,
-    out: &mut Vec<Comment>,
-) -> anyhow::Result<()> {
-    for entry in tree::read_tree(transaction, odb, tree)?.entries() {
-        let name = std::str::from_utf8(entry.filename).unwrap_or("");
-        let entry_oid = entry.oid.to_owned();
-        let file = if file_prefix.as_os_str().is_empty() {
-            None
-        } else {
-            Some(file_prefix.to_string_lossy().to_string())
-        };
-        if entry.mode.is_tree() {
-            match read_comment(odb, name, entry_oid, file) {
-                Ok(c) => out.push(c),
-                // Path-component directory, not a comment leaf: descend.
-                Err(_) => collect_comments_under_into(
-                    transaction,
-                    odb,
-                    change_id,
-                    entry_oid,
-                    &file_prefix.join(name),
-                    out,
-                )?,
-            }
-        } else if !entry.mode.is_commit() {
-            out.push(read_comment(odb, name, entry_oid, file).with_context(|| {
-                format!("undecodable comment {} on change {}", name, change_id)
-            })?);
-        }
-    }
-    Ok(())
+    let cur = view(tree)?;
+    let parent = match parent_tree {
+        Some(pt) => view(pt)?,
+        None => tree::empty_id(),
+    };
+    let added = tree::subtract(transaction, cur, parent)?;
+    let Some(added_dir) = get_tree(transaction, transaction.odb(), added, dir) else {
+        return Ok(Vec::new());
+    };
+    Ok(tree::read_tree(transaction, transaction.odb(), added_dir)?
+        .entries()
+        .filter_map(|entry| std::str::from_utf8(entry.filename).ok().map(str::to_string))
+        .collect())
 }
 
 /// Remove specific outbox comment entries by content hash. Used by forge
 /// sync paths to drop entries whose posted counterparts have been observed
-/// on the forge and stored under `comments/...` already.
+/// on the forge and stored under `comments/...` already. The hash is the
+/// entry's key, so no tree walk is needed; missing entries are a no-op.
 pub fn delete_outbox_comments(
     transaction: &Transaction,
     change_id: &str,
     scope: &ChangesRef,
     content_hashes: &[String],
-) -> anyhow::Result<usize> {
+) -> anyhow::Result<()> {
     if content_hashes.is_empty() {
-        return Ok(0);
+        return Ok(());
     }
-    let odb = transaction.odb();
-    let want: std::collections::HashSet<&str> = content_hashes.iter().map(|s| s.as_str()).collect();
-
-    let ref_name = scope.ref_name();
-    let prev_commit = match transaction.resolve_ref(&ref_name)? {
-        Some(oid) => oid,
-        None => return Ok(0),
-    };
-    let mut tree = objects::CommitData::read(odb, prev_commit)?.tree_id()?;
-
     let encoded = encode_change_id_path(change_id);
-    let mut paths_to_remove: Vec<std::path::PathBuf> = Vec::new();
-
-    // Non-file: outbox/comments/C/<change>/<hash>
-    let c_prefix = std::path::Path::new("outbox/comments/C").join(&encoded);
-    if let Some(c_tree) = get_tree(transaction, odb, tree, &c_prefix) {
-        for entry in tree::read_tree(transaction, odb, c_tree)?.entries() {
-            if let Ok(name) = std::str::from_utf8(entry.filename) {
-                if want.contains(name) {
-                    paths_to_remove.push(c_prefix.join(name));
-                }
-            }
-        }
-    }
-
-    // File: outbox/comments/F/<change>/<blob_id>/<path>/<to>/<file>/<hash>
-    let f_prefix = std::path::Path::new("outbox/comments/F").join(&encoded);
-    if let Some(f_tree) = get_tree(transaction, odb, tree, &f_prefix) {
-        collect_outbox_file_paths(
-            transaction,
-            odb,
-            f_tree,
-            &f_prefix,
-            &want,
-            &mut paths_to_remove,
-        )?;
-    }
-
-    if paths_to_remove.is_empty() {
-        return Ok(0);
-    }
-
-    for path in &paths_to_remove {
-        if matches!(
-            tree::get_path_entry(transaction, odb, tree, path),
-            Ok(Some(_))
-        ) {
-            tree = tree::insert_oid(
-                odb,
-                tree,
-                path,
-                gix_hash::ObjectId::null(gix_hash::Kind::Sha1),
-                0,
-            )?;
-        }
-    }
-
-    let sig = transaction.signature()?;
-    let msg = format!("cleanup posted outbox comments on {}\n", ref_name);
-    let new_oid = objects::write_commit(odb, tree, &[prev_commit], &sig, &sig, &msg)?;
-    transaction.update_ref(&ref_name, Expected::At(prev_commit), new_oid, &msg)?;
-
-    Ok(paths_to_remove.len())
+    let paths: Vec<std::path::PathBuf> = content_hashes
+        .iter()
+        .map(|hash| {
+            std::path::Path::new(CommentNamespace::Outbox.path())
+                .join(&encoded)
+                .join(hash)
+        })
+        .collect();
+    crate::store::delete_filtered(transaction, &paths, scope)
 }
 
 /// Pending (not yet posted to the forge) comments for a change, loaded from
@@ -571,18 +283,18 @@ pub struct PendingComments {
     pub posted_ids: std::collections::HashMap<String, String>,
 }
 
-/// A comment fetched from a forge, in forge-neutral form. `forge_id` is the
-/// remote's node/comment ID; `reply_to`, when set, refers to a parent's
-/// `forge_id`.
+/// A comment fetched from a forge: the forge envelope (its id, the author and
+/// timestamp used to attribute the ref commit) around the meta payload to
+/// store. `reply_to`, when set, refers to a parent's `forge_id`; it is
+/// resolved to the parent's local comment id during storage.
 pub struct FetchedComment {
     pub forge_id: String,
     pub author: String,
-    pub body: String,
     pub timestamp: String,
-    pub path: Option<String>,
-    pub line: Option<i64>,
     pub reply_to: Option<String>,
-    pub commit_oid: Option<String>,
+    /// The comment content to store; `reply_to` and `update_of` are set by
+    /// the store, not the forge.
+    pub meta: CommentMeta,
 }
 
 /// Write comments fetched from a forge into the given changes ref.
@@ -601,76 +313,25 @@ pub fn store_fetched_comments(
     let mut written = Vec::with_capacity(comments.len());
     let mut id_map: std::collections::HashMap<String, String> = std::collections::HashMap::new();
     for comment in comments {
-        let location = comment
-            .path
-            .as_ref()
-            .zip(comment.line)
-            .map(|(_, line)| Location {
-                start_line: line as u32,
-                end_line: line as u32,
-                start_col: 1,
-                end_col: u32::MAX,
-            });
-        let reply_to = comment
+        let mut meta = comment.meta.clone();
+        meta.reply_to = comment
             .reply_to
             .as_ref()
             .and_then(|forge_id| id_map.get(forge_id))
             .cloned();
-        let meta = CommentMeta {
-            message: comment.body.clone(),
-            file: comment.path.clone(),
-            location,
-            reply_to,
-            update_of: None,
-        };
 
-        let hash = write_comment_with_commit(
+        let hash = write_comment(
             transaction,
             change,
             &meta,
             Some(&comment.author),
             Some(&comment.timestamp),
-            comment.commit_oid.as_deref(),
             scope,
+            CommentNamespace::Default,
         )?;
         id_map.insert(comment.forge_id.clone(), hash.clone());
         written.push((hash, comment.forge_id.clone()));
     }
 
     Ok(written)
-}
-
-fn collect_outbox_file_paths(
-    transaction: &Transaction,
-    odb: &Odb,
-    tree: gix_hash::ObjectId,
-    cur: &std::path::Path,
-    want: &std::collections::HashSet<&str>,
-    out: &mut Vec<std::path::PathBuf>,
-) -> anyhow::Result<()> {
-    for entry in tree::read_tree(transaction, odb, tree)?.entries() {
-        let name = match std::str::from_utf8(entry.filename) {
-            Ok(n) => n,
-            Err(_) => continue,
-        };
-        match () {
-            _ if entry.mode.is_tree() => {
-                collect_outbox_file_paths(
-                    transaction,
-                    odb,
-                    entry.oid.to_owned(),
-                    &cur.join(name),
-                    want,
-                    out,
-                )?;
-            }
-            _ if !entry.mode.is_commit() => {
-                if want.contains(name) {
-                    out.push(cur.join(name));
-                }
-            }
-            _ => {}
-        }
-    }
-    Ok(())
 }

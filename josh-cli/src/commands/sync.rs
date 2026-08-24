@@ -30,6 +30,7 @@ pub fn handle_sync(
     args: &SyncArgs,
     transaction: &josh_core::cache::Transaction,
 ) -> anyhow::Result<()> {
+    josh_core::filter::check_experimental_features_enabled("josh changes sync")?;
     let head = transaction.head()?;
     let branch = head.short_branch().map(|s| s.to_string());
 

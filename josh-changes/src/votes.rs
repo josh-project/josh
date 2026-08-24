@@ -1,68 +1,62 @@
 use std::collections::HashMap;
 
 use crate::change::{Change, encode_change_id_path};
-use crate::layout::ChangesRefData;
+use crate::layout::{ChangesRefData, VotesByChange};
 use crate::refs::ChangesRef;
 use crate::store::{namespace_filter, read_filtered};
 
-use josh_core::cache::{Expected, Transaction};
-use josh_core::filter::tree;
-use josh_core::objects;
-
+use josh_core::cache::Transaction;
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct VoteData {
     pub state: String,
     pub sha: String,
 }
 
-pub fn write_vote(
-    transaction: &Transaction,
-    change: &Change,
-    state: &str,
-    author: Option<&str>,
-    timestamp: Option<&str>,
-    scope: &ChangesRef,
-) -> anyhow::Result<String> {
-    write_vote_inner(
-        transaction,
-        change,
-        state,
-        author,
-        timestamp,
-        scope,
-        "votes",
-    )
+/// Which votes namespace a write targets.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum VoteNamespace {
+    /// The canonical `votes` tree.
+    Default,
+    /// The `outbox/votes` queue of a `Remote` ref: pending posts to the
+    /// remote, cleaned up on the next fetch that observes them coming back.
+    Outbox,
 }
 
-/// Write a vote into the outbox subtree of a `Remote` ref. The vote is queued
-/// for the next `sync --push` to post to the forge, after which the forge's
-/// posted-vote tracking records the post and the outbox entry can be cleaned
-/// up.
-pub fn write_outbox_vote(
-    transaction: &Transaction,
-    change: &Change,
-    state: &str,
-    author: Option<&str>,
-    timestamp: Option<&str>,
-    scope: &ChangesRef,
-) -> anyhow::Result<String> {
-    if !matches!(scope, ChangesRef::Remote { .. }) {
-        return Err(anyhow::anyhow!(
-            "write_outbox_vote requires a Remote scope (got {})",
-            scope.ref_name()
-        ));
+impl VoteNamespace {
+    pub(crate) fn path(self) -> &'static str {
+        match self {
+            Self::Default => "votes",
+            Self::Outbox => "outbox/votes",
+        }
     }
-    write_vote_inner(
-        transaction,
-        change,
-        state,
-        author,
-        timestamp,
-        scope,
-        "outbox/votes",
-    )
+
+    /// This namespace's map inside a (possibly sparsely populated)
+    /// `ChangesRefData`.
+    fn of(self, data: &ChangesRefData) -> &VotesByChange {
+        match self {
+            Self::Default => &data.votes,
+            Self::Outbox => &data.outbox.votes,
+        }
+    }
+
+    fn of_mut(self, data: &mut ChangesRefData) -> &mut VotesByChange {
+        match self {
+            Self::Default => &mut data.votes,
+            Self::Outbox => &mut data.outbox.votes,
+        }
+    }
+
+    /// The write namespace for `scope`: local writes go to `Default`, remote
+    /// writes queue in `Outbox`.
+    pub fn for_scope(scope: &ChangesRef) -> Self {
+        match scope {
+            ChangesRef::Local { .. } => Self::Default,
+            ChangesRef::Remote { .. } => Self::Outbox,
+        }
+    }
 }
 
+/// Write a vote into `namespace` on `scope`'s ref. `Outbox` requires a
 fn configured_email(transaction: &Transaction) -> anyhow::Result<String> {
     let signature = transaction.signature()?;
     Ok(std::str::from_utf8(signature.email.as_ref())
@@ -70,15 +64,26 @@ fn configured_email(transaction: &Transaction) -> anyhow::Result<String> {
         .to_owned())
 }
 
-fn write_vote_inner(
+/// Write a vote into `namespace` on `scope`'s ref. `Outbox` requires a
+/// `Remote` scope. Outbox votes are queued for the next `sync --push` to
+/// post to the forge, after which the forge's posted-vote tracking records
+/// the post and the outbox entry can be cleaned up.
+pub fn write_vote(
     transaction: &Transaction,
     change: &Change,
     state: &str,
     author: Option<&str>,
     timestamp: Option<&str>,
     scope: &ChangesRef,
-    path_prefix: &str,
-) -> anyhow::Result<String> {
+    namespace: VoteNamespace,
+) -> anyhow::Result<()> {
+    if namespace == VoteNamespace::Outbox && !matches!(scope, ChangesRef::Remote { .. }) {
+        return Err(anyhow::anyhow!(
+            "outbox votes require a Remote scope (got {})",
+            scope.ref_name()
+        ));
+    }
+
     let change_id = change
         .id()
         .ok_or_else(|| anyhow::anyhow!("commit {} has no Change-Id", change.commit()))?;
@@ -93,12 +98,21 @@ fn write_vote_inner(
         None => configured_email(transaction)?,
     };
 
-    let path = std::path::Path::new(path_prefix)
-        .join(encode_change_id_path(&change_id))
-        .join(&user);
+    let inner: HashMap<String, VoteData> = [(user, data)].into();
+    let mut ref_data = ChangesRefData::default();
+    namespace
+        .of_mut(&mut ref_data)
+        .insert(change_id.to_string(), inner);
 
-    let root = crate::store::write_value(transaction, &path, &data, author, timestamp, scope)?;
-    Ok(root.to_string())
+    crate::store::write_filtered(
+        transaction,
+        scope,
+        namespace_filter(namespace.path()),
+        &ref_data,
+        author,
+        timestamp,
+    )?;
+    Ok(())
 }
 
 pub fn read_vote(
@@ -112,13 +126,16 @@ pub fn read_vote(
         None => configured_email(transaction)?,
     };
 
-    let Some(data) =
-        read_filtered::<ChangesRefData>(transaction, scope, namespace_filter("votes"))?
+    let Some(data) = read_filtered::<ChangesRefData>(
+        transaction,
+        scope,
+        namespace_filter(VoteNamespace::Default.path()),
+    )?
     else {
         return Ok(None);
     };
-    Ok(data
-        .votes
+    Ok(VoteNamespace::Default
+        .of(&data)
         .get(change_id)
         .and_then(|votes| votes.get(&user))
         .cloned())
@@ -129,9 +146,14 @@ pub fn list_votes(
     change_id: &str,
     scope: &ChangesRef,
 ) -> anyhow::Result<Vec<(String, VoteData)>> {
-    let data = read_filtered::<ChangesRefData>(transaction, scope, namespace_filter("votes"))?;
+    let data = read_filtered::<ChangesRefData>(
+        transaction,
+        scope,
+        namespace_filter(VoteNamespace::Default.path()),
+    )?;
     Ok(sorted_votes(
-        data.as_ref().and_then(|d| d.votes.get(change_id)),
+        data.as_ref()
+            .and_then(|d| VoteNamespace::Default.of(d).get(change_id)),
     ))
 }
 
@@ -142,10 +164,14 @@ pub fn list_outbox_votes(
     change_id: &str,
     scope: &ChangesRef,
 ) -> anyhow::Result<Vec<(String, VoteData)>> {
-    let data =
-        read_filtered::<ChangesRefData>(transaction, scope, namespace_filter("outbox/votes"))?;
+    let data = read_filtered::<ChangesRefData>(
+        transaction,
+        scope,
+        namespace_filter(VoteNamespace::Outbox.path()),
+    )?;
     Ok(sorted_votes(
-        data.as_ref().and_then(|d| d.outbox.votes.get(change_id)),
+        data.as_ref()
+            .and_then(|d| VoteNamespace::Outbox.of(d).get(change_id)),
     ))
 }
 
@@ -160,54 +186,20 @@ fn sorted_votes(votes: Option<&HashMap<String, VoteData>>) -> Vec<(String, VoteD
 }
 
 /// Delete the outbox vote entries of the given users from `scope`'s ref.
-/// Returns the number of entries removed.
 pub fn delete_outbox_votes(
     transaction: &Transaction,
     change_id: &str,
     scope: &ChangesRef,
     users: &[String],
-) -> anyhow::Result<usize> {
-    if users.is_empty() {
-        return Ok(0);
-    }
-
-    let odb = transaction.odb();
+) -> anyhow::Result<()> {
     let encoded = encode_change_id_path(change_id);
-    let ref_name = scope.ref_name();
-    let prev_commit = match transaction.resolve_ref(&ref_name)? {
-        Some(oid) => oid,
-        None => return Ok(0),
-    };
-    let mut tree = objects::CommitData::read(odb, prev_commit)?.tree_id()?;
-
-    let mut removed = 0usize;
-    for user in users {
-        let path = std::path::Path::new("outbox/votes")
-            .join(&encoded)
-            .join(user);
-        if matches!(
-            tree::get_path_entry(transaction, odb, tree, &path),
-            Ok(Some(_))
-        ) {
-            tree = tree::insert_oid(
-                odb,
-                tree,
-                &path,
-                gix_hash::ObjectId::null(gix_hash::Kind::Sha1),
-                0,
-            )?;
-            removed += 1;
-        }
-    }
-
-    if removed == 0 {
-        return Ok(0);
-    }
-
-    let sig = transaction.signature()?;
-    let msg = format!("delete outbox votes on {}\n", ref_name);
-    let new_oid = objects::write_commit(odb, tree, &[prev_commit], &sig, &sig, &msg)?;
-    transaction.update_ref(&ref_name, Expected::At(prev_commit), new_oid, &msg)?;
-
-    Ok(removed)
+    let paths: Vec<std::path::PathBuf> = users
+        .iter()
+        .map(|user| {
+            std::path::Path::new(VoteNamespace::Outbox.path())
+                .join(&encoded)
+                .join(user)
+        })
+        .collect();
+    crate::store::delete_filtered(transaction, &paths, scope)
 }

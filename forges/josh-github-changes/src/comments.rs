@@ -1,6 +1,6 @@
 //! Posting local comments and votes to GitHub, converting fetched PR
 //! comments into the forge-neutral shape `josh-changes` stores, and composing
-//! `josh-changes` storage primitives with the GitHub ID tracking in `ids`.
+//! `josh-changes` storage primitives with the GitHub ID tracking in `node_ids`.
 
 use std::collections::HashMap;
 
@@ -17,12 +17,26 @@ pub fn fetched_comments(pr_data: &PrData) -> Vec<josh_changes::FetchedComment> {
         .map(|c| josh_changes::FetchedComment {
             forge_id: c.id.clone(),
             author: c.author.clone(),
-            body: c.body.clone(),
             timestamp: c.timestamp.clone(),
-            path: c.path.clone(),
-            line: c.line,
             reply_to: c.reply_to.clone(),
-            commit_oid: c.commit_oid.clone(),
+            meta: josh_changes::CommentMeta {
+                message: c.body.clone(),
+                file: c.path.clone(),
+                // GitHub review comments address a single line; it maps to a
+                // full-width `Location` on that line.
+                location: c
+                    .path
+                    .as_ref()
+                    .zip(c.line)
+                    .map(|(_, line)| josh_changes::Location {
+                        start_line: line as u32,
+                        end_line: line as u32,
+                        start_col: 1,
+                        end_col: u32::MAX,
+                    }),
+                reply_to: None,
+                update_of: None,
+            },
         })
         .collect()
 }
@@ -62,7 +76,8 @@ pub async fn post_comments(
         let mut remaining = Vec::new();
 
         for comment in unposted.drain(..) {
-            let can_post = match &comment.reply_to {
+            let meta = &comment.meta;
+            let can_post = match &meta.reply_to {
                 Some(parent_hash) => new_ids.contains_key(parent_hash.as_str()),
                 None => true,
             };
@@ -71,15 +86,12 @@ pub async fn post_comments(
                 continue;
             }
 
-            let result = if let Some(ref file) = comment.file {
-                if let Some(parent_hash) = &comment.reply_to {
+            let result = if let Some(ref file) = meta.file {
+                if let Some(parent_hash) = &meta.reply_to {
                     match new_ids.get(parent_hash.as_str()) {
                         Some(parent_gh_id) => {
                             connection
-                                .add_pull_request_review_thread_reply(
-                                    parent_gh_id,
-                                    &comment.message,
-                                )
+                                .add_pull_request_review_thread_reply(parent_gh_id, &meta.message)
                                 .await
                         }
                         None => {
@@ -88,16 +100,16 @@ pub async fn post_comments(
                         }
                     }
                 } else {
-                    let line = comment
+                    let line = meta
                         .location
                         .as_ref()
                         .map_or(1, |loc| loc.start_line as i64);
                     connection
-                        .add_pull_request_review_thread(pr_node_id, &comment.message, file, line)
+                        .add_pull_request_review_thread(pr_node_id, &meta.message, file, line)
                         .await
                 }
             } else {
-                connection.add_comment(pr_node_id, &comment.message).await
+                connection.add_comment(pr_node_id, &meta.message).await
             };
 
             match result {
@@ -119,21 +131,22 @@ pub async fn post_comments(
         if !progressed {
             // Orphan reply_to references — post remaining as standalone.
             for comment in remaining.drain(..) {
-                let result = if comment.file.is_some() {
-                    let line = comment
+                let meta = &comment.meta;
+                let result = if meta.file.is_some() {
+                    let line = meta
                         .location
                         .as_ref()
                         .map_or(1, |loc| loc.start_line as i64);
                     connection
                         .add_pull_request_review_thread(
                             pr_node_id,
-                            &comment.message,
-                            comment.file.as_deref().unwrap_or(""),
+                            &meta.message,
+                            meta.file.as_deref().unwrap_or(""),
                             line,
                         )
                         .await
                 } else {
-                    connection.add_comment(pr_node_id, &comment.message).await
+                    connection.add_comment(pr_node_id, &meta.message).await
                 };
                 match result {
                     Ok(github_id) => {
@@ -245,15 +258,7 @@ pub fn record_fetched_comments(
     written: &[(String, String)],
     scope: &josh_changes::ChangesRef,
 ) -> anyhow::Result<()> {
-    for (local_hash, github_id) in written {
-        crate::node_ids::store_comment_node_id(
-            transaction,
-            change_id,
-            local_hash,
-            github_id,
-            scope,
-        )?;
-    }
+    crate::node_ids::store_comment_node_ids(transaction, change_id, written, scope)?;
 
     let fetched: std::collections::HashSet<&str> = written
         .iter()
@@ -272,7 +277,7 @@ pub fn record_fetched_comments(
 
 /// Filter `votes` (as loaded by [`josh_changes::list_outbox_votes`]) down to
 /// those not yet posted to GitHub, i.e. whose `(state, sha)` is not already
-/// recorded in `gh_vote_ids`.
+/// recorded in `gh_vote_node_ids`.
 pub fn pending_votes(
     transaction: &Transaction,
     change_id: &str,
@@ -296,21 +301,21 @@ pub fn pending_votes(
 
 /// Remove outbox vote entries from `votes` (as loaded by
 /// [`josh_changes::list_outbox_votes`]) whose `(state, sha)` is recorded in
-/// `gh_vote_ids`, i.e. votes already posted to GitHub. Safe to call
+/// `gh_vote_node_ids`, i.e. votes already posted to GitHub. Safe to call
 /// unconditionally -- it's a no-op when nothing needs cleaning.
 pub fn cleanup_posted_outbox_votes(
     transaction: &Transaction,
     change_id: &str,
     scope: &josh_changes::ChangesRef,
     votes: &[(String, josh_changes::VoteData)],
-) -> anyhow::Result<usize> {
+) -> anyhow::Result<()> {
     if votes.is_empty() {
-        return Ok(0);
+        return Ok(());
     }
 
     let tracked = crate::node_ids::read_vote_node_ids(transaction, change_id, scope)?;
     if tracked.is_empty() {
-        return Ok(0);
+        return Ok(());
     }
 
     let users: Vec<String> = votes

@@ -191,7 +191,7 @@ pub fn flatten_thread(
         let children: Vec<usize> = all
             .iter()
             .enumerate()
-            .filter(|(_, x)| x.reply_to.as_deref() == Some(&c.id))
+            .filter(|(_, x)| x.meta.reply_to.as_deref() == Some(&c.id))
             .map(|(i, _)| i)
             .collect();
         if !children.is_empty() {
@@ -224,7 +224,7 @@ pub fn render_threads(
         .map(|c| {
             let children: Vec<&josh_changes::Comment> = all
                 .iter()
-                .filter(|x| x.reply_to.as_deref() == Some(&c.id))
+                .filter(|x| x.meta.reply_to.as_deref() == Some(&c.id))
                 .collect();
             let indent = depth * 16;
             let author = c.author.as_deref().unwrap_or_default();
@@ -241,7 +241,7 @@ pub fn render_threads(
             rsx! {
                 div { style: "margin-left: {indent}px",
                     div { class: "diff-comment-inline",
-                        {render_comment_card(author, &ts, &c.message)}
+                        {render_comment_card(author, &ts, &c.meta.message)}
                     }
                     {render_threads(all, &children, depth + 1)}
                 }
