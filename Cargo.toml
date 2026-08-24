@@ -53,24 +53,24 @@ mime = "0.3"
 parking_lot = "0.12.5"
 form_urlencoded = "1.2.2"
 futures = "0.3.33"
-gix = { version = "0.86.0", default-features = false, features = ["sha1", "parallel", "revision"] }
-gix-actor = "^0.41"
+gix = { version = "0.87.0", default-features = false, features = ["sha1", "parallel", "revision"] }
+gix-actor = "^0.42"
 gix-features = { version = "0.49", features = ["progress"] }
 gix-hash = { version = "^0.26", features = ["sha1"] }
-gix-object = "0.63.0"
-gix-odb = "0.83"
-gix-pack = { version = "0.73", features = ["sha1", "object-cache-dynamic"] }
-gix-command = "0.9.1"
-gix-diff = { version = "0.66.0", default-features = false, features = ["blob"] }
-gix-filter = "0.33.0"
+gix-object = "0.64.0"
+gix-odb = "0.84"
+gix-pack = { version = "0.74", features = ["sha1", "object-cache-dynamic"] }
+gix-command = "0.10.0"
+gix-diff = { version = "0.67.0", default-features = false, features = ["blob"] }
+gix-filter = "0.34.0"
 gix-glob = "0.27.0"
-gix-merge = { version = "0.19.0", default-features = false, features = ["sha1"] }
-gix-revwalk = "0.34.0"
-gix-worktree = { version = "0.55.0", default-features = false, features = ["attributes"] }
-gix-revision = { version = "0.48.0", default-features = false, features = ["merge_base"] }
+gix-merge = { version = "0.20.0", default-features = false, features = ["sha1"] }
+gix-revwalk = "0.35.0"
+gix-worktree = { version = "0.56.0", default-features = false, features = ["attributes"] }
+gix-revision = { version = "0.49.0", default-features = false, features = ["merge_base"] }
 gix-zlib = "0.1"
-gix-config = "0.59.0"
-gix-submodule = "0.33.0"
+gix-config = "0.60.0"
+gix-submodule = "0.34.0"
 libc = "0.2.189"
 regex = "1.13.1"
 serde = { version = "1.0.229", features = ["std", "derive"] }
@@ -93,10 +93,10 @@ backon = "1.6.0"
 futures-util = "0.3.33"
 thiserror = "2.0.19"
 axum-auth = "0.8.1"
-bincode = "^2"
+bincode = "^3"
 tower-http = { version = "0.7", features = ["trace"] }
 proc-macro2 = "^1"
-prettyplease = "0.2.37"
+prettyplease = "0.3.0"
 graphql_client = "^0.16"
 graphql_client_codegen = { version = "^0.16.0" }
 
