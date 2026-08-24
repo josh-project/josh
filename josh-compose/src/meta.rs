@@ -1,12 +1,7 @@
-//! Workspace metadata parsed from git trees.
-//!
-//! Each workspace in the build graph stores its configuration as blobs in a git tree
-//! (`label`, `output`, `cmd`, `image`/build-tree OID, sidecar specs, etc.). This
-//! module reads those blobs and constructs typed [`WorkspaceMeta`] values for the
-//! scheduler.
+//! Decodes compose workspace trees into scheduler metadata.
+//! Scalar settings are blobs; object references are gitlinks.
 
 use std::path::Path;
-use std::str::FromStr;
 
 use crate::OutputMode;
 use josh_compose_backend::NetworkPolicy;
@@ -105,11 +100,48 @@ pub fn read_blob_entries(
         .collect()
 }
 
-/// Parse a workspace's configuration from its git tree.
-///
-/// Reads blobs named `label`, `output`, `cmd`, `cache`, `network`, and `image`, plus
-/// the optional `worktree` subtree. Returns `None` for `image` and `worktree` when
-/// the workspace is orchestrator-only (no image to build and no files to mount).
+pub fn read_gitlink(
+    transaction: &cache::Transaction,
+    odb: &memodb::Odb,
+    tree_oid: gix_hash::ObjectId,
+    path: &str,
+) -> anyhow::Result<Option<gix_hash::ObjectId>> {
+    let Some(entry) = tree::get_path_entry(transaction, odb, tree_oid, Path::new(path))? else {
+        return Ok(None);
+    };
+    if !entry.mode.is_commit() {
+        anyhow::bail!("expected gitlink at {path}");
+    }
+    Ok(Some(entry.oid))
+}
+
+pub fn read_gitlink_entries(
+    transaction: &cache::Transaction,
+    odb: &memodb::Odb,
+    tree_oid: gix_hash::ObjectId,
+    prefix: &str,
+) -> anyhow::Result<Vec<(String, gix_hash::ObjectId)>> {
+    let Ok(Some(entry)) = tree::get_path_entry(transaction, odb, tree_oid, Path::new(prefix))
+    else {
+        return Ok(vec![]);
+    };
+    let Ok(subtree) = tree::read_tree(transaction, odb, entry.oid) else {
+        return Ok(vec![]);
+    };
+    Ok(subtree
+        .entries()
+        .filter(|entry| entry.mode.is_commit())
+        .map(|entry| {
+            (
+                String::from_utf8_lossy(entry.filename).into_owned(),
+                entry.oid.to_owned(),
+            )
+        })
+        .collect())
+}
+
+/// Decode a workspace tree.
+/// Missing image and worktree entries represent orchestrator-only nodes.
 pub fn read_meta(
     transaction: &cache::Transaction,
     odb: &memodb::Odb,
@@ -136,13 +168,7 @@ pub fn read_meta(
         _ => NetworkPolicy::None,
     };
 
-    let image = read_blob(transaction, odb, ws_tree, "image")
-        .filter(|s| !s.is_empty())
-        .map(|sha| {
-            gix_hash::ObjectId::from_str(&sha)
-                .map_err(|_| anyhow::anyhow!("invalid image SHA in workspace tree: {sha}"))
-        })
-        .transpose()?;
+    let image = read_gitlink(transaction, odb, ws_tree, "image")?;
 
     let tree = tree::read_tree(transaction, odb, ws_tree)?;
     let worktree = tree.entry(b"worktree").map(|e| e.oid.to_owned());
@@ -167,14 +193,9 @@ pub fn read_sidecars(
     ws_tree: gix_hash::ObjectId,
 ) -> anyhow::Result<Vec<SidecarSpec>> {
     let mut out = vec![];
-    for (name, content) in read_blob_entries(transaction, odb, ws_tree, "sidecars") {
-        let sidecar_tree = gix_hash::ObjectId::from_str(content.trim())
-            .map_err(|_| anyhow::anyhow!("sidecar {name}: invalid tree SHA {content:?}"))?;
-        let image_sha = read_blob(transaction, odb, sidecar_tree, "image")
-            .filter(|s| !s.is_empty())
+    for (name, sidecar_tree) in read_gitlink_entries(transaction, odb, ws_tree, "sidecars")? {
+        let image = read_gitlink(transaction, odb, sidecar_tree, "image")?
             .ok_or_else(|| anyhow::anyhow!("sidecar {name}: missing image"))?;
-        let image = gix_hash::ObjectId::from_str(&image_sha)
-            .map_err(|_| anyhow::anyhow!("sidecar {name}: invalid image SHA {image_sha:?}"))?;
         let port_str = read_blob(transaction, odb, sidecar_tree, "port")
             .filter(|s| !s.is_empty())
             .ok_or_else(|| anyhow::anyhow!("sidecar {name}: missing port"))?;
@@ -191,4 +212,54 @@ pub fn read_sidecars(
         });
     }
     Ok(out)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn workspace_references_are_gitlinks() {
+        let dir = tempfile::tempdir().unwrap();
+        gix::init_bare(dir.path()).unwrap();
+        let context = cache::TransactionContext::new(
+            dir.path(),
+            std::sync::Arc::new(cache::CacheStack::new()),
+        );
+        let transaction = context.open().unwrap();
+        let odb = transaction.odb();
+        let leaf = gix_hash::ObjectId::from_bytes_or_panic(&[1; 20]);
+        let target =
+            tree::insert_oid(odb, tree::empty_id(), Path::new("leaf"), leaf, 0o100644).unwrap();
+
+        let inputs = tree::insert_oid(
+            odb,
+            tree::empty_id(),
+            Path::new("dependency"),
+            target,
+            0o160000,
+        )
+        .unwrap();
+        let workspace =
+            tree::insert_oid(odb, tree::empty_id(), Path::new("image"), target, 0o160000).unwrap();
+        let workspace =
+            tree::insert_oid(odb, workspace, Path::new("inputs"), inputs, 0o040000).unwrap();
+        let workspace =
+            tree::insert_oid(odb, workspace, Path::new("invalid"), target, 0o100644).unwrap();
+
+        assert_eq!(
+            read_meta(&transaction, odb, workspace).unwrap().image,
+            Some(target)
+        );
+        assert_eq!(
+            read_gitlink_entries(&transaction, odb, workspace, "inputs").unwrap(),
+            vec![("dependency".to_string(), target)]
+        );
+        assert_eq!(
+            read_gitlink(&transaction, odb, workspace, "invalid")
+                .unwrap_err()
+                .to_string(),
+            "expected gitlink at invalid"
+        );
+    }
 }

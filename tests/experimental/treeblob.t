@@ -34,18 +34,20 @@ Roundtrip: :& spec is preserved
   $ josh-filter -p ':&version.txt'
   :&version.txt
 
-Apply via stored filter: blob at path contains tree OID of subfilter result
+TreeId via stored filter: gitlink carries the tree OID of the subfilter result
   $ cat > filter.josh <<'EOF'
-  > :#version.txt[:/sub1]
+  > :#version[:/sub1]
   > EOF
   $ git add filter.josh
   $ git commit -m "add filter" 1> /dev/null
   $ josh-filter -s :+filter master --update refs/josh/master 1> /dev/null
-  $ [ "$(git show refs/josh/master:version.txt)" = "$(git rev-parse master:sub1)" ] && echo "match"
+  $ git ls-tree refs/josh/master version | cut -d' ' -f1-2
+  160000 commit
+  $ [ "$(git rev-parse refs/josh/master:version)" = "$(git rev-parse master:sub1)" ] && echo "match"
   match
 
-Reverse: a treeid inverts to :empty (it fabricates a blob and consumes no input)
-  $ josh-filter --reverse -p ':#version.txt[:/sub1]'
+Reverse: a treeid inverts to :empty (it fabricates a gitlink and consumes no input)
+  $ josh-filter --reverse -p ':#version[:/sub1]'
   :empty
 
 Apply: composing treeid groups across sibling directories keeps every entry
@@ -71,37 +73,37 @@ Deref: path not found is treated as nop (reference is updated, path absent from 
   $ git show refs/josh/noptest:version.txt 2>/dev/null || echo "not present"
   not present
 
-Deref: blob containing a valid tree SHA resolves and inserts at path
-  $ git rev-parse master:sub1 > ptr.txt
-  $ git add ptr.txt
+Deref: gitlink carrying a valid tree SHA resolves and inserts at path
+  $ git update-index --add --cacheinfo 160000,$(git rev-parse master:sub1),ptr
   $ git commit -m "add ptr" 1> /dev/null
-  $ josh-filter -s ':#ptr.txt' master --update refs/josh/deref 1> /dev/null
-  $ git show refs/josh/deref:ptr.txt/file1
+  $ josh-filter -s ':#ptr' master --update refs/josh/deref 1> /dev/null
+  $ git show refs/josh/deref:ptr/file1
   contents1
 
-Deref: blob with invalid content inserts empty blob at path
-  $ printf 'not-a-sha\n' > bad_ptr.txt
+Deref: a non-gitlink entry is an error (reference is not updated)
+  $ printf 'not-a-reference\n' > bad_ptr.txt
   $ git add bad_ptr.txt
   $ git commit -m "add bad_ptr" 1> /dev/null
-  $ josh-filter ':#bad_ptr.txt' master --update refs/josh/badtest 1> /dev/null
-  $ git rev-parse --verify refs/josh/badtest > /dev/null && echo "updated"
-  updated
-  $ git show refs/josh/badtest:bad_ptr.txt | wc -c | tr -d ' '
-  0
+  $ josh-filter ':#bad_ptr.txt' master --update refs/josh/badtest 2>&1; echo "exit:$?"
+  *:#: expected gitlink at path: bad_ptr.txt (glob)
+  exit:1
+  $ git rev-parse --verify refs/josh/badtest 2>/dev/null || echo "not updated"
+  not updated
 
-Deref: blob with valid SHA but object not in repo is an error (reference not updated)
-  $ printf '0000000000000000000000000000000000000001\n' > ghost_ptr.txt
-  $ git add ghost_ptr.txt
+Deref: gitlink with object not in repo is an error (reference is not updated)
+  $ git update-index --add --cacheinfo 160000,0000000000000000000000000000000000000001,ghost_ptr
   $ git commit -m "add ghost_ptr" 1> /dev/null
-  $ josh-filter ':#ghost_ptr.txt' master --update refs/josh/ghosttest 2>&1; echo "exit:$?"
+  $ josh-filter ':#ghost_ptr' master --update refs/josh/ghosttest 2>&1; echo "exit:$?"
   *:#: object not found in repo: 0000000000000000000000000000000000000001 (glob)
   exit:1
   $ git rev-parse --verify refs/josh/ghosttest 2>/dev/null || echo "not updated"
   not updated
 
-ObjectRef: stores tree OID of sub1 as blob content at sub1
+ObjectRef: stores the tree OID of sub1 in a gitlink at sub1
   $ josh-filter -s ':&sub1' master --update refs/josh/treeref 1> /dev/null
-  $ [ "$(git show refs/josh/treeref:sub1)" = "$(git rev-parse master:sub1)" ] && echo "match"
+  $ git ls-tree refs/josh/treeref sub1 | cut -d' ' -f1-2
+  160000 commit
+  $ [ "$(git rev-parse refs/josh/treeref:sub1)" = "$(git rev-parse master:sub1)" ] && echo "match"
   match
 
 ObjectRef + ObjectDeref round-trip: tree entry restored
@@ -114,12 +116,14 @@ ObjectRef + :#/path sugar round-trip: tree entry restored via canonical expansio
   $ git show refs/josh/roundtrip_sugar:file1
   contents1
 
-ObjectRef: stores blob OID as blob content at path
+ObjectRef: stores the blob OID in a gitlink at path
   $ josh-filter -s ':&sub1/file1' master --update refs/josh/blobref 1> /dev/null
-  $ [ "$(git show refs/josh/blobref:sub1/file1)" = "$(git rev-parse master:sub1/file1)" ] && echo "match"
+  $ git ls-tree refs/josh/blobref sub1/file1 | cut -d' ' -f1-2
+  160000 commit
+  $ [ "$(git rev-parse refs/josh/blobref:sub1/file1)" = "$(git rev-parse master:sub1/file1)" ] && echo "match"
   match
 
-ObjectDeref: blob OID reference wraps blob at path (round-trip)
+ObjectDeref: blob OID gitlink restores the blob at path (round-trip)
   $ josh-filter ':#sub1/file1' refs/josh/blobref --update refs/josh/blobroundtrip 1> /dev/null
   $ git show refs/josh/blobroundtrip:sub1/file1
   contents1

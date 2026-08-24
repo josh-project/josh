@@ -1,5 +1,4 @@
 use std::collections::HashSet;
-use std::str::FromStr;
 
 use josh_core::cache;
 use josh_core::memodb;
@@ -97,9 +96,7 @@ fn walk_workspace(
         return Ok(());
     }
 
-    for (dep_name, dep_sha) in meta::read_blob_entries(transaction, odb, ws_tree, "inputs") {
-        let dep_tree = gix_hash::ObjectId::from_str(dep_sha.trim())
-            .map_err(|_| anyhow::anyhow!("dependency {dep_name}: invalid tree SHA {dep_sha:?}"))?;
+    for (_, dep_tree) in meta::read_gitlink_entries(transaction, odb, ws_tree, "inputs")? {
         walk_workspace(
             transaction,
             odb,
@@ -141,9 +138,7 @@ fn walk_workspace_jobs(
         return Ok(());
     }
 
-    for (dep_name, dep_sha) in meta::read_blob_entries(transaction, odb, ws_tree, "inputs") {
-        let dep_tree = gix_hash::ObjectId::from_str(dep_sha.trim())
-            .map_err(|_| anyhow::anyhow!("dependency {dep_name}: invalid tree SHA {dep_sha:?}"))?;
+    for (_, dep_tree) in meta::read_gitlink_entries(transaction, odb, ws_tree, "inputs")? {
         walk_workspace_jobs(
             transaction,
             odb,
@@ -194,9 +189,7 @@ fn collect_image_with_bases(
         return Ok(());
     }
 
-    for (base_name, base_sha) in meta::read_blob_entries(transaction, odb, image_oid, "bases") {
-        let base_oid = gix_hash::ObjectId::from_str(base_sha.trim())
-            .map_err(|_| anyhow::anyhow!("invalid base SHA for {base_name}: {base_sha:?}"))?;
+    for (_, base_oid) in meta::read_gitlink_entries(transaction, odb, image_oid, "bases")? {
         collect_image_with_bases(transaction, odb, base_oid, out, image_seen)?;
     }
 

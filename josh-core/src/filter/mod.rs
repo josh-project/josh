@@ -933,6 +933,79 @@ pub fn apply_to_commit2(
                 .transpose();
             }
         }
+        Op::ObjectDeref(path) => {
+            let referenced_commit = tree::get_path_entry(transaction, odb, commit.tree_id()?, path)
+                .ok()
+                .flatten()
+                .filter(|entry| entry.mode.is_commit())
+                .and_then(|entry| {
+                    matches!(odb.try_kind(entry.oid), Ok(Some(gix_object::Kind::Commit)))
+                        .then_some(entry.oid)
+                });
+
+            if let Some(new_oid) = referenced_commit {
+                let normal_parents = commit
+                    .parent_ids()
+                    .map(|parent| transaction.get(filter, parent))
+                    .collect::<anyhow::Result<Option<Vec<gix_hash::ObjectId>>>>()?;
+                let normal_parents = some_or!(normal_parents, { return Ok(None) });
+
+                let old_oid = if let Some(parent) = commit.first_parent_id() {
+                    let parent_tree = git::read_tree_id(odb, parent)?;
+                    tree::get_path_entry(transaction, odb, parent_tree, path)
+                        .ok()
+                        .flatten()
+                        .filter(|entry| entry.mode.is_commit())
+                        .and_then(|entry| {
+                            matches!(odb.try_kind(entry.oid), Ok(Some(gix_object::Kind::Commit)))
+                                .then_some(entry.oid)
+                        })
+                        .unwrap_or_else(|| gix_hash::ObjectId::null(gix_hash::Kind::Sha1))
+                } else {
+                    gix_hash::ObjectId::null(gix_hash::Kind::Sha1)
+                };
+
+                let original_target = normal_parents
+                    .first()
+                    .copied()
+                    .unwrap_or_else(|| gix_hash::ObjectId::null(gix_hash::Kind::Sha1));
+                let mut filtered_parents = normal_parents;
+                let path_filter = to_filter(Op::Subdir(path.clone()));
+                if original_target != gix_hash::ObjectId::null(gix_hash::Kind::Sha1)
+                    && transaction.get(path_filter, original_target)?.is_none()
+                {
+                    return Ok(None);
+                }
+
+                if old_oid != new_oid {
+                    let referenced_history = history::unapply_filter(
+                        transaction,
+                        path_filter,
+                        original_target,
+                        old_oid,
+                        new_oid,
+                        history::OrphansMode::Keep,
+                        None,
+                    )?;
+                    if referenced_history != gix_hash::ObjectId::null(gix_hash::Kind::Sha1) {
+                        filtered_parents.push(referenced_history);
+                    }
+                }
+
+                let filtered_tree =
+                    apply(transaction, filter, Rewrite::from_commit_data(&commit)?)?;
+                return Some(history::create_filtered_commit(
+                    &commit,
+                    filtered_parents,
+                    filtered_tree,
+                    transaction,
+                    filter,
+                ))
+                .transpose();
+            }
+
+            apply(transaction, filter, Rewrite::from_commit_data(&commit)?)?
+        }
         Op::Workspace(ws_path) => {
             // The get_* helpers return a bare Filter and would fold an unreadable tree to
             // Op::Empty, so bad input must error here; every probe below shares the read.
@@ -1631,25 +1704,23 @@ fn apply_impl(
             apply_impl(transaction, odb, f, x)
         }
         Op::TreeId(path, subfilter) => {
-            let applied = apply_impl(transaction, odb, *subfilter, x.clone())?;
-            let oid_str = applied.tree_id().to_string();
-            apply_impl(
-                transaction,
+            let tree_oid = apply_impl(transaction, odb, *subfilter, x.clone())?.tree_id();
+            Ok(x.with_tree(tree::insert_oid(
                 odb,
-                to_filter(Op::Insert(path.clone(), InsertContent::Inline(oid_str))),
-                x,
-            )
+                tree::empty_id(),
+                path,
+                tree_oid,
+                0o160000,
+            )?))
         }
         Op::ObjectRef(path) => {
             if let Ok(Some(entry)) = tree::get_path_entry(transaction, odb, x.tree_id(), path) {
-                let oid_str = entry.oid.to_string();
-                let blob_oid = odb.write(gix_object::Kind::Blob, oid_str.as_bytes());
                 Ok(x.with_tree(tree::insert_oid(
                     odb,
                     tree::empty_id(),
                     path,
-                    blob_oid,
-                    0o100644,
+                    entry.oid,
+                    0o160000,
                 )?))
             } else {
                 Ok(x)
@@ -1661,39 +1732,23 @@ fn apply_impl(
                 Ok(Some(e)) => e,
                 _ => return Ok(x),
             };
-            // Path exists: read OID string from blob content.
-            let oid_str = if let Some(blob) = tree::blob_bytes(odb, entry.oid) {
-                std::str::from_utf8(&blob)?
-                    .lines()
-                    .next()
-                    .unwrap_or("")
-                    .trim()
-                    .to_string()
-            } else {
-                String::new()
-            };
-            if let Ok(oid) = gix_hash::ObjectId::from_str(&oid_str) {
-                // Kind by header, never by `contains`: `read_header`'s disk fallback
-                // virtualizes the empty tree, `exists` does not.
-                let (oid, mode) = match odb.try_kind(oid) {
-                    Ok(Some(gix_object::Kind::Tree)) => (oid, 0o040000),
-                    Ok(Some(gix_object::Kind::Blob)) => (oid, 0o100644),
-                    _ => {
-                        return Err(anyhow::anyhow!(":#: object not found in repo: {}", oid));
-                    }
-                };
-                Ok(x.with_tree(tree::insert_oid(odb, tree::empty_id(), path, oid, mode)?))
-            } else {
-                // Content is not a valid OID: insert empty blob at path.
-                let empty_blob = odb.write(gix_object::Kind::Blob, b"");
-                Ok(x.with_tree(tree::insert_oid(
-                    odb,
-                    tree::empty_id(),
-                    path,
-                    empty_blob,
-                    0o100644,
-                )?))
+            if !entry.mode.is_commit() {
+                return Err(anyhow::anyhow!(
+                    ":#: expected gitlink at path: {}",
+                    path.display()
+                ));
             }
+            let oid = entry.oid;
+            // Header lookup can resolve the virtual empty tree; existence checks cannot.
+            let (oid, mode) = match odb.try_kind(oid) {
+                Ok(Some(gix_object::Kind::Commit)) => (git::read_tree_id(odb, oid)?, 0o040000),
+                Ok(Some(gix_object::Kind::Tree)) => (oid, 0o040000),
+                Ok(Some(gix_object::Kind::Blob)) => (oid, 0o100644),
+                _ => {
+                    return Err(anyhow::anyhow!(":#: object not found in repo: {}", oid));
+                }
+            };
+            Ok(x.with_tree(tree::insert_oid(odb, tree::empty_id(), path, oid, mode)?))
         }
 
         Op::Compose(filters) => {
