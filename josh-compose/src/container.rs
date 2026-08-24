@@ -1,6 +1,5 @@
 use std::collections::HashSet;
 use std::path::Path;
-use std::str::FromStr;
 
 use josh_core::cache;
 use josh_core::memodb;
@@ -114,21 +113,14 @@ pub fn run_container(
     eprintln!("[{}] Running ({})", workspace_meta.label, ws_tree);
 
     // Run all dependencies, collecting failures so sibling jobs still get a chance to run.
-    let input_entries = meta::read_blob_entries(transaction, odb, ws_tree, "inputs");
+    let input_entries = meta::read_gitlink_entries(transaction, odb, ws_tree, "inputs")?;
     let mut dep_volumes: Vec<(String, String, bool)> = vec![];
     let mut dep_errors: Vec<String> = vec![];
-    for (dep_name, dep_sha) in &input_entries {
-        let dep_tree = match gix_hash::ObjectId::from_str(dep_sha.trim()) {
-            Ok(oid) => oid,
-            Err(_) => {
-                dep_errors.push(format!("dependency {dep_name}: invalid SHA {dep_sha:?}"));
-                continue;
-            }
-        };
+    for (dep_name, dep_tree) in &input_entries {
         if let Err(e) = run_container(
             transaction,
             odb,
-            dep_tree,
+            *dep_tree,
             attempted,
             extract_to_workdir,
             runtime,
@@ -136,11 +128,11 @@ pub fn run_container(
             dep_errors.push(format!("dependency {dep_name} failed: {e}"));
             continue;
         }
-        let dep_meta = meta::read_meta(transaction, odb, dep_tree)?;
+        let dep_meta = meta::read_meta(transaction, odb, *dep_tree)?;
         if dep_meta.output == OutputMode::None {
             continue;
         }
-        let dep_out_vol = naming::output(dep_tree);
+        let dep_out_vol = naming::output(*dep_tree);
         if !runtime.artifact_exists(&dep_out_vol)? {
             dep_errors.push(format!("dependency {dep_name} has no output volume"));
             continue;

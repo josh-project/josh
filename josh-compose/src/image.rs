@@ -1,5 +1,4 @@
 use anyhow::Context;
-use std::str::FromStr;
 
 use josh_compose_backend::{EnvRecipe, EnvironmentBackend};
 use josh_core::cache;
@@ -30,12 +29,10 @@ pub fn ensure_image(
 
     // Build each base environment and pass its key as a build arg so the
     // Containerfile can reference it (e.g. ARG my_base; FROM $my_base).
-    let base_entries = meta::read_blob_entries(transaction, odb, build_tree, "bases");
-    for (base_name, base_sha) in &base_entries {
-        let base_oid = gix_hash::ObjectId::from_str(base_sha.trim())
-            .with_context(|| format!("invalid base SHA for {base_name}: {base_sha}"))?;
+    for (base_name, base_oid) in meta::read_gitlink_entries(transaction, odb, build_tree, "bases")?
+    {
         let base_env = ensure_image(transaction, odb, base_oid, runtime)?;
-        build_args.push((base_name.clone(), base_env));
+        build_args.push((base_name, base_env));
     }
 
     for (k, v) in meta::read_blob_entries(transaction, odb, build_tree, "args") {

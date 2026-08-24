@@ -164,8 +164,8 @@ impl Filter {
         Ok(self.chain(to_filter(Op::Starlark(path.into(), subfilter))))
     }
 
-    /// Chain a filter that inserts a blob containing the tree OID of the subfilter applied to the input tree.
-    /// Syntax: `:#path[filter]` (e.g. `:#version.txt[:/lib]` inserts a blob at `version.txt` with the OID of `:/lib` applied).
+    /// Chain a filter that stores the subfilter's tree ID as a gitlink at `path`.
+    /// Syntax: `:#path[filter]`, for example `:#version[:/lib]`.
     pub fn treeid(
         self,
         path: impl Into<std::path::PathBuf>,
