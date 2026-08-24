@@ -32,7 +32,7 @@ fn estimate_item_height(item: &DiffItem) -> u32 {
     match item {
         DiffItem::Line(_) => 20,
         DiffItem::Comment(c) => {
-            let lines = c.comment.message.lines().count().max(1) as u32;
+            let lines = c.comment.meta.message.lines().count().max(1) as u32;
             40 + lines * 20
         }
     }
@@ -108,7 +108,7 @@ fn build_diff_with_comments(
 ) -> Vec<DiffItem> {
     let matching: Vec<&josh_changes::Comment> = comments
         .iter()
-        .filter(|c| c.file.as_deref() == Some(file_path))
+        .filter(|c| c.meta.file.as_deref() == Some(file_path))
         .collect();
     if matching.is_empty() {
         return lines.iter().map(|l| DiffItem::Line(l.clone())).collect();
@@ -119,16 +119,17 @@ fn build_diff_with_comments(
     let mut flat: Vec<(u32, FlatComment)> = Vec::new();
     let file_indices: Vec<usize> = all_comment_indices
         .iter()
-        .filter(|&&i| comments[i].file.as_deref() == Some(file_path))
+        .filter(|&&i| comments[i].meta.file.as_deref() == Some(file_path))
         .copied()
         .collect();
     let roots: Vec<usize> = file_indices
         .iter()
-        .filter(|&&i| comments[i].reply_to.is_none())
+        .filter(|&&i| comments[i].meta.reply_to.is_none())
         .copied()
         .collect();
     for &root in &roots {
         let target = comments[root]
+            .meta
             .location
             .as_ref()
             .map(|loc| loc.start_line)
@@ -468,7 +469,7 @@ pub fn FileDiffView(
                                                             div {
                                                                 class: "diff-comment-inline",
                                                                 style: "margin-left: {indent}px",
-                                                                {render_comment_card(&author, &ts, &flat.comment.message)}
+                                                                {render_comment_card(&author, &ts, &flat.comment.meta.message)}
                                                             }
                                                         }
                                                     }

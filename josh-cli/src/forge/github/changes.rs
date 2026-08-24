@@ -371,7 +371,7 @@ impl GithubSyncCtx<'_> {
 
         josh_changes::store_diff_data(self.transaction, &change, &meta.remote_scope)?;
 
-        josh_changes::store_pr_data(
+        josh_github_changes::store_pr_data(
             self.transaction,
             &meta.change_id,
             &meta.pr_data,
@@ -538,9 +538,12 @@ impl GithubSyncCtx<'_> {
 
             // Record the final PR state for every candidate, open or closed;
             // a failed ref write skips the candidate like any other failure.
-            if let Err(e) =
-                josh_changes::store_pr_data(self.transaction, change_id, &pr_data, remote_scope)
-            {
+            if let Err(e) = josh_github_changes::store_pr_data(
+                self.transaction,
+                change_id,
+                &pr_data,
+                remote_scope,
+            ) {
                 stats.track_gc_skipped(
                     change_id,
                     pr_number,
@@ -561,7 +564,17 @@ impl GithubSyncCtx<'_> {
             }
 
             // Delete the change from the remote changes ref.
-            match josh_changes::delete_change(self.transaction, change_id, remote_scope) {
+            match josh_changes::delete_change(
+                self.transaction,
+                change_id,
+                remote_scope,
+                &[
+                    josh_github_changes::GITHUB_PR_DATA_PATH,
+                    josh_github_changes::GITHUB_COMMENT_NODE_IDS_PATH,
+                    josh_github_changes::GITHUB_VOTE_NODE_IDS_PATH,
+                    josh_github_changes::GITHUB_CACHE_PATH,
+                ],
+            ) {
                 Ok(()) => stats.track_cleaned(change_id, pr_number, &pr_data.state),
                 Err(e) => {
                     stats.track_gc_skipped(change_id, pr_number, format!("failed to delete: {}", e))
@@ -671,19 +684,21 @@ impl GithubSyncCtx<'_> {
 
         if let Some(c) = comments {
             let post = josh_github_changes::post_comments(self.api, &pr_node_id, c).await;
-            for p in &post.posted {
-                match josh_github_changes::store_comment_node_id(
-                    self.transaction,
-                    &pending.change_id,
-                    &p.local_id,
-                    &p.github_id,
-                    &pending.remote_scope,
-                ) {
-                    Ok(()) => outcome.posted_comments += 1,
-                    Err(e) => outcome
-                        .errors
-                        .push(format!("failed to record posted comment: {}", e)),
-                }
+            let written: Vec<(String, String)> = post
+                .posted
+                .iter()
+                .map(|p| (p.local_id.clone(), p.github_id.clone()))
+                .collect();
+            match josh_github_changes::store_comment_node_ids(
+                self.transaction,
+                &pending.change_id,
+                &written,
+                &pending.remote_scope,
+            ) {
+                Ok(()) => outcome.posted_comments += post.posted.len(),
+                Err(e) => outcome
+                    .errors
+                    .push(format!("failed to record posted comments: {}", e)),
             }
             if let Some(e) = post.error {
                 outcome
@@ -700,21 +715,18 @@ impl GithubSyncCtx<'_> {
                 &v.pending,
             )
             .await;
-            for (user, data) in &post.posted {
-                match josh_github_changes::store_vote_node_id(
-                    self.transaction,
-                    &pending.change_id,
-                    user,
-                    data,
-                    &pending.remote_scope,
-                ) {
-                    Ok(()) => outcome.posted_votes += 1,
-                    Err(e) => outcome
-                        .errors
-                        .push(format!("failed to record posted vote: {}", e)),
-                }
+            match josh_github_changes::store_vote_node_ids(
+                self.transaction,
+                &pending.change_id,
+                &post.posted,
+                &pending.remote_scope,
+            ) {
+                Ok(()) => outcome.posted_votes += post.posted.len(),
+                Err(e) => outcome
+                    .errors
+                    .push(format!("failed to record posted votes: {}", e)),
             }
-            // Drop outbox entries whose post is now reflected in gh_vote_ids.
+            // Drop outbox entries whose post is now reflected in gh_vote_node_ids.
             // Safe unconditionally -- no-op when nothing needs cleaning.
             if let Err(e) = josh_github_changes::cleanup_posted_outbox_votes(
                 self.transaction,

@@ -119,13 +119,13 @@ pub fn DetailView(sha: String, scope: josh_changes::ChangesRef, mut page: Signal
                             div { class: "revision-list",
                                 for rev in data.revisions.iter() {
                                     {
-                                        let is_current = rev.commit_oid == data.sha;
+                                        let is_current = rev.diff.commit == data.sha;
                                         let row_class = if is_current {
                                             "revision-item current"
                                         } else {
                                             "revision-item"
                                         };
-                                        let short_sha = &rev.commit_oid[..rev.commit_oid.len().min(8)];
+                                        let short_sha = &rev.diff.commit[..rev.diff.commit.len().min(8)];
                                         let ts = rev.timestamp.parse::<i64>().ok()
                                             .and_then(|s| chrono::DateTime::from_timestamp(s, 0))
                                             .map(|dt| dt.format("%Y-%m-%d %H:%M").to_string())
@@ -150,7 +150,7 @@ pub fn DetailView(sha: String, scope: josh_changes::ChangesRef, mut page: Signal
                             let top_roots: Vec<&josh_changes::Comment> = data
                                 .comments
                                 .iter()
-                                .filter(|c| c.file.is_none() && c.reply_to.is_none())
+                                .filter(|c| c.meta.file.is_none() && c.meta.reply_to.is_none())
                                 .collect();
                             if !top_roots.is_empty() {
                                 rsx! {
@@ -178,8 +178,8 @@ pub fn DetailView(sha: String, scope: josh_changes::ChangesRef, mut page: Signal
                                         let file_roots: Vec<&josh_changes::Comment> = data
                                             .comments
                                             .iter()
-                                            .filter(|c| c.file.as_deref() == Some(p.as_str())
-                                                && c.reply_to.is_none())
+                                            .filter(|c| c.meta.file.as_deref() == Some(p.as_str())
+                                                && c.meta.reply_to.is_none())
                                             .collect();
                                         let has_comments = !file_roots.is_empty();
                                         rsx! {
@@ -415,14 +415,9 @@ pub fn save_comment(
         update_of: None,
     };
 
-    let content_hash = match scope {
-        josh_changes::ChangesRef::Remote { .. } => {
-            josh_changes::write_outbox_comment(&transaction, &change, &meta, None, None, scope)?
-        }
-        josh_changes::ChangesRef::Local { .. } => {
-            josh_changes::write_comment(&transaction, &change, &meta, None, None, scope)?
-        }
-    };
+    let namespace = josh_changes::CommentNamespace::for_scope(scope);
+    let content_hash =
+        josh_changes::write_comment(&transaction, &change, &meta, None, None, scope, namespace)?;
     // The write went into the transaction's in-memory odb; make it durable (and
     // surface flush errors) before reporting success.
     transaction.flush_mem_odb()?;
@@ -447,7 +442,7 @@ pub fn save_vote(
     state: &str,
     body: &str,
     scope: &josh_changes::ChangesRef,
-) -> anyhow::Result<String> {
+) -> anyhow::Result<()> {
     let transaction = crate::common::open_transaction()?;
     let oid = gix_hash::ObjectId::from_str(sha)?;
     let change = josh_changes::Change::new(&transaction, oid)?;
@@ -460,36 +455,28 @@ pub fn save_vote(
         update_of: None,
     };
 
-    let content_hash = match scope {
-        josh_changes::ChangesRef::Remote { .. } => {
-            if !body.trim().is_empty() {
-                josh_changes::write_outbox_comment(
-                    &transaction,
-                    &change,
-                    &body_meta(),
-                    None,
-                    None,
-                    scope,
-                )?;
-            }
-            josh_changes::write_outbox_vote(&transaction, &change, state, None, None, scope)?
-        }
-        josh_changes::ChangesRef::Local { .. } => {
-            if !body.trim().is_empty() {
-                josh_changes::write_comment(
-                    &transaction,
-                    &change,
-                    &body_meta(),
-                    None,
-                    None,
-                    scope,
-                )?;
-            }
-            josh_changes::write_vote(&transaction, &change, state, None, None, scope)?
-        }
-    };
+    if !body.trim().is_empty() {
+        josh_changes::write_comment(
+            &transaction,
+            &change,
+            &body_meta(),
+            None,
+            None,
+            scope,
+            josh_changes::CommentNamespace::for_scope(scope),
+        )?;
+    }
+    josh_changes::write_vote(
+        &transaction,
+        &change,
+        state,
+        None,
+        None,
+        scope,
+        josh_changes::VoteNamespace::for_scope(scope),
+    )?;
     // The write went into the transaction's in-memory odb; make it durable (and
     // surface flush errors) before reporting success.
     transaction.flush_mem_odb()?;
-    Ok(content_hash)
+    Ok(())
 }

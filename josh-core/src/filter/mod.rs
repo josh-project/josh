@@ -1,7 +1,7 @@
 use super::*;
 use anyhow::anyhow;
 use gix_object::bstr::BString;
-use josh_filter::check_experimental_features_enabled;
+pub use josh_filter::check_experimental_features_enabled;
 pub use josh_filter::experimental_features_enabled;
 
 use std::path::Path;
@@ -3004,5 +3004,135 @@ mod tests {
         let out_linear =
             objects::CommitData::read(&repo.objects, downstack(&t, linear, base).unwrap()).unwrap();
         assert_eq!(out_linear.parent_count(), 1);
+    }
+    // josh-changes builds changes-ref writes on `unapply` with a
+    // `subdir(p).prefix(p)` filter (self-inverse: "exclude previous value under
+    // p, overlay the new view"). These cover the edges the push path never
+    // hits: an absent base ref, and deletion via an empty view.
+    #[test]
+    fn unapply_subdir_prefix_leaf_write_and_delete() {
+        let td = tempfile::tempdir().unwrap();
+        let repo = gix::init_bare(td.path()).unwrap();
+
+        let cachestack = std::sync::Arc::new(
+            cache::CacheStack::new().with_backend(cache::SledCacheBackend::new(td.path())),
+        );
+        let ctx = cache::TransactionContext::new(td.path(), cachestack);
+        let t = ctx.open().unwrap();
+
+        let f = Filter::new().subdir("a/b").prefix("a/b");
+        // The filter must be invertible for the generic unapply path.
+        assert!(invert(f).is_ok());
+
+        // Result trees live in the transaction's odb, so assert through
+        // get_path_entry rather than walking the tree.
+        let blob_id = |content: &str| {
+            josh_gix_ext::write_blob(&repo.objects, content.as_bytes())
+                .unwrap()
+                .to_string()
+        };
+        let entry_id = |tree: gix_hash::ObjectId, path: &str| -> Option<String> {
+            tree::get_path_entry(&t, t.odb(), tree, Path::new(path))
+                .unwrap()
+                .map(|e| e.oid.to_string())
+        };
+
+        // Leaf write onto an absent base (ref does not exist yet): the result
+        // is the view itself.
+        let view = build_tree(&repo, &[("a/b/c.txt", "new")]);
+        let merged = unapply(&t, f, view, tree::empty_id(), None).unwrap();
+        assert_eq!(merged, view);
+
+        // Leaf write over an existing base: content under a/b is replaced,
+        // everything else is preserved.
+        let base = build_tree(&repo, &[("x.txt", "keep"), ("a/b/old.txt", "old")]);
+        let merged = unapply(&t, f, view, base, None).unwrap();
+        assert_eq!(entry_id(merged, "x.txt"), Some(blob_id("keep")));
+        assert_eq!(entry_id(merged, "a/b/c.txt"), Some(blob_id("new")));
+        assert_eq!(entry_id(merged, "a/b/old.txt"), None);
+        // Leaf write where the base exists but the selected path does not
+        // (the common new-change case): the view is merged in, the rest kept.
+        let base_no_ns = build_tree(&repo, &[("x.txt", "keep")]);
+        let merged = unapply(&t, f, view, base_no_ns, None).unwrap();
+        assert_eq!(entry_id(merged, "x.txt"), Some(blob_id("keep")));
+        assert_eq!(entry_id(merged, "a/b/c.txt"), Some(blob_id("new")));
+        // Round-trip: applying the filter to the merged tree yields the view.
+        let roundtrip = apply(&t, f, Rewrite::from_tree(merged)).unwrap();
+        assert_eq!(roundtrip.tree_id(), view);
+
+        // Empty view deletes the selected path only.
+        let deleted = unapply(&t, f, tree::empty_id(), base, None).unwrap();
+        assert_eq!(entry_id(deleted, "x.txt"), Some(blob_id("keep")));
+        assert_eq!(entry_id(deleted, "a/b"), None);
+
+        // The write shape store.rs uses for blob leaves: filter on the parent
+        // directory (`subdir` on the leaf itself yields an empty tree for
+        // blobs), insert the leaf into the filtered subset, merge back.
+        let subset = apply(&t, f, Rewrite::from_tree(base)).unwrap().tree_id();
+        let view = tree::insert_oid(
+            t.odb(),
+            subset,
+            Path::new("a/b/c.txt"),
+            josh_gix_ext::write_blob(&repo.objects, b"new").unwrap(),
+            0o0100644,
+        )
+        .unwrap();
+        let merged = unapply(&t, f, view, base, None).unwrap();
+        assert_eq!(entry_id(merged, "x.txt"), Some(blob_id("keep")));
+        assert_eq!(entry_id(merged, "a/b/old.txt"), Some(blob_id("old")));
+        assert_eq!(entry_id(merged, "a/b/c.txt"), Some(blob_id("new")));
+
+        // Blob-leaf deletion in the same shape: zero-oid insert into the
+        // subset removes the entry.
+        let view = tree::insert_oid(
+            t.odb(),
+            subset,
+            Path::new("a/b/old.txt"),
+            gix_hash::ObjectId::null(gix_hash::Kind::Sha1),
+            0,
+        )
+        .unwrap();
+        let deleted = unapply(&t, f, view, base, None).unwrap();
+        assert_eq!(entry_id(deleted, "x.txt"), Some(blob_id("keep")));
+        assert_eq!(entry_id(deleted, "a/b/old.txt"), None);
+    }
+
+    // Same contract for a deeper, multi-component path (`outbox/votes`-style):
+    // subdir/prefix accept slashes, and so does their inverse.
+    #[test]
+    fn unapply_multi_component_path() {
+        let td = tempfile::tempdir().unwrap();
+        let repo = gix::init_bare(td.path()).unwrap();
+
+        let cachestack = std::sync::Arc::new(
+            cache::CacheStack::new().with_backend(cache::SledCacheBackend::new(td.path())),
+        );
+        let ctx = cache::TransactionContext::new(td.path(), cachestack);
+        let t = ctx.open().unwrap();
+
+        let f = Filter::new().subdir("ns/sub/leaf").prefix("ns/sub/leaf");
+        assert!(invert(f).is_ok());
+
+        let base = build_tree(
+            &repo,
+            &[("ns/sub/leaf/old", "old"), ("ns/keep/f.txt", "keep")],
+        );
+        let view = build_tree(&repo, &[("ns/sub/leaf/new", "new")]);
+        let merged = unapply(&t, f, view, base, None).unwrap();
+
+        let roundtrip = apply(&t, f, Rewrite::from_tree(merged)).unwrap();
+        assert_eq!(roundtrip.tree_id(), view);
+
+        let sibling = apply(
+            &t,
+            Filter::new().subdir("ns/keep").prefix("ns/keep"),
+            Rewrite::from_tree(merged),
+        )
+        .unwrap();
+        assert_eq!(
+            sibling.tree_id(),
+            build_tree(&repo, &[("ns/keep/f.txt", "keep")]),
+            "sibling subtree must survive"
+        );
     }
 }

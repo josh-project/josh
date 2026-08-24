@@ -18,3 +18,7 @@ josh-core.workspace = true
 josh-git-serde.workspace = true
 josh-github-graphql.workspace = true
 josh-github-webhooks.workspace = true
+
+[dev-dependencies]
+gix.workspace = true
+tempfile.workspace = true

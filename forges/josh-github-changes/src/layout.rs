@@ -1,7 +1,8 @@
 //! Serde view of the GitHub-owned namespaces on a changes ref.
 //!
-//! Like `josh_changes::layout`, but for the `gh*` subtrees: scope a ref to a
-//! subtree with a josh filter, then deserialize into the matching alias.
+//! Like `josh_changes::layout`, but for the `gh*` subtrees: reads scope a ref
+//! to a subtree with a josh filter, then deserialize; writes populate a
+//! sparse struct and merge it back with `josh_changes::write_filtered`.
 //! Field names are the literal top-level tree entries.
 
 use std::collections::HashMap;

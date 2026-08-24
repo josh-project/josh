@@ -1,5 +1,8 @@
 use crate::change::{Change, encode_change_id_path};
+use crate::comments::CommentNamespace;
+use crate::layout::DIFFS_PATH;
 use crate::refs::ChangesRef;
+use crate::votes::VoteNamespace;
 use josh_core::cache::{Expected, Transaction};
 use josh_core::filter::tree;
 use josh_core::memodb::Odb;
@@ -32,6 +35,58 @@ pub fn scope_tree(
     }
 }
 
+/// One commit of a changes ref's history: the commit plus its tree and
+/// first-parent tree, resolved.
+pub(crate) struct RefHistoryEntry {
+    pub commit: objects::CommitData,
+    pub tree: gix_hash::ObjectId,
+    pub parent_tree: Option<gix_hash::ObjectId>,
+}
+
+/// First-parent walk of `head`'s history, newest first. Commits with
+/// unreadable data or trees are skipped.
+pub(crate) fn walk_ref_history(
+    transaction: &Transaction,
+    head: gix_hash::ObjectId,
+) -> anyhow::Result<Vec<RefHistoryEntry>> {
+    let odb = transaction.odb();
+    let mut walk = objects::RevWalk::new(odb);
+    walk.simplify_first_parent();
+    walk.push(head)?;
+    let mut out = Vec::new();
+    for oid in walk.into_topo_vec(|_| false)? {
+        let Ok(commit) = objects::CommitData::read(odb, oid) else {
+            continue;
+        };
+        let Ok(tree) = commit.tree_id() else {
+            continue;
+        };
+        let parent_tree = commit
+            .first_parent_id()
+            .and_then(|p| josh_core::git::read_tree_id(odb, p).ok());
+        out.push(RefHistoryEntry {
+            commit,
+            tree,
+            parent_tree,
+        });
+    }
+    Ok(out)
+}
+
+/// Resolve `scope`'s ref to its tip commit and tree -- the empty tree when
+/// the ref does not exist.
+pub(crate) fn scope_base(
+    transaction: &Transaction,
+    scope: &ChangesRef,
+) -> anyhow::Result<(Option<gix_hash::ObjectId>, gix_hash::ObjectId)> {
+    let prev_commit = transaction.resolve_ref(&scope.ref_name())?;
+    let tree = match prev_commit {
+        Some(oid) => objects::CommitData::read(transaction.odb(), oid)?.tree_id()?,
+        None => tree::empty_id(),
+    };
+    Ok((prev_commit, tree))
+}
+
 pub(crate) fn parse_timestamp(s: Option<&str>) -> gix_actor::date::Time {
     let Some(s) = s else {
         return gix_actor::date::Time {
@@ -51,36 +106,94 @@ pub(crate) fn parse_timestamp(s: Option<&str>) -> gix_actor::date::Time {
     }
 }
 
-/// Write `blob_oid` at `path` inside `scope`'s ref, committing the updated
-/// tree onto the ref. No-op when the same blob is already present at `path`.
-///
-/// This is the generic write primitive for path-keyed metadata on changes
-/// refs; forge crates build their on-ref layouts on top of it.
-pub fn write_changes_tree(
+/// Serialize `data` into git objects and merge the value tree into `scope`'s
+/// ref, narrowed by `filter` -- the inverse of `read_filtered`: the value
+/// tree is embedded into full-ref shape with the filter's inverse and
+/// overlaid onto the ref tree, committing the result onto the ref. The
+/// overlay is a recursive merge where the value's entries win, so a sparsely
+/// populated struct adds or replaces only the entries it carries and
+/// everything else survives. Deletion is `delete_filtered`; a value that is the
+/// complete content of the filter's scope simply carries every entry.
+/// No-op when nothing changes.
+pub fn write_filtered<T: serde::Serialize>(
     transaction: &Transaction,
-    path: &std::path::Path,
-    blob_oid: gix_hash::ObjectId,
+    scope: &ChangesRef,
+    filter: josh_core::filter::Filter,
+    data: &T,
     author: Option<&str>,
     timestamp: Option<&str>,
+) -> anyhow::Result<()> {
+    let Some((prev_commit, merged)) = merge_into_ref(transaction, scope, filter, data)? else {
+        return Ok(());
+    };
+    commit_tree(
+        transaction,
+        &scope.ref_name(),
+        prev_commit,
+        merged,
+        author,
+        timestamp,
+        &[],
+    )
+}
+
+/// Serialize `data` into git objects and merge the value tree into `scope`'s
+/// ref tree, narrowed by `filter` -- the `write_filtered` front half, without
+/// committing. Returns the ref's tip commit and the merged tree, or `None`
+/// when nothing changes.
+fn merge_into_ref<T: serde::Serialize>(
+    transaction: &Transaction,
     scope: &ChangesRef,
+    filter: josh_core::filter::Filter,
+    data: &T,
+) -> anyhow::Result<Option<(Option<gix_hash::ObjectId>, gix_hash::ObjectId)>> {
+    let value = josh_git_serde::to_value(data)?;
+    anyhow::ensure!(
+        matches!(value, GitValue::Tree(_)),
+        "changes-ref writes require a tree-shaped value"
+    );
+    let root = josh_git_serde::to_tree_oid(transaction.odb(), &value)?;
+
+    let (prev_commit, base_tree) = scope_base(transaction, scope)?;
+
+    let merged = merge_value_tree(transaction, filter, root, base_tree)?;
+    if merged == base_tree {
+        return Ok(None);
+    }
+    Ok(Some((prev_commit, merged)))
+}
+
+/// Embed the value tree `root` into full-ref shape with `filter`'s inverse
+/// and overlay it onto `base_tree` -- the tail of `filter::unapply` minus
+/// its `subtract` step: the filter's location gains `root`'s entries,
+/// recursively merged so everything else survives.
+fn merge_value_tree(
+    transaction: &Transaction,
+    filter: josh_core::filter::Filter,
+    root: gix_hash::ObjectId,
+    base_tree: gix_hash::ObjectId,
+) -> anyhow::Result<gix_hash::ObjectId> {
+    let embedded = josh_core::filter::apply(
+        transaction,
+        josh_core::filter::invert(filter)?,
+        josh_core::filter::Rewrite::from_tree(root),
+    )?;
+    tree::overlay(transaction, embedded.tree_id(), base_tree)
+}
+
+/// Commit `tree` onto `ref_name` (creating the ref when absent), signed by
+/// `author`/`timestamp` or the transaction's user. The commit's parents are
+/// `prev_commit` (when present) followed by `extra_parents`.
+pub(crate) fn commit_tree(
+    transaction: &Transaction,
+    ref_name: &str,
+    prev_commit: Option<gix_hash::ObjectId>,
+    tree: gix_hash::ObjectId,
+    author: Option<&str>,
+    timestamp: Option<&str>,
+    extra_parents: &[gix_hash::ObjectId],
 ) -> anyhow::Result<()> {
     let odb = transaction.odb();
-    let ref_name = scope.ref_name();
-    let prev_commit = transaction.resolve_ref(&ref_name)?;
-    let base_tree = match prev_commit {
-        Some(oid) => objects::CommitData::read(odb, oid)?.tree_id()?,
-        None => tree::empty_id(),
-    };
-
-    // Skip if the blob already exists at this path.
-    if let Ok(Some(existing)) = tree::get_path_entry(transaction, odb, base_tree, path) {
-        if existing.oid.to_owned() == blob_oid {
-            return Ok(());
-        }
-    }
-
-    let tree = tree::insert_oid(odb, base_tree, path, blob_oid, 0o0100644)?;
-
     let sig = match author {
         Some(name) => gix_actor::Signature {
             name: name.into(),
@@ -90,9 +203,13 @@ pub fn write_changes_tree(
         None => josh_core::git::user_signature(transaction)?,
     };
     let msg = format!("update {}\n", ref_name);
-    let new_oid = objects::write_commit(odb, tree, prev_commit.as_slice(), &sig, &sig, &msg)?;
+    let parents: Vec<gix_hash::ObjectId> = prev_commit
+        .into_iter()
+        .chain(extra_parents.iter().copied())
+        .collect();
+    let new_oid = objects::write_commit(odb, tree, &parents, &sig, &sig, &msg)?;
     transaction.update_ref(
-        &ref_name,
+        ref_name,
         prev_commit.map_or(Expected::Absent, Expected::At),
         new_oid,
         &msg,
@@ -100,92 +217,70 @@ pub fn write_changes_tree(
     Ok(())
 }
 
-/// Write `value` at `path` inside `scope`'s ref as git objects -- structs and
-/// maps become trees, scalars blobs -- committing the updated tree onto the
-/// ref. Returns the root object id: the value's canonical identity, usable as
-/// a dedup key. No-op (returning the same id) when an identical value already
-/// sits at `path`.
-pub fn write_value<T: serde::Serialize>(
+/// Remove `paths` from `scope`'s ref in a single commit by applying one
+/// `:exclude[::path]` chain to the ref tree -- the delete half of the
+/// `read_filtered`/`write_filtered` family: subtraction where writes
+/// overlay. Excluding a missing path is a no-op; when the tree does not
+/// change, no commit is made.
+pub fn delete_filtered(
     transaction: &Transaction,
-    path: &std::path::Path,
-    data: &T,
-    author: Option<&str>,
-    timestamp: Option<&str>,
+    paths: &[std::path::PathBuf],
     scope: &ChangesRef,
-) -> anyhow::Result<gix_hash::ObjectId> {
-    let (root, mode) = value_oid(transaction, data)?;
-    place_oid(transaction, path, root, mode, author, timestamp, scope)?;
-    Ok(root)
+) -> anyhow::Result<()> {
+    let ref_name = scope.ref_name();
+    let (prev_commit, base_tree) = scope_base(transaction, scope)?;
+
+    let mut filter = josh_core::filter::Filter::new();
+    for path in paths {
+        filter = filter.exclude(josh_core::filter::Filter::new().file(path_str(path)?));
+    }
+
+    let tree = josh_core::filter::apply(
+        transaction,
+        filter,
+        josh_core::filter::Rewrite::from_tree(base_tree),
+    )?
+    .tree_id();
+    if tree == base_tree {
+        return Ok(());
+    }
+    commit_tree(transaction, &ref_name, prev_commit, tree, None, None, &[])
+}
+
+pub(crate) fn path_str(path: &std::path::Path) -> anyhow::Result<&str> {
+    path.to_str()
+        .ok_or_else(|| anyhow::anyhow!("non-UTF-8 path {}", path.display()))
 }
 
 /// Serialize `data` into git objects without placing them at any path,
-/// returning the root object id and its tree-entry mode. For content-addressed
-/// layouts where the id is a path component (e.g. comments); pair with
-/// [`place_oid`].
+/// returning the root object id. For content-addressed layouts where the id
+/// is a path component (e.g. comments, which place the result with their own
+/// private helper).
 pub fn value_oid<T: serde::Serialize>(
     transaction: &Transaction,
     data: &T,
-) -> anyhow::Result<(gix_hash::ObjectId, i32)> {
+) -> anyhow::Result<gix_hash::ObjectId> {
     let odb = transaction.odb();
     let value = josh_git_serde::to_value(data)?;
-    let root = josh_git_serde::to_tree_oid(odb, &value)?;
-    let mode: i32 = match &value {
-        GitValue::Tree(_) => 0o0040000,
-        GitValue::Blob(_) => 0o0100644,
-    };
-    Ok((root, mode))
+    josh_git_serde::to_tree_oid(odb, &value)
 }
 
-/// Place the already-written object `root` at `path` inside `scope`'s ref and
-/// commit the updated tree. No-op when `root` already sits at `path`.
-pub fn place_oid(
+/// Deserialize the tree `root` into `T`.
+pub(crate) fn deserialize_tree<T: serde::de::DeserializeOwned>(
     transaction: &Transaction,
-    path: &std::path::Path,
     root: gix_hash::ObjectId,
-    mode: i32,
-    author: Option<&str>,
-    timestamp: Option<&str>,
-    scope: &ChangesRef,
-) -> anyhow::Result<()> {
-    let odb = transaction.odb();
-    let ref_name = scope.ref_name();
-    let prev_commit = transaction.resolve_ref(&ref_name)?;
-    let base_tree = match prev_commit {
-        Some(oid) => objects::CommitData::read(odb, oid)?.tree_id()?,
-        None => tree::empty_id(),
-    };
-
-    if let Ok(Some(existing)) = tree::get_path_entry(transaction, odb, base_tree, path) {
-        if existing.oid.to_owned() == root {
-            return Ok(());
-        }
-    }
-
-    let tree = tree::insert_oid(odb, base_tree, path, root, mode)?;
-
-    let sig = match author {
-        Some(name) => gix_actor::Signature {
-            name: name.into(),
-            email: format!("{}@github", name).into(),
-            time: parse_timestamp(timestamp),
-        },
-        None => josh_core::git::user_signature(transaction)?,
-    };
-    let msg = format!("update {}\n", ref_name);
-    let new_oid = objects::write_commit(&odb, tree, prev_commit.as_slice(), &sig, &sig, &msg)?;
-    transaction.update_ref(
-        &ref_name,
-        prev_commit.map_or(Expected::Absent, Expected::At),
-        new_oid,
-        &msg,
-    )?;
-    Ok(())
+) -> anyhow::Result<T> {
+    let value = josh_git_serde::from_tree_oid(transaction.odb(), root)?;
+    Ok(josh_git_serde::from_value(&value)?)
 }
 
-/// Select `dir` in place: the filtered tree keeps the entry under its name,
+/// Select `path` in place: the filtered tree keeps the entry under its name,
 /// so the matching field of a layout struct populates and the rest default.
-pub fn namespace_filter(dir: &str) -> josh_core::filter::Filter {
-    josh_core::filter::Filter::new().subdir(dir).prefix(dir)
+/// The `subdir(path).prefix(path)` chain is self-inverse, so the same filter
+/// embeds a serialized value tree back into full-ref shape on write
+/// (`write_filtered`).
+pub fn namespace_filter(path: &str) -> josh_core::filter::Filter {
+    josh_core::filter::Filter::new().subdir(path).prefix(path)
 }
 
 /// Deserialize `scope`'s ref tree, narrowed by `filter`, into `T`. `None`
@@ -206,8 +301,7 @@ pub fn read_filtered<T: serde::de::DeserializeOwned>(
         filter,
         josh_core::filter::Rewrite::from_tree(root),
     )?;
-    let value = josh_git_serde::from_tree_oid(odb, filtered.tree_id())?;
-    Ok(Some(josh_git_serde::from_value(&value)?))
+    Ok(Some(deserialize_tree(transaction, filtered.tree_id())?))
 }
 
 /// The change's tip and base commits, stored as a tree at `diffs/<change-id>`.
@@ -217,41 +311,31 @@ pub struct DiffData {
     pub base: String,
 }
 
+/// Merge the change's `diffs/` entry into `scope`'s ref. The commit carries
+/// an anchor parent on the change's tip commit so the ref's history keeps the
+/// change reachable.
 pub fn store_diff_data(
     transaction: &Transaction,
     change: &Change,
     scope: &ChangesRef,
 ) -> anyhow::Result<()> {
-    let odb = transaction.odb();
     let change_id = change
         .id()
         .ok_or_else(|| anyhow::anyhow!("commit {} has no Change-Id", change.commit()))?;
 
-    let data = DiffData {
-        commit: change.commit().to_string(),
-        base: change.base().to_string(),
+    let mut data = crate::layout::ChangesRefData::default();
+    data.diffs.insert(
+        change_id.to_string(),
+        DiffData {
+            commit: change.commit().to_string(),
+            base: change.base().to_string(),
+        },
+    );
+    let Some((prev_tip, tree)) =
+        merge_into_ref(transaction, scope, namespace_filter(DIFFS_PATH), &data)?
+    else {
+        return Ok(());
     };
-    let value = josh_git_serde::to_value(&data)?;
-    let tree_oid = josh_git_serde::to_tree_oid(odb, &value)?;
-
-    let ref_name = scope.ref_name();
-    let prev_tip = transaction.resolve_ref(&ref_name)?;
-    let base_tree = match prev_tip {
-        Some(oid) => objects::CommitData::read(odb, oid)?.tree_id()?,
-        None => tree::empty_id(),
-    };
-
-    let path = std::path::Path::new("diffs").join(encode_change_id_path(&change_id));
-
-    if let Ok(Some(existing)) = tree::get_path_entry(transaction, odb, base_tree, &path) {
-        if existing.oid == tree_oid {
-            return Ok(());
-        }
-    }
-
-    let tree = tree::insert_oid(odb, base_tree, &path, tree_oid, 0o0040000)?;
-
-    let sig = transaction.signature()?;
 
     let anchor_sig = gix_actor::Signature {
         name: "JOSH".into(),
@@ -262,7 +346,7 @@ pub fn store_diff_data(
         },
     };
     let anchor_oid = objects::write_commit(
-        odb,
+        transaction.odb(),
         tree::empty_id(),
         &[change.commit()],
         &anchor_sig,
@@ -270,81 +354,195 @@ pub fn store_diff_data(
         "josh\n",
     )?;
 
-    let mut parents: Vec<gix_hash::ObjectId> = Vec::new();
-    parents.extend(prev_tip);
-    parents.push(anchor_oid);
-    let msg = format!("update {}\n", ref_name);
-    let new_oid = objects::write_commit(odb, tree, &parents, &sig, &sig, &msg)?;
-    transaction.update_ref(
-        &ref_name,
-        prev_tip.map_or(Expected::Absent, Expected::At),
-        new_oid,
-        &msg,
-    )?;
-
-    Ok(())
+    commit_tree(
+        transaction,
+        &scope.ref_name(),
+        prev_tip,
+        tree,
+        None,
+        None,
+        &[anchor_oid],
+    )
 }
 
-pub fn store_pr_data<T: serde::Serialize>(
-    transaction: &Transaction,
-    change_id: &str,
-    data: &T,
-    scope: &ChangesRef,
-) -> anyhow::Result<()> {
-    let path = std::path::Path::new("gh").join(encode_change_id_path(change_id));
-    write_value(transaction, &path, data, None, None, scope)?;
-    Ok(())
-}
-
-/// Delete all stored data for a change from the given changes ref.
-/// Removes entries from diffs/, comments/{C,F}/, outbox/comments/{C,F}/,
-/// gh/, and gh_ids/ subtrees.
+/// Delete all stored data for a change from the given changes ref: the
+/// change's entry under every core namespace (diffs, votes, comments, and
+/// their outbox counterparts) plus any caller-supplied forge namespaces in
+/// `extra_namespaces`.
 pub fn delete_change(
     transaction: &Transaction,
     change_id: &str,
     scope: &ChangesRef,
+    extra_namespaces: &[&str],
 ) -> anyhow::Result<()> {
-    let odb = transaction.odb();
     let encoded = encode_change_id_path(change_id);
+    let core = [
+        DIFFS_PATH,
+        CommentNamespace::Default.path(),
+        CommentNamespace::Outbox.path(),
+        VoteNamespace::Default.path(),
+        VoteNamespace::Outbox.path(),
+    ];
+    let paths: Vec<std::path::PathBuf> = core
+        .into_iter()
+        .chain(extra_namespaces.iter().copied())
+        .map(|prefix| std::path::Path::new(prefix).join(&encoded))
+        .collect();
+    delete_filtered(transaction, &paths, scope)?;
+    Ok(())
+}
 
-    let ref_name = scope.ref_name();
-    let prev_commit = match transaction.resolve_ref(&ref_name)? {
-        Some(oid) => oid,
-        None => return Ok(()),
-    };
-    let mut tree = objects::CommitData::read(odb, prev_commit)?.tree_id()?;
-    for prefix in &[
-        "diffs",
-        "comments/C",
-        "comments/F",
-        "outbox/comments/C",
-        "outbox/comments/F",
-        "gh",
-        "gh_ids",
-        "gh_vote_ids",
-        "gh_cache",
-        "votes",
-        "outbox/votes",
-    ] {
-        let path = std::path::Path::new(prefix).join(&encoded);
-        if matches!(
-            tree::get_path_entry(transaction, odb, tree, &path),
-            Ok(Some(_))
-        ) {
-            tree = tree::insert_oid(
-                odb,
-                tree,
-                &path,
-                gix_hash::ObjectId::null(gix_hash::Kind::Sha1),
-                0,
-            )?;
-        }
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::change::Change;
+    use crate::layout::ChangesRefData;
+    use josh_core::cache::{CacheStack, SledCacheBackend, TransactionContext};
+
+    fn open_transaction(td: &tempfile::TempDir) -> Transaction {
+        gix::init_bare(td.path()).unwrap();
+        // Commits need an identity; don't depend on the ambient global git
+        // config (CI containers have none).
+        use std::io::Write as _;
+        std::fs::OpenOptions::new()
+            .append(true)
+            .open(td.path().join("config"))
+            .unwrap()
+            .write_all(b"\n[user]\n\tname = test\n\temail = test@example.com\n")
+            .unwrap();
+
+        let cachestack =
+            std::sync::Arc::new(CacheStack::new().with_backend(SledCacheBackend::new(td.path())));
+        TransactionContext::new(td.path(), cachestack)
+            .open()
+            .unwrap()
     }
 
-    let sig = transaction.signature()?;
-    let msg = format!("update {}\n", ref_name);
-    let new_oid = objects::write_commit(odb, tree, &[prev_commit], &sig, &sig, &msg)?;
-    transaction.update_ref(&ref_name, Expected::At(prev_commit), new_oid, &msg)?;
+    fn commit_with_change_id(
+        td: &tempfile::TempDir,
+        change_id: &str,
+        subject: &str,
+    ) -> gix_hash::ObjectId {
+        let repo = gix::open(td.path()).unwrap();
+        let sig = gix_actor::Signature {
+            name: "test".into(),
+            email: "test@example.com".into(),
+            time: gix_actor::date::Time {
+                seconds: 0,
+                offset: 0,
+            },
+        };
+        josh_gix_ext::write_commit(
+            &repo.objects,
+            tree::empty_id(),
+            &[],
+            &sig,
+            &sig,
+            &format!("{}\n\nChange-Id: {}\n", subject, change_id),
+        )
+        .unwrap()
+    }
 
-    Ok(())
+    #[test]
+    fn diff_and_vote_writes_merge_and_roundtrip() {
+        let td = tempfile::tempdir().unwrap();
+        let t = open_transaction(&td);
+        let scope = ChangesRef::Local {
+            branch: "main".to_string(),
+        };
+        let change = Change::new(&t, commit_with_change_id(&td, "change/1", "subject")).unwrap();
+
+        // Diff write: lands, is idempotent, and carries the anchor parent.
+        store_diff_data(&t, &change, &scope).unwrap();
+        let tip = t.resolve_ref(&scope.ref_name()).unwrap().unwrap();
+        store_diff_data(&t, &change, &scope).unwrap();
+        assert_eq!(Some(tip), t.resolve_ref(&scope.ref_name()).unwrap());
+        let tip_data = objects::CommitData::read(t.odb(), tip).unwrap();
+        let tip_parsed = tip_data.parsed().unwrap();
+        let tip_parents: Vec<_> = tip_parsed.parents().collect();
+        assert_eq!(tip_parents.len(), 1);
+        // The anchor commit pins the change's tip commit in the ref history.
+        let anchor = objects::CommitData::read(t.odb(), tip_parents[0]).unwrap();
+        let anchor_parsed = anchor.parsed().unwrap();
+        let anchor_parents: Vec<_> = anchor_parsed.parents().collect();
+        assert_eq!(anchor_parents.len(), 1);
+        assert_eq!(anchor_parents[0].to_string(), change.commit().to_string());
+
+        // Vote writes: merge across users, replace per user.
+        let default = VoteNamespace::Default;
+        crate::votes::write_vote(&t, &change, "approve", Some("alice"), None, &scope, default)
+            .unwrap();
+        crate::votes::write_vote(&t, &change, "reject", Some("bob"), None, &scope, default)
+            .unwrap();
+        crate::votes::write_vote(&t, &change, "approve", Some("alice"), None, &scope, default)
+            .unwrap();
+
+        let votes = read_filtered::<ChangesRefData>(&t, &scope, namespace_filter(default.path()))
+            .unwrap()
+            .unwrap();
+        let per_change = votes.votes.get("change/1").unwrap();
+        assert_eq!(per_change.len(), 2);
+        assert_eq!(per_change.get("alice").unwrap().state, "approve");
+        assert_eq!(per_change.get("bob").unwrap().state, "reject");
+
+        // The diff entry survives the vote writes.
+        let diffs = read_filtered::<ChangesRefData>(&t, &scope, namespace_filter(DIFFS_PATH))
+            .unwrap()
+            .unwrap();
+        assert!(diffs.diffs.contains_key("change/1"));
+
+        // Outbox votes land in their own namespace and delete cleanly.
+        let remote = ChangesRef::Remote {
+            remote: "origin".to_string(),
+            branch: "main".to_string(),
+        };
+        crate::votes::write_vote(
+            &t,
+            &change,
+            "approve",
+            Some("alice"),
+            None,
+            &remote,
+            VoteNamespace::Outbox,
+        )
+        .unwrap();
+        crate::votes::delete_outbox_votes(
+            &t,
+            change.id().unwrap(),
+            &remote,
+            &["alice".to_string()],
+        )
+        .unwrap();
+        let outbox = read_filtered::<ChangesRefData>(
+            &t,
+            &remote,
+            namespace_filter(VoteNamespace::Outbox.path()),
+        )
+        .unwrap()
+        .unwrap();
+        assert!(outbox.outbox.votes.is_empty());
+    }
+
+    /// Each distinct diff write is a revision; re-writing the same diff adds
+    /// none.
+    #[test]
+    fn revisions_track_diff_updates() {
+        let td = tempfile::tempdir().unwrap();
+        let t = open_transaction(&td);
+        let scope = ChangesRef::Local {
+            branch: "main".to_string(),
+        };
+
+        let change_v1 = Change::new(&t, commit_with_change_id(&td, "change/9", "v1")).unwrap();
+        store_diff_data(&t, &change_v1, &scope).unwrap();
+        let change_v2 = Change::new(&t, commit_with_change_id(&td, "change/9", "v2")).unwrap();
+        store_diff_data(&t, &change_v2, &scope).unwrap();
+        store_diff_data(&t, &change_v2, &scope).unwrap();
+
+        let revs = crate::revisions::read_revisions(&t, &change_v2, &scope).unwrap();
+        assert_eq!(revs.len(), 2);
+        // Oldest first, carrying the actual change commits.
+        assert_eq!(revs[0].diff.commit, change_v1.commit().to_string());
+        assert_eq!(revs[1].diff.commit, change_v2.commit().to_string());
+    }
 }
