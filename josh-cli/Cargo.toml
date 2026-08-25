@@ -19,6 +19,7 @@ defer.workspace = true
 clap.workspace = true
 juniper.workspace = true
 git2.workspace = true
+gix-hash.workspace = true
 tokio = { workspace = true, features = ["rt-multi-thread", "macros"] }
 serde.workspace = true
 chrono = { workspace = true, features = ["clock"] }
@@ -40,6 +41,9 @@ josh-github-changes.workspace = true
 josh-graphql.workspace = true
 josh-link.workspace = true
 josh-templates.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
 
 [features]
 codesign = []

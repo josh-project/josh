@@ -12,6 +12,7 @@ keywords = ["git", "monorepo", "workflow", "scm"]
 anyhow.workspace = true
 chrono.workspace = true
 git2.workspace = true
+gix-hash.workspace = true
 serde.workspace = true
 
 josh-core.workspace = true

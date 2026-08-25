@@ -1,5 +1,6 @@
 use std::collections::HashSet;
 use std::path::Path;
+use std::str::FromStr;
 
 use josh_core::cache;
 use josh_core::memodb;
@@ -78,8 +79,8 @@ fn start_sidecar(
 pub fn run_container(
     transaction: &cache::Transaction,
     odb: &memodb::Odb,
-    ws_tree: git2::Oid,
-    attempted: &mut HashSet<git2::Oid>,
+    ws_tree: gix_hash::ObjectId,
+    attempted: &mut HashSet<gix_hash::ObjectId>,
     extract_to_workdir: bool,
     runtime: &dyn Runtime,
 ) -> anyhow::Result<()> {
@@ -117,7 +118,7 @@ pub fn run_container(
     let mut dep_volumes: Vec<(String, String, bool)> = vec![];
     let mut dep_errors: Vec<String> = vec![];
     for (dep_name, dep_sha) in &input_entries {
-        let dep_tree = match git2::Oid::from_str(dep_sha.trim()) {
+        let dep_tree = match gix_hash::ObjectId::from_str(dep_sha.trim()) {
             Ok(oid) => oid,
             Err(_) => {
                 dep_errors.push(format!("dependency {dep_name}: invalid SHA {dep_sha:?}"));

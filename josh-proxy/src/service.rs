@@ -498,7 +498,7 @@ fn resolve_upstream_ref(
     transaction: &josh_core::cache::Transaction,
     repo: &str,
     ref_value: &str,
-) -> anyhow::Result<git2::Oid> {
+) -> anyhow::Result<gix_hash::ObjectId> {
     let josh_name = format!(
         "refs/josh/upstream/{}/{}",
         josh_core::to_ns(repo),
@@ -513,7 +513,7 @@ fn resolve_upstream_ref(
 pub struct NamespacedRefs {
     transaction: josh_core::cache::Transaction,
     ns: Arc<TmpGitNamespace>,
-    refs: Vec<(String, git2::Oid)>,
+    refs: Vec<(String, gix_hash::ObjectId)>,
     head_symref: (String, String),
 }
 
@@ -540,7 +540,7 @@ impl NamespacedRefs {
         Ok(())
     }
 
-    pub fn into_inner(self) -> (Vec<(String, git2::Oid)>, (String, String)) {
+    pub fn into_inner(self) -> (Vec<(String, gix_hash::ObjectId)>, (String, String)) {
         (self.refs, self.head_symref)
     }
 }
@@ -642,7 +642,7 @@ async fn filter_to_namespace(
         let (filtered_refs, _) = josh_core::filter_refs(&t2, filter, &refs_to_filter);
         let populate_refs = filtered_refs
             .iter()
-            .any(|(refn, oid)| refn == &head_symref_target && !oid.is_zero());
+            .any(|(refn, oid)| refn == &head_symref_target && !oid.is_null());
 
         let head_symref = ("HEAD".to_string(), head_symref_target);
 
@@ -655,7 +655,7 @@ async fn filter_to_namespace(
         let namespaced_refs = if populate_refs {
             filtered_refs
                 .into_iter()
-                .filter(|(_, oid)| !oid.is_zero())
+                .filter(|(_, oid)| !oid.is_null())
                 .collect()
         } else {
             Default::default()
@@ -883,7 +883,7 @@ async fn serve_namespace(
 pub enum HeadRef {
     ExplicitHead,
     ExplicitRef(String),
-    ExplicitSha(String, git2::Oid),
+    ExplicitSha(String, gix_hash::ObjectId),
     Implicit,
 }
 
@@ -909,7 +909,7 @@ impl FromStr for HeadRef {
             "HEAD" => HeadRef::ExplicitHead,
             r if r.starts_with("refs/") => HeadRef::ExplicitRef(r.into()),
             r => {
-                if let Ok(oid) = git2::Oid::from_str(&r) {
+                if let Ok(oid) = gix_hash::ObjectId::from_str(&r) {
                     HeadRef::ExplicitSha(r.to_string(), oid)
                 } else {
                     return Err(anyhow!("failed to parse ref"));
@@ -1340,7 +1340,7 @@ async fn serve_render_template(
                 .unwrap(),
         )?;
 
-        let commit_id = if let Ok(oid) = git2::Oid::from_str(&head_ref) {
+        let commit_id = if let Ok(oid) = gix_hash::ObjectId::from_str(&head_ref) {
             oid
         } else {
             transaction_mirror

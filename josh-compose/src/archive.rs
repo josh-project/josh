@@ -7,7 +7,7 @@ use josh_core::memodb;
 pub fn tree_to_tar(
     transaction: &cache::Transaction,
     odb: &memodb::Odb,
-    tree_oid: git2::Oid,
+    tree_oid: gix_hash::ObjectId,
 ) -> anyhow::Result<Vec<u8>> {
     let mut buf = Vec::new();
     {
@@ -21,7 +21,7 @@ pub fn tree_to_tar(
 fn append_tree(
     transaction: &cache::Transaction,
     odb: &memodb::Odb,
-    tree_oid: git2::Oid,
+    tree_oid: gix_hash::ObjectId,
     prefix: &str,
     builder: &mut tar::Builder<impl std::io::Write>,
 ) -> anyhow::Result<()> {
@@ -33,7 +33,7 @@ fn append_tree(
         } else {
             format!("{prefix}/{name}")
         };
-        let id = josh_core::objects::git2_oid(entry.oid);
+        let id = entry.oid.to_owned();
 
         if entry.mode.is_link() {
             let content = tree::blob_bytes(odb, id)

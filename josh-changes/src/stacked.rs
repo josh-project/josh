@@ -16,7 +16,7 @@ pub enum PushMode {
 #[derive(Debug, Clone)]
 pub struct PushRef {
     pub ref_name: String,
-    pub oid: git2::Oid,
+    pub oid: gix_hash::ObjectId,
     pub change_id: String,
 }
 
@@ -115,8 +115,8 @@ pub fn build_to_push(
     push_mode: &PushMode,
     baseref: &str,
     ref_with_options: &str,
-    oid_to_push: git2::Oid,
-    base_oid: git2::Oid,
+    oid_to_push: gix_hash::ObjectId,
+    base_oid: gix_hash::ObjectId,
 ) -> anyhow::Result<Vec<PushRef>> {
     match push_mode {
         PushMode::Publish(author) => {

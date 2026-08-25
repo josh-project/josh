@@ -1,4 +1,5 @@
 use dioxus::prelude::*;
+use std::str::FromStr;
 
 use crate::Page;
 use crate::common::{
@@ -46,7 +47,7 @@ pub struct PrInfo {
 
 #[component]
 pub fn DetailView(sha: String, scope: josh_changes::ChangesRef, mut page: Signal<Page>) -> Element {
-    let changes_ref_oid = use_context::<Signal<Option<git2::Oid>>>();
+    let changes_ref_oid = use_context::<Signal<Option<gix_hash::ObjectId>>>();
     // Establish a reactive dependency on ref changes.
     let _ = changes_ref_oid.read();
     let data = load_detail(&sha, &scope);
@@ -289,9 +290,9 @@ pub fn DetailView(sha: String, scope: josh_changes::ChangesRef, mut page: Signal
 
 pub fn load_detail(sha: &str, scope: &josh_changes::ChangesRef) -> anyhow::Result<DetailData> {
     let transaction = crate::common::open_transaction()?;
-    let oid = git2::Oid::from_str(sha)?;
+    let oid = gix_hash::ObjectId::from_str(sha)?;
     let repo = transaction.git2_repo();
-    let commit = repo.find_commit(oid)?;
+    let commit = repo.find_commit(josh_core::objects::git2_oid(&oid))?;
 
     let msg = commit.message().unwrap_or("");
     let subject = msg.lines().next().unwrap_or("").to_string();
@@ -345,13 +346,13 @@ pub fn load_detail(sha: &str, scope: &josh_changes::ChangesRef) -> anyhow::Resul
         if let Ok(all) = josh_changes::list_changes(&transaction, scope) {
             if let Some(c) = all.iter().find(|c| c.id() == Some(cid.as_str())) {
                 let base = c.base();
-                if base != git2::Oid::ZERO_SHA1 {
+                if base != gix_hash::ObjectId::null(gix_hash::Kind::Sha1) {
                     change.set_base(base);
                 }
             }
         }
         for oid in change.contributing(&transaction).unwrap_or_default() {
-            if let Ok(c) = repo.find_commit(oid) {
+            if let Ok(c) = repo.find_commit(josh_core::objects::git2_oid(&oid)) {
                 let msg = c.message().unwrap_or("");
                 let c_subject = msg.lines().next().unwrap_or("").to_string();
                 let c_author = c.author().email().unwrap_or("").to_string();
@@ -401,7 +402,7 @@ pub fn save_comment(
     scope: &josh_changes::ChangesRef,
 ) -> anyhow::Result<String> {
     let transaction = crate::common::open_transaction()?;
-    let oid = git2::Oid::from_str(sha)?;
+    let oid = gix_hash::ObjectId::from_str(sha)?;
     let change = josh_changes::Change::new(&transaction, oid)?;
 
     let meta = josh_changes::CommentMeta {
@@ -433,7 +434,7 @@ pub fn save_comment(
 
 /// Refresh the shared OID after a local ref mutation.
 pub fn bump_changes_ref_oid(
-    mut changes_ref_oid: Signal<Option<git2::Oid>>,
+    mut changes_ref_oid: Signal<Option<gix_hash::ObjectId>>,
     scope: &josh_changes::ChangesRef,
 ) {
     let new_oid = git2::Repository::discover(".")
@@ -451,7 +452,7 @@ pub fn save_vote(
     scope: &josh_changes::ChangesRef,
 ) -> anyhow::Result<String> {
     let transaction = crate::common::open_transaction()?;
-    let oid = git2::Oid::from_str(sha)?;
+    let oid = gix_hash::ObjectId::from_str(sha)?;
     let change = josh_changes::Change::new(&transaction, oid)?;
 
     let body_meta = || josh_changes::CommentMeta {

@@ -10,7 +10,7 @@
 //! unambiguous and don't collide with anything else on the system.
 
 /// Output artifact for the workspace tree `ws_tree` (mounted at `/out`).
-pub fn output(ws_tree: git2::Oid) -> String {
+pub fn output(ws_tree: gix_hash::ObjectId) -> String {
     format!("{OUTPUT_PREFIX}{ws_tree}")
 }
 
@@ -20,7 +20,7 @@ pub fn cache(cache_name: &str) -> String {
 }
 
 /// Environment key for the image built from `build_tree`.
-pub fn env(build_tree: git2::Oid) -> String {
+pub fn env(build_tree: gix_hash::ObjectId) -> String {
     format!("{ENV_PREFIX}{build_tree}")
 }
 

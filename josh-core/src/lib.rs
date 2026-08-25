@@ -132,8 +132,8 @@ pub fn reset_caches() -> anyhow::Result<()> {
 pub fn filter_commit(
     transaction: &cache::Transaction,
     filterobj: filter::Filter,
-    oid: git2::Oid,
-) -> anyhow::Result<git2::Oid> {
+    oid: gix_hash::ObjectId,
+) -> anyhow::Result<gix_hash::ObjectId> {
     // A chained filter feeds the previous step's freshly built commit in here, so the peel
     // has to see the transaction's buffered objects.
     let original_commit = objects::peel_to_commit(transaction.odb(), oid)?;
@@ -154,8 +154,11 @@ pub fn filter_commit(
 pub fn filter_refs(
     transaction: &cache::Transaction,
     filterobj: filter::Filter,
-    refs: &[(String, git2::Oid)],
-) -> (Vec<(String, git2::Oid)>, Vec<(String, anyhow::Error)>) {
+    refs: &[(String, gix_hash::ObjectId)],
+) -> (
+    Vec<(String, gix_hash::ObjectId)>,
+    Vec<(String, anyhow::Error)>,
+) {
     let s = tracing::Span::current();
     let _e = s.enter();
     let mut updated = vec![];
@@ -174,7 +177,7 @@ pub fn filter_refs(
                     warn = true,
                     from = k.0.as_str(),
                 );
-                git2::Oid::ZERO_SHA1
+                gix_hash::ObjectId::null(gix_hash::Kind::Sha1)
             }
         };
         updated.push((k.0.to_string(), oid));
@@ -183,9 +186,9 @@ pub fn filter_refs(
     (updated, errors)
 }
 
-pub fn update_refs(transaction: &cache::Transaction, updated: Vec<(String, git2::Oid)>) {
+pub fn update_refs(transaction: &cache::Transaction, updated: Vec<(String, gix_hash::ObjectId)>) {
     for (refn, filtered_commit) in updated.into_iter() {
-        if filtered_commit.is_zero() {
+        if filtered_commit.is_null() {
             continue;
         }
 

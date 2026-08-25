@@ -6,13 +6,13 @@
 //! scheduler.
 
 use std::path::Path;
+use std::str::FromStr;
 
 use crate::OutputMode;
 use josh_compose_backend::NetworkPolicy;
 use josh_core::cache;
 use josh_core::filter::tree;
 use josh_core::memodb;
-use josh_core::objects;
 
 /// Specification for a sidecar service that runs alongside a workspace step.
 ///
@@ -22,7 +22,7 @@ pub struct SidecarSpec {
     /// Logical name used for addressing and labeling.
     pub name: String,
     /// Build-tree OID of the image to run.
-    pub image: git2::Oid,
+    pub image: gix_hash::ObjectId,
     /// Static environment variables set by the workspace config.
     pub env: Vec<(String, String)>,
     /// Environment variable names to forward from the host process (e.g. API keys, CI
@@ -45,10 +45,10 @@ pub struct WorkspaceMeta {
     pub cache: Option<String>,
     pub network: NetworkPolicy,
     /// Tree OID of the image workspace. `None` for orchestrator-only workspaces.
-    pub image: Option<git2::Oid>,
+    pub image: Option<gix_hash::ObjectId>,
     /// Tree OID of the workspace files mounted into the environment at `/worktree`.
     /// `None` for orchestrator-only workspaces.
-    pub worktree: Option<git2::Oid>,
+    pub worktree: Option<gix_hash::ObjectId>,
     pub sidecars: Vec<SidecarSpec>,
 }
 
@@ -56,11 +56,11 @@ pub struct WorkspaceMeta {
 pub fn read_blob(
     transaction: &cache::Transaction,
     odb: &memodb::Odb,
-    tree_oid: git2::Oid,
+    tree_oid: gix_hash::ObjectId,
     path: &str,
 ) -> Option<String> {
     let entry = tree::get_path_entry(transaction, odb, tree_oid, Path::new(path)).ok()??;
-    let content = tree::blob_bytes(odb, objects::git2_oid(&entry.oid))?;
+    let content = tree::blob_bytes(odb, entry.oid.to_owned())?;
     Some(std::str::from_utf8(&content).ok()?.trim().to_string())
 }
 
@@ -68,14 +68,14 @@ pub fn read_blob(
 pub fn read_tree_entries(
     transaction: &cache::Transaction,
     odb: &memodb::Odb,
-    tree_oid: git2::Oid,
+    tree_oid: gix_hash::ObjectId,
     prefix: &str,
-) -> Vec<(String, git2::Oid)> {
+) -> Vec<(String, gix_hash::ObjectId)> {
     let Ok(Some(entry)) = tree::get_path_entry(transaction, odb, tree_oid, Path::new(prefix))
     else {
         return vec![];
     };
-    let Ok(subtree) = tree::read_tree(transaction, odb, objects::git2_oid(&entry.oid)) else {
+    let Ok(subtree) = tree::read_tree(transaction, odb, entry.oid.to_owned()) else {
         return vec![];
     };
     subtree
@@ -83,7 +83,7 @@ pub fn read_tree_entries(
         .map(|e| {
             (
                 String::from_utf8_lossy(e.filename).into_owned(),
-                objects::git2_oid(e.oid),
+                e.oid.to_owned(),
             )
         })
         .collect()
@@ -93,7 +93,7 @@ pub fn read_tree_entries(
 pub fn read_blob_entries(
     transaction: &cache::Transaction,
     odb: &memodb::Odb,
-    tree_oid: git2::Oid,
+    tree_oid: gix_hash::ObjectId,
     prefix: &str,
 ) -> Vec<(String, String)> {
     read_tree_entries(transaction, odb, tree_oid, prefix)
@@ -113,7 +113,7 @@ pub fn read_blob_entries(
 pub fn read_meta(
     transaction: &cache::Transaction,
     odb: &memodb::Odb,
-    ws_tree: git2::Oid,
+    ws_tree: gix_hash::ObjectId,
 ) -> anyhow::Result<WorkspaceMeta> {
     let label = read_blob(transaction, odb, ws_tree, "label")
         .filter(|s| !s.is_empty())
@@ -139,13 +139,13 @@ pub fn read_meta(
     let image = read_blob(transaction, odb, ws_tree, "image")
         .filter(|s| !s.is_empty())
         .map(|sha| {
-            git2::Oid::from_str(&sha)
+            gix_hash::ObjectId::from_str(&sha)
                 .map_err(|_| anyhow::anyhow!("invalid image SHA in workspace tree: {sha}"))
         })
         .transpose()?;
 
     let tree = tree::read_tree(transaction, odb, ws_tree)?;
-    let worktree = tree.entry(b"worktree").map(|e| objects::git2_oid(e.oid));
+    let worktree = tree.entry(b"worktree").map(|e| e.oid.to_owned());
 
     let sidecars = read_sidecars(transaction, odb, ws_tree)?;
 
@@ -164,16 +164,16 @@ pub fn read_meta(
 pub fn read_sidecars(
     transaction: &cache::Transaction,
     odb: &memodb::Odb,
-    ws_tree: git2::Oid,
+    ws_tree: gix_hash::ObjectId,
 ) -> anyhow::Result<Vec<SidecarSpec>> {
     let mut out = vec![];
     for (name, content) in read_blob_entries(transaction, odb, ws_tree, "sidecars") {
-        let sidecar_tree = git2::Oid::from_str(content.trim())
+        let sidecar_tree = gix_hash::ObjectId::from_str(content.trim())
             .map_err(|_| anyhow::anyhow!("sidecar {name}: invalid tree SHA {content:?}"))?;
         let image_sha = read_blob(transaction, odb, sidecar_tree, "image")
             .filter(|s| !s.is_empty())
             .ok_or_else(|| anyhow::anyhow!("sidecar {name}: missing image"))?;
-        let image = git2::Oid::from_str(&image_sha)
+        let image = gix_hash::ObjectId::from_str(&image_sha)
             .map_err(|_| anyhow::anyhow!("sidecar {name}: invalid image SHA {image_sha:?}"))?;
         let port_str = read_blob(transaction, odb, sidecar_tree, "port")
             .filter(|s| !s.is_empty())

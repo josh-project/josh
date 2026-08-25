@@ -5,7 +5,7 @@ use std::collections::{BTreeSet, HashMap};
 use std::sync::LazyLock;
 use tracing::{Level, info, span};
 
-pub type KnownViews = HashMap<String, (git2::Oid, BTreeSet<String>)>;
+pub type KnownViews = HashMap<String, (gix_hash::ObjectId, BTreeSet<String>)>;
 
 static KNOWN_FILTERS: LazyLock<std::sync::Mutex<KnownViews>> =
     LazyLock::new(|| std::sync::Mutex::new(std::collections::HashMap::new()));
@@ -13,7 +13,7 @@ static KNOWN_FILTERS: LazyLock<std::sync::Mutex<KnownViews>> =
 pub fn list_refs(
     transaction: &cache::Transaction,
     upstream_repo: &str,
-) -> anyhow::Result<Vec<(String, git2::Oid)>> {
+) -> anyhow::Result<Vec<(String, gix_hash::ObjectId)>> {
     let mut refs = vec![];
 
     let prefix = ["refs", "josh", "upstream", &to_ns(upstream_repo)]
@@ -48,7 +48,12 @@ pub fn remember_filter(upstream_repo: &str, filter_spec: &str) {
     {
         let known_f = &mut known_filters
             .entry(upstream_repo.trim_start_matches('/').to_string())
-            .or_insert_with(|| (git2::Oid::ZERO_SHA1, BTreeSet::new()));
+            .or_insert_with(|| {
+                (
+                    gix_hash::ObjectId::null(gix_hash::Kind::Sha1),
+                    BTreeSet::new(),
+                )
+            });
 
         known_f.1.insert(filter_spec.to_string());
     }
@@ -83,7 +88,12 @@ pub fn default_from_to(
     {
         let known_f = &mut known_filters
             .entry(upstream_repo.trim_start_matches('/').to_string())
-            .or_insert_with(|| (git2::Oid::ZERO_SHA1, BTreeSet::new()));
+            .or_insert_with(|| {
+                (
+                    gix_hash::ObjectId::null(gix_hash::Kind::Sha1),
+                    BTreeSet::new(),
+                )
+            });
 
         known_f.1.insert(filter_spec.to_string());
     }
@@ -95,7 +105,7 @@ pub fn memorize_from_to(
     transaction: &cache::Transaction,
     namespace: &str,
     upstream_repo: &str,
-) -> anyhow::Result<((String, git2::Oid), String)> {
+) -> anyhow::Result<((String, gix_hash::ObjectId), String)> {
     let from = format!("refs/josh/upstream/{}/HEAD", &to_ns(upstream_repo));
     let to_ref = format!("refs/{}/HEAD", &namespace);
 
@@ -135,17 +145,19 @@ pub fn discover_filter_candidates(transaction: &cache::Transaction) -> anyhow::R
 
         let name = from_ns(&name);
 
-        let known_f = &mut known_filters
-            .entry(name.clone())
-            .or_insert_with(|| (git2::Oid::ZERO_SHA1, BTreeSet::new()));
+        let known_f = &mut known_filters.entry(name.clone()).or_insert_with(|| {
+            (
+                gix_hash::ObjectId::null(gix_hash::Kind::Sha1),
+                BTreeSet::new(),
+            )
+        });
 
         if known_f.0 != target {
-            // PORT: mirror-resident fetched target, and `peel` tolerates annotated tags --
-            // stays on git2 until flag day.
+            // Fetched targets may be annotated tags.
             let tree = repo
-                .find_object(target, None)?
+                .find_object(objects::git2_oid(&target), None)?
                 .peel(git2::ObjectType::Tree)?;
-            let hs = find_all_workspaces_and_subdirectories(odb, tree.id())?;
+            let hs = find_all_workspaces_and_subdirectories(odb, objects::gix_oid(tree.id()))?;
             known_f.0 = target;
             for i in hs {
                 known_f.1.insert(i);
@@ -161,7 +173,12 @@ pub fn discover_filter_candidates(transaction: &cache::Transaction) -> anyhow::R
 
         known_filters
             .entry(from_ns(&filtered.upstream_repo))
-            .or_insert_with(|| (git2::Oid::ZERO_SHA1, BTreeSet::new()))
+            .or_insert_with(|| {
+                (
+                    gix_hash::ObjectId::null(gix_hash::Kind::Sha1),
+                    BTreeSet::new(),
+                )
+            })
             .1
             .insert(from_ns(&filtered.filter_spec));
         Ok(())
@@ -172,7 +189,7 @@ pub fn discover_filter_candidates(transaction: &cache::Transaction) -> anyhow::R
 
 pub fn find_all_workspaces_and_subdirectories(
     src: &impl gix_object::Find,
-    tree: git2::Oid,
+    tree: gix_hash::ObjectId,
 ) -> anyhow::Result<std::collections::HashSet<String>> {
     let _trace_s = span!(Level::TRACE, "find_all_workspaces_and_subdirectories");
     let mut hs = std::collections::HashSet::new();
@@ -198,7 +215,7 @@ pub fn find_all_workspaces_and_subdirectories(
 pub fn refresh_known_filters(
     transaction_mirror: &cache::Transaction,
     transaction_overlay: &cache::Transaction,
-) -> anyhow::Result<Vec<(String, git2::Oid)>> {
+) -> anyhow::Result<Vec<(String, gix_hash::ObjectId)>> {
     let known_filters = KNOWN_FILTERS.lock().unwrap();
     let mut updated_refs = vec![];
     for (upstream_repo, e) in known_filters.iter() {

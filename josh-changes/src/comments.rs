@@ -7,6 +7,7 @@ use josh_core::filter::tree;
 use josh_core::memodb::Odb;
 use josh_core::objects;
 use josh_git_serde::{from_tree_oid, from_value};
+use std::str::FromStr;
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct Location {
@@ -113,7 +114,7 @@ fn write_comment_inner(
     let prefix = std::path::Path::new(path_prefix);
     let path = if let Some(ref file) = meta.file {
         let resolve_commit = match blob_commit_override {
-            Some(s) => git2::Oid::from_str(s)?,
+            Some(s) => gix_hash::ObjectId::from_str(s)?,
             None => change.commit(),
         };
         let commit_tree = objects::CommitData::read(odb, resolve_commit)?.tree_id()?;
@@ -243,10 +244,10 @@ pub fn comment_author(
 fn read_comment(
     odb: &Odb,
     id: &str,
-    entry_oid: git2::Oid,
+    entry_oid: gix_hash::ObjectId,
     file: Option<String>,
 ) -> anyhow::Result<Comment> {
-    let value = from_tree_oid(odb, objects::gix_oid(entry_oid))?;
+    let value = from_tree_oid(odb, entry_oid)?;
     let meta: CommentMeta = from_value(&value)?;
     Ok(Comment {
         id: id.to_string(),
@@ -383,7 +384,7 @@ pub fn read_comments(
 fn collect_comments_at_prefix(
     transaction: &Transaction,
     odb: &Odb,
-    tree: git2::Oid,
+    tree: gix_hash::ObjectId,
     change_id: &str,
     prefix: &str,
     pending: bool,
@@ -403,7 +404,7 @@ fn collect_comments_at_prefix(
     ) {
         for entry in tree::read_tree(transaction, odb, cid_tree)?.entries() {
             let id = String::from_utf8_lossy(entry.filename).into_owned();
-            let mut c = read_comment(odb, &id, objects::git2_oid(&entry.oid), None)
+            let mut c = read_comment(odb, &id, entry.oid.to_owned(), None)
                 .with_context(|| format!("undecodable comment {} on change {}", id, change_id))?;
             c.pending = pending;
             out.push(c);
@@ -446,13 +447,13 @@ fn collect_comments_under_into(
     transaction: &Transaction,
     odb: &Odb,
     change_id: &str,
-    tree: git2::Oid,
+    tree: gix_hash::ObjectId,
     file_prefix: &std::path::Path,
     out: &mut Vec<Comment>,
 ) -> anyhow::Result<()> {
     for entry in tree::read_tree(transaction, odb, tree)?.entries() {
         let name = std::str::from_utf8(entry.filename).unwrap_or("");
-        let entry_oid = objects::git2_oid(&entry.oid);
+        let entry_oid = entry.oid.to_owned();
         let file = if file_prefix.as_os_str().is_empty() {
             None
         } else {
@@ -539,7 +540,13 @@ pub fn delete_outbox_comments(
             tree::get_path_entry(transaction, odb, tree, path),
             Ok(Some(_))
         ) {
-            tree = tree::insert_oid(odb, tree, path, git2::Oid::ZERO_SHA1, 0)?;
+            tree = tree::insert_oid(
+                odb,
+                tree,
+                path,
+                gix_hash::ObjectId::null(gix_hash::Kind::Sha1),
+                0,
+            )?;
         }
     }
 
@@ -636,7 +643,7 @@ pub fn store_fetched_comments(
 fn collect_outbox_file_paths(
     transaction: &Transaction,
     odb: &Odb,
-    tree: git2::Oid,
+    tree: gix_hash::ObjectId,
     cur: &std::path::Path,
     want: &std::collections::HashSet<&str>,
     out: &mut Vec<std::path::PathBuf>,
@@ -651,7 +658,7 @@ fn collect_outbox_file_paths(
                 collect_outbox_file_paths(
                     transaction,
                     odb,
-                    objects::git2_oid(&entry.oid),
+                    entry.oid.to_owned(),
                     &cur.join(name),
                     want,
                     out,

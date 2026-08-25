@@ -8,19 +8,15 @@ use starlark::{
 use std::fmt::{self, Display};
 use std::path::PathBuf;
 
-/// Opaque Filter type for Starlark
-/// We wrap Filter in a newtype that implements the required traits
+/// Opaque Starlark filter.
 #[derive(Debug, Clone, Copy, ProvidesStaticType, NoSerialize)]
 pub struct StarlarkFilter {
     pub filter: Filter,
 }
 
-// Implement Allocative manually since Filter doesn't implement it
-// Filter is just a wrapper around git2::Oid which is Copy and small
+// Filter owns no heap allocations.
 impl Allocative for StarlarkFilter {
-    fn visit<'a, 'b: 'a>(&self, _visitor: &'a mut allocative::Visitor<'b>) {
-        // Filter contains only a git2::Oid which is Copy and doesn't need visiting
-    }
+    fn visit<'a, 'b: 'a>(&self, _visitor: &'a mut allocative::Visitor<'b>) {}
 }
 
 starlark_simple_value!(StarlarkFilter);

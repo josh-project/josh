@@ -14,10 +14,13 @@ starlark = "0.14.2"
 allocative = "0.3"
 
 anyhow.workspace = true
-git2.workspace = true
 
 josh-filter.workspace = true
 josh-gix-ext.workspace = true
 
+gix-hash.workspace = true
 gix-object.workspace = true
+
+[dev-dependencies]
+git2.workspace = true
 

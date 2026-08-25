@@ -2,26 +2,33 @@
 //!
 //! Each updated ref is reported as one `<flag> <old-oid> <new-oid> <local-ref>`
 //! line; rejected updates may carry a `(reason)` suffix after the ref name.
+use std::str::FromStr;
 
 /// One ref update reported by `git fetch --porcelain`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum RefUpdate {
     /// Fast-forward update (' ').
     FastForward {
-        old: git2::Oid,
-        new: git2::Oid,
+        old: gix_hash::ObjectId,
+        new: gix_hash::ObjectId,
         reference: String,
     },
     /// Forced (non-fast-forward) update ('+').
     Forced {
-        old: git2::Oid,
-        new: git2::Oid,
+        old: gix_hash::ObjectId,
+        new: gix_hash::ObjectId,
         reference: String,
     },
     /// Newly created ref ('*').
-    New { new: git2::Oid, reference: String },
+    New {
+        new: gix_hash::ObjectId,
+        reference: String,
+    },
     /// Deleted ref ('-').
-    Deleted { old: git2::Oid, reference: String },
+    Deleted {
+        old: gix_hash::ObjectId,
+        reference: String,
+    },
     /// Update rejected by the remote ('!'), with an optional reason.
     Rejected {
         reference: String,
@@ -192,8 +199,8 @@ pub fn parse_fetch_porcelain(output: &str) -> anyhow::Result<Vec<RefUpdate>> {
         let new = parts.next().ok_or_else(|| parse_error(line))?;
         let reference = parts.next().ok_or_else(|| parse_error(line))?;
 
-        let old = git2::Oid::from_str(old).map_err(|_| parse_error(line))?;
-        let new = git2::Oid::from_str(new).map_err(|_| parse_error(line))?;
+        let old = gix_hash::ObjectId::from_str(old).map_err(|_| parse_error(line))?;
+        let new = gix_hash::ObjectId::from_str(new).map_err(|_| parse_error(line))?;
         let reference = reference.to_string();
 
         let update = match flag {
@@ -243,8 +250,8 @@ mod tests {
     const OID_A: &str = "af180e6da554e60815593af48d419ac0e719c47a";
     const OID_B: &str = "2bf1cefd82c96e5d7478ff834c59194d40e539c4";
 
-    fn oid(s: &str) -> git2::Oid {
-        git2::Oid::from_str(s).unwrap()
+    fn oid(s: &str) -> gix_hash::ObjectId {
+        gix_hash::ObjectId::from_str(s).unwrap()
     }
 
     #[test]

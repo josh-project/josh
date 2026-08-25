@@ -68,7 +68,7 @@ pub fn handle_track(
         url,
         None,
         "HEAD",
-        fetched_commit,
+        josh_core::objects::gix_oid(fetched_commit),
         josh_core::objects::CommitData::read(transaction.odb(), head.commit)?.tree_id()?,
         link_mode,
     )?

@@ -38,10 +38,10 @@ pub fn handle_sync(
     let base_oid = if let Some(b) = &branch {
         match transaction.resolve_ref(&format!("refs/remotes/origin/{}", b))? {
             Some(oid) => josh_core::objects::peel_to_commit(transaction.odb(), oid)?,
-            None => git2::Oid::ZERO_SHA1,
+            None => gix_hash::ObjectId::null(gix_hash::Kind::Sha1),
         }
     } else {
-        git2::Oid::ZERO_SHA1
+        gix_hash::ObjectId::null(gix_hash::Kind::Sha1)
     };
 
     let resolved = args.scope.resolve(transaction)?;
@@ -93,8 +93,8 @@ fn sync_local(
     args: &SyncArgs,
     transaction: &josh_core::cache::Transaction,
     local_branch: &str,
-    head_oid: git2::Oid,
-    base_oid: git2::Oid,
+    head_oid: gix_hash::ObjectId,
+    base_oid: gix_hash::ObjectId,
 ) -> anyhow::Result<()> {
     if args.push {
         return Err(anyhow!(

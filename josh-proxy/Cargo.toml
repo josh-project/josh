@@ -51,6 +51,7 @@ tempfile.workspace = true
 gix.workspace = true
 juniper.workspace = true
 git2.workspace = true
+gix-hash.workspace = true
 url.workspace = true
 
 josh-changes.workspace = true

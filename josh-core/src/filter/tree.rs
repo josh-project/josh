@@ -4,9 +4,9 @@ use anyhow::anyhow;
 
 pub fn pathstree(
     root: &str,
-    input: git2::Oid,
+    input: gix_hash::ObjectId,
     transaction: &cache::Transaction,
-) -> anyhow::Result<git2::Oid> {
+) -> anyhow::Result<gix_hash::ObjectId> {
     let odb = transaction.odb();
     pathstree_inner(root, input, transaction, odb)
 }
@@ -14,10 +14,10 @@ pub fn pathstree(
 /// Oid-level body of [`pathstree`]; the odb is hoisted like in [`remove_pred_inner`].
 fn pathstree_inner(
     root: &str,
-    input: git2::Oid,
+    input: gix_hash::ObjectId,
     transaction: &cache::Transaction,
     odb: &josh_memodb::Odb,
-) -> anyhow::Result<git2::Oid> {
+) -> anyhow::Result<gix_hash::ObjectId> {
     if let Some(cached) = transaction.get_paths((input, root.to_string())) {
         return Ok(cached);
     }
@@ -33,7 +33,7 @@ fn pathstree_inner(
         if entry.mode.is_tree() {
             let s = pathstree_inner(
                 &format!("{}{}{}", root, if root.is_empty() { "" } else { "/" }, name),
-                objects::git2_oid(entry.oid),
+                entry.oid.to_owned(),
                 transaction,
                 odb,
             )?;
@@ -42,7 +42,7 @@ fn pathstree_inner(
                 rebuild.keep(gix_object::tree::Entry {
                     mode: gix_object::tree::EntryKind::Tree.into(),
                     filename: entry.filename.to_owned(),
-                    oid: objects::gix_oid(s),
+                    oid: s,
                 });
             }
         } else if !entry.mode.is_commit() {
@@ -50,11 +50,7 @@ fn pathstree_inner(
             let path = normalize_path(&Path::new(root).join(name));
             let path_string = path.to_str().ok_or_else(|| anyhow!("no name"))?;
             let file_contents = if name == "workspace.josh" {
-                format!(
-                    "#{}\n{}",
-                    path_string,
-                    blob_text(odb, objects::git2_oid(entry.oid))
-                )
+                format!("#{}\n{}", path_string, blob_text(odb, entry.oid.to_owned()))
             } else {
                 path_string.to_string()
             };
@@ -71,23 +67,23 @@ fn pathstree_inner(
 }
 
 pub fn regex_replace(
-    input: git2::Oid,
+    input: gix_hash::ObjectId,
     regex: &regex::Regex,
     replacement: &str,
     transaction: &cache::Transaction,
-) -> anyhow::Result<git2::Oid> {
+) -> anyhow::Result<gix_hash::ObjectId> {
     let odb = transaction.odb();
     regex_replace_inner(input, regex, replacement, transaction, odb)
 }
 
 /// Oid-level body of [`regex_replace`]; the odb is hoisted like in [`remove_pred_inner`].
 fn regex_replace_inner(
-    input: git2::Oid,
+    input: gix_hash::ObjectId,
     regex: &regex::Regex,
     replacement: &str,
     transaction: &cache::Transaction,
     odb: &josh_memodb::Odb,
-) -> anyhow::Result<git2::Oid> {
+) -> anyhow::Result<gix_hash::ObjectId> {
     let bytes = transaction
         .read_tree_bytes(odb, input)?
         .ok_or_else(|| anyhow!("regex_replace: {} is not a tree", input))?;
@@ -98,23 +94,18 @@ fn regex_replace_inner(
         // Non-UTF-8 entry names stay an error even though the name is otherwise unused here.
         std::str::from_utf8(entry.filename).map_err(|_| anyhow!("no name"))?;
         if entry.mode.is_tree() {
-            let s = regex_replace_inner(
-                objects::git2_oid(entry.oid),
-                regex,
-                replacement,
-                transaction,
-                odb,
-            )?;
+            let s =
+                regex_replace_inner(entry.oid.to_owned(), regex, replacement, transaction, odb)?;
 
             if s != tree::empty_id() {
                 rebuild.keep(gix_object::tree::Entry {
                     mode: entry.mode,
                     filename: entry.filename.to_owned(),
-                    oid: objects::gix_oid(s),
+                    oid: s,
                 });
             }
         } else if !entry.mode.is_commit() {
-            let file_contents = blob_text(odb, objects::git2_oid(entry.oid));
+            let file_contents = blob_text(odb, entry.oid.to_owned());
             let replaced = regex.replacen(&file_contents, 0, replacement);
 
             rebuild.keep(gix_object::tree::Entry {
@@ -129,8 +120,8 @@ fn regex_replace_inner(
 
 /// The raw bytes of the blob `oid`, or `None` when the object is missing or not a blob --
 /// `find_blob`'s tolerance, in facade currency.
-pub fn blob_bytes(odb: &josh_memodb::Odb, oid: git2::Oid) -> Option<josh_memodb::Bytes> {
-    match odb.read(objects::gix_oid(oid)) {
+pub fn blob_bytes(odb: &josh_memodb::Odb, oid: gix_hash::ObjectId) -> Option<josh_memodb::Bytes> {
+    match odb.read(oid) {
         Ok((gix_object::Kind::Blob, bytes)) => Some(bytes),
         _ => None,
     }
@@ -140,7 +131,7 @@ pub fn blob_bytes(odb: &josh_memodb::Odb, oid: git2::Oid) -> Option<josh_memodb:
 /// a NUL byte, or is not valid UTF-8 -- the same tolerant semantics as [`get_blob`], minus the
 /// path lookup. The NUL check keeps binary blobs from reading as content in workspace/link
 /// parsing and text transforms.
-pub(crate) fn blob_text(odb: &josh_memodb::Odb, oid: git2::Oid) -> String {
+pub(crate) fn blob_text(odb: &josh_memodb::Odb, oid: gix_hash::ObjectId) -> String {
     let bytes = some_or!(blob_bytes(odb, oid), {
         return "".to_owned();
     });
@@ -212,7 +203,11 @@ impl TreeRebuild {
     /// Write the rebuilt tree, or return `input` unchanged when nothing was dropped or
     /// rewritten: an untouched entry set reproduces `input` bit-identically, since git trees
     /// are content-addressed and the write preserves entry order.
-    fn finish(self, odb: &josh_memodb::Odb, input: git2::Oid) -> anyhow::Result<git2::Oid> {
+    fn finish(
+        self,
+        odb: &josh_memodb::Odb,
+        input: gix_hash::ObjectId,
+    ) -> anyhow::Result<gix_hash::ObjectId> {
         if self.changed {
             objects::write_tree_now(odb, self.out)
         } else {
@@ -288,7 +283,7 @@ impl TreeReader {
 pub fn read_tree(
     transaction: &cache::Transaction,
     odb: &josh_memodb::Odb,
-    oid: git2::Oid,
+    oid: gix_hash::ObjectId,
 ) -> anyhow::Result<TreeReader> {
     let bytes = transaction
         .read_tree_bytes(odb, oid)?
@@ -345,7 +340,7 @@ fn path_components(path: &Path) -> Option<Vec<&[u8]>> {
 pub fn get_path_entry(
     transaction: &cache::Transaction,
     odb: &josh_memodb::Odb,
-    root: git2::Oid,
+    root: gix_hash::ObjectId,
     path: &Path,
 ) -> anyhow::Result<Option<gix_object::tree::Entry>> {
     let bytes = match transaction.read_tree_bytes(odb, root)? {
@@ -374,7 +369,7 @@ pub fn get_path_entry_at(
         if !entry.mode.is_tree() {
             return Ok(None);
         }
-        let bytes = match transaction.read_tree_bytes(odb, objects::git2_oid(&entry.oid))? {
+        let bytes = match transaction.read_tree_bytes(odb, entry.oid)? {
             Some(bytes) => bytes,
             None => return Ok(None),
         };
@@ -416,10 +411,10 @@ fn insert_in_order(out: &mut Vec<gix_object::tree::Entry>, entry: gix_object::tr
 pub fn remove_pred(
     transaction: &cache::Transaction,
     path: &mut String,
-    input: git2::Oid,
+    input: gix_hash::ObjectId,
     pred: &dyn Fn(&str, bool) -> bool,
-    key: git2::Oid,
-) -> anyhow::Result<git2::Oid> {
+    key: gix_hash::ObjectId,
+) -> anyhow::Result<gix_hash::ObjectId> {
     let odb = transaction.odb();
     remove_pred_inner(transaction, odb, path, input, pred, key)
 }
@@ -430,14 +425,11 @@ fn remove_pred_inner(
     transaction: &cache::Transaction,
     odb: &josh_memodb::Odb,
     path: &mut String,
-    input: git2::Oid,
+    input: gix_hash::ObjectId,
     pred: &dyn Fn(&str, bool) -> bool,
-    key: git2::Oid,
-) -> anyhow::Result<git2::Oid> {
-    let root_key = git2::Oid::hash_object(
-        git2::ObjectType::Blob,
-        format!("glob-fallback:{:?}:{}", key, path).as_bytes(),
-    )?;
+    key: gix_hash::ObjectId,
+) -> anyhow::Result<gix_hash::ObjectId> {
+    let root_key = objects::hash_blob(format!("glob-fallback:{:?}:{}", key, path).as_bytes());
     if let Some(cached) = transaction.get_glob((input, root_key, 0)) {
         return Ok(cached);
     }
@@ -458,22 +450,15 @@ fn remove_pred_inner(
         path.push_str(name);
 
         if entry.mode.is_tree() {
-            let s = remove_pred_inner(
-                transaction,
-                odb,
-                path,
-                objects::git2_oid(entry.oid),
-                pred,
-                key,
-            )?;
-            if s != objects::git2_oid(entry.oid) || s == empty {
+            let s = remove_pred_inner(transaction, odb, path, entry.oid.to_owned(), pred, key)?;
+            if s != entry.oid.to_owned() || s == empty {
                 rebuild.mark_changed();
             }
             if s != empty {
                 rebuild.keep(gix_object::tree::Entry {
                     mode: entry.mode,
                     filename: entry.filename.to_owned(),
-                    oid: objects::gix_oid(s),
+                    oid: s,
                 });
             }
         } else if entry.mode.is_commit() {
@@ -512,11 +497,11 @@ pub use josh_filter::pattern::{CompiledPattern, PATTERN_MATCH_OPTIONS, PatternCo
 /// a literal prefix) stay separate.
 pub fn remove_pattern(
     transaction: &cache::Transaction,
-    input: git2::Oid,
+    input: gix_hash::ObjectId,
     cp: &CompiledPattern,
-    key: git2::Oid,
+    key: gix_hash::ObjectId,
     state: u64,
-) -> anyhow::Result<git2::Oid> {
+) -> anyhow::Result<gix_hash::ObjectId> {
     let odb = transaction.odb();
     remove_pattern_inner(transaction, odb, input, cp, key, state)
 }
@@ -525,11 +510,11 @@ pub fn remove_pattern(
 fn remove_pattern_inner(
     transaction: &cache::Transaction,
     odb: &josh_memodb::Odb,
-    input: git2::Oid,
+    input: gix_hash::ObjectId,
     cp: &CompiledPattern,
-    key: git2::Oid,
+    key: gix_hash::ObjectId,
     state: u64,
-) -> anyhow::Result<git2::Oid> {
+) -> anyhow::Result<gix_hash::ObjectId> {
     let state = cp.closure(state);
     if let Some(cached) = transaction.get_glob((input, key, state)) {
         return Ok(cached);
@@ -589,23 +574,16 @@ fn remove_pattern_inner(
             let s = if next == 0 {
                 empty
             } else {
-                remove_pattern_inner(
-                    transaction,
-                    odb,
-                    objects::git2_oid(entry.oid),
-                    cp,
-                    key,
-                    next,
-                )?
+                remove_pattern_inner(transaction, odb, entry.oid.to_owned(), cp, key, next)?
             };
-            if s != objects::git2_oid(entry.oid) || s == empty {
+            if s != entry.oid.to_owned() || s == empty {
                 rebuild.mark_changed();
             }
             if s != empty {
                 rebuild.keep(gix_object::tree::Entry {
                     mode: entry.mode,
                     filename: entry.filename.to_owned(),
-                    oid: objects::gix_oid(s),
+                    oid: s,
                 });
             }
         } else if entry.mode.is_commit() {
@@ -643,9 +621,9 @@ fn remove_pattern_inner(
 
 pub fn subtract(
     transaction: &cache::Transaction,
-    input1: git2::Oid,
-    input2: git2::Oid,
-) -> anyhow::Result<git2::Oid> {
+    input1: gix_hash::ObjectId,
+    input2: gix_hash::ObjectId,
+) -> anyhow::Result<gix_hash::ObjectId> {
     let odb = transaction.odb();
     subtract_inner(transaction, odb, input1, input2)
 }
@@ -654,9 +632,9 @@ pub fn subtract(
 fn subtract_inner(
     transaction: &cache::Transaction,
     odb: &josh_memodb::Odb,
-    input1: git2::Oid,
-    input2: git2::Oid,
-) -> anyhow::Result<git2::Oid> {
+    input1: gix_hash::ObjectId,
+    input2: gix_hash::ObjectId,
+) -> anyhow::Result<gix_hash::ObjectId> {
     if input1 == input2 {
         return Ok(empty_id());
     }
@@ -681,17 +659,13 @@ fn subtract_inner(
         // Modifications are collected by name first and applied in one pass: `None` removes
         // the entry, `Some` replaces its oid with the subtraction result (only ever produced
         // for a tree entry, whose raw mode is kept).
-        let mut mods: std::collections::HashMap<&[u8], Option<git2::Oid>> =
+        let mut mods: std::collections::HashMap<&[u8], Option<gix_hash::ObjectId>> =
             std::collections::HashMap::new();
         for entry in &tree2.entries {
             if let Some(e1) = lookup_entry(&tree1, entry.filename, sorted1) {
-                let sub = subtract_inner(
-                    transaction,
-                    odb,
-                    objects::git2_oid(e1.oid),
-                    objects::git2_oid(entry.oid),
-                )?;
-                if sub == empty_id() || sub == git2::Oid::ZERO_SHA1 {
+                let sub =
+                    subtract_inner(transaction, odb, e1.oid.to_owned(), entry.oid.to_owned())?;
+                if sub == empty_id() || sub == gix_hash::ObjectId::null(gix_hash::Kind::Sha1) {
                     mods.insert(&**entry.filename, None);
                 } else {
                     mods.insert(&**entry.filename, Some(sub));
@@ -703,7 +677,7 @@ fn subtract_inner(
         out.retain(|e| mods.get(e.filename.as_slice()) != Some(&None));
         for entry in &mut out {
             if let Some(Some(sub)) = mods.get(entry.filename.as_slice()) {
-                entry.oid = objects::gix_oid(*sub);
+                entry.oid = *sub;
             }
         }
         let result = objects::write_tree_now(odb, out)?;
@@ -727,9 +701,9 @@ fn subtract_inner(
 /// set of paths out of a large tree therefore costs O(input2) instead of O(input1).
 pub fn intersect(
     transaction: &cache::Transaction,
-    input1: git2::Oid,
-    input2: git2::Oid,
-) -> anyhow::Result<git2::Oid> {
+    input1: gix_hash::ObjectId,
+    input2: gix_hash::ObjectId,
+) -> anyhow::Result<gix_hash::ObjectId> {
     let odb = transaction.odb();
     intersect_inner(transaction, odb, input1, input2)
 }
@@ -738,9 +712,9 @@ pub fn intersect(
 fn intersect_inner(
     transaction: &cache::Transaction,
     odb: &josh_memodb::Odb,
-    input1: git2::Oid,
-    input2: git2::Oid,
-) -> anyhow::Result<git2::Oid> {
+    input1: gix_hash::ObjectId,
+    input2: gix_hash::ObjectId,
+) -> anyhow::Result<gix_hash::ObjectId> {
     // Identical (sub)trees intersect to themselves; an empty side leaves nothing to keep.
     if input1 == input2 {
         return Ok(input1);
@@ -764,18 +738,14 @@ fn intersect_inner(
         let mut out = Vec::new();
         for entry in &tree2.entries {
             if let Some(e1) = lookup_entry(&tree1, entry.filename, sorted1) {
-                let child = intersect(
-                    transaction,
-                    objects::git2_oid(e1.oid),
-                    objects::git2_oid(entry.oid),
-                )?;
-                if child != empty_id() && child != git2::Oid::ZERO_SHA1 {
+                let child = intersect(transaction, e1.oid.to_owned(), entry.oid.to_owned())?;
+                if child != empty_id() && child != gix_hash::ObjectId::null(gix_hash::Kind::Sha1) {
                     insert_in_order(
                         &mut out,
                         gix_object::tree::Entry {
                             mode: e1.mode,
                             filename: entry.filename.to_owned(),
-                            oid: objects::gix_oid(child),
+                            oid: child,
                         },
                     );
                 }
@@ -800,9 +770,9 @@ fn component_bytes(c: &std::ffi::OsStr) -> &[u8] {
 
 /// Read `oid` as raw tree bytes, or `None` if it is missing or not a tree. Uncached: the
 /// insert path can be called without a transaction to hang the tree cache off.
-fn tree_bytes(src: &impl gix_object::Find, oid: git2::Oid) -> Option<Vec<u8>> {
+fn tree_bytes(src: &impl gix_object::Find, oid: gix_hash::ObjectId) -> Option<Vec<u8>> {
     let mut buf = Vec::new();
-    match src.try_find(&objects::gix_oid(oid), &mut buf) {
+    match src.try_find(&oid, &mut buf) {
         Ok(Some(data)) if data.kind == gix_object::Kind::Tree => Some(buf),
         _ => None,
     }
@@ -816,10 +786,10 @@ fn tree_bytes(src: &impl gix_object::Find, oid: git2::Oid) -> Option<Vec<u8>> {
 fn replace_child_inner(
     odb: &(impl gix_object::Find + gix_object::Write),
     child: &[u8],
-    oid: git2::Oid,
+    oid: gix_hash::ObjectId,
     mode: i32,
-    tree_oid: git2::Oid,
-) -> anyhow::Result<git2::Oid> {
+    tree_oid: gix_hash::ObjectId,
+) -> anyhow::Result<gix_hash::ObjectId> {
     let mut out = match tree_bytes(odb, tree_oid) {
         Some(bytes) => seed_entries(&gix_object::TreeRef::from_bytes(
             &bytes,
@@ -827,7 +797,7 @@ fn replace_child_inner(
         )?),
         None => Vec::new(),
     };
-    let remove = oid == git2::Oid::ZERO_SHA1 || oid == empty_id();
+    let remove = oid == gix_hash::ObjectId::null(gix_hash::Kind::Sha1) || oid == empty_id();
     let first = out.iter().position(|e| &*e.filename == child);
     out.retain(|e| &*e.filename != child);
     if !remove {
@@ -835,7 +805,7 @@ fn replace_child_inner(
             mode: gix_object::tree::EntryMode::try_from(mode as u32)
                 .map_err(|m| anyhow!("replace_child: invalid mode {:o}", m))?,
             filename: child.into(),
-            oid: objects::gix_oid(oid),
+            oid: oid,
         };
         match first {
             Some(pos) => out.insert(pos, entry),
@@ -850,11 +820,11 @@ fn replace_child_inner(
 /// overwritable.
 pub fn insert_oid(
     odb: &(impl gix_object::Find + gix_object::Write),
-    full_tree: git2::Oid,
+    full_tree: gix_hash::ObjectId,
     path: &Path,
-    oid: git2::Oid,
+    oid: gix_hash::ObjectId,
     mode: i32,
-) -> anyhow::Result<git2::Oid> {
+) -> anyhow::Result<gix_hash::ObjectId> {
     let mut components = path.components();
     let Some(first) = components.next() else {
         return Err(anyhow!("file_name"));
@@ -881,7 +851,7 @@ pub fn insert_oid(
                 let tree = gix_object::TreeRef::from_bytes(&bytes, gix_hash::Kind::Sha1)?;
                 let sorted = entries_canonically_sorted(&tree);
                 match lookup_entry(&tree, cb.into(), sorted) {
-                    Some(e) => objects::git2_oid(e.oid),
+                    Some(e) => e.oid.to_owned(),
                     None => empty_id(),
                 }
             }
@@ -896,26 +866,23 @@ pub fn insert_oid(
 
 /// Kind of `oid`, or `None` when the object is missing (the zero oid included) or the
 /// header unreadable -- both read as an ordinary miss.
-fn kind_of(src: &impl gix_object::FindHeader, oid: git2::Oid) -> Option<gix_object::Kind> {
-    src.try_header(&objects::gix_oid(oid))
-        .ok()
-        .flatten()
-        .map(|h| h.kind)
+fn kind_of(src: &impl gix_object::FindHeader, oid: gix_hash::ObjectId) -> Option<gix_object::Kind> {
+    src.try_header(&oid).ok().flatten().map(|h| h.kind)
 }
 
 /// Fill `buf` with the raw bytes of `oid` if it is a readable tree object. Parse failures
 /// fold to `None` at the caller, keeping the probe arms tolerant of corrupt trees.
-fn read_tree_into(src: &impl gix_object::Find, oid: git2::Oid, buf: &mut Vec<u8>) -> bool {
+fn read_tree_into(src: &impl gix_object::Find, oid: gix_hash::ObjectId, buf: &mut Vec<u8>) -> bool {
     matches!(
-        src.try_find(&objects::gix_oid(oid), buf),
+        src.try_find(&oid, buf),
         Ok(Some(data)) if data.kind == gix_object::Kind::Tree
     )
 }
 
 pub fn diff_paths(
     src: &(impl gix_object::Find + gix_object::FindHeader),
-    input1: git2::Oid,
-    input2: git2::Oid,
+    input1: gix_hash::ObjectId,
+    input2: gix_hash::ObjectId,
     root: &str,
 ) -> anyhow::Result<Vec<(String, i32)>> {
     if input1 == input2 {
@@ -955,15 +922,15 @@ pub fn diff_paths(
             if let Some(e) = tree1.entry(entry.filename) {
                 r.append(&mut diff_paths(
                     src,
-                    objects::git2_oid(e.oid),
-                    objects::git2_oid(entry.oid),
+                    e.oid.to_owned(),
+                    entry.oid.to_owned(),
                     &format!("{}{}{}", root, if root.is_empty() { "" } else { "/" }, name),
                 )?);
             } else {
                 r.append(&mut diff_paths(
                     src,
-                    git2::Oid::ZERO_SHA1,
-                    objects::git2_oid(entry.oid),
+                    gix_hash::ObjectId::null(gix_hash::Kind::Sha1),
+                    entry.oid.to_owned(),
                     &format!("{}{}{}", root, if root.is_empty() { "" } else { "/" }, name),
                 )?);
             }
@@ -974,8 +941,8 @@ pub fn diff_paths(
             if tree2.entry(entry.filename).is_none() {
                 r.append(&mut diff_paths(
                     src,
-                    objects::git2_oid(entry.oid),
-                    git2::Oid::ZERO_SHA1,
+                    entry.oid.to_owned(),
+                    gix_hash::ObjectId::null(gix_hash::Kind::Sha1),
                     &format!("{}{}{}", root, if root.is_empty() { "" } else { "/" }, name),
                 )?);
             }
@@ -989,8 +956,8 @@ pub fn diff_paths(
             let name = std::str::from_utf8(entry.filename).map_err(|_| anyhow!("no name"))?;
             r.append(&mut diff_paths(
                 src,
-                git2::Oid::ZERO_SHA1,
-                objects::git2_oid(entry.oid),
+                gix_hash::ObjectId::null(gix_hash::Kind::Sha1),
+                entry.oid.to_owned(),
                 &format!("{}{}{}", root, if root.is_empty() { "" } else { "/" }, name),
             )?);
         }
@@ -1002,8 +969,8 @@ pub fn diff_paths(
             let name = std::str::from_utf8(entry.filename).map_err(|_| anyhow!("no name"))?;
             r.append(&mut diff_paths(
                 src,
-                objects::git2_oid(entry.oid),
-                git2::Oid::ZERO_SHA1,
+                entry.oid.to_owned(),
+                gix_hash::ObjectId::null(gix_hash::Kind::Sha1),
                 &format!("{}{}{}", root, if root.is_empty() { "" } else { "/" }, name),
             )?);
         }
@@ -1015,9 +982,9 @@ pub fn diff_paths(
 
 pub fn overlay(
     transaction: &cache::Transaction,
-    input1: git2::Oid,
-    input2: git2::Oid,
-) -> anyhow::Result<git2::Oid> {
+    input1: gix_hash::ObjectId,
+    input2: gix_hash::ObjectId,
+) -> anyhow::Result<gix_hash::ObjectId> {
     let odb = transaction.odb();
     overlay_inner(transaction, odb, input1, input2)
 }
@@ -1026,9 +993,9 @@ pub fn overlay(
 fn overlay_inner(
     transaction: &cache::Transaction,
     odb: &josh_memodb::Odb,
-    input1: git2::Oid,
-    input2: git2::Oid,
-) -> anyhow::Result<git2::Oid> {
+    input1: gix_hash::ObjectId,
+    input2: gix_hash::ObjectId,
+) -> anyhow::Result<gix_hash::ObjectId> {
     if let Some(cached) = transaction.get_overlay((input1, input2)) {
         return Ok(cached);
     }
@@ -1052,17 +1019,12 @@ fn overlay_inner(
         // name exists in `tree1` (with `tree1` winning on blob collisions, keeping its raw
         // mode), taken over as-is otherwise -- placed at its canonical position, raw mode
         // included.
-        let mut mods: std::collections::HashMap<&[u8], git2::Oid> =
+        let mut mods: std::collections::HashMap<&[u8], gix_hash::ObjectId> =
             std::collections::HashMap::new();
         let mut new_entries: Vec<gix_object::tree::Entry> = Vec::new();
         for entry in &tree2.entries {
             if let Some(e1) = lookup_entry(&tree1, entry.filename, sorted1) {
-                let id = overlay_inner(
-                    transaction,
-                    odb,
-                    objects::git2_oid(e1.oid),
-                    objects::git2_oid(entry.oid),
-                )?;
+                let id = overlay_inner(transaction, odb, e1.oid.to_owned(), entry.oid.to_owned())?;
                 mods.insert(&**entry.filename, id);
             } else {
                 new_entries.push((*entry).into());
@@ -1072,7 +1034,7 @@ fn overlay_inner(
         let mut out = seed_entries(&tree1);
         for entry in &mut out {
             if let Some(id) = mods.get(entry.filename.as_slice()) {
-                entry.oid = objects::gix_oid(*id);
+                entry.oid = *id;
             }
         }
         for entry in new_entries {
@@ -1103,8 +1065,8 @@ pub fn invert_paths(
     transaction: &cache::Transaction,
     odb: &josh_memodb::Odb,
     root: &str,
-    tree: git2::Oid,
-) -> anyhow::Result<git2::Oid> {
+    tree: gix_hash::ObjectId,
+) -> anyhow::Result<gix_hash::ObjectId> {
     if let Some(cached) = transaction.get_invert((tree, root.to_string())) {
         return Ok(cached);
     }
@@ -1127,7 +1089,7 @@ pub fn invert_paths(
             // entry) -- resolved on the hoisted parse.
             let b = parsed
                 .entry(entry.filename)
-                .map(|e| blob_text(odb, objects::git2_oid(e.oid)))
+                .map(|e| blob_text(odb, e.oid.to_owned()))
                 .unwrap_or_default();
             let opath = pathline(&b)?;
 
@@ -1135,7 +1097,7 @@ pub fn invert_paths(
                 odb,
                 result,
                 Path::new(&opath),
-                objects::git2_oid(&odb.write(gix_object::Kind::Blob, mpath.as_bytes())),
+                odb.write(gix_object::Kind::Blob, mpath.as_bytes()),
                 0o0100644,
             )
             .unwrap();
@@ -1146,7 +1108,7 @@ pub fn invert_paths(
                 transaction,
                 odb,
                 &format!("{}{}{}", root, if root.is_empty() { "" } else { "/" }, name),
-                objects::git2_oid(entry.oid),
+                entry.oid.to_owned(),
             )?;
             result = overlay(transaction, result, s)?;
         }
@@ -1160,7 +1122,7 @@ pub fn invert_paths(
 pub fn original_path(
     transaction: &cache::Transaction,
     filter: Filter,
-    tree: git2::Oid,
+    tree: gix_hash::ObjectId,
     path: &Path,
 ) -> anyhow::Result<String> {
     let paths_tree = apply(
@@ -1175,9 +1137,9 @@ pub fn original_path(
 pub fn repopulated_tree(
     transaction: &cache::Transaction,
     filter: Filter,
-    full_tree: git2::Oid,
-    partial_tree: git2::Oid,
-) -> anyhow::Result<git2::Oid> {
+    full_tree: gix_hash::ObjectId,
+    partial_tree: gix_hash::ObjectId,
+) -> anyhow::Result<gix_hash::ObjectId> {
     let paths_tree = apply(
         transaction,
         to_filter(Op::Paths).chain(filter),
@@ -1192,22 +1154,16 @@ pub fn repopulated_tree(
 pub fn populate(
     transaction: &cache::Transaction,
     odb: &josh_memodb::Odb,
-    paths: git2::Oid,
-    content: git2::Oid,
-) -> anyhow::Result<git2::Oid> {
+    paths: gix_hash::ObjectId,
+    content: gix_hash::ObjectId,
+) -> anyhow::Result<gix_hash::ObjectId> {
     if let Some(cached) = transaction.get_populate((paths, content)) {
         return Ok(cached);
     }
 
     use gix_object::Kind;
-    let paths_kind = odb
-        .read_header(objects::gix_oid(paths))
-        .map(|(kind, _)| kind)
-        .ok();
-    let content_kind = odb
-        .read_header(objects::gix_oid(content))
-        .map(|(kind, _)| kind)
-        .ok();
+    let paths_kind = odb.read_header(paths).map(|(kind, _)| kind).ok();
+    let content_kind = odb.read_header(content).map(|(kind, _)| kind).ok();
 
     let mut result_tree = empty_id();
     if let (Some(Kind::Blob), Some(Kind::Blob)) = (paths_kind, content_kind) {
@@ -1229,12 +1185,7 @@ pub fn populate(
                 result_tree = overlay(
                     transaction,
                     result_tree,
-                    populate(
-                        transaction,
-                        odb,
-                        objects::git2_oid(e.oid),
-                        objects::git2_oid(entry.oid),
-                    )?,
+                    populate(transaction, odb, e.oid.to_owned(), entry.oid.to_owned())?,
                 )?;
             }
         }
@@ -1247,8 +1198,8 @@ pub fn populate(
 
 pub fn compose(
     transaction: &cache::Transaction,
-    trees: Vec<(&Filter, git2::Oid)>,
-) -> anyhow::Result<git2::Oid> {
+    trees: Vec<(&Filter, gix_hash::ObjectId)>,
+) -> anyhow::Result<gix_hash::ObjectId> {
     let mut result = empty_id();
     let mut taken = empty_id();
     for (f, applied) in trees {
@@ -1287,14 +1238,14 @@ pub fn compose(
 pub fn get_blob(
     transaction: &cache::Transaction,
     odb: &josh_memodb::Odb,
-    tree: git2::Oid,
+    tree: gix_hash::ObjectId,
     path: &Path,
 ) -> String {
     let entry = match get_path_entry(transaction, odb, tree, path) {
         Ok(Some(entry)) => entry,
         _ => return "".to_owned(),
     };
-    blob_text(odb, objects::git2_oid(&entry.oid))
+    blob_text(odb, entry.oid)
 }
 
 /// [`get_blob`] over a caller-held parse of the root tree (see [`get_path_entry_at`]).
@@ -1308,26 +1259,28 @@ pub(crate) fn get_blob_at(
         Ok(Some(entry)) => entry,
         _ => return "".to_owned(),
     };
-    blob_text(odb, objects::git2_oid(&entry.oid))
+    blob_text(odb, entry.oid)
 }
 
-pub fn empty_id() -> git2::Oid {
-    git2::Oid::from_str("4b825dc642cb6eb9a060e54bf8d69288fbee4904").unwrap()
+pub fn empty_id() -> gix_hash::ObjectId {
+    gix_hash::ObjectId::empty_tree(gix_hash::Kind::Sha1)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    fn make_tree(repo: &git2::Repository, paths: &[&str]) -> git2::Oid {
+    fn make_tree(repo: &git2::Repository, paths: &[&str]) -> gix_hash::ObjectId {
         let mut b = git2::build::TreeUpdateBuilder::new();
         for p in paths {
-            let oid = repo.blob(p.as_bytes()).unwrap();
-            b.upsert(*p, oid, git2::FileMode::Blob);
+            let oid = objects::gix_oid(repo.blob(p.as_bytes()).unwrap());
+            b.upsert(*p, objects::git2_oid(&oid), git2::FileMode::Blob);
         }
         let base = repo.treebuilder(None).unwrap().write().unwrap();
-        b.create_updated(repo, &repo.find_tree(base).unwrap())
-            .unwrap()
+        objects::gix_oid(
+            b.create_updated(repo, &repo.find_tree(base).unwrap())
+                .unwrap(),
+        )
     }
 
     fn open_transaction(td: &tempfile::TempDir) -> cache::Transaction {
@@ -1345,20 +1298,22 @@ mod tests {
         let td = tempfile::tempdir().unwrap();
         let repo = git2::Repository::init_bare(td.path()).unwrap();
 
-        let blob = repo.blob(b"content").unwrap();
-        let link = repo.blob(b"target").unwrap();
+        let blob = objects::gix_oid(repo.blob(b"content").unwrap());
+        let link = objects::gix_oid(repo.blob(b"target").unwrap());
         // Gitlinks reference commits in other repositories; git does not require the oid
         // to exist locally.
-        let sub = git2::Oid::from_str("0123456789012345678901234567890123456789").unwrap();
+        let sub = gix_hash::ObjectId::from_str("0123456789012345678901234567890123456789").unwrap();
 
         let mut b = repo.treebuilder(None).unwrap();
-        b.insert("keep.rs", blob, 0o100644).unwrap();
-        b.insert("link.rs", link, 0o120000).unwrap();
-        b.insert("sub", sub, 0o160000).unwrap();
-        let input = b.write().unwrap();
+        b.insert("keep.rs", objects::git2_oid(&blob), 0o100644)
+            .unwrap();
+        b.insert("link.rs", objects::git2_oid(&link), 0o120000)
+            .unwrap();
+        b.insert("sub", objects::git2_oid(&sub), 0o160000).unwrap();
+        let input = objects::gix_oid(b.write().unwrap());
 
         let t = open_transaction(&td);
-        let key = git2::Oid::from_str("1111111111111111111111111111111111111111").unwrap();
+        let key = gix_hash::ObjectId::from_str("1111111111111111111111111111111111111111").unwrap();
         let out = remove_pred(&t, &mut String::new(), input, &|_, isblob| isblob, key).unwrap();
 
         assert_ne!(out, input, "dropping the gitlink must produce a new tree");
@@ -1370,7 +1325,7 @@ mod tests {
         assert!(out_entry(&out_tree, "keep.rs").is_some());
         let link_entry = out_entry(&out_tree, "link.rs").expect("symlink kept");
         assert_eq!(link_entry.mode.value(), 0o120000);
-        assert_eq!(objects::git2_oid(&link_entry.oid), link);
+        assert_eq!(link_entry.oid, link);
     }
 
     // The predicate must see full slash-separated paths at every depth (truncate discipline of
@@ -1385,7 +1340,7 @@ mod tests {
         let input = make_tree(&repo, &paths);
 
         let t = open_transaction(&td);
-        let key = git2::Oid::from_str("2222222222222222222222222222222222222222").unwrap();
+        let key = gix_hash::ObjectId::from_str("2222222222222222222222222222222222222222").unwrap();
 
         let seen = std::cell::RefCell::new(Vec::new());
         let pred = |path: &str, isblob: bool| {
@@ -1414,14 +1369,18 @@ mod tests {
                 .is_none()
         );
 
-        let key2 = git2::Oid::from_str("3333333333333333333333333333333333333333").unwrap();
+        let key2 =
+            gix_hash::ObjectId::from_str("3333333333333333333333333333333333333333").unwrap();
         let out2 = remove_pred(&t, &mut String::new(), input, &|_, _| true, key2).unwrap();
         assert_eq!(out2, input, "keep-everything must return the input oid");
     }
 
     /// Read a tree the code under test produced: its result lives in the transaction's store,
     /// so it is read through the facade rather than the repository handle.
-    fn out_entries(t: &cache::Transaction, oid: git2::Oid) -> Vec<gix_object::tree::Entry> {
+    fn out_entries(
+        t: &cache::Transaction,
+        oid: gix_hash::ObjectId,
+    ) -> Vec<gix_object::tree::Entry> {
         objects::read_tree_entries(t.odb(), oid).unwrap()
     }
 
@@ -1438,7 +1397,10 @@ mod tests {
     // Write a raw (unvalidated) tree object straight into the odb. This can express fsck-invalid
     // trees -- legacy filemodes, unsorted or duplicate entries, forbidden names -- that git can
     // still transport with default settings and that therefore reach remove_pred in production.
-    fn write_raw_tree(repo: &git2::Repository, entries: &[(&str, &str, git2::Oid)]) -> git2::Oid {
+    fn write_raw_tree(
+        repo: &git2::Repository,
+        entries: &[(&str, &str, gix_hash::ObjectId)],
+    ) -> gix_hash::ObjectId {
         let mut data = Vec::new();
         for (mode, name, oid) in entries {
             data.extend_from_slice(mode.as_bytes());
@@ -1447,10 +1409,12 @@ mod tests {
             data.push(0);
             data.extend_from_slice(oid.as_bytes());
         }
-        repo.odb()
-            .unwrap()
-            .write(git2::ObjectType::Tree, &data)
-            .unwrap()
+        objects::gix_oid(
+            repo.odb()
+                .unwrap()
+                .write(git2::ObjectType::Tree, &data)
+                .unwrap(),
+        )
     }
 
     // A tree the filter keeps entirely round-trips byte-for-byte, no matter how fsck-invalid
@@ -1460,8 +1424,8 @@ mod tests {
     fn remove_pred_preserves_fsck_invalid_trees() {
         let td = tempfile::tempdir().unwrap();
         let repo = git2::Repository::init_bare(td.path()).unwrap();
-        let blob = repo.blob(b"content").unwrap();
-        let blob2 = repo.blob(b"other").unwrap();
+        let blob = objects::gix_oid(repo.blob(b"content").unwrap());
+        let blob2 = objects::gix_oid(repo.blob(b"other").unwrap());
         let t = open_transaction(&td);
 
         let sub = write_raw_tree(&repo, &[("100644", "inner.rs", blob)]);
@@ -1475,7 +1439,7 @@ mod tests {
                 ("100644", "a.rs", blob2),
             ],
         );
-        let key = git2::Oid::from_str("4444444444444444444444444444444444444444").unwrap();
+        let key = gix_hash::ObjectId::from_str("4444444444444444444444444444444444444444").unwrap();
         let out = remove_pred(&t, &mut String::new(), input, &|_, _| true, key).unwrap();
         assert_eq!(out, input, "kept-entirely trees pass through verbatim");
     }
@@ -1486,8 +1450,8 @@ mod tests {
     fn remove_pred_rebuild_preserves_survivors() {
         let td = tempfile::tempdir().unwrap();
         let repo = git2::Repository::init_bare(td.path()).unwrap();
-        let blob = repo.blob(b"content").unwrap();
-        let blob2 = repo.blob(b"other").unwrap();
+        let blob = objects::gix_oid(repo.blob(b"content").unwrap());
+        let blob2 = objects::gix_oid(repo.blob(b"other").unwrap());
         let t = open_transaction(&td);
 
         let input = write_raw_tree(
@@ -1509,7 +1473,7 @@ mod tests {
                 ("100644", "a.rs", blob2),
             ],
         );
-        let key = git2::Oid::from_str("5555555555555555555555555555555555555555").unwrap();
+        let key = gix_hash::ObjectId::from_str("5555555555555555555555555555555555555555").unwrap();
         let out = remove_pred(
             &t,
             &mut String::new(),
@@ -1531,14 +1495,14 @@ mod tests {
     fn protected_names_are_not_special() {
         let td = tempfile::tempdir().unwrap();
         let repo = git2::Repository::init_bare(td.path()).unwrap();
-        let blob = repo.blob(b"content").unwrap();
+        let blob = objects::gix_oid(repo.blob(b"content").unwrap());
         let t = open_transaction(&td);
 
         let input = write_raw_tree(
             &repo,
             &[("100644", ".git", blob), ("100644", "keep.rs", blob)],
         );
-        let key = git2::Oid::from_str("6666666666666666666666666666666666666666").unwrap();
+        let key = gix_hash::ObjectId::from_str("6666666666666666666666666666666666666666").unwrap();
         let out = remove_pred(&t, &mut String::new(), input, &|_, isblob| isblob, key).unwrap();
         assert_eq!(out, input, ".git in input passes through verbatim");
 
@@ -1547,7 +1511,7 @@ mod tests {
         assert_eq!(
             get_path_entry(&t, odb, inserted, Path::new("sub/.git"))
                 .unwrap()
-                .map(|e| objects::git2_oid(&e.oid)),
+                .map(|e| e.oid),
             Some(blob),
             "inserted names are written as given"
         );
@@ -1560,16 +1524,17 @@ mod tests {
     fn subtract_overlay_tolerate_non_canonical_order() {
         let td = tempfile::tempdir().unwrap();
         let repo = git2::Repository::init_bare(td.path()).unwrap();
-        let blob = repo.blob(b"content").unwrap();
-        let blob2 = repo.blob(b"other").unwrap();
+        let blob = objects::gix_oid(repo.blob(b"content").unwrap());
+        let blob2 = objects::gix_oid(repo.blob(b"other").unwrap());
         let t = open_transaction(&td);
 
         // "z.rs" first: canonically misplaced, so a bisect for it fails.
         let unsorted = write_raw_tree(&repo, &[("100644", "z.rs", blob), ("100644", "a.rs", blob)]);
 
         let mut b = repo.treebuilder(None).unwrap();
-        b.insert("z.rs", blob, 0o100644).unwrap();
-        let selector = b.write().unwrap();
+        b.insert("z.rs", objects::git2_oid(&blob), 0o100644)
+            .unwrap();
+        let selector = objects::gix_oid(b.write().unwrap());
 
         let out = subtract(&t, unsorted, selector).unwrap();
         let out_tree = out_entries(&t, out);
@@ -1583,8 +1548,9 @@ mod tests {
         // the new entry lands after the last entry that canonically precedes it (here: at
         // the end, after a.rs).
         let mut b = repo.treebuilder(None).unwrap();
-        b.insert("m.rs", blob2, 0o100644).unwrap();
-        let addition = b.write().unwrap();
+        b.insert("m.rs", objects::git2_oid(&blob2), 0o100644)
+            .unwrap();
+        let addition = objects::gix_oid(b.write().unwrap());
         let out = overlay(&t, unsorted, addition).unwrap();
         let expected = write_raw_tree(
             &repo,
@@ -1603,16 +1569,18 @@ mod tests {
     // Build a tree whose blob contents depend only on the entry NAME (not the full path), so
     // directories with identical children get identical subtree oids -- the precondition for
     // exercising the path-aliasing scenario.
-    fn make_named_tree(repo: &git2::Repository, paths: &[String]) -> git2::Oid {
+    fn make_named_tree(repo: &git2::Repository, paths: &[String]) -> gix_hash::ObjectId {
         let mut b = git2::build::TreeUpdateBuilder::new();
         for p in paths {
             let name = p.rsplit('/').next().unwrap();
-            let oid = repo.blob(name.as_bytes()).unwrap();
-            b.upsert(p.as_str(), oid, git2::FileMode::Blob);
+            let oid = objects::gix_oid(repo.blob(name.as_bytes()).unwrap());
+            b.upsert(p.as_str(), objects::git2_oid(&oid), git2::FileMode::Blob);
         }
         let base = repo.treebuilder(None).unwrap().write().unwrap();
-        b.create_updated(repo, &repo.find_tree(base).unwrap())
-            .unwrap()
+        objects::gix_oid(
+            b.create_updated(repo, &repo.find_tree(base).unwrap())
+                .unwrap(),
+        )
     }
 
     // Ground truth for a pattern filter: enumerate every blob path of `input` and keep exactly
@@ -1620,9 +1588,13 @@ mod tests {
     // with a TreeUpdateBuilder (which drops empty dirs). Deliberately NOT remove_pred: the old
     // full-path walk had an order-dependent cache-aliasing bug for identical subtrees at
     // different paths, which the duplicated-subtree case below exercises.
-    fn ground_truth_tree(repo: &git2::Repository, input: git2::Oid, pattern: &str) -> git2::Oid {
+    fn ground_truth_tree(
+        repo: &git2::Repository,
+        input: gix_hash::ObjectId,
+        pattern: &str,
+    ) -> gix_hash::ObjectId {
         let glob = glob::Pattern::new(pattern).unwrap();
-        let tree = repo.find_tree(input).unwrap();
+        let tree = repo.find_tree(objects::git2_oid(&input)).unwrap();
         let mut kept = vec![];
         tree.walk(git2::TreeWalkMode::PreOrder, |root, entry| {
             if entry.kind() == Some(git2::ObjectType::Blob) {
@@ -1639,8 +1611,10 @@ mod tests {
             b.upsert(path.as_str(), *oid, git2::FileMode::Blob);
         }
         let base = repo.treebuilder(None).unwrap().write().unwrap();
-        b.create_updated(repo, &repo.find_tree(base).unwrap())
-            .unwrap()
+        objects::gix_oid(
+            b.create_updated(repo, &repo.find_tree(base).unwrap())
+                .unwrap(),
+        )
     }
 
     // Property-style equivalence of the component-wise NFA walk against full-path glob matching:
@@ -1711,7 +1685,7 @@ mod tests {
 
         let input = make_named_tree(&repo, &paths);
 
-        let tree = repo.find_tree(input).unwrap();
+        let tree = repo.find_tree(objects::git2_oid(&input)).unwrap();
         assert_eq!(
             tree.get_path(Path::new("a/x")).unwrap().id(),
             tree.get_path(Path::new("c/x")).unwrap().id(),
@@ -1743,7 +1717,7 @@ mod tests {
             // Isolate the cases from each other (and from other tests in this process).
             cache::clear_global_caches();
 
-            let key = git2::Oid::hash_object(git2::ObjectType::Blob, pattern.as_bytes()).unwrap();
+            let key = objects::hash_blob(pattern.as_bytes());
             let cp = CompiledPattern::compile(pattern).unwrap();
             assert!(!cp.fallback, "`{pattern}` must not need the fallback");
             let got =
@@ -1761,7 +1735,7 @@ mod tests {
     // must produce ground-truth results with per-root cache keys.
     #[test]
     fn compiled_pattern_fallback_cases() {
-        let key = git2::Oid::from_str("1234567890123456789012345678901234567890").unwrap();
+        let key = gix_hash::ObjectId::from_str("1234567890123456789012345678901234567890").unwrap();
 
         // A '/' inside a bracket class never splits: it is inside the class token, not a
         // `Char('/')` token, so these stay on the NFA walk.
@@ -1808,7 +1782,7 @@ mod tests {
         let repo = git2::Repository::init_bare(td.path()).unwrap();
         let paths: Vec<String> = ["a/f.txt", "b/f.txt"].map(String::from).to_vec();
         let input = make_named_tree(&repo, &paths);
-        let tree = repo.find_tree(input).unwrap();
+        let tree = repo.find_tree(objects::git2_oid(&input)).unwrap();
         assert_eq!(
             tree.get_path(Path::new("a")).unwrap().id(),
             tree.get_path(Path::new("b")).unwrap().id()
@@ -1816,7 +1790,7 @@ mod tests {
 
         let t = open_transaction(&td);
         let pattern = glob::Pattern::new("a/*.txt").unwrap();
-        let key = git2::Oid::from_str("abcdef1234567890123456789012345678901234").unwrap();
+        let key = gix_hash::ObjectId::from_str("abcdef1234567890123456789012345678901234").unwrap();
         let out = remove_pred(
             &t,
             &mut String::new(),
@@ -1837,24 +1811,30 @@ mod tests {
     fn get_path_entry_contract() {
         let td = tempfile::tempdir().unwrap();
         let repo = git2::Repository::init_bare(td.path()).unwrap();
-        let blob = repo.blob(b"content").unwrap();
+        let blob = objects::gix_oid(repo.blob(b"content").unwrap());
         let t = open_transaction(&td);
         let odb = t.odb();
 
-        let gitlink = git2::Oid::from_str("0123456789012345678901234567890123456789").unwrap();
+        let gitlink =
+            gix_hash::ObjectId::from_str("0123456789012345678901234567890123456789").unwrap();
         let mut b = git2::build::TreeUpdateBuilder::new();
-        b.upsert("a/b/deep.txt", blob, git2::FileMode::Blob);
-        b.upsert("top.txt", blob, git2::FileMode::Blob);
-        b.upsert("a/sub", gitlink, git2::FileMode::Commit);
+        b.upsert(
+            "a/b/deep.txt",
+            objects::git2_oid(&blob),
+            git2::FileMode::Blob,
+        );
+        b.upsert("top.txt", objects::git2_oid(&blob), git2::FileMode::Blob);
+        b.upsert("a/sub", objects::git2_oid(&gitlink), git2::FileMode::Commit);
         let base = repo.treebuilder(None).unwrap().write().unwrap();
-        let root = b
-            .create_updated(&repo, &repo.find_tree(base).unwrap())
-            .unwrap();
+        let root = objects::gix_oid(
+            b.create_updated(&repo, &repo.find_tree(base).unwrap())
+                .unwrap(),
+        );
 
         let entry = get_path_entry(&t, odb, root, Path::new("a/b/deep.txt"))
             .unwrap()
             .expect("hit at depth 2");
-        assert_eq!(objects::git2_oid(&entry.oid), blob);
+        assert_eq!(entry.oid, blob);
         assert!(!entry.mode.is_tree());
 
         let entry = get_path_entry(&t, odb, root, Path::new("a/sub"))
@@ -1931,14 +1911,15 @@ mod tests {
         let td = tempfile::tempdir().unwrap();
         let repo = git2::Repository::init_bare(td.path()).unwrap();
 
-        let blob = repo.blob(b"legacy").unwrap();
+        let blob = objects::gix_oid(repo.blob(b"legacy").unwrap());
         let sub_tree = make_tree(&repo, &["dir/a.txt", "dir/b.txt"]);
-        let dir = repo
-            .find_tree(sub_tree)
-            .unwrap()
-            .get_name("dir")
-            .unwrap()
-            .id();
+        let dir = objects::gix_oid(
+            repo.find_tree(objects::git2_oid(&sub_tree))
+                .unwrap()
+                .get_name("dir")
+                .unwrap()
+                .id(),
+        );
         let input1 = write_raw_tree(
             &repo,
             &[("40000", "dir", dir), ("100664", "legacy.rs", blob)],
@@ -1954,10 +1935,7 @@ mod tests {
             0o100664,
             "untouched entries must keep their raw mode, like the seeded treebuilder"
         );
-        let out_dir = out_entries(
-            &t,
-            objects::git2_oid(&out_entry(&out_tree, "dir").unwrap().oid),
-        );
+        let out_dir = out_entries(&t, out_entry(&out_tree, "dir").unwrap().oid);
         assert!(
             out_entry(&out_dir, "a.txt").is_none(),
             "matched path removed"
@@ -1975,32 +1953,27 @@ mod tests {
         let td = tempfile::tempdir().unwrap();
         let repo = git2::Repository::init_bare(td.path()).unwrap();
 
-        let ours = repo.blob(b"ours").unwrap();
-        let theirs = repo.blob(b"theirs").unwrap();
+        let ours = objects::gix_oid(repo.blob(b"ours").unwrap());
+        let theirs = objects::gix_oid(repo.blob(b"theirs").unwrap());
         let input1 = write_raw_tree(&repo, &[("100664", "shared.rs", ours)]);
         let mut b = repo.treebuilder(None).unwrap();
-        b.insert("new.rs", theirs, 0o100644).unwrap();
-        b.insert("shared.rs", theirs, 0o100644).unwrap();
-        let input2 = b.write().unwrap();
+        b.insert("new.rs", objects::git2_oid(&theirs), 0o100644)
+            .unwrap();
+        b.insert("shared.rs", objects::git2_oid(&theirs), 0o100644)
+            .unwrap();
+        let input2 = objects::gix_oid(b.write().unwrap());
 
         let t = open_transaction(&td);
         let out = overlay(&t, input1, input2).unwrap();
 
         let out_tree = out_entries(&t, out);
         let shared = out_entry(&out_tree, "shared.rs").unwrap();
-        assert_eq!(
-            objects::git2_oid(&shared.oid),
-            ours,
-            "input1 wins blob collisions"
-        );
+        assert_eq!(shared.oid, ours, "input1 wins blob collisions");
         assert_eq!(
             shared.mode.value(),
             0o100664,
             "collision entries keep input1's raw mode"
         );
-        assert_eq!(
-            objects::git2_oid(&out_entry(&out_tree, "new.rs").unwrap().oid),
-            theirs
-        );
+        assert_eq!(out_entry(&out_tree, "new.rs").unwrap().oid, theirs);
     }
 }

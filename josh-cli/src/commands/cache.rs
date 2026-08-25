@@ -1,4 +1,5 @@
 use std::collections::HashSet;
+use std::str::FromStr;
 
 use anyhow::Context;
 
@@ -96,7 +97,7 @@ fn handle_cache_build(args: &CacheBuildArgs, transaction: &Transaction) -> anyho
         let mut steps = Vec::new();
         let mut ok = true;
         for id_str in ids.iter().rev() {
-            match git2::Oid::from_str(id_str)
+            match gix_hash::ObjectId::from_str(id_str)
                 .map_err(anyhow::Error::from)
                 .and_then(|oid| from_tree(transaction, oid))
             {
@@ -184,7 +185,7 @@ fn handle_cache_build(args: &CacheBuildArgs, transaction: &Transaction) -> anyho
             let mut next_commits = Vec::new();
 
             for (branch_name, filtered_oid) in filtered {
-                if filtered_oid == git2::Oid::ZERO_SHA1 {
+                if filtered_oid == gix_hash::ObjectId::null(gix_hash::Kind::Sha1) {
                     continue;
                 }
                 let filtered_ref =

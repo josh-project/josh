@@ -13,16 +13,16 @@ pub trait CacheBackend: Send + Sync {
     fn read(
         &self,
         filter: crate::filter::Filter,
-        from: git2::Oid,
+        from: gix_hash::ObjectId,
         hint: HistoryGraphHint,
         tree_keyed: bool,
-    ) -> anyhow::Result<Option<git2::Oid>>;
+    ) -> anyhow::Result<Option<gix_hash::ObjectId>>;
 
     fn write(
         &self,
         filter: crate::filter::Filter,
-        from: git2::Oid,
-        to: git2::Oid,
+        from: gix_hash::ObjectId,
+        to: gix_hash::ObjectId,
         hint: HistoryGraphHint,
         tree_keyed: bool,
     ) -> anyhow::Result<()>;

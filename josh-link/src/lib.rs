@@ -7,7 +7,7 @@ use std::path::PathBuf;
 
 /// Prepared link addition, ready to be finalized
 pub struct PreparedLinkAdd {
-    tree_oid: git2::Oid,
+    tree_oid: gix_hash::ObjectId,
     path: PathBuf,
 }
 
@@ -15,9 +15,9 @@ impl PreparedLinkAdd {
     pub fn into_commit(
         self,
         transaction: &josh_core::cache::Transaction,
-        head_commit: git2::Oid,
+        head_commit: gix_hash::ObjectId,
         signature: &git2::Signature,
-    ) -> anyhow::Result<git2::Oid> {
+    ) -> anyhow::Result<gix_hash::ObjectId> {
         josh_core::objects::write_commit(
             transaction.odb(),
             self.tree_oid,
@@ -32,7 +32,7 @@ impl PreparedLinkAdd {
     /// Get tree OID for custom commit creation
     ///
     /// This is used by josh-cq to add additional files before creating a commit
-    pub fn into_tree_oid(self) -> git2::Oid {
+    pub fn into_tree_oid(self) -> gix_hash::ObjectId {
         self.tree_oid
     }
 }
@@ -40,9 +40,9 @@ impl PreparedLinkAdd {
 /// Result from updating links
 pub struct UpdateLinksResult {
     /// Commit with updated .link.josh files
-    pub commit_with_updates: git2::Oid,
+    pub commit_with_updates: gix_hash::ObjectId,
     /// Commit after applying :link filter
-    pub filtered_commit: git2::Oid,
+    pub filtered_commit: gix_hash::ObjectId,
 }
 
 /// A remote URL and commit SHA found in a `.link.josh` file.
@@ -56,7 +56,7 @@ pub struct LinkRef {
 /// all (remote, commit) pairs found in any `.link.josh` file across all commits and trees.
 pub fn collect_all_link_refs(
     transaction: &josh_core::cache::Transaction,
-    commit: git2::Oid,
+    commit: gix_hash::ObjectId,
 ) -> anyhow::Result<HashSet<LinkRef>> {
     // Apply a filter that keeps only .link.josh files. This prunes the history
     // to only commits that actually changed those files, so the revwalk below
@@ -67,7 +67,7 @@ pub fn collect_all_link_refs(
     let filtered_commit = josh_core::filter_commit(transaction, link_file_filter, commit)
         .context("Failed to apply .link.josh filter")?;
 
-    if filtered_commit == git2::Oid::ZERO_SHA1 {
+    if filtered_commit == gix_hash::ObjectId::null(gix_hash::Kind::Sha1) {
         return Ok(HashSet::new());
     }
 
@@ -122,8 +122,8 @@ pub fn prepare_link_add(
     url: &str,
     filter: Option<&str>,
     target: &str,
-    fetched_commit: git2::Oid,
-    head_tree: git2::Oid,
+    fetched_commit: gix_hash::ObjectId,
+    head_tree: gix_hash::ObjectId,
     mode: josh_core::filter::LinkMode,
 ) -> anyhow::Result<PreparedLinkAdd> {
     let odb = transaction.odb();
@@ -166,8 +166,8 @@ pub fn prepare_link_add(
 
 pub fn update_links(
     transaction: &josh_core::cache::Transaction,
-    head_commit: git2::Oid,
-    links_to_update: Vec<(PathBuf, git2::Oid)>,
+    head_commit: gix_hash::ObjectId,
+    links_to_update: Vec<(PathBuf, gix_hash::ObjectId)>,
     signature: &git2::Signature,
 ) -> anyhow::Result<Option<UpdateLinksResult>> {
     let odb = transaction.odb();

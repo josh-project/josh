@@ -142,12 +142,15 @@ fn prepare_push(
             let old_filtered = if let Some((_, filtered_oid)) = filtered_oids.first() {
                 *filtered_oid
             } else {
-                git2::Oid::ZERO_SHA1
+                gix_hash::ObjectId::null(gix_hash::Kind::Sha1)
             };
 
             (dest_oid, old_filtered)
         } else {
-            (git2::Oid::ZERO_SHA1, git2::Oid::ZERO_SHA1)
+            (
+                gix_hash::ObjectId::null(gix_hash::Kind::Sha1),
+                gix_hash::ObjectId::null(gix_hash::Kind::Sha1),
+            )
         };
 
     let original_target = if let Some(base) = base {
@@ -180,7 +183,7 @@ fn prepare_push(
     .context("Failed to unapply filter")?;
 
     let unfiltered_oid = if merge {
-        if original_target == git2::Oid::ZERO_SHA1 {
+        if original_target == gix_hash::ObjectId::null(gix_hash::Kind::Sha1) {
             return Err(anyhow!(
                 "--merge requires --base=<ref> or an existing destination ref"
             ));

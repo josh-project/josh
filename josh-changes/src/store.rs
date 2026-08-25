@@ -10,14 +10,14 @@ use josh_git_serde::GitValue;
 pub(crate) fn get_tree(
     transaction: &Transaction,
     odb: &Odb,
-    root: git2::Oid,
+    root: gix_hash::ObjectId,
     path: &std::path::Path,
-) -> Option<git2::Oid> {
+) -> Option<gix_hash::ObjectId> {
     tree::get_path_entry(transaction, odb, root, path)
         .ok()
         .flatten()
         .filter(|entry| entry.mode.is_tree())
-        .map(|entry| objects::git2_oid(&entry.oid))
+        .map(|entry| entry.oid.to_owned())
 }
 
 /// The tree of `scope`'s ref, or `None` when the ref does not exist.
@@ -25,7 +25,7 @@ pub fn scope_tree(
     transaction: &Transaction,
     odb: &Odb,
     scope: &ChangesRef,
-) -> anyhow::Result<Option<git2::Oid>> {
+) -> anyhow::Result<Option<gix_hash::ObjectId>> {
     match transaction.resolve_ref(&scope.ref_name())? {
         Some(oid) => Ok(Some(objects::CommitData::read(odb, oid)?.tree_id()?)),
         None => Ok(None),
@@ -50,7 +50,7 @@ pub(crate) fn parse_timestamp(s: Option<&str>) -> git2::Time {
 pub fn write_changes_tree(
     transaction: &Transaction,
     path: &std::path::Path,
-    blob_oid: git2::Oid,
+    blob_oid: gix_hash::ObjectId,
     author: Option<&str>,
     timestamp: Option<&str>,
     scope: &ChangesRef,
@@ -65,7 +65,7 @@ pub fn write_changes_tree(
 
     // Skip if the blob already exists at this path.
     if let Ok(Some(existing)) = tree::get_path_entry(transaction, odb, base_tree, path) {
-        if objects::git2_oid(&existing.oid) == blob_oid {
+        if existing.oid.to_owned() == blob_oid {
             return Ok(());
         }
     }
@@ -103,7 +103,7 @@ pub fn write_value<T: serde::Serialize>(
     author: Option<&str>,
     timestamp: Option<&str>,
     scope: &ChangesRef,
-) -> anyhow::Result<git2::Oid> {
+) -> anyhow::Result<gix_hash::ObjectId> {
     let (root, mode) = value_oid(transaction, data)?;
     place_oid(transaction, path, root, mode, author, timestamp, scope)?;
     Ok(root)
@@ -116,7 +116,7 @@ pub fn write_value<T: serde::Serialize>(
 pub fn value_oid<T: serde::Serialize>(
     transaction: &Transaction,
     data: &T,
-) -> anyhow::Result<(git2::Oid, i32)> {
+) -> anyhow::Result<(gix_hash::ObjectId, i32)> {
     let odb = transaction.odb();
     let value = josh_git_serde::to_value(data)?;
     let root = josh_git_serde::to_tree_oid(odb, &value)?;
@@ -124,7 +124,7 @@ pub fn value_oid<T: serde::Serialize>(
         GitValue::Tree(_) => 0o0040000,
         GitValue::Blob(_) => git2::FileMode::Blob.into(),
     };
-    Ok((objects::git2_oid(&root), mode))
+    Ok((root, mode))
 }
 
 /// Place the already-written object `root` at `path` inside `scope`'s ref and
@@ -132,7 +132,7 @@ pub fn value_oid<T: serde::Serialize>(
 pub fn place_oid(
     transaction: &Transaction,
     path: &std::path::Path,
-    root: git2::Oid,
+    root: gix_hash::ObjectId,
     mode: i32,
     author: Option<&str>,
     timestamp: Option<&str>,
@@ -147,7 +147,7 @@ pub fn place_oid(
     };
 
     if let Ok(Some(existing)) = tree::get_path_entry(transaction, odb, base_tree, path) {
-        if objects::git2_oid(&existing.oid) == root {
+        if existing.oid.to_owned() == root {
             return Ok(());
         }
     }
@@ -197,7 +197,7 @@ pub fn read_filtered<T: serde::de::DeserializeOwned>(
         filter,
         josh_core::filter::Rewrite::from_tree(root),
     )?;
-    let value = josh_git_serde::from_tree_oid(odb, objects::gix_oid(filtered.tree_id()))?;
+    let value = josh_git_serde::from_tree_oid(odb, filtered.tree_id())?;
     Ok(Some(josh_git_serde::from_value(&value)?))
 }
 
@@ -240,13 +240,7 @@ pub fn store_diff_data(
         }
     }
 
-    let tree = tree::insert_oid(
-        odb,
-        base_tree,
-        &path,
-        objects::git2_oid(&tree_oid),
-        0o0040000,
-    )?;
+    let tree = tree::insert_oid(odb, base_tree, &path, tree_oid, 0o0040000)?;
 
     let sig = transaction.signature()?;
 
@@ -260,7 +254,7 @@ pub fn store_diff_data(
         "josh\n",
     )?;
 
-    let mut parents: Vec<git2::Oid> = Vec::new();
+    let mut parents: Vec<gix_hash::ObjectId> = Vec::new();
     parents.extend(prev_tip);
     parents.push(anchor_oid);
     let msg = format!("update {}\n", ref_name);
@@ -321,7 +315,13 @@ pub fn delete_change(
             tree::get_path_entry(transaction, odb, tree, &path),
             Ok(Some(_))
         ) {
-            tree = tree::insert_oid(odb, tree, &path, git2::Oid::ZERO_SHA1, 0)?;
+            tree = tree::insert_oid(
+                odb,
+                tree,
+                &path,
+                gix_hash::ObjectId::null(gix_hash::Kind::Sha1),
+                0,
+            )?;
         }
     }
 

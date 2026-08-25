@@ -2,15 +2,16 @@
 
 use anyhow::{Context, anyhow};
 use std::fs::read_to_string;
+use std::str::FromStr;
 
 fn resolve_input_ref(
     transaction: &josh_core::cache::Transaction,
     input_ref: &str,
-) -> anyhow::Result<(String, git2::Oid)> {
+) -> anyhow::Result<(String, gix_hash::ObjectId)> {
     let oid = josh_core::git::resolve_snapshot_input(transaction, input_ref)?;
     let ref_string = if input_ref == "+" || input_ref == "." {
         oid.to_string()
-    } else if git2::Oid::from_str(input_ref).is_ok() {
+    } else if gix_hash::ObjectId::from_str(input_ref).is_ok() {
         input_ref.to_string()
     } else if let Some(name) = transaction.expand_ref_name(input_ref)? {
         name
@@ -144,7 +145,7 @@ struct GitNotesFilterHook {
 impl josh_core::cache::FilterHook for GitNotesFilterHook {
     fn filter_for_commit(
         &self,
-        commit_oid: git2::Oid,
+        commit_oid: gix_hash::ObjectId,
         arg: &str,
     ) -> anyhow::Result<josh_core::filter::Filter> {
         let notes_ref = if arg.starts_with("refs/") {
@@ -154,7 +155,10 @@ impl josh_core::cache::FilterHook for GitNotesFilterHook {
         };
         let repo = self.repo.lock().unwrap();
         let note = repo
-            .find_note(Some(notes_ref.as_str()), commit_oid)
+            .find_note(
+                Some(notes_ref.as_str()),
+                josh_core::objects::git2_oid(&commit_oid),
+            )
             .context("missing git note for commit")?;
         let msg = note.message().context("empty git note")?;
         josh_core::filter::parse(msg)
@@ -206,15 +210,13 @@ fn run_filter(args: Vec<String>) -> anyhow::Result<i32> {
     };
     transaction = transaction.with_filter_hook(std::sync::Arc::new(hook));
 
-    let repo = transaction.git2_repo();
-
     // If the filter spec doesn't contain a colon and it's not from a file,
     // treat it as a SHA and read from tree
     let mut filterobj = if specstr.contains(':') || is_from_file {
         josh_core::filter::parse(&specstr)?
     } else {
         // Try to parse as SHA and read filter from tree
-        let tree_oid = git2::Oid::from_str(specstr.trim())
+        let tree_oid = gix_hash::ObjectId::from_str(specstr.trim())
             .with_context(|| format!("Invalid filter spec or SHA: {}", specstr))?;
         josh_core::filter::from_tree(&transaction, tree_oid)?
     };
@@ -242,11 +244,8 @@ fn run_filter(args: Vec<String>) -> anyhow::Result<i32> {
             if !matcher.matches(name) {
                 return Ok(());
             }
-            let target = repo.find_object(oid, None)?.peel_to_commit()?.id();
-            ids.push((
-                josh_core::objects::gix_oid(target),
-                josh_core::filter::Filter::new().message(name),
-            ));
+            let target = josh_core::objects::peel_to_commit(transaction.odb(), oid)?;
+            ids.push((target, josh_core::filter::Filter::new().message(name)));
             refs.push((name.to_string(), target));
             Ok(())
         })?;
@@ -261,12 +260,9 @@ fn run_filter(args: Vec<String>) -> anyhow::Result<i32> {
         for line in reflist.lines() {
             let split = line.split(' ').collect::<Vec<_>>();
             if let [sha, name] = split.as_slice() {
-                let target = git2::Oid::from_str(sha)?;
-                let target = repo.find_object(target, None)?.peel_to_commit()?.id();
-                ids.push((
-                    josh_core::objects::gix_oid(target),
-                    josh_core::filter::Filter::new().message(name),
-                ));
+                let target = gix_hash::ObjectId::from_str(sha)?;
+                let target = josh_core::objects::peel_to_commit(transaction.odb(), target)?;
+                ids.push((target, josh_core::filter::Filter::new().message(name)));
                 refs.push((name.to_string(), target));
             } else if !split.is_empty() {
                 eprintln!("Warning: malformed line: {:?}", line);
@@ -332,7 +328,7 @@ fn run_filter(args: Vec<String>) -> anyhow::Result<i32> {
 
     let old_oid = transaction
         .resolve_ref(target)?
-        .unwrap_or(git2::Oid::ZERO_SHA1);
+        .unwrap_or(gix_hash::ObjectId::null(gix_hash::Kind::Sha1));
 
     let (mut updated_refs, errors) = josh_core::filter_refs(&transaction, filterobj, &refs);
 
@@ -400,7 +396,7 @@ fn run_filter(args: Vec<String>) -> anyhow::Result<i32> {
         // rev-parse reads them through the repository handle, which only sees disk.
         transaction.flush_mem_odb()?;
 
-        let rev = |spec: &str| -> anyhow::Result<git2::Oid> {
+        let rev = |spec: &str| -> anyhow::Result<gix_hash::ObjectId> {
             transaction
                 .rev_parse(spec)?
                 .ok_or_else(|| anyhow!("no such revision: {}", spec))

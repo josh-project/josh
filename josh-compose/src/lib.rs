@@ -86,7 +86,7 @@ pub fn plan_images(
     opts: RunOptions,
     ignore_cache: bool,
     runtime: &dyn ArtifactBackend,
-) -> anyhow::Result<Vec<git2::Oid>> {
+) -> anyhow::Result<Vec<gix_hash::ObjectId>> {
     josh_filter::check_experimental_features_enabled("josh compose images")?;
 
     let filter_spec = opts.filter_spec.trim().to_string();
@@ -110,7 +110,7 @@ pub fn plan_jobs(
     opts: RunOptions,
     ignore_cache: bool,
     runtime: &dyn ArtifactBackend,
-) -> anyhow::Result<Vec<git2::Oid>> {
+) -> anyhow::Result<Vec<gix_hash::ObjectId>> {
     josh_filter::check_experimental_features_enabled("josh compose jobs")?;
 
     let filter_spec = opts.filter_spec.trim().to_string();

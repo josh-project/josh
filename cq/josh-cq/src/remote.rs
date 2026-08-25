@@ -1,5 +1,6 @@
 use anyhow::Context;
 use anyhow::anyhow;
+use std::str::FromStr;
 
 use std::collections::BTreeMap;
 use std::process::Command;
@@ -7,7 +8,7 @@ use std::process::Command;
 /// List refs from a remote repository using git ls-remote
 ///
 /// Returns a map of ref names to their OIDs
-pub fn list_refs(url: &str) -> anyhow::Result<BTreeMap<String, git2::Oid>> {
+pub fn list_refs(url: &str) -> anyhow::Result<BTreeMap<String, gix_hash::ObjectId>> {
     let output = Command::new("git")
         .args(["ls-remote", url])
         .output()
@@ -19,12 +20,12 @@ pub fn list_refs(url: &str) -> anyhow::Result<BTreeMap<String, git2::Oid>> {
     }
 
     let stdout = String::from_utf8(output.stdout)?;
-    let refs: BTreeMap<String, git2::Oid> = stdout
+    let refs: BTreeMap<String, gix_hash::ObjectId> = stdout
         .lines()
         .filter_map(|line| {
             let parts: Vec<&str> = line.split('\t').collect();
             if parts.len() == 2 {
-                let oid = git2::Oid::from_str(parts[0]).ok()?;
+                let oid = gix_hash::ObjectId::from_str(parts[0]).ok()?;
                 Some((parts[1].to_string(), oid))
             } else {
                 None

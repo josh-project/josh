@@ -10,7 +10,7 @@ use std::sync::{LazyLock, RwLock};
 pub trait FilterHook {
     fn filter_for_commit(
         &self,
-        commit_oid: git2::Oid,
+        commit_oid: gix_hash::ObjectId,
         arg: &str,
     ) -> anyhow::Result<crate::filter::Filter>;
 }
@@ -21,9 +21,9 @@ pub struct Head {
     /// itself when detached. Either way, this is the ref to update to move HEAD.
     pub reference: String,
     /// The unpeeled target of [`Head::reference`], for guarding an update against it.
-    pub target: git2::Oid,
+    pub target: gix_hash::ObjectId,
     /// The commit HEAD resolves to, annotated tags peeled.
-    pub commit: git2::Oid,
+    pub commit: gix_hash::ObjectId,
 }
 
 impl Head {
@@ -51,7 +51,7 @@ pub enum Expected {
     /// The ref must not exist yet.
     Absent,
     /// The ref must currently point at exactly this oid.
-    At(git2::Oid),
+    At(gix_hash::ObjectId),
 }
 
 /// Parse `refname` as the fully qualified name every ref API method requires it to be.
@@ -81,32 +81,33 @@ fn previous_value(expected: Expected) -> gix::refs::transaction::PreviousValue {
     match expected {
         Expected::Any => PreviousValue::Any,
         Expected::Absent => PreviousValue::MustNotExist,
-        Expected::At(old) => PreviousValue::MustExistAndMatch(gix::refs::Target::Object(
-            crate::objects::gix_oid(old),
-        )),
+        Expected::At(old) => PreviousValue::MustExistAndMatch(gix::refs::Target::Object(old)),
     }
 }
 
-static REF_CACHE: LazyLock<RwLock<HashMap<gix_hash::ObjectId, HashMap<git2::Oid, git2::Oid>>>> =
-    LazyLock::new(Default::default);
+static REF_CACHE: LazyLock<
+    RwLock<HashMap<gix_hash::ObjectId, HashMap<gix_hash::ObjectId, gix_hash::ObjectId>>>,
+> = LazyLock::new(Default::default);
 
-static POPULATE_MAP: LazyLock<RwLock<HashMap<(git2::Oid, git2::Oid), git2::Oid>>> =
-    LazyLock::new(Default::default);
+static POPULATE_MAP: LazyLock<
+    RwLock<HashMap<(gix_hash::ObjectId, gix_hash::ObjectId), gix_hash::ObjectId>>,
+> = LazyLock::new(Default::default);
 
 // Keyed by (input tree, pattern key, NFA state mask). The state mask makes entries independent
 // of the path a subtree was reached through; the legacy full-path fallback folds its root path
 // into a synthetic pattern key and uses mask 0.
-static GLOB_MAP: LazyLock<RwLock<HashMap<(git2::Oid, git2::Oid, u64), git2::Oid>>> =
-    LazyLock::new(Default::default);
+static GLOB_MAP: LazyLock<
+    RwLock<HashMap<(gix_hash::ObjectId, gix_hash::ObjectId, u64), gix_hash::ObjectId>>,
+> = LazyLock::new(Default::default);
 
 // Path-projection memoization for `:PATHS` and its inverse, keyed by (input tree oid, root path).
 // Both are pure functions of the input tree, and workspace filters walk commits parent-first, so a
 // child commit reuses the projections its parent just computed for the subtrees they share, which
 // an in-process map captures.
-static PATHS_MAP: LazyLock<RwLock<HashMap<(git2::Oid, String), git2::Oid>>> =
+static PATHS_MAP: LazyLock<RwLock<HashMap<(gix_hash::ObjectId, String), gix_hash::ObjectId>>> =
     LazyLock::new(Default::default);
 
-static INVERT_MAP: LazyLock<RwLock<HashMap<(git2::Oid, String), git2::Oid>>> =
+static INVERT_MAP: LazyLock<RwLock<HashMap<(gix_hash::ObjectId, String), gix_hash::ObjectId>>> =
     LazyLock::new(Default::default);
 
 /// Placeholder hint for tree-keyed records with no commit context. Sequence 0 is
@@ -239,23 +240,25 @@ impl TransactionContext {
 
 #[allow(unused)]
 struct Transaction2 {
-    commit_map: HashMap<gix_hash::ObjectId, HashMap<git2::Oid, git2::Oid>>,
-    apply_map: HashMap<gix_hash::ObjectId, HashMap<git2::Oid, git2::Oid>>,
-    subtract_map: HashMap<(git2::Oid, git2::Oid), git2::Oid>,
-    intersect_map: HashMap<(git2::Oid, git2::Oid), git2::Oid>,
-    overlay_map: HashMap<(git2::Oid, git2::Oid), git2::Oid>,
-    unapply_map: HashMap<gix_hash::ObjectId, HashMap<git2::Oid, git2::Oid>>,
-    legalize_map: HashMap<(crate::filter::Filter, git2::Oid), crate::filter::Filter>,
-    downstack_deps_map: HashMap<git2::Oid, std::collections::HashSet<crate::filter::DownstackDep>>,
-    merge_trees_map: HashMap<(git2::Oid, git2::Oid, git2::Oid), git2::Oid>,
-    last_written_commit: Option<(git2::Oid, git2::Oid)>,
+    commit_map: HashMap<gix_hash::ObjectId, HashMap<gix_hash::ObjectId, gix_hash::ObjectId>>,
+    apply_map: HashMap<gix_hash::ObjectId, HashMap<gix_hash::ObjectId, gix_hash::ObjectId>>,
+    subtract_map: HashMap<(gix_hash::ObjectId, gix_hash::ObjectId), gix_hash::ObjectId>,
+    intersect_map: HashMap<(gix_hash::ObjectId, gix_hash::ObjectId), gix_hash::ObjectId>,
+    overlay_map: HashMap<(gix_hash::ObjectId, gix_hash::ObjectId), gix_hash::ObjectId>,
+    unapply_map: HashMap<gix_hash::ObjectId, HashMap<gix_hash::ObjectId, gix_hash::ObjectId>>,
+    legalize_map: HashMap<(crate::filter::Filter, gix_hash::ObjectId), crate::filter::Filter>,
+    downstack_deps_map:
+        HashMap<gix_hash::ObjectId, std::collections::HashSet<crate::filter::DownstackDep>>,
+    merge_trees_map:
+        HashMap<(gix_hash::ObjectId, gix_hash::ObjectId, gix_hash::ObjectId), gix_hash::ObjectId>,
+    last_written_commit: Option<(gix_hash::ObjectId, gix_hash::ObjectId)>,
     tree_cache: TreeCache,
 
     cache: std::sync::Arc<CacheStack>,
     // In-transaction memoization of the trigram index (source tree -> index tree); the
     // cache backend behind it holds the durable, cross-transaction copy.
-    index_map: HashMap<git2::Oid, git2::Oid>,
-    missing: Vec<(usize, crate::filter::Filter, git2::Oid)>,
+    index_map: HashMap<gix_hash::ObjectId, gix_hash::ObjectId>,
+    missing: Vec<(usize, crate::filter::Filter, gix_hash::ObjectId)>,
     misses: usize,
     nesting_level: usize,
 }
@@ -446,12 +449,12 @@ impl Transaction {
     pub fn read_tree_bytes(
         &self,
         odb: &josh_memodb::Odb,
-        oid: git2::Oid,
+        oid: gix_hash::ObjectId,
     ) -> anyhow::Result<Option<TreeBytes>> {
         if let Some(bytes) = self.t2.borrow().tree_cache.get(oid) {
             return Ok(Some(TreeBytes::Cached(bytes)));
         }
-        let (kind, bytes) = odb.read(crate::objects::gix_oid(oid))?;
+        let (kind, bytes) = odb.read(oid)?;
         if kind != gix_object::Kind::Tree {
             return Ok(None);
         }
@@ -588,7 +591,7 @@ impl Transaction {
     /// partial-name DWIM. `Ok(None)` if the ref (or the end of a symbolic chain) does not
     /// exist. The target is not peeled: for an annotated tag ref this is the tag oid,
     /// peeling is an object-store concern.
-    pub fn resolve_ref(&self, refname: &str) -> anyhow::Result<Option<git2::Oid>> {
+    pub fn resolve_ref(&self, refname: &str) -> anyhow::Result<Option<gix_hash::ObjectId>> {
         // Parsing as a full name is what rejects `master`: gix's find would resolve it.
         let name = full_ref_name(refname)?;
         let Some(reference) = self.find_ref(&name)? else {
@@ -623,12 +626,12 @@ impl Transaction {
     fn follow_symrefs(
         &self,
         mut reference: gix::refs::Reference,
-    ) -> anyhow::Result<Option<(gix::refs::FullName, git2::Oid)>> {
+    ) -> anyhow::Result<Option<(gix::refs::FullName, gix_hash::ObjectId)>> {
         // git's own limit on how far a symbolic ref may point.
         for _ in 0..5 {
             let next = match &reference.target {
                 gix::refs::Target::Object(id) => {
-                    let target = crate::objects::git2_oid(id);
+                    let target = id.to_owned();
                     return Ok(Some((reference.name, target)));
                 }
                 gix::refs::Target::Symbolic(next) => self.find_ref(next)?,
@@ -682,10 +685,10 @@ impl Transaction {
     /// like `master~2` -- to the object it names, unpeeled. `Ok(None)` when it resolves to
     /// nothing, which covers both a malformed spec and one naming something absent: a
     /// revision a user typed is input, not a contract.
-    pub fn rev_parse(&self, spec: &str) -> anyhow::Result<Option<git2::Oid>> {
+    pub fn rev_parse(&self, spec: &str) -> anyhow::Result<Option<gix_hash::ObjectId>> {
         let repo = self.repo();
         match repo.rev_parse_single(spec) {
-            Ok(id) => Ok(Some(crate::objects::git2_oid(&id))),
+            Ok(id) => Ok(Some(id.into())),
             Err(gix::revision::spec::parse::single::Error::RangedRev { .. }) => Ok(None),
             Err(gix::revision::spec::parse::single::Error::Parse(error)) => {
                 let operational_error = error.sources().any(|source| {
@@ -792,7 +795,7 @@ impl Transaction {
         &self,
         refname: &str,
         expected: Expected,
-        target: git2::Oid,
+        target: gix_hash::ObjectId,
         log_message: &str,
     ) -> anyhow::Result<()> {
         let name = full_ref_name(refname)?;
@@ -807,7 +810,7 @@ impl Transaction {
         };
         if guard_allows_unchanged
             && let Some(reference) = self.find_ref(&name)?
-            && reference.target == gix::refs::Target::Object(crate::objects::gix_oid(target))
+            && reference.target == gix::refs::Target::Object(target)
         {
             return Ok(());
         }
@@ -821,7 +824,7 @@ impl Transaction {
                         message: log_message.into(),
                     },
                     expected: previous_value(expected),
-                    new: gix::refs::Target::Object(crate::objects::gix_oid(target)),
+                    new: gix::refs::Target::Object(target),
                 },
                 name,
                 deref: false,
@@ -914,9 +917,7 @@ impl Transaction {
         let name = full_ref_name(refname)?;
         if let Expected::At(old) = expected {
             match self.find_ref(&name)? {
-                Some(reference)
-                    if reference.target
-                        == gix::refs::Target::Object(crate::objects::gix_oid(old)) => {}
+                Some(reference) if reference.target == gix::refs::Target::Object(old) => {}
                 _ => {
                     return Err(anyhow!(
                         "ref '{}' does not point at the expected value {old}",
@@ -973,7 +974,7 @@ impl Transaction {
     pub fn for_each_ref_prefixed(
         &self,
         prefix: &str,
-        mut cb: impl FnMut(&str, git2::Oid) -> anyhow::Result<()>,
+        mut cb: impl FnMut(&str, gix_hash::ObjectId) -> anyhow::Result<()>,
     ) -> anyhow::Result<()> {
         // Glob metacharacters (*?[\) are all invalid in refnames, so a caller passing one
         // means to match, not to prefix.
@@ -1008,7 +1009,7 @@ impl Transaction {
             if !name.starts_with(prefix) {
                 continue;
             }
-            refs.insert(name.to_owned(), crate::objects::git2_oid(target));
+            refs.insert(name.to_owned(), target.to_owned());
         }
         for edit in self.pending_refs.borrow().iter() {
             let Ok(name) = std::str::from_utf8(edit.name.as_bstr()) else {
@@ -1022,7 +1023,7 @@ impl Transaction {
                     new: gix::refs::Target::Object(target),
                     ..
                 } => {
-                    refs.insert(name.to_owned(), crate::objects::git2_oid(target));
+                    refs.insert(name.to_owned(), target.to_owned());
                 }
                 gix::refs::transaction::Change::Update {
                     new: gix::refs::Target::Symbolic(_),
@@ -1053,7 +1054,12 @@ impl Transaction {
         prev
     }
 
-    pub fn insert_apply(&self, filter: crate::filter::Filter, from: git2::Oid, to: git2::Oid) {
+    pub fn insert_apply(
+        &self,
+        filter: crate::filter::Filter,
+        from: gix_hash::ObjectId,
+        to: gix_hash::ObjectId,
+    ) {
         let mut t2 = self.t2.borrow_mut();
         t2.apply_map
             .entry(filter.id())
@@ -1061,7 +1067,11 @@ impl Transaction {
             .insert(from, to);
     }
 
-    pub fn get_apply(&self, filter: crate::filter::Filter, from: git2::Oid) -> Option<git2::Oid> {
+    pub fn get_apply(
+        &self,
+        filter: crate::filter::Filter,
+        from: gix_hash::ObjectId,
+    ) -> Option<gix_hash::ObjectId> {
         let t2 = self.t2.borrow_mut();
         if let Some(m) = t2.apply_map.get(&filter.id()) {
             return m.get(&from).cloned();
@@ -1071,7 +1081,7 @@ impl Transaction {
 
     pub(crate) fn insert_downstack_deps(
         &self,
-        oid: git2::Oid,
+        oid: gix_hash::ObjectId,
         deps: std::collections::HashSet<crate::filter::DownstackDep>,
     ) {
         let mut t2 = self.t2.borrow_mut();
@@ -1080,7 +1090,7 @@ impl Transaction {
 
     pub(crate) fn get_downstack_deps(
         &self,
-        oid: git2::Oid,
+        oid: gix_hash::ObjectId,
     ) -> Option<std::collections::HashSet<crate::filter::DownstackDep>> {
         let t2 = self.t2.borrow_mut();
         t2.downstack_deps_map.get(&oid).cloned()
@@ -1088,8 +1098,8 @@ impl Transaction {
 
     pub(crate) fn insert_merge_trees(
         &self,
-        key: (git2::Oid, git2::Oid, git2::Oid),
-        result: git2::Oid,
+        key: (gix_hash::ObjectId, gix_hash::ObjectId, gix_hash::ObjectId),
+        result: gix_hash::ObjectId,
     ) {
         let mut t2 = self.t2.borrow_mut();
         t2.merge_trees_map.insert(key, result);
@@ -1097,38 +1107,59 @@ impl Transaction {
 
     pub(crate) fn get_merge_trees(
         &self,
-        key: (git2::Oid, git2::Oid, git2::Oid),
-    ) -> Option<git2::Oid> {
+        key: (gix_hash::ObjectId, gix_hash::ObjectId, gix_hash::ObjectId),
+    ) -> Option<gix_hash::ObjectId> {
         let t2 = self.t2.borrow_mut();
         t2.merge_trees_map.get(&key).copied()
     }
 
-    pub fn insert_subtract(&self, from: (git2::Oid, git2::Oid), to: git2::Oid) {
+    pub fn insert_subtract(
+        &self,
+        from: (gix_hash::ObjectId, gix_hash::ObjectId),
+        to: gix_hash::ObjectId,
+    ) {
         let mut t2 = self.t2.borrow_mut();
         t2.subtract_map.insert(from, to);
     }
 
-    pub fn get_subtract(&self, from: (git2::Oid, git2::Oid)) -> Option<git2::Oid> {
+    pub fn get_subtract(
+        &self,
+        from: (gix_hash::ObjectId, gix_hash::ObjectId),
+    ) -> Option<gix_hash::ObjectId> {
         let t2 = self.t2.borrow_mut();
         t2.subtract_map.get(&from).cloned()
     }
 
-    pub fn insert_intersect(&self, from: (git2::Oid, git2::Oid), to: git2::Oid) {
+    pub fn insert_intersect(
+        &self,
+        from: (gix_hash::ObjectId, gix_hash::ObjectId),
+        to: gix_hash::ObjectId,
+    ) {
         let mut t2 = self.t2.borrow_mut();
         t2.intersect_map.insert(from, to);
     }
 
-    pub fn get_intersect(&self, from: (git2::Oid, git2::Oid)) -> Option<git2::Oid> {
+    pub fn get_intersect(
+        &self,
+        from: (gix_hash::ObjectId, gix_hash::ObjectId),
+    ) -> Option<gix_hash::ObjectId> {
         let t2 = self.t2.borrow_mut();
         t2.intersect_map.get(&from).cloned()
     }
 
-    pub fn insert_overlay(&self, from: (git2::Oid, git2::Oid), to: git2::Oid) {
+    pub fn insert_overlay(
+        &self,
+        from: (gix_hash::ObjectId, gix_hash::ObjectId),
+        to: gix_hash::ObjectId,
+    ) {
         let mut t2 = self.t2.borrow_mut();
         t2.overlay_map.insert(from, to);
     }
 
-    pub fn get_overlay(&self, from: (git2::Oid, git2::Oid)) -> Option<git2::Oid> {
+    pub fn get_overlay(
+        &self,
+        from: (gix_hash::ObjectId, gix_hash::ObjectId),
+    ) -> Option<gix_hash::ObjectId> {
         let t2 = self.t2.borrow_mut();
         t2.overlay_map.get(&from).cloned()
     }
@@ -1137,17 +1168,17 @@ impl Transaction {
     /// walk processes a commit right after writing its parent, so this single slot answers the
     /// common "what tree does my filtered parent have" lookup without re-parsing the parent from the
     /// odb -- and without retaining every written commit the way a map would.
-    pub fn set_last_written_commit(&self, commit: git2::Oid, tree: git2::Oid) {
+    pub fn set_last_written_commit(&self, commit: gix_hash::ObjectId, tree: gix_hash::ObjectId) {
         self.t2.borrow_mut().last_written_commit = Some((commit, tree));
     }
 
-    pub fn last_written_commit(&self) -> Option<(git2::Oid, git2::Oid)> {
+    pub fn last_written_commit(&self) -> Option<(gix_hash::ObjectId, gix_hash::ObjectId)> {
         self.t2.borrow().last_written_commit
     }
 
     pub fn insert_legalize(
         &self,
-        from: (crate::filter::Filter, git2::Oid),
+        from: (crate::filter::Filter, gix_hash::ObjectId),
         to: crate::filter::Filter,
     ) {
         let mut t2 = self.t2.borrow_mut();
@@ -1156,13 +1187,18 @@ impl Transaction {
 
     pub fn get_legalize(
         &self,
-        from: (crate::filter::Filter, git2::Oid),
+        from: (crate::filter::Filter, gix_hash::ObjectId),
     ) -> Option<crate::filter::Filter> {
         let t2 = self.t2.borrow_mut();
         t2.legalize_map.get(&from).cloned()
     }
 
-    pub fn insert_unapply(&self, filter: crate::filter::Filter, from: git2::Oid, to: git2::Oid) {
+    pub fn insert_unapply(
+        &self,
+        filter: crate::filter::Filter,
+        from: gix_hash::ObjectId,
+        to: gix_hash::ObjectId,
+    ) {
         let mut t2 = self.t2.borrow_mut();
         t2.unapply_map
             .entry(filter.id())
@@ -1170,25 +1206,24 @@ impl Transaction {
             .insert(from, to);
     }
 
-    pub fn insert_paths(&self, tree: (git2::Oid, String), result: git2::Oid) {
+    pub fn insert_paths(&self, tree: (gix_hash::ObjectId, String), result: gix_hash::ObjectId) {
         PATHS_MAP.write().unwrap().entry(tree).or_insert(result);
     }
 
-    pub fn get_paths(&self, tree: (git2::Oid, String)) -> Option<git2::Oid> {
+    pub fn get_paths(&self, tree: (gix_hash::ObjectId, String)) -> Option<gix_hash::ObjectId> {
         PATHS_MAP.read().unwrap().get(&tree).cloned()
     }
 
-    pub fn insert_invert(&self, tree: (git2::Oid, String), result: git2::Oid) {
+    pub fn insert_invert(&self, tree: (gix_hash::ObjectId, String), result: gix_hash::ObjectId) {
         INVERT_MAP.write().unwrap().entry(tree).or_insert(result);
     }
 
-    pub fn get_invert(&self, tree: (git2::Oid, String)) -> Option<git2::Oid> {
+    pub fn get_invert(&self, tree: (gix_hash::ObjectId, String)) -> Option<gix_hash::ObjectId> {
         INVERT_MAP.read().unwrap().get(&tree).cloned()
     }
 
-    /// Build a josh-search index cache that shards records by `commit`'s history-graph
-    /// position. Pass [`git2::Oid::ZERO_SHA1`] for a bare tree with no commit context.
-    pub fn trigram_index_cache(&self, commit: git2::Oid) -> TrigramIndexCache<'_> {
+    /// Cache indexes under the commit's history shard. A null ID means no commit context.
+    pub fn trigram_index_cache(&self, commit: gix_hash::ObjectId) -> TrigramIndexCache<'_> {
         TrigramIndexCache {
             transaction: self,
             hint: self.tree_keyed_hint(commit),
@@ -1198,14 +1233,19 @@ impl Transaction {
     /// Trees carry no history position of their own, so tree-keyed records use the hint
     /// of the commit being indexed. Falls back to the placeholder when there is no commit
     /// context or the hint cannot be computed.
-    fn tree_keyed_hint(&self, commit: git2::Oid) -> HistoryGraphHint {
-        if commit == git2::Oid::ZERO_SHA1 {
+    fn tree_keyed_hint(&self, commit: gix_hash::ObjectId) -> HistoryGraphHint {
+        if commit == gix_hash::ObjectId::null(gix_hash::Kind::Sha1) {
             return TREE_KEYED_FALLBACK_HINT;
         }
         compute_history_hint(self, commit).unwrap_or(TREE_KEYED_FALLBACK_HINT)
     }
 
-    fn insert_trigram_index(&self, tree: git2::Oid, result: git2::Oid, hint: HistoryGraphHint) {
+    fn insert_trigram_index(
+        &self,
+        tree: gix_hash::ObjectId,
+        result: gix_hash::ObjectId,
+        hint: HistoryGraphHint,
+    ) {
         let filter = crate::filter::index();
         let mut t2 = self.t2.borrow_mut();
         t2.index_map.entry(tree).or_insert(result);
@@ -1214,7 +1254,11 @@ impl Transaction {
         }
     }
 
-    fn get_trigram_index(&self, tree: git2::Oid, hint: HistoryGraphHint) -> Option<git2::Oid> {
+    fn get_trigram_index(
+        &self,
+        tree: gix_hash::ObjectId,
+        hint: HistoryGraphHint,
+    ) -> Option<gix_hash::ObjectId> {
         let filter = crate::filter::index();
         let t2 = self.t2.borrow_mut();
         if let Some(oid) = t2.index_map.get(&tree).cloned() {
@@ -1224,30 +1268,49 @@ impl Transaction {
         let oid = t2.cache.read_propagate(filter, tree, hint, true).ok()??;
         // Per-subtree index trees are anchored by no ref, so gc may have pruned a
         // cached one; treat a dangling hit as a miss and reindex.
-        if self.odb().contains(crate::objects::gix_oid(oid)) {
+        if self.odb().contains(oid) {
             Some(oid)
         } else {
             None
         }
     }
 
-    pub fn insert_populate(&self, tree: (git2::Oid, git2::Oid), result: git2::Oid) {
+    pub fn insert_populate(
+        &self,
+        tree: (gix_hash::ObjectId, gix_hash::ObjectId),
+        result: gix_hash::ObjectId,
+    ) {
         POPULATE_MAP.write().unwrap().entry(tree).or_insert(result);
     }
 
-    pub fn get_populate(&self, tree: (git2::Oid, git2::Oid)) -> Option<git2::Oid> {
+    pub fn get_populate(
+        &self,
+        tree: (gix_hash::ObjectId, gix_hash::ObjectId),
+    ) -> Option<gix_hash::ObjectId> {
         POPULATE_MAP.read().unwrap().get(&tree).cloned()
     }
 
-    pub fn insert_glob(&self, tree: (git2::Oid, git2::Oid, u64), result: git2::Oid) {
+    pub fn insert_glob(
+        &self,
+        tree: (gix_hash::ObjectId, gix_hash::ObjectId, u64),
+        result: gix_hash::ObjectId,
+    ) {
         GLOB_MAP.write().unwrap().entry(tree).or_insert(result);
     }
 
-    pub fn get_glob(&self, tree: (git2::Oid, git2::Oid, u64)) -> Option<git2::Oid> {
+    pub fn get_glob(
+        &self,
+        tree: (gix_hash::ObjectId, gix_hash::ObjectId, u64),
+    ) -> Option<gix_hash::ObjectId> {
         GLOB_MAP.read().unwrap().get(&tree).cloned()
     }
 
-    pub fn insert_ref(&self, filter: crate::filter::Filter, from: git2::Oid, to: git2::Oid) {
+    pub fn insert_ref(
+        &self,
+        filter: crate::filter::Filter,
+        from: gix_hash::ObjectId,
+        to: gix_hash::ObjectId,
+    ) {
         REF_CACHE
             .write()
             .unwrap()
@@ -1256,17 +1319,25 @@ impl Transaction {
             .insert(from, to);
     }
 
-    pub fn get_ref(&self, filter: crate::filter::Filter, from: git2::Oid) -> Option<git2::Oid> {
+    pub fn get_ref(
+        &self,
+        filter: crate::filter::Filter,
+        from: gix_hash::ObjectId,
+    ) -> Option<gix_hash::ObjectId> {
         if let Some(m) = REF_CACHE.read().unwrap().get(&filter.id())
             && let Some(oid) = m.get(&from)
-            && self.odb().contains(crate::objects::gix_oid(*oid))
+            && self.odb().contains(*oid)
         {
             return Some(*oid);
         }
         None
     }
 
-    pub fn get_unapply(&self, filter: crate::filter::Filter, from: git2::Oid) -> Option<git2::Oid> {
+    pub fn get_unapply(
+        &self,
+        filter: crate::filter::Filter,
+        from: gix_hash::ObjectId,
+    ) -> Option<gix_hash::ObjectId> {
         let t2 = self.t2.borrow_mut();
         if let Some(m) = t2.unapply_map.get(&filter.id()) {
             return m.get(&from).cloned();
@@ -1277,7 +1348,7 @@ impl Transaction {
     pub fn lookup_filter_hook(
         &self,
         hook: &str,
-        from: git2::Oid,
+        from: gix_hash::ObjectId,
     ) -> anyhow::Result<crate::filter::Filter> {
         if let Some(h) = &self.filter_hook {
             return h.filter_for_commit(from, hook);
@@ -1293,8 +1364,8 @@ impl Transaction {
     pub fn insert(
         &self,
         filter: crate::filter::Filter,
-        from: git2::Oid,
-        to: git2::Oid,
+        from: gix_hash::ObjectId,
+        to: gix_hash::ObjectId,
         store: bool,
     ) -> anyhow::Result<()> {
         let hint = if filter != crate::filter::sequence_number()
@@ -1326,7 +1397,9 @@ impl Transaction {
         Ok(())
     }
 
-    pub fn get_missing(&self) -> anyhow::Result<Vec<(usize, crate::filter::Filter, git2::Oid)>> {
+    pub fn get_missing(
+        &self,
+    ) -> anyhow::Result<Vec<(usize, crate::filter::Filter, gix_hash::ObjectId)>> {
         let missing = self.t2.borrow().missing.clone();
         let mut retained = Vec::with_capacity(missing.len());
         for (level, f, i) in missing {
@@ -1341,15 +1414,19 @@ impl Transaction {
         Ok(retained)
     }
 
-    pub fn known(&self, filter: crate::filter::Filter, from: git2::Oid) -> anyhow::Result<bool> {
+    pub fn known(
+        &self,
+        filter: crate::filter::Filter,
+        from: gix_hash::ObjectId,
+    ) -> anyhow::Result<bool> {
         Ok(self.get2(filter, from)?.is_some())
     }
 
     pub fn get(
         &self,
         filter: crate::filter::Filter,
-        from: git2::Oid,
-    ) -> anyhow::Result<Option<git2::Oid>> {
+        from: gix_hash::ObjectId,
+    ) -> anyhow::Result<Option<gix_hash::ObjectId>> {
         if let Some(x) = self.get2(filter, from)? {
             Ok(Some(x))
         } else {
@@ -1364,8 +1441,8 @@ impl Transaction {
     fn get2(
         &self,
         filter: crate::filter::Filter,
-        from: git2::Oid,
-    ) -> anyhow::Result<Option<git2::Oid>> {
+        from: gix_hash::ObjectId,
+    ) -> anyhow::Result<Option<gix_hash::ObjectId>> {
         if filter.is_nop() {
             return Ok(Some(from));
         }
@@ -1391,14 +1468,14 @@ impl Transaction {
         let oid = t2.cache.read_propagate(filter, from, hint, false)?;
 
         if let Some(oid) = oid {
-            if oid == git2::Oid::ZERO_SHA1 {
+            if oid == gix_hash::ObjectId::null(gix_hash::Kind::Sha1) {
                 return Ok(Some(oid));
             }
             if filter == crate::filter::sequence_number() {
                 return Ok(Some(oid));
             }
 
-            if self.odb().contains(crate::objects::gix_oid(oid)) {
+            if self.odb().contains(oid) {
                 // Only report an object as cached if it exists in the object database.
                 // This forces a rebuild in case the object was garbage collected.
                 return Ok(Some(oid));
@@ -1427,11 +1504,11 @@ pub struct TrigramIndexCache<'a> {
 }
 
 impl josh_search::IndexCache for TrigramIndexCache<'_> {
-    fn get_index(&self, tree: git2::Oid) -> Option<git2::Oid> {
+    fn get_index(&self, tree: gix_hash::ObjectId) -> Option<gix_hash::ObjectId> {
         self.transaction.get_trigram_index(tree, self.hint)
     }
 
-    fn set_index(&self, tree: git2::Oid, index: git2::Oid) {
+    fn set_index(&self, tree: gix_hash::ObjectId, index: gix_hash::ObjectId) {
         self.transaction
             .insert_trigram_index(tree, index, self.hint)
     }
@@ -1454,13 +1531,13 @@ mod tests {
         (dir, transaction)
     }
 
-    fn commit(transaction: &Transaction, msg: &str) -> git2::Oid {
+    fn commit(transaction: &Transaction, msg: &str) -> gix_hash::ObjectId {
         let repo = transaction.git2_repo();
         let tree = repo
             .find_tree(repo.treebuilder(None).unwrap().write().unwrap())
             .unwrap();
         let sig = git2::Signature::new("t", "t@example.com", &git2::Time::new(0, 0)).unwrap();
-        repo.commit(None, &sig, &sig, msg, &tree, &[]).unwrap()
+        crate::objects::gix_oid(repo.commit(None, &sig, &sig, msg, &tree, &[]).unwrap())
     }
 
     #[test]
@@ -1550,7 +1627,7 @@ mod tests {
                 .find_reference("refs/heads/main")
                 .unwrap()
                 .target(),
-            Some(a)
+            Some(crate::objects::git2_oid(&a))
         );
     }
 
@@ -1857,10 +1934,11 @@ mod tests {
             .find_tree(repo.treebuilder(None).unwrap().write().unwrap())
             .unwrap();
         let sig = git2::Signature::new("t", "t@example.com", &git2::Time::new(0, 0)).unwrap();
-        let parent_commit = repo.find_commit(parent).unwrap();
-        let tip = repo
-            .commit(None, &sig, &sig, "tip", &tree, &[&parent_commit])
-            .unwrap();
+        let parent_commit = repo.find_commit(crate::objects::git2_oid(&parent)).unwrap();
+        let tip = crate::objects::gix_oid(
+            repo.commit(None, &sig, &sig, "tip", &tree, &[&parent_commit])
+                .unwrap(),
+        );
         transaction
             .update_ref("refs/heads/main", Expected::Any, tip, "test")
             .unwrap();
@@ -1940,7 +2018,11 @@ mod tests {
         let log = std::fs::read_to_string(dir.path().join(".git/logs/refs/heads/main")).unwrap();
         let lines: Vec<&str> = log.lines().collect();
         assert_eq!(lines.len(), 2, "{}", log);
-        assert!(lines[0].starts_with(&format!("{} {}", git2::Oid::ZERO_SHA1, a)));
+        assert!(lines[0].starts_with(&format!(
+            "{} {}",
+            gix_hash::ObjectId::null(gix_hash::Kind::Sha1),
+            a
+        )));
         assert!(lines[0].ends_with("\tfirst"));
         assert!(lines[1].starts_with(&format!("{} {}", a, b)));
         assert!(lines[1].ends_with("\tsecond"));
@@ -2193,11 +2275,9 @@ mod tests {
 
         let oid = {
             let transaction = context.open().unwrap();
-            let oid = crate::objects::git2_oid(
-                &transaction
-                    .odb()
-                    .write(gix_object::Kind::Blob, b"published"),
-            );
+            let oid = transaction
+                .odb()
+                .write(gix_object::Kind::Blob, b"published");
             transaction
                 .update_ref("refs/josh/blob", Expected::Absent, oid, "test")
                 .unwrap();
@@ -2209,16 +2289,22 @@ mod tests {
             );
             let on_disk = git2::Repository::open(dir.path()).unwrap();
             assert!(on_disk.find_reference("refs/josh/blob").is_err());
-            assert!(on_disk.find_blob(oid).is_err());
+            assert!(on_disk.find_blob(crate::objects::git2_oid(&oid)).is_err());
             oid
         };
 
         let on_disk = git2::Repository::open(dir.path()).unwrap();
         assert_eq!(
             on_disk.find_reference("refs/josh/blob").unwrap().target(),
-            Some(oid)
+            Some(crate::objects::git2_oid(&oid))
         );
-        assert_eq!(on_disk.find_blob(oid).unwrap().content(), b"published");
+        assert_eq!(
+            on_disk
+                .find_blob(crate::objects::git2_oid(&oid))
+                .unwrap()
+                .content(),
+            b"published"
+        );
     }
 
     /// An explicit disk-reader boundary has the same ordering as drop: object first, ref second.
@@ -2226,8 +2312,7 @@ mod tests {
     fn flush_mem_odb_publishes_pending_refs_after_objects() {
         let (dir, context) = test_context();
         let transaction = context.open().unwrap();
-        let oid =
-            crate::objects::git2_oid(&transaction.odb().write(gix_object::Kind::Blob, b"boundary"));
+        let oid = transaction.odb().write(gix_object::Kind::Blob, b"boundary");
         transaction
             .update_ref("refs/josh/blob", Expected::Absent, oid, "test")
             .unwrap();
@@ -2237,9 +2322,15 @@ mod tests {
         let on_disk = git2::Repository::open(dir.path()).unwrap();
         assert_eq!(
             on_disk.find_reference("refs/josh/blob").unwrap().target(),
-            Some(oid)
+            Some(crate::objects::git2_oid(&oid))
         );
-        assert_eq!(on_disk.find_blob(oid).unwrap().content(), b"boundary");
+        assert_eq!(
+            on_disk
+                .find_blob(crate::objects::git2_oid(&oid))
+                .unwrap()
+                .content(),
+            b"boundary"
+        );
     }
 
     #[test]

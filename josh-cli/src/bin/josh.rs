@@ -346,18 +346,14 @@ fn to_absolute_remote_url(url: &str) -> anyhow::Result<String> {
     }
 }
 
-/// Initial clone setup: create directory, init repo, add remote (no transaction needed)
+/// Initialize a clone and configure its remote.
 fn clone_repo(args: &CloneArgs) -> anyhow::Result<std::path::PathBuf> {
-    // Use the provided output directory
     let output_dir = args.out.clone();
 
-    // Create the output directory first
     std::fs::create_dir_all(&output_dir)?;
 
-    // Initialize a new git repository inside the directory using git2
     git2::Repository::init(&output_dir).context("Failed to initialize git repository")?;
 
-    // Use handle_remote_add to add the remote with the filter
     let remote_add_args = RemoteAddArgs {
         name: "origin".to_string(),
         url: to_absolute_remote_url(&args.url)?,

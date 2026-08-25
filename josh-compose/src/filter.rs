@@ -5,7 +5,7 @@ use anyhow::Context;
 pub fn resolve_input(
     transaction: &josh_core::cache::Transaction,
     input_ref: &str,
-) -> anyhow::Result<git2::Oid> {
+) -> anyhow::Result<gix_hash::ObjectId> {
     josh_core::git::resolve_snapshot_input(transaction, input_ref)
         .with_context(|| format!("failed to resolve input ref: {input_ref:?}"))
 }
@@ -18,8 +18,8 @@ pub fn resolve_input(
 pub fn compute_ws_tree(
     transaction: &josh_core::cache::Transaction,
     filter_spec: &str,
-    source_commit: git2::Oid,
-) -> anyhow::Result<(git2::Oid, String)> {
+    source_commit: gix_hash::ObjectId,
+) -> anyhow::Result<(gix_hash::ObjectId, String)> {
     let full_filter = format!(":SQUASH{filter_spec}");
 
     let filterobj = josh_core::filter::parse(&full_filter)

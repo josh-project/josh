@@ -11,7 +11,8 @@ use std::collections::HashMap;
 const FLUSH_AFTER: usize = 1000;
 
 pub struct DistributedCacheBackend {
-    new_entries: std::sync::Mutex<HashMap<(Filter, u64), HashMap<git2::Oid, git2::Oid>>>,
+    new_entries:
+        std::sync::Mutex<HashMap<(Filter, u64), HashMap<gix_hash::ObjectId, gix_hash::ObjectId>>>,
     repo: std::sync::Mutex<git2::Repository>,
     // Whether this backend accepts writes. The default ([`Self::new`]) is read-only: regular
     // sessions consume the fetched cache but should not each grow the shard chains with a
@@ -30,7 +31,7 @@ pub struct DistributedCacheBackend {
     // in `mem_odb` only, so the refs are published exclusively by a forced flush, after a drain
     // has made every buffered object durable: a ref on disk must never point to objects that
     // only exist in memory.
-    pending_refs: std::sync::Mutex<HashMap<String, git2::Oid>>,
+    pending_refs: std::sync::Mutex<HashMap<String, gix_hash::ObjectId>>,
     // Filter -> persisted tree id (`as_tree`), used to name cache refs. `as_tree` resolves
     // insert OIDs, so ref names always reference persisted, reachable filter trees even when
     // the filter passed in still contains unresolved ones.
@@ -103,14 +104,11 @@ impl DistributedCacheBackend {
             }
             let rp = ref_path(self.tree_id(odb, *filter)?, *shard);
 
-            // Base the update on the newest unpublished commit for this ref when one exists:
-            // basing on the published tip would drop the entries of earlier unpublished
-            // batches.
+            // Include earlier unpublished batches.
             let base = if let Some(oid) = pending.get(&rp) {
                 Some(*oid)
             } else if let Ok(r) = repo.revparse_single(&rp) {
-                // PORT: resolves a ref -- stays on git2 until flag day.
-                Some(r.peel_to_commit()?.id())
+                Some(objects::gix_oid(r.peel_to_commit()?.id()))
             } else {
                 None
             };
@@ -119,7 +117,7 @@ impl DistributedCacheBackend {
             let root = match base {
                 Some(commit) => {
                     let tree = objects::CommitData::read(odb, commit)?.tree_id()?;
-                    gix_object::FindExt::find_tree(odb, &objects::gix_oid(tree), &mut buf)?.into()
+                    gix_object::FindExt::find_tree(odb, &tree, &mut buf)?.into()
                 }
                 None => gix_object::Tree::default(),
             };
@@ -132,7 +130,7 @@ impl DistributedCacheBackend {
             // in tree entries -- so it is encoded as a blob entry pointing at the empty blob;
             // the entry mode disambiguates on read.
             for (from, to) in &mut *m {
-                let (kind, target) = if *to == git2::Oid::ZERO_SHA1 {
+                let (kind, target) = if *to == gix_hash::ObjectId::null(gix_hash::Kind::Sha1) {
                     (
                         gix_object::tree::EntryKind::Blob,
                         objects::write_blob(odb, &[])?,
@@ -140,7 +138,7 @@ impl DistributedCacheBackend {
                 } else {
                     (gix_object::tree::EntryKind::Commit, *to)
                 };
-                editor.upsert(fanout(*from), kind, objects::gix_oid(target))?;
+                editor.upsert(fanout(*from), kind, target)?;
             }
 
             let updated = editor.write(|tree| {
@@ -151,7 +149,7 @@ impl DistributedCacheBackend {
             let signature = crate::git::josh_commit_signature()?;
             let commit = objects::write_commit(
                 odb,
-                objects::git2_oid(&updated),
+                updated,
                 base.as_slice(),
                 &signature,
                 &signature,
@@ -182,7 +180,7 @@ impl DistributedCacheBackend {
         self.mem_odb.flush()?;
 
         for (rp, commit) in pending.drain() {
-            repo.reference(&rp, commit, true, "cache")?;
+            repo.reference(&rp, objects::git2_oid(&commit), true, "cache")?;
         }
 
         Ok(())
@@ -213,7 +211,7 @@ fn ref_path(filter_tree_id: gix_hash::ObjectId, shard: u64) -> String {
 // rewrites subtrees that grow with the accumulated shard. A single 2-hex level goes quadratic on
 // dense shards for exactly that reason, while a third level only adds one more tree write per
 // entry without making any subtree meaningfully smaller.
-fn fanout(commit: git2::Oid) -> [gix_object::bstr::BString; 3] {
+fn fanout(commit: gix_hash::ObjectId) -> [gix_object::bstr::BString; 3] {
     let commit = commit.to_string();
     [commit[..2].into(), commit[2..5].into(), commit[5..].into()]
 }
@@ -222,10 +220,10 @@ impl CacheBackend for DistributedCacheBackend {
     fn read(
         &self,
         filter: Filter,
-        from: git2::Oid,
+        from: gix_hash::ObjectId,
         hint: HistoryGraphHint,
         tree_keyed: bool,
-    ) -> anyhow::Result<Option<git2::Oid>> {
+    ) -> anyhow::Result<Option<gix_hash::ObjectId>> {
         if filter == filter::sequence_number() || filter == filter::reachable_roots() {
             return Ok(None);
         }
@@ -252,21 +250,19 @@ impl CacheBackend for DistributedCacheBackend {
         let odb = self.odb.lock().unwrap();
         let odb = &*odb;
         let rp = ref_path(self.tree_id(odb, filter)?, shard);
-        // Flushed-but-unpublished entries live in a pending commit (see `flush`), not behind
-        // the ref yet; prefer it so in-process reads keep seeing everything ever flushed.
+        // Prefer unpublished entries from this process.
         let pending = self.pending_refs.lock().unwrap();
         let tree = if let Some(oid) = pending.get(&rp) {
             objects::CommitData::read(odb, *oid)?.tree_id()?
         } else if let Ok(r) = repo.revparse_single(&rp) {
-            // PORT: resolves a ref -- stays on git2 until flag day.
-            r.peel_to_tree()?.id()
+            objects::gix_oid(r.peel_to_tree()?.id())
         } else {
             return Ok(None);
         };
         std::mem::drop(pending);
 
         let mut buf = Vec::new();
-        let root = gix_object::FindExt::find_tree_iter(odb, &objects::gix_oid(tree), &mut buf)?;
+        let root = gix_object::FindExt::find_tree_iter(odb, &tree, &mut buf)?;
         let mut entry_buf = Vec::new();
         let entry = root
             .lookup_entry(odb, &mut entry_buf, fanout(from))
@@ -283,16 +279,16 @@ impl CacheBackend for DistributedCacheBackend {
         // Gitlink entries carry the target oid directly; any other mode is the empty-blob
         // encoding of `Oid::ZERO_SHA1` (see `flush`).
         if e.mode.kind() == gix_object::tree::EntryKind::Commit {
-            return Ok(Some(objects::git2_oid(&e.oid)));
+            return Ok(Some(e.oid));
         }
-        Ok(Some(git2::Oid::ZERO_SHA1))
+        Ok(Some(gix_hash::ObjectId::null(gix_hash::Kind::Sha1)))
     }
 
     fn write(
         &self,
         filter: Filter,
-        from: git2::Oid,
-        to: git2::Oid,
+        from: gix_hash::ObjectId,
+        to: gix_hash::ObjectId,
         hint: HistoryGraphHint,
         // Writes stay eligibility-gated for tree-keyed records too: subtrees recur
         // across commits, so a stable subtree is still caught at some sampled commit.

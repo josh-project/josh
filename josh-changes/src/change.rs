@@ -3,20 +3,21 @@ use crate::store::store_diff_data;
 use anyhow::{Context, anyhow};
 use josh_core::objects;
 use josh_core::trailers::{commit_change_meta, parse_change_meta};
+use std::str::FromStr;
 
 #[derive(Debug, Clone)]
 pub struct Change {
     pub(crate) author: String,
     pub(crate) id: Option<String>,
     pub(crate) series: Vec<String>,
-    pub(crate) commit: git2::Oid,
-    pub(crate) base: git2::Oid,
+    pub(crate) commit: gix_hash::ObjectId,
+    pub(crate) base: gix_hash::ObjectId,
 }
 
 impl Change {
     pub fn new(
         transaction: &josh_core::cache::Transaction,
-        commit: git2::Oid,
+        commit: gix_hash::ObjectId,
     ) -> anyhow::Result<Self> {
         Ok(Self::from_commit(&objects::CommitData::read(
             transaction.odb(),
@@ -35,7 +36,7 @@ impl Change {
             id: None,
             series: Vec::new(),
             commit: commit.id(),
-            base: git2::Oid::ZERO_SHA1,
+            base: gix_hash::ObjectId::null(gix_hash::Kind::Sha1),
         };
         let (id, series) = commit_change_meta(commit);
         change.id = id;
@@ -56,29 +57,31 @@ impl Change {
         &self.series
     }
 
-    pub fn commit(&self) -> git2::Oid {
+    pub fn commit(&self) -> gix_hash::ObjectId {
         self.commit
     }
 
-    pub fn base(&self) -> git2::Oid {
+    pub fn base(&self) -> gix_hash::ObjectId {
         self.base
     }
 
-    pub fn set_base(&mut self, base: git2::Oid) {
+    pub fn set_base(&mut self, base: gix_hash::ObjectId) {
         self.base = base;
     }
 
     pub fn contributing(
         &self,
         transaction: &josh_core::cache::Transaction,
-    ) -> anyhow::Result<Vec<git2::Oid>> {
+    ) -> anyhow::Result<Vec<gix_hash::ObjectId>> {
         // First-parent walk down to (but not including) the base.
         let odb = transaction.odb();
         let mut walk = objects::RevWalk::new(odb);
         walk.simplify_first_parent();
         walk.push(self.commit)?;
         let base = self.base;
-        let mut oids = walk.into_topo_vec(|oid| base != git2::Oid::ZERO_SHA1 && oid == base)?;
+        let mut oids = walk.into_topo_vec(|oid| {
+            base != gix_hash::ObjectId::null(gix_hash::Kind::Sha1) && oid == base
+        })?;
         oids.retain(|oid| *oid != base);
         if oids.first() == Some(&self.commit) {
             oids.remove(0);
@@ -96,10 +99,10 @@ pub fn encode_change_id_path(id: &str) -> String {
 /// merge needed). Author and committer are copied from the head commit.
 pub fn create_synthetic_merge_commit(
     transaction: &josh_core::cache::Transaction,
-    pr_head: git2::Oid,
-    target_branch_tip: git2::Oid,
+    pr_head: gix_hash::ObjectId,
+    target_branch_tip: gix_hash::ObjectId,
     message: &str,
-) -> anyhow::Result<git2::Oid> {
+) -> anyhow::Result<gix_hash::ObjectId> {
     let odb = transaction.odb();
     let head = objects::CommitData::read(odb, pr_head)?;
     let tree = head.tree_id()?;
@@ -115,17 +118,18 @@ pub fn create_synthetic_merge_commit(
 
 pub(crate) fn split_changes(
     transaction: &josh_core::cache::Transaction,
-    changes: std::collections::HashMap<git2::Oid, Change>,
+    changes: std::collections::HashMap<gix_hash::ObjectId, Change>,
 ) -> anyhow::Result<Vec<Change>> {
-    if changes.values().next().map(|c| c.base) == Some(git2::Oid::ZERO_SHA1) {
+    if changes.values().next().map(|c| c.base)
+        == Some(gix_hash::ObjectId::null(gix_hash::Kind::Sha1))
+    {
         return Ok(changes.into_values().collect());
     }
 
     changes
         .into_values()
         .map(|c| {
-            let filter =
-                josh_core::filter::Filter::new().downstack(josh_core::objects::gix_oid(c.base));
+            let filter = josh_core::filter::Filter::new().downstack(c.base);
             let new_oid = josh_core::filter::apply_to_commit(filter, c.commit, transaction)?;
             let mut result = c;
             result.commit = new_oid;
@@ -136,14 +140,16 @@ pub(crate) fn split_changes(
 
 pub(crate) fn get_changes(
     transaction: &josh_core::cache::Transaction,
-    tip: git2::Oid,
-    base: git2::Oid,
-) -> anyhow::Result<std::collections::HashMap<git2::Oid, Change>> {
+    tip: gix_hash::ObjectId,
+    base: gix_hash::ObjectId,
+) -> anyhow::Result<std::collections::HashMap<gix_hash::ObjectId, Change>> {
     let odb = transaction.odb();
     let mut walk = objects::RevWalk::new(odb);
     walk.simplify_first_parent();
     walk.push(tip)?;
-    let mut oids = walk.into_topo_vec(|oid| base != git2::Oid::ZERO_SHA1 && oid == base)?;
+    let mut oids = walk.into_topo_vec(|oid| {
+        base != gix_hash::ObjectId::null(gix_hash::Kind::Sha1) && oid == base
+    })?;
     oids.retain(|oid| *oid != base);
     oids.reverse();
 
@@ -163,8 +169,8 @@ pub(crate) fn get_changes(
 
 pub fn sync_changes(
     transaction: &josh_core::cache::Transaction,
-    tip: git2::Oid,
-    base: git2::Oid,
+    tip: gix_hash::ObjectId,
+    base: gix_hash::ObjectId,
     branch: &str,
 ) -> anyhow::Result<Vec<Change>> {
     let changes = get_changes(transaction, tip, base)?;
@@ -202,9 +208,11 @@ pub fn list_changes(
 
     let mut changes = Vec::new();
     for (change_id, data) in entries {
-        let tip_oid = git2::Oid::from_str(&data.commit).unwrap_or(git2::Oid::ZERO_SHA1);
-        let base_oid = git2::Oid::from_str(&data.base).unwrap_or(git2::Oid::ZERO_SHA1);
-        if tip_oid == git2::Oid::ZERO_SHA1 {
+        let tip_oid = gix_hash::ObjectId::from_str(&data.commit)
+            .unwrap_or(gix_hash::ObjectId::null(gix_hash::Kind::Sha1));
+        let base_oid = gix_hash::ObjectId::from_str(&data.base)
+            .unwrap_or(gix_hash::ObjectId::null(gix_hash::Kind::Sha1));
+        if tip_oid == gix_hash::ObjectId::null(gix_hash::Kind::Sha1) {
             continue;
         }
         let commit = match objects::CommitData::read(odb, tip_oid) {
@@ -223,12 +231,12 @@ pub fn list_changes(
 
 pub fn resolve_change(
     transaction: &josh_core::cache::Transaction,
-    head: git2::Oid,
+    head: gix_hash::ObjectId,
     spec: &str,
 ) -> anyhow::Result<Change> {
     let odb = transaction.odb();
     // Try as a full OID first.
-    if let Ok(oid) = git2::Oid::from_str(spec) {
+    if let Ok(oid) = gix_hash::ObjectId::from_str(spec) {
         if let Ok(commit) = objects::CommitData::read(odb, oid) {
             return Ok(Change::from_commit(&commit));
         }

@@ -4,6 +4,7 @@ use josh_core::git::josh_commit_signature;
 use josh_test_support::bench::{EntryKind, git2_oid, gix_oid};
 use rand::prelude::*;
 use std::path::{Path, PathBuf};
+use std::str::FromStr;
 
 // The sparse counterpart to the `deephistory_subdir` bench. Both apply a plain `:/dir_00` subdir
 // filter to the head of a long, fixed-width history, but this one makes the extracted subdir change
@@ -54,7 +55,7 @@ const JOSH_BENCH_COMMIT_TIME: &str = "1700000000";
 /// One history length and the head of its generated history.
 struct SizeCase {
     n_commits: usize,
-    head: git2::Oid,
+    head: gix_hash::ObjectId,
 }
 
 struct SubdirBench {
@@ -80,7 +81,8 @@ impl SubdirBench {
 
         let provisioned = josh_test_support::provision_repo::provision_repo(
             "deephistory_subdir_sparse",
-            &git2::Oid::from_str(EXPECTED_HEAD).expect("EXPECTED_HEAD must be a valid oid"),
+            &gix_hash::ObjectId::from_str(EXPECTED_HEAD)
+                .expect("EXPECTED_HEAD must be a valid oid"),
             |repo| {
                 let mut heads = vec![];
                 for &n_commits in HISTORY_SIZES {
@@ -99,7 +101,10 @@ impl SubdirBench {
             let repo = &provisioned.repo;
             for &n_commits in HISTORY_SIZES {
                 let head = repo.refname_to_id(&format!("refs/heads/case_{n_commits}"))?;
-                cases.push(SizeCase { n_commits, head });
+                cases.push(SizeCase {
+                    n_commits,
+                    head: gix_oid(head),
+                });
             }
         }
 
@@ -125,9 +130,9 @@ impl SubdirBench {
             // sees what is on disk.
             transaction.flush_mem_odb()?;
             let repo = transaction.git2_repo();
-            let filtered_tree = repo.find_commit(filtered)?.tree()?.id();
+            let filtered_tree = repo.find_commit(git2_oid(filtered))?.tree()?.id();
             let raw_subdir_tree = repo
-                .find_commit(case.head)?
+                .find_commit(git2_oid(case.head))?
                 .tree()?
                 .get_path(Path::new(SUBDIR))?
                 .id();
@@ -159,9 +164,9 @@ impl SubdirBench {
 }
 
 /// Number of commits reachable from `head`.
-fn count_history(repo: &git2::Repository, head: git2::Oid) -> anyhow::Result<usize> {
+fn count_history(repo: &git2::Repository, head: gix_hash::ObjectId) -> anyhow::Result<usize> {
     let mut walk = repo.revwalk()?;
-    walk.push(head)?;
+    walk.push(git2_oid(head))?;
     Ok(walk.count())
 }
 
@@ -180,7 +185,7 @@ fn random_string(rng: &mut StdRng, len: usize) -> String {
 /// `CHURN_PER_COMMIT` files outside it, and only with probability `SUBDIR_CHANGE_PROB` also touches a
 /// `dir_00` file. The tip is tagged `refs/heads/case_<n_commits>` so the head survives the cache
 /// round-trip.
-fn build_case(repo: &git2::Repository, n_commits: usize) -> anyhow::Result<git2::Oid> {
+fn build_case(repo: &git2::Repository, n_commits: usize) -> anyhow::Result<gix_hash::ObjectId> {
     use rand::RngExt;
 
     // Deterministic root tree: file `i` lives at `dir_{i % N_DIRS}/file_{i}`; split the paths into the
@@ -261,27 +266,30 @@ fn build_case(repo: &git2::Repository, n_commits: usize) -> anyhow::Result<git2:
         true,
         "bench case tip",
     )?;
-    Ok(head)
+    Ok(gix_oid(head))
 }
 
 /// Aggregate every case tip under one index commit so its oid is a content-addressed cache stamp for
 /// the whole repo and every case stays reachable through provision_repo's `git prune`. Never filtered.
-fn build_index(repo: &git2::Repository, heads: &[git2::Oid]) -> anyhow::Result<git2::Oid> {
+fn build_index(
+    repo: &git2::Repository,
+    heads: &[gix_hash::ObjectId],
+) -> anyhow::Result<gix_hash::ObjectId> {
     let sig = josh_commit_signature()?;
     let empty_tree = repo.find_tree(repo.treebuilder(None)?.write()?)?;
     let parents = heads
         .iter()
-        .map(|oid| repo.find_commit(*oid))
+        .map(|oid| repo.find_commit(git2_oid(*oid)))
         .collect::<Result<Vec<_>, _>>()?;
     let parent_refs = parents.iter().collect::<Vec<_>>();
-    Ok(repo.commit(
+    Ok(gix_oid(repo.commit(
         Some("refs/heads/bench-index"),
         &sig,
         &sig,
         "bench index",
         &empty_tree,
         &parent_refs,
-    )?)
+    )?))
 }
 
 fn deephistory_subdir_sparse(c: &mut Criterion) {

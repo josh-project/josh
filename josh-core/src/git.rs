@@ -1,6 +1,7 @@
 use anyhow::{Context, anyhow};
 use std::io::IsTerminal;
 use std::path::PathBuf;
+use std::str::FromStr;
 
 /// Resolve the `input_ref` argument to a commit OID.
 ///
@@ -13,7 +14,7 @@ use std::path::PathBuf;
 pub fn resolve_snapshot_input(
     transaction: &crate::cache::Transaction,
     input_ref: &str,
-) -> anyhow::Result<git2::Oid> {
+) -> anyhow::Result<gix_hash::ObjectId> {
     let repo = transaction.git2_repo();
     if input_ref == "+" || input_ref == "." {
         let mut index = repo.index()?;
@@ -30,14 +31,18 @@ pub fn resolve_snapshot_input(
         let sig = crate::git::josh_commit_signature()?;
         let head_commit = repo.head()?.peel_to_commit()?;
         let commit_oid = repo.commit(None, &sig, &sig, "WIP", &tree, &[&head_commit])?;
-        Ok(commit_oid)
-    } else if let Ok(oid) = git2::Oid::from_str(input_ref) {
-        Ok(repo.find_object(oid, None)?.peel_to_commit()?.id())
+        Ok(crate::objects::gix_oid(commit_oid))
+    } else if let Ok(oid) = gix_hash::ObjectId::from_str(input_ref) {
+        Ok(crate::objects::gix_oid(
+            repo.find_object(crate::objects::git2_oid(&oid), None)?
+                .peel_to_commit()?
+                .id(),
+        ))
     } else {
         let obj = repo
             .revparse_single(input_ref)
             .with_context(|| format!("could not resolve input: {:?}", input_ref))?;
-        Ok(obj.peel_to_commit()?.id())
+        Ok(crate::objects::gix_oid(obj.peel_to_commit()?.id()))
     }
 }
 
@@ -247,8 +252,11 @@ impl GitCommand {
 /// lines via `gix_object::CommitRefIter`. This avoids libgit2's commit parse cache (a
 /// lock-guarded global that also decodes author/committer/message) whenever a caller only
 /// needs the parent ids; memory-store hits are zero-copy.
-pub fn read_parent_ids(odb: &josh_memodb::Odb, oid: git2::Oid) -> anyhow::Result<Vec<git2::Oid>> {
-    let (kind, bytes) = odb.read(crate::objects::gix_oid(oid))?;
+pub fn read_parent_ids(
+    odb: &josh_memodb::Odb,
+    oid: gix_hash::ObjectId,
+) -> anyhow::Result<Vec<gix_hash::ObjectId>> {
+    let (kind, bytes) = odb.read(oid)?;
     // A hard error, not an assert: this is reachable from inside git2 callback frames,
     // where unwinding across the FFI boundary would abort.
     if kind != gix_object::Kind::Commit {
@@ -258,16 +266,20 @@ pub fn read_parent_ids(odb: &josh_memodb::Odb, oid: git2::Oid) -> anyhow::Result
             kind
         ));
     }
-    gix_object::CommitRefIter::from_bytes(&bytes, gix_hash::Kind::Sha1)
-        .parent_ids()
-        .map(|p| Ok(git2::Oid::from_bytes(p.as_bytes())?))
-        .collect()
+    Ok(
+        gix_object::CommitRefIter::from_bytes(&bytes, gix_hash::Kind::Sha1)
+            .parent_ids()
+            .collect(),
+    )
 }
 
 /// Sibling of [`read_parent_ids`]: read a commit's tree OID without touching libgit2's
 /// commit parse cache.
-pub fn read_tree_id(odb: &josh_memodb::Odb, oid: git2::Oid) -> anyhow::Result<git2::Oid> {
-    let (kind, bytes) = odb.read(crate::objects::gix_oid(oid))?;
+pub fn read_tree_id(
+    odb: &josh_memodb::Odb,
+    oid: gix_hash::ObjectId,
+) -> anyhow::Result<gix_hash::ObjectId> {
+    let (kind, bytes) = odb.read(oid)?;
     // Same hard-error rationale as read_parent_ids.
     if kind != gix_object::Kind::Commit {
         return Err(anyhow::anyhow!(
@@ -276,8 +288,7 @@ pub fn read_tree_id(odb: &josh_memodb::Odb, oid: git2::Oid) -> anyhow::Result<gi
             kind
         ));
     }
-    let tree_id = gix_object::CommitRefIter::from_bytes(&bytes, gix_hash::Kind::Sha1).tree_id()?;
-    Ok(git2::Oid::from_bytes(tree_id.as_bytes())?)
+    Ok(gix_object::CommitRefIter::from_bytes(&bytes, gix_hash::Kind::Sha1).tree_id()?)
 }
 
 #[cfg(test)]
@@ -289,14 +300,19 @@ mod tests {
         let sig = git2::Signature::new("t", "t@example.com", &git2::Time::new(0, 0)).unwrap();
         let tree_id = repo.treebuilder(None).unwrap().write().unwrap();
         let tree = repo.find_tree(tree_id).unwrap();
-        let commit_id = repo.commit(None, &sig, &sig, "test", &tree, &[]).unwrap();
+        let commit_id =
+            crate::objects::gix_oid(repo.commit(None, &sig, &sig, "test", &tree, &[]).unwrap());
 
         let objects_dir = repo.commondir().join("objects");
         let store = josh_memodb::MemOdb::new(None, objects_dir.clone());
         let odb = josh_memodb::Odb::at(store, &objects_dir).unwrap();
         assert_eq!(
             super::read_tree_id(&odb, commit_id).unwrap(),
-            repo.find_commit(commit_id).unwrap().tree_id()
+            crate::objects::gix_oid(
+                repo.find_commit(crate::objects::git2_oid(&commit_id))
+                    .unwrap()
+                    .tree_id()
+            )
         );
     }
 }

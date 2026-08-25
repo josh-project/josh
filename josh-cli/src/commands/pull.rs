@@ -39,7 +39,7 @@ pub enum IntegrateReport {
     },
 }
 
-fn short_oid(oid: git2::Oid) -> String {
+fn short_oid(oid: gix_hash::ObjectId) -> String {
     oid.to_string()[..7].to_string()
 }
 
@@ -47,7 +47,10 @@ fn short_oid(oid: git2::Oid) -> String {
 /// Used as an opportunistic content hash: a change that was merely restacked
 /// (rebased without content edits) keeps its patch-id even though the commit
 /// and tree oids all change.
-fn patch_id(transaction: &josh_core::cache::Transaction, oid: git2::Oid) -> anyhow::Result<String> {
+fn patch_id(
+    transaction: &josh_core::cache::Transaction,
+    oid: gix_hash::ObjectId,
+) -> anyhow::Result<String> {
     let output = transaction
         .git_command(
             &[
@@ -95,8 +98,8 @@ fn patch_id(transaction: &josh_core::cache::Transaction, oid: git2::Oid) -> anyh
 /// changed). Without a transaction (tests), every update counts as changed.
 fn change_content_changed(
     transaction: Option<&josh_core::cache::Transaction>,
-    old: git2::Oid,
-    new: git2::Oid,
+    old: gix_hash::ObjectId,
+    new: gix_hash::ObjectId,
 ) -> bool {
     let Some(transaction) = transaction else {
         return true;
@@ -228,20 +231,24 @@ fn resolve_upstream_ref(
 /// commits (e.g. by a merge queue) are detected as well.
 fn upstream_change_ids(
     transaction: &josh_core::cache::Transaction,
-    tip: git2::Oid,
-    base: git2::Oid,
+    tip: gix_hash::ObjectId,
+    base: gix_hash::ObjectId,
 ) -> anyhow::Result<std::collections::HashSet<String>> {
-    let repo = transaction.git2_repo();
     let odb = transaction.odb();
-    let mut ids = std::collections::HashSet::new();
-    let mut walk = repo.revwalk()?;
-    walk.push(tip)?;
-    if base != git2::Oid::ZERO_SHA1 {
-        walk.hide(base)?;
-    }
+    let commits = if base.is_null() {
+        let mut walk = josh_core::objects::RevWalk::new(odb);
+        walk.push(tip)?;
+        walk.into_topo_vec(|_| false)?
+    } else {
+        josh_core::objects::RangeWalk::new(odb, |oid| {
+            josh_core::cache::compute_sequence_number(transaction, oid)
+        })
+        .into_topo_vec(tip, base)?
+    };
 
-    for oid in walk {
-        let commit = josh_core::objects::CommitData::read(odb, oid?)?;
+    let mut ids = std::collections::HashSet::new();
+    for oid in commits {
+        let commit = josh_core::objects::CommitData::read(odb, oid)?;
         if let (Some(id), _) = commit_change_meta(&commit) {
             ids.insert(id);
         }
@@ -254,9 +261,9 @@ fn upstream_change_ids(
 /// Bails out on conflicts without writing any refs.
 fn restack_commits(
     transaction: &josh_core::cache::Transaction,
-    tip: git2::Oid,
-    commits: &[git2::Oid],
-) -> anyhow::Result<(git2::Oid, usize)> {
+    tip: gix_hash::ObjectId,
+    commits: &[gix_hash::ObjectId],
+) -> anyhow::Result<(gix_hash::ObjectId, usize)> {
     use josh_core::objects::CommitData;
 
     let odb = transaction.odb();
@@ -351,24 +358,21 @@ pub fn integrate(
     let (new_tip, report) = if merge_base == old {
         (new, IntegrateReport::FastForward { branch })
     } else {
-        // Diverged: collect the local-only commits (linear stack expected).
-        let mut walk = repo.revwalk()?;
-        walk.set_sorting(git2::Sort::TOPOLOGICAL | git2::Sort::REVERSE)?;
-        walk.simplify_first_parent()?;
+        let odb = transaction.odb();
+        let mut walk = josh_core::objects::RevWalk::new(odb);
+        walk.simplify_first_parent();
         walk.push(old)?;
-        walk.hide(merge_base)?;
+        let mut local_commits = walk.into_topo_vec(|oid| oid == merge_base)?;
+        local_commits.reverse();
 
-        let mut local_commits = Vec::new();
-        for oid in walk {
-            let oid = oid?;
-            let commit = josh_core::objects::CommitData::read(transaction.odb(), oid)?;
-            if commit.parent_ids().count() > 1 {
+        for &oid in &local_commits {
+            let commit = josh_core::objects::CommitData::read(odb, oid)?;
+            if commit.parent_count() > 1 {
                 anyhow::bail!(
                     "local branch '{}' contains merge commits; cannot integrate automatically",
                     branch
                 );
             }
-            local_commits.push(oid);
         }
 
         let applied = upstream_change_ids(transaction, new, merge_base)?;
@@ -379,11 +383,7 @@ pub fn integrate(
             let commit = josh_core::objects::CommitData::read(transaction.odb(), oid)?;
             match commit_change_meta(&commit) {
                 (Some(id), _) if applied.contains(&id) => skipped.push(id),
-                // A commit with a Change-Id not yet applied upstream, or one
-                // without a Change-Id at all, is a local-only commit we keep and
-                // restack. A missing Change-Id just means we cannot match it
-                // against the upstream stack; restacking cherry-picks it on top
-                // and drops it if its content already landed (becomes empty).
+                // Keep unmatched commits; restacking drops content that already landed.
                 _ => remaining.push(oid),
             }
         }
@@ -409,7 +409,7 @@ pub fn integrate(
 
     // Update the worktree first (safe: refuses to clobber conflicting local
     // modifications), only then move the branch ref.
-    let new_tip_commit = repo.find_commit(new_tip)?;
+    let new_tip_commit = repo.find_commit(josh_core::objects::git2_oid(&new_tip))?;
     repo.checkout_tree(
         new_tip_commit.as_object(),
         Some(git2::build::CheckoutBuilder::new().safe()),
@@ -529,12 +529,13 @@ pub fn handle_pull(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::str::FromStr;
 
     const OID_A: &str = "af180e6da554e60815593af48d419ac0e719c47a";
     const OID_B: &str = "2bf1cefd82c96e5d7478ff834c59194d40e539c4";
 
-    fn oid(s: &str) -> git2::Oid {
-        git2::Oid::from_str(s).unwrap()
+    fn oid(s: &str) -> gix_hash::ObjectId {
+        gix_hash::ObjectId::from_str(s).unwrap()
     }
 
     fn fast_forward(old: &str, new: &str, reference: &str) -> RefUpdate {
@@ -550,6 +551,46 @@ mod tests {
             new: oid(new),
             reference: reference.to_string(),
         }
+    }
+
+    #[test]
+    fn upstream_change_ids_walks_every_parent_between_base_and_tip() {
+        let dir = tempfile::tempdir().unwrap();
+        git2::Repository::init_bare(dir.path()).unwrap();
+        let context = josh_core::cache::TransactionContext::new(
+            dir.path(),
+            std::sync::Arc::new(josh_core::cache::CacheStack::new()),
+        );
+        let transaction = context.open().unwrap();
+        let signature =
+            git2::Signature::new("Test", "test@example.com", &git2::Time::new(0, 0)).unwrap();
+        let commit = |parents: &[gix_hash::ObjectId], change: Option<&str>| {
+            let message = change
+                .map(|id| format!("Subject\n\nChange: {id}\n"))
+                .unwrap_or_else(|| "Root".to_string());
+            josh_core::objects::write_commit(
+                transaction.odb(),
+                gix_hash::ObjectId::empty_tree(gix_hash::Kind::Sha1),
+                parents,
+                &signature,
+                &signature,
+                &message,
+            )
+            .unwrap()
+        };
+
+        let root = commit(&[], None);
+        let left = commit(&[root], Some("left"));
+        let right = commit(&[root], Some("right"));
+        let merge = commit(&[left, right], Some("merge"));
+
+        assert_eq!(
+            upstream_change_ids(&transaction, merge, root).unwrap(),
+            ["left", "right", "merge"]
+                .map(String::from)
+                .into_iter()
+                .collect()
+        );
     }
 
     #[test]

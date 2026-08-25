@@ -23,7 +23,7 @@ use starlark::{
 /// The evaluation is synchronous; no threads are spawned and no values escape.
 pub fn evaluate(
     script: &str,
-    tree_oid: git2::Oid,
+    tree_oid: gix_hash::ObjectId,
     objects: &dyn gix_object::Find,
 ) -> anyhow::Result<Filter> {
     // Parse the starlark script

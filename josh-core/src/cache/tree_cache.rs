@@ -18,29 +18,14 @@ impl std::ops::Deref for TreeBytes {
     }
 }
 
-/// Cache key routing the oid digest into [`PassthroughHasher`]'s single-`write` path:
-/// `git2::Oid`'s own `Hash` impl hashes its bytes as a slice, whose `write_usize` length
-/// prefix the hasher rejects.
-#[derive(PartialEq, Eq)]
-struct OidKey(git2::Oid);
+type OidMap<V> =
+    std::collections::HashMap<gix_hash::ObjectId, V, BuildHasherDefault<PassthroughHasher>>;
+type OidSet = std::collections::HashSet<gix_hash::ObjectId, BuildHasherDefault<PassthroughHasher>>;
 
-impl std::hash::Hash for OidKey {
-    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-        state.write(self.0.as_bytes());
-    }
-}
-
-type OidMap<V> = std::collections::HashMap<OidKey, V, BuildHasherDefault<PassthroughHasher>>;
-type OidSet = std::collections::HashSet<OidKey, BuildHasherDefault<PassthroughHasher>>;
-
-/// Per-transaction cache of raw tree bytes, standing in for the parsed-object cache libgit2
-/// kept behind `find_tree` (which the gix-object tree ops no longer go through). See
-/// [`super::Transaction::read_tree_bytes`] for the read path.
+/// Raw tree bytes cached after their second read.
 ///
-/// Policy: a tree is only copied into the cache on its second read
-/// ([`should_promote`](Self::should_promote)), so once-read trees cost nothing extra; trees are
-/// content-addressed so cached entries never go stale; the cache is dropped wholesale when it
-/// outgrows [`LIMIT`](Self::LIMIT).
+/// Entries never go stale because trees are content-addressed. The cache resets when it
+/// exceeds [`LIMIT`](Self::LIMIT).
 #[derive(Default)]
 pub(crate) struct TreeCache {
     map: OidMap<std::sync::Arc<[u8]>>,
@@ -51,23 +36,22 @@ pub(crate) struct TreeCache {
 impl TreeCache {
     const LIMIT: usize = 64 * 1024 * 1024;
 
-    pub(crate) fn get(&self, oid: git2::Oid) -> Option<std::sync::Arc<[u8]>> {
-        self.map.get(&OidKey(oid)).cloned()
+    pub(crate) fn get(&self, oid: gix_hash::ObjectId) -> Option<std::sync::Arc<[u8]>> {
+        self.map.get(&oid).cloned()
     }
 
-    /// Whether `oid` is being read for the second time and should be copied into the cache
-    /// now; the first read is only recorded, so it can hand out the odb's buffer as it is.
-    pub(crate) fn should_promote(&mut self, oid: git2::Oid) -> bool {
-        !self.seen.insert(OidKey(oid))
+    /// Return true from the second read onward.
+    pub(crate) fn should_promote(&mut self, oid: gix_hash::ObjectId) -> bool {
+        !self.seen.insert(oid)
     }
 
-    pub(crate) fn insert(&mut self, oid: git2::Oid, bytes: std::sync::Arc<[u8]>) {
+    pub(crate) fn insert(&mut self, oid: gix_hash::ObjectId, bytes: std::sync::Arc<[u8]>) {
         if self.bytes > Self::LIMIT {
             self.map.clear();
             self.bytes = 0;
         }
         self.bytes += bytes.len();
-        self.map.insert(OidKey(oid), bytes);
+        self.map.insert(oid, bytes);
     }
 }
 
@@ -75,12 +59,10 @@ impl TreeCache {
 mod tests {
     use super::*;
 
-    fn oid(n: u8) -> git2::Oid {
-        git2::Oid::from_bytes(&[n; 20]).unwrap()
+    fn oid(n: u8) -> gix_hash::ObjectId {
+        gix_hash::ObjectId::from_bytes_or_panic(&[n; 20])
     }
 
-    // The first read is only recorded; the second read promotes, and only then does the cache
-    // hold the bytes.
     #[test]
     fn promotes_on_second_read_only() {
         let mut cache = TreeCache::default();
@@ -91,8 +73,6 @@ mod tests {
         assert_eq!(&*cache.get(oid(1)).unwrap(), b"tree bytes");
     }
 
-    // Growing past the budget drops the whole cache before the next insert, which itself
-    // stays cached.
     #[test]
     fn clears_wholesale_over_limit() {
         let mut cache = TreeCache::default();

@@ -31,8 +31,8 @@ impl CacheStack {
     pub fn write_all(
         &self,
         filter: filter::Filter,
-        from: git2::Oid,
-        to: git2::Oid,
+        from: gix_hash::ObjectId,
+        to: gix_hash::ObjectId,
         hint: HistoryGraphHint,
         tree_keyed: bool,
     ) -> anyhow::Result<()> {
@@ -66,10 +66,10 @@ impl CacheStack {
     pub fn read_propagate(
         &self,
         filter: filter::Filter,
-        from: git2::Oid,
+        from: gix_hash::ObjectId,
         hint: HistoryGraphHint,
         tree_keyed: bool,
-    ) -> anyhow::Result<Option<git2::Oid>> {
+    ) -> anyhow::Result<Option<gix_hash::ObjectId>> {
         let values = self
             .backends
             .iter()

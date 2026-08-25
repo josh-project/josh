@@ -33,12 +33,12 @@ pub fn random_string(rng: &mut StdRng, len: usize) -> String {
 pub fn build_index(
     repo: &git2::Repository,
     sig: &git2::Signature,
-    heads: &[git2::Oid],
-) -> Result<git2::Oid> {
+    heads: &[gix::ObjectId],
+) -> Result<gix::ObjectId> {
     let empty_tree = repo.find_tree(repo.treebuilder(None)?.write()?)?;
     let parents = heads
         .iter()
-        .map(|oid| repo.find_commit(*oid))
+        .map(|oid| repo.find_commit(git2_oid(*oid)))
         .collect::<Result<Vec<_>, _>>()?;
     let parent_refs = parents.iter().collect::<Vec<_>>();
     let index = repo.commit(
@@ -49,7 +49,7 @@ pub fn build_index(
         &empty_tree,
         &parent_refs,
     )?;
-    Ok(index)
+    Ok(gix_oid(index))
 }
 
 /// Rebuild, with plain git2 tree walking (no josh code), the tree a pattern filter must produce:
@@ -60,10 +60,10 @@ pub fn build_index(
 /// `require_literal_leading_dot`; a glob-based predicate is exact regardless).
 pub fn expected_tree(
     repo: &git2::Repository,
-    head: git2::Oid,
+    head: gix::ObjectId,
     keep: &dyn Fn(&str) -> bool,
-) -> Result<(git2::Oid, usize)> {
-    let tree = repo.find_commit(head)?.tree()?;
+) -> Result<(gix::ObjectId, usize)> {
+    let tree = repo.find_commit(git2_oid(head))?.tree()?;
     let mut kept: Vec<(String, git2::Oid, i32)> = vec![];
     tree.walk(git2::TreeWalkMode::PreOrder, |root, entry| {
         if entry.kind() == Some(git2::ObjectType::Blob) {
@@ -85,5 +85,5 @@ pub fn expected_tree(
         };
         builder.upsert(path.as_str(), mode, gix_oid(*oid))?;
     }
-    Ok((git2_oid(builder.write()?.detach()), kept.len()))
+    Ok((builder.write()?.detach(), kept.len()))
 }

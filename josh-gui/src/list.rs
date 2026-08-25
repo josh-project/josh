@@ -45,8 +45,8 @@ pub fn ListView(
     mut page: Signal<Page>,
     mut selected_change: Signal<Option<String>>,
 ) -> Element {
-    let changes_ref_oid = use_context::<Signal<Option<git2::Oid>>>();
-    let mut prev_metadata_oid = use_signal(|| None::<Option<git2::Oid>>);
+    let changes_ref_oid = use_context::<Signal<Option<gix_hash::ObjectId>>>();
+    let mut prev_metadata_oid = use_signal(|| None::<Option<gix_hash::ObjectId>>);
 
     {
         let scope_for_meta = scope.clone();
@@ -325,7 +325,9 @@ pub fn load_rows(scope: &josh_changes::ChangesRef) -> anyhow::Result<ListData> {
     let mut dependencies: HashMap<String, Vec<String>> = HashMap::new();
 
     for change in &changes {
-        let commit = transaction.git2_repo().find_commit(change.commit())?;
+        let commit = transaction
+            .git2_repo()
+            .find_commit(josh_core::objects::git2_oid(&change.commit()))?;
         let subject = commit
             .message()
             .unwrap_or("")

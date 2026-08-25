@@ -4205,6 +4205,7 @@ dependencies = [
  "anyhow",
  "chrono",
  "git2",
+ "gix-hash",
  "josh-core",
  "josh-git-serde",
  "serde",
@@ -4319,7 +4320,7 @@ name = "josh-github-changes"
 version = "26.7.28"
 dependencies = [
  "anyhow",
- "git2",
+ "gix-hash",
  "josh-changes",
  "josh-core",
  "josh-git-serde",
@@ -4351,7 +4352,7 @@ version = "26.7.28"
 dependencies = [
  "anyhow",
  "async-trait",
- "git2",
+ "gix-hash",
  "graphql_client",
  "http",
  "josh-github-auth",
@@ -4409,6 +4410,7 @@ dependencies = [
  "clap",
  "dioxus",
  "git2",
+ "gix-hash",
  "josh-changes",
  "josh-core",
  "josh-github-changes",
@@ -4438,7 +4440,6 @@ name = "josh-search"
 version = "26.7.28"
 dependencies = [
  "anyhow",
- "git2",
  "gix-hash",
  "gix-object",
 ]
@@ -4449,7 +4450,7 @@ version = "26.7.28"
 dependencies = [
  "allocative",
  "anyhow",
- "git2",
+ "gix-hash",
  "gix-object",
  "josh-filter",
  "josh-gix-ext",

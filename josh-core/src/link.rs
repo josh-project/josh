@@ -1,6 +1,6 @@
 pub fn find_link_files(
     src: &impl gix_object::Find,
-    tree: git2::Oid,
+    tree: gix_hash::ObjectId,
 ) -> anyhow::Result<Vec<(std::path::PathBuf, crate::filter::Filter)>> {
     use crate::filter;
     use crate::objects;

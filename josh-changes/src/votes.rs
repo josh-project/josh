@@ -190,7 +190,13 @@ pub fn delete_outbox_votes(
             tree::get_path_entry(transaction, odb, tree, &path),
             Ok(Some(_))
         ) {
-            tree = tree::insert_oid(odb, tree, &path, git2::Oid::ZERO_SHA1, 0)?;
+            tree = tree::insert_oid(
+                odb,
+                tree,
+                &path,
+                gix_hash::ObjectId::null(gix_hash::Kind::Sha1),
+                0,
+            )?;
             removed += 1;
         }
     }

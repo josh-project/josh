@@ -20,7 +20,7 @@ pub struct ProvisionedRepo {
     pub repo: git2::Repository,
     /// The head oid the callback produced (always equal to the `expected` that
     /// was passed to [`provision_repo`]).
-    pub head: git2::Oid,
+    pub head: gix::ObjectId,
 }
 
 impl ProvisionedRepo {
@@ -46,11 +46,11 @@ impl ProvisionedRepo {
 /// new `expected`.
 pub fn provision_repo<C>(
     testcase: &str,
-    expected: &git2::Oid,
+    expected: &gix::ObjectId,
     callback: C,
 ) -> Result<ProvisionedRepo>
 where
-    C: FnMut(&git2::Repository) -> Result<git2::Oid>,
+    C: FnMut(&git2::Repository) -> Result<gix::ObjectId>,
 {
     let expected = *expected;
     let cache_root = cache_root_for(testcase)?;
@@ -71,17 +71,19 @@ fn cache_root_for(testcase: &str) -> Result<PathBuf> {
 }
 
 /// A cached repo is reusable if it opens as a bare repo and contains `expected`.
-fn cache_hit(cache_root: &Path, expected: git2::Oid) -> bool {
+fn cache_hit(cache_root: &Path, expected: gix::ObjectId) -> bool {
     let Ok(repo) = git2::Repository::open_bare(cache_root) else {
         return false;
     };
-    repo.odb().map(|odb| odb.exists(expected)).unwrap_or(false)
+    repo.odb()
+        .map(|odb| odb.exists(crate::bench::git2_oid(expected)))
+        .unwrap_or(false)
 }
 
 /// Build `testcase` from scratch into `cache_root`, erasing any prior cache.
-fn rebuild<C>(cache_root: &Path, expected: git2::Oid, callback: &mut C) -> Result<()>
+fn rebuild<C>(cache_root: &Path, expected: gix::ObjectId, callback: &mut C) -> Result<()>
 where
-    C: FnMut(&git2::Repository) -> Result<git2::Oid>,
+    C: FnMut(&git2::Repository) -> Result<gix::ObjectId>,
 {
     if cache_root.exists() {
         std::fs::remove_dir_all(cache_root)
@@ -130,7 +132,7 @@ where
 }
 
 /// Copy the canonical cached repo into a fresh tempdir and open it.
-fn copy_to_tempdir(cache_root: &Path, expected: git2::Oid) -> Result<ProvisionedRepo> {
+fn copy_to_tempdir(cache_root: &Path, expected: gix::ObjectId) -> Result<ProvisionedRepo> {
     let tmp = tempfile::tempdir().context("creating tempdir for repo copy")?;
     copy_dir_recursive(cache_root, tmp.path())
         .with_context(|| format!("copying {} to tempdir", cache_root.display()))?;
