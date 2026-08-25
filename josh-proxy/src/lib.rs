@@ -16,18 +16,12 @@ pub(crate) const MAX_MEM_PACK_SIZE: usize = 128 * 1024 * 1024;
 
 use crate::http::{IntoRetryable, RetryableError};
 use crate::upstream::RemoteAuth;
-use josh_core;
 
 josh_core::regex_parsed!(
     FilteredRepoUrl,
     r"(?P<api>/~/\w+)?(?P<upstream_repo>/[^:!]*[.]git)(?P<headref>[\^@][^:!]*)?((?P<filter_spec>[:!].*)[.]git)?(?P<pathinfo>/.*)?(?P<rest>.*)",
     [api, upstream_repo, filter_spec, pathinfo, headref, rest]
 );
-
-#[derive(serde::Serialize, serde::Deserialize, Debug, Clone, Default)]
-pub struct Ref {
-    pub target: josh_core::Oid,
-}
 
 fn make_ssh_command() -> String {
     let ssh_options = [
