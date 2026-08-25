@@ -124,7 +124,8 @@ pub(crate) fn split_changes(
     changes
         .into_values()
         .map(|c| {
-            let filter = josh_core::filter::Filter::new().downstack(c.base);
+            let filter =
+                josh_core::filter::Filter::new().downstack(josh_core::objects::gix_oid(c.base));
             let new_oid = josh_core::filter::apply_to_commit(filter, c.commit, transaction)?;
             let mut result = c;
             result.commit = new_oid;

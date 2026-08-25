@@ -12,7 +12,7 @@ use crate::op::{InsertContent, LazyRef, Op, Regex, RevMatch};
 /// most once, on demand, via `Filter::id`/`build_node_oid` — never during `to_filter`.
 pub(crate) struct Node {
     pub(crate) op: Op,
-    pub(crate) oid: OnceLock<git2::Oid>,
+    pub(crate) oid: OnceLock<gix_hash::ObjectId>,
 }
 
 /// Canonicalizes each `Op` to a single interned node by structural equality, so equal `Op`s
@@ -121,7 +121,7 @@ impl<'a> InMemoryBuilder<'a> {
         self.persist_ids
             .get(&filter)
             .copied()
-            .unwrap_or_else(|| gix_hash::ObjectId::from_bytes_or_panic(filter.id().as_bytes()))
+            .unwrap_or_else(|| filter.id())
     }
 
     fn write_blob(&mut self, data: &[u8]) -> gix_hash::ObjectId {
@@ -403,7 +403,7 @@ impl<'a> InMemoryBuilder<'a> {
                     InsertContent::Oid(oid) => {
                         if let Some(src) = self.src {
                             let kind = src
-                                .try_header(&josh_gix_ext::gix_oid(*oid))
+                                .try_header(oid.as_ref())
                                 .map_err(|e| anyhow!("insert: object {}: {}", oid, e))?
                                 .map(|header| header.kind);
                             let mode = match kind {
@@ -426,7 +426,7 @@ impl<'a> InMemoryBuilder<'a> {
                                 gix_object::tree::Entry {
                                     mode: mode.into(),
                                     filename: BString::from("o"),
-                                    oid: gix_hash::ObjectId::from_bytes_or_panic(oid.as_bytes()),
+                                    oid: *oid,
                                 },
                             ];
                             self.write_tree(gix_object::Tree { entries })
@@ -594,17 +594,16 @@ pub fn to_filter(op: Op) -> Filter {
 /// Materialize a node's content OID, building its tree (and, recursively via `build_op`'s child
 /// `Filter::id` calls, its children's). Called only from `Filter::id`, never on the optimizer
 /// hot path.
-pub(crate) fn build_node_oid(node: &'static Node) -> git2::Oid {
+pub(crate) fn build_node_oid(node: &'static Node) -> gix_hash::ObjectId {
     let mut builder = InMemoryBuilder::new(None);
-    let tree_id = builder.build_op(&node.op).expect("failed to build op");
-    git2::Oid::from_bytes(tree_id.as_bytes()).unwrap()
+    builder.build_op(&node.op).expect("failed to build op")
 }
 
 /// Construct a sentinel filter: a unique leaked node whose OID is pre-seeded to `oid` (so it
 /// never goes through `build_op`) and whose op is `Nop`. Sentinels bypass interning, so each
 /// is a distinct node — pointer-identity equality keeps them distinct from the real `Nop`
 /// filter and from each other, while `to_op_ref` still yields `Nop`.
-pub(crate) fn sentinel(oid: git2::Oid) -> Filter {
+pub(crate) fn sentinel(oid: gix_hash::ObjectId) -> Filter {
     let node: &'static Node = Box::leak(Box::new(Node {
         op: Op::Nop,
         oid: OnceLock::new(),
@@ -637,10 +636,10 @@ impl<'a> InMemoryBuilder<'a> {
         let oid = if dirty {
             self.build_op(op)?
         } else {
-            if !out.exists(&josh_gix_ext::gix_oid(filter.id())) {
+            if !out.exists(filter.id().as_ref()) {
                 self.build_op(op)?;
             }
-            gix_hash::ObjectId::from_bytes_or_panic(filter.id().as_bytes())
+            filter.id()
         };
         self.persist_ids.insert(filter, oid);
         Ok(oid)
@@ -650,12 +649,11 @@ impl<'a> InMemoryBuilder<'a> {
 pub fn as_tree(
     out: &(impl gix_object::FindHeader + gix_object::Exists + gix_object::Write),
     filter: Filter,
-) -> anyhow::Result<git2::Oid> {
+) -> anyhow::Result<gix_hash::ObjectId> {
     let filter = crate::opt::optimize(filter);
 
     let mut builder = InMemoryBuilder::new(Some(out));
     let root_oid = builder.build_persist(out, filter)?;
-    let root_oid = git2::Oid::from_bytes(root_oid.as_bytes())?;
 
     builder.staging.flush(out)?;
 
@@ -755,8 +753,11 @@ impl Blob {
     }
 }
 
-pub fn from_tree(src: &impl gix_object::Find, tree_oid: git2::Oid) -> anyhow::Result<Filter> {
-    Ok(to_filter(from_tree2(src, josh_gix_ext::gix_oid(tree_oid))?))
+pub fn from_tree(
+    src: &impl gix_object::Find,
+    tree_oid: gix_hash::ObjectId,
+) -> anyhow::Result<Filter> {
+    Ok(to_filter(from_tree2(src, tree_oid)?))
 }
 
 fn from_tree2(src: &impl gix_object::Find, tree_oid: gix_hash::ObjectId) -> anyhow::Result<Op> {
@@ -918,7 +919,7 @@ fn from_tree2(src: &impl gix_object::Find, tree_oid: gix_hash::ObjectId) -> anyh
             if let Some(obj_entry) = inner.get_name("o") {
                 return Ok(Op::Insert(
                     std::path::PathBuf::from(path),
-                    InsertContent::Oid(josh_gix_ext::git2_oid(&obj_entry.id())),
+                    InsertContent::Oid(obj_entry.id()),
                 ));
             }
             let kind_blob = Blob::read(
@@ -1182,7 +1183,10 @@ fn from_tree2(src: &impl gix_object::Find, tree_oid: gix_hash::ObjectId) -> anyh
                 // Parse match operator from key
                 let (match_op, lazy_ref) = if key == "_" {
                     // Default filter - no SHA needed
-                    (RevMatch::Default, LazyRef::Resolved(git2::Oid::ZERO_SHA1))
+                    (
+                        RevMatch::Default,
+                        LazyRef::Resolved(gix_hash::ObjectId::null(gix_hash::Kind::Sha1)),
+                    )
                 } else if let Some(ref_str) = key.strip_prefix("<=") {
                     (RevMatch::AncestorInclusive, LazyRef::parse(ref_str)?)
                 } else if let Some(ref_str) = key.strip_prefix('<') {

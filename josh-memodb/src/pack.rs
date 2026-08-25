@@ -6,6 +6,7 @@
 //! on disk are filtered out first, so a pack contains only genuinely-new objects and the on-disk
 //! layout stays deterministic.
 
+use anyhow::Context;
 use std::io::{Seek, Write};
 use std::path::Path;
 use std::sync::atomic::AtomicBool;
@@ -34,8 +35,7 @@ pub(crate) fn write_snapshot(objects_dir: &Path, snapshot: &Snapshot) -> anyhow:
     // the expected case below, and the default refresh mode re-lists the pack directory on every
     // miss — disable it; the first lookup still loads all indices present now, and loose-object
     // probes stat the filesystem directly either way.
-    let mut odb = gix_odb::at(objects_dir.to_owned())
-        .map_err(|e| anyhow::anyhow!("mem-odb pack write failed: {e}"))?;
+    let mut odb = gix_odb::at(objects_dir.to_owned()).context("mem-odb pack write failed")?;
     odb.refresh = gix_odb::store::RefreshMode::Never;
 
     let to_pack: Vec<_> = snapshot
@@ -46,12 +46,10 @@ pub(crate) fn write_snapshot(objects_dir: &Path, snapshot: &Snapshot) -> anyhow:
     if to_pack.is_empty() {
         return Ok(());
     }
-    let num_entries = u32::try_from(to_pack.len())
-        .map_err(|e| anyhow::anyhow!("mem-odb pack write failed: {e}"))?;
+    let num_entries = u32::try_from(to_pack.len()).context("mem-odb pack write failed")?;
 
     let pack_dir = objects_dir.join("pack");
-    std::fs::create_dir_all(&pack_dir)
-        .map_err(|e| anyhow::anyhow!("mem-odb pack write failed: {e}"))?;
+    std::fs::create_dir_all(&pack_dir).context("mem-odb pack write failed")?;
 
     // Serialize the pack byte stream (header, compressed entries, checksum trailer) through an
     // anonymous spool file in the pack directory: objects are compressed one at a time as the
@@ -59,8 +57,7 @@ pub(crate) fn write_snapshot(objects_dir: &Path, snapshot: &Snapshot) -> anyhow:
     // a snapshot's size is only *typically* bounded by the store's chunk limit (unbounded stores
     // exist, and the limit is an overflow trigger, not a cap).
     let mut spool = std::io::BufWriter::new(
-        tempfile::tempfile_in(&pack_dir)
-            .map_err(|e| anyhow::anyhow!("mem-odb pack write failed: {e}"))?,
+        tempfile::tempfile_in(&pack_dir).context("mem-odb pack write failed")?,
     );
     let mut iter = output::bytes::FromEntriesIter::new(
         to_pack.iter().map(|(oid, kind, data)| {
@@ -78,18 +75,12 @@ pub(crate) fn write_snapshot(objects_dir: &Path, snapshot: &Snapshot) -> anyhow:
         gix_hash::Kind::Sha1,
     );
     for written in &mut iter {
-        written.map_err(|e| anyhow::anyhow!("mem-odb pack write failed: {e}"))?;
+        written.context("mem-odb pack write failed")?;
     }
     drop(iter);
-    spool
-        .flush()
-        .map_err(|e| anyhow::anyhow!("mem-odb pack write failed: {e}"))?;
-    let mut spool = spool
-        .into_inner()
-        .map_err(|e| anyhow::anyhow!("mem-odb pack write failed: {e}"))?;
-    spool
-        .rewind()
-        .map_err(|e| anyhow::anyhow!("mem-odb pack write failed: {e}"))?;
+    spool.flush().context("mem-odb pack write failed")?;
+    let mut spool = spool.into_inner().context("mem-odb pack write failed")?;
+    spool.rewind().context("mem-odb pack write failed")?;
 
     let outcome = gix_pack::Bundle::write_to_directory(
         &mut std::io::BufReader::new(spool),
@@ -107,7 +98,7 @@ pub(crate) fn write_snapshot(objects_dir: &Path, snapshot: &Snapshot) -> anyhow:
             compression: gix_zlib::Compression::DEFAULT,
         },
     )
-    .map_err(|e| anyhow::anyhow!("mem-odb pack write failed: {e}"))?;
+    .context("mem-odb pack write failed")?;
     // gix marks the freshly-landed pack with a `.keep` file for the caller to remove once its
     // referencing refs exist. josh's flushes carry no such handshake (libgit2's packbuilder wrote
     // no `.keep` either), and a leftover one would exempt the pack from `git repack -d` forever.
@@ -118,7 +109,7 @@ pub(crate) fn write_snapshot(objects_dir: &Path, snapshot: &Snapshot) -> anyhow:
     if let Some(data_path) = &outcome.data_path {
         if let Err(e) = std::fs::remove_file(data_path.with_extension("keep")) {
             if e.kind() != std::io::ErrorKind::NotFound {
-                return Err(anyhow::anyhow!("mem-odb pack write failed: {e}"));
+                return Err(e).context("mem-odb pack write failed");
             }
         }
     }

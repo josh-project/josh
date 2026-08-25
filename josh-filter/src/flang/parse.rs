@@ -183,7 +183,7 @@ fn parse_item(pair: pest::iterators::Pair<Rule>) -> anyhow::Result<Filter> {
             let content_pair = inner.next().unwrap();
             let content = match content_pair.as_rule() {
                 Rule::string => InsertContent::Inline(unquote(content_pair.as_str())),
-                Rule::object_oid => InsertContent::Oid(git2::Oid::from_str(content_pair.as_str())?),
+                Rule::object_oid => InsertContent::Oid(content_pair.as_str().parse()?),
                 _ => unreachable!(),
             };
             Ok(to_filter(Op::Insert(path, content)))
@@ -278,7 +278,9 @@ fn parse_item(pair: pest::iterators::Pair<Rule>) -> anyhow::Result<Filter> {
                                 let filter = parse(filter_pair.as_str())?;
                                 entries.push((
                                     RevMatch::Default,
-                                    LazyRef::Resolved(git2::Oid::ZERO_SHA1),
+                                    LazyRef::Resolved(gix_hash::ObjectId::null(
+                                        gix_hash::Kind::Sha1,
+                                    )),
                                     filter,
                                 ));
                             }

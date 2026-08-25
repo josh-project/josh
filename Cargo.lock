@@ -3479,7 +3479,6 @@ name = "josh-filter"
 version = "26.7.28"
 dependencies = [
  "anyhow",
- "git2",
  "gix-hash",
  "gix-object",
  "glob",
@@ -3499,7 +3498,6 @@ name = "josh-git-serde"
 version = "26.7.28"
 dependencies = [
  "anyhow",
- "git2",
  "gix-hash",
  "gix-object",
  "josh-gix-ext",

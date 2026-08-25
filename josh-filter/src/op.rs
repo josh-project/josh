@@ -57,7 +57,7 @@ impl LinkMode {
 
 #[derive(Hash, Clone, Debug, PartialEq, PartialOrd, Eq, Ord)]
 pub enum LazyRef {
-    Resolved(git2::Oid),
+    Resolved(gix_hash::ObjectId),
     Lazy(String),
 }
 
@@ -67,7 +67,7 @@ pub enum InsertContent {
     /// An object referenced by OID. The kind (blob or tree) is resolved against a repository
     /// when the filter is applied or persisted; `persist::as_tree` references the object as a
     /// tree entry with the matching mode so it is reachable from the filter tree.
-    Oid(git2::Oid),
+    Oid(gix_hash::ObjectId),
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -98,7 +98,7 @@ impl LazyRef {
             return Ok(LazyRef::Lazy(s));
         }
 
-        if let Ok(oid) = git2::Oid::from_str(&s) {
+        if let Ok(oid) = s.parse() {
             Ok(LazyRef::Resolved(oid))
         } else {
             Err(anyhow!("invalid ref: {:?}", s))

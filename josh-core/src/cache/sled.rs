@@ -17,7 +17,7 @@ struct State {
     /// Cache directory, set by [`SledCacheBackend::new`]. `None` until the first backend is built.
     path: Option<std::path::PathBuf>,
     db: Option<sled::Db>,
-    trees: std::collections::HashMap<git2::Oid, sled::Tree>,
+    trees: std::collections::HashMap<gix_hash::ObjectId, sled::Tree>,
     active: usize,
 }
 

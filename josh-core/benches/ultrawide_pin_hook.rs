@@ -290,7 +290,7 @@ fn pin_filter_tree(
             gix_oid(placeholder),
         )?;
     }
-    let tree = git2_oid(builder.write()?.detach());
+    let tree = builder.write()?.detach();
     let param = josh_filter::Filter::new().insert_oid(".", tree)?;
     Ok(josh_filter::Filter::new().pin(param))
 }

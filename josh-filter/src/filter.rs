@@ -56,7 +56,7 @@ impl Default for Filter {
 impl Filter {
     /// The content-addressed OID of this filter, computed lazily on first call and cached on the
     /// node. This is the only place a filter's tree is built (via `build_op`).
-    pub fn id(&self) -> git2::Oid {
+    pub fn id(&self) -> gix_hash::ObjectId {
         *self.0.oid.get_or_init(|| persist::build_node_oid(self.0))
     }
 }
@@ -90,7 +90,7 @@ impl Filter {
     /// relationship to `tip` satisfies `match` (e.g. `AncestorInclusive` is `<=tip`); the first
     /// matching arm wins and a commit matching none passes through unchanged. Tips are resolved
     /// oids (`RevMatch::Default` ignores its tip); construct `Op::Rev` directly for lazy refs.
-    pub fn rev(self, arms: Vec<(RevMatch, git2::Oid, Filter)>) -> Filter {
+    pub fn rev(self, arms: Vec<(RevMatch, gix_hash::ObjectId, Filter)>) -> Filter {
         self.chain(to_filter(Op::Rev(
             arms.into_iter()
                 .map(|(m, tip, then)| (m, LazyRef::Resolved(tip), then))
@@ -196,7 +196,7 @@ impl Filter {
     pub fn insert_oid(
         self,
         path: impl Into<std::path::PathBuf>,
-        oid: git2::Oid,
+        oid: gix_hash::ObjectId,
     ) -> anyhow::Result<Filter> {
         Ok(self.chain(to_filter(Op::Insert(path.into(), InsertContent::Oid(oid)))))
     }
@@ -242,7 +242,7 @@ impl Filter {
     }
 
     /// Chain a squash filter
-    pub fn squash(self, ids: Option<&[(git2::Oid, Filter)]>) -> Filter {
+    pub fn squash(self, ids: Option<&[(gix_hash::ObjectId, Filter)]>) -> Filter {
         self.chain(if let Some(ids) = ids {
             to_filter(Op::Squash(Some(
                 ids.iter()
@@ -256,7 +256,7 @@ impl Filter {
 
     /// Chain a downstack filter that rebuilds the stack from `base` to the input commit,
     /// dropping intermediate commits whose paths are disjoint from the tip's changes.
-    pub fn downstack(self, base: git2::Oid) -> Filter {
+    pub fn downstack(self, base: gix_hash::ObjectId) -> Filter {
         self.chain(to_filter(Op::Downstack(LazyRef::Resolved(base))))
     }
 
@@ -373,7 +373,8 @@ pub fn invert(filter: Filter) -> anyhow::Result<Filter> {
 /// The sequence_number filter used for tracking commit sequence numbers. A memoized sentinel
 /// node whose OID is the zero OID, so identity comparison and cache-keying stay correct.
 pub fn sequence_number() -> Filter {
-    static F: LazyLock<Filter> = LazyLock::new(|| persist::sentinel(git2::Oid::ZERO_SHA1));
+    static F: LazyLock<Filter> =
+        LazyLock::new(|| persist::sentinel(gix_hash::ObjectId::null(gix_hash::Kind::Sha1)));
     *F
 }
 
@@ -386,7 +387,7 @@ pub fn reachable_roots() -> Filter {
     static F: LazyLock<Filter> = LazyLock::new(|| {
         let mut bytes = [0u8; 20];
         bytes[19] = 1;
-        persist::sentinel(git2::Oid::from_bytes(&bytes).expect("valid sentinel oid"))
+        persist::sentinel(gix_hash::ObjectId::from_bytes_or_panic(&bytes))
     });
     *F
 }
