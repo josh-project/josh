@@ -4428,6 +4428,7 @@ dependencies = [
  "anyhow",
  "gix-hash",
  "gix-object",
+ "josh-gix-ext",
 ]
 
 [[package]]

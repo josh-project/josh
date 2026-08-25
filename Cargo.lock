@@ -3317,6 +3317,7 @@ dependencies = [
  "clap",
  "defer",
  "dirs",
+ "dunce",
  "env_logger",
  "gix",
  "gix-actor",
@@ -3342,6 +3343,7 @@ dependencies = [
  "serde_json",
  "tempfile",
  "tokio",
+ "url",
 ]
 
 [[package]]
@@ -3685,6 +3687,7 @@ dependencies = [
  "base64 0.23.0",
  "bon",
  "clap",
+ "dunce",
  "futures",
  "gix",
  "gix-hash",
@@ -3711,6 +3714,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2",
+ "socket2",
  "tempfile",
  "thiserror 2.0.19",
  "tokio",

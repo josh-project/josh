@@ -4,6 +4,21 @@ use std::collections::HashMap;
 
 use gix_object::WriteTo;
 
+/// The raw bytes of a path component, for matching against git tree entry names.
+#[cfg(unix)]
+pub fn component_bytes(c: &std::ffi::OsStr) -> &[u8] {
+    std::os::unix::ffi::OsStrExt::as_bytes(c)
+}
+
+/// The raw bytes of a path component, for matching against git tree entry names: their UTF-8
+/// encoding. Panics on a component that is not valid Unicode, which cannot name a tree entry.
+#[cfg(windows)]
+pub fn component_bytes(c: &std::ffi::OsStr) -> &[u8] {
+    c.to_str()
+        .expect("path component is not valid Unicode")
+        .as_bytes()
+}
+
 pub mod graph;
 pub mod merge;
 pub mod revwalk;
@@ -125,7 +140,7 @@ pub fn path_entry(
             return Ok(None);
         }
         let parsed = gix_object::TreeRef::from_bytes(&buffer, gix_hash::Kind::Sha1)?;
-        let name = std::os::unix::ffi::OsStrExt::as_bytes(component.as_os_str());
+        let name = component_bytes(component.as_os_str());
         let Some(entry) = parsed.entries.iter().find(|e| e.filename == name) else {
             return Ok(None);
         };

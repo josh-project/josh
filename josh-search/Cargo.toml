@@ -17,6 +17,7 @@ harness = false
 anyhow.workspace = true
 gix-hash.workspace = true
 gix-object.workspace = true
+josh-gix-ext.workspace = true
 
 [dev-dependencies]
 josh-gix-ext.workspace = true

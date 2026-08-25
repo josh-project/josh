@@ -17,6 +17,7 @@ log.workspace = true
 serde_json.workspace = true
 defer.workspace = true
 clap.workspace = true
+dunce.workspace = true
 juniper.workspace = true
 gix.workspace = true
 gix-hash.workspace = true
@@ -26,6 +27,7 @@ chrono = { workspace = true, features = ["clock"] }
 dirs.workspace = true
 reqwest.workspace = true
 reqwest-middleware.workspace = true
+url.workspace = true
 
 arboard = { version = "^3.6", default-features = false }
 

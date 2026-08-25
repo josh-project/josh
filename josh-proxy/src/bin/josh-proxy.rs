@@ -177,7 +177,7 @@ async fn run_proxy(args: josh_proxy::cli::Args) -> anyhow::Result<i32> {
     let (shutdown_tx, _shutdown_rx) = broadcast::channel(1);
 
     let addr: SocketAddr = format!("[::]:{}", args.port).parse()?;
-    let listener = tokio::net::TcpListener::bind(addr).await?;
+    let listener = make_listener(addr)?;
 
     let server_future = async move { axum::serve(listener, app).await.context("Server error") };
 
@@ -252,6 +252,37 @@ fn update_hook(refname: &str, old: &str, new: &str) -> anyhow::Result<i32> {
     }
 }
 
+/// Bind the listener dual-stack: a bare [::] socket accepts IPv4 on Linux, where bindv6only
+/// defaults off, but is v6-only on Windows.
+fn make_listener(addr: SocketAddr) -> anyhow::Result<tokio::net::TcpListener> {
+    let socket = socket2::Socket::new(
+        socket2::Domain::IPV6,
+        socket2::Type::STREAM,
+        Some(socket2::Protocol::TCP),
+    )?;
+    socket.set_only_v6(false)?;
+    socket.bind(&addr.into())?;
+    socket.listen(1024)?;
+    socket.set_nonblocking(true)?;
+    Ok(tokio::net::TcpListener::from_std(socket.into())?)
+}
+
+/// The hook this process was invoked as, for the Windows shim hooks. On unix the hooks are
+/// symlinks and argv[0] names them, so the environment is not consulted.
+fn hook_from_env() -> Option<&'static str> {
+    #[cfg(windows)]
+    {
+        static JOSH_PROXY_HOOK: std::sync::LazyLock<Option<String>> =
+            std::sync::LazyLock::new(|| std::env::var("JOSH_PROXY_HOOK").ok());
+        JOSH_PROXY_HOOK.as_deref()
+    }
+
+    #[cfg(not(windows))]
+    {
+        None
+    }
+}
+
 fn pre_receive_hook() -> anyhow::Result<i32> {
     let repo_update = repo_update_from_env()?;
 
@@ -286,13 +317,13 @@ fn main() -> std::process::ExitCode {
     // process to do the actual computation while taking advantage of the
     // cached data already loaded into the main process's memory.
     if let [a0, a1, a2, a3, ..] = &std::env::args().collect::<Vec<_>>().as_slice()
-        && a0.ends_with("/update")
+        && (a0.ends_with("/update") || hook_from_env() == Some("update"))
     {
         return std::process::ExitCode::from(update_hook(a1, a2, a3).unwrap_or(1) as u8);
     }
 
     if let [a0, ..] = &std::env::args().collect::<Vec<_>>().as_slice()
-        && a0.ends_with("/pre-receive")
+        && (a0.ends_with("/pre-receive") || hook_from_env() == Some("pre-receive"))
     {
         eprintln!("josh-proxy: pre-receive hook");
         return std::process::ExitCode::from(match pre_receive_hook() {

@@ -1,0 +1,127 @@
+name: rust-windows
+
+on:
+  push:
+    branches: [ master ]
+  pull_request:
+    branches: [ '**' ]
+    types: [opened, synchronize, reopened, ready_for_review]
+  merge_group:
+
+env:
+  CARGO_TERM_COLOR: always
+  # The runner's Git for Windows defaults to core.autocrlf=true, which rewrites
+  # LF to CRLF on checkout; tests assert byte-exact worktree content, so pin it
+  # off via env config (takes precedence over the system/global gitconfig).
+  GIT_CONFIG_COUNT: 1
+  GIT_CONFIG_KEY_0: core.autocrlf
+  GIT_CONFIG_VALUE_0: "false"
+  # Wrap rustc in sccache. When the R2 backend is configured below it caches
+  # remotely; otherwise (fork and dependabot PRs, which get no secrets) it
+  # falls back to a local disk cache.
+  RUSTC_WRAPPER: sccache
+
+jobs:
+  windows:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { arch: x86-64, os: windows-latest }
+          - { arch: arm64, os: windows-11-arm }
+    runs-on: ${{ matrix.os }}
+    name: Windows ${{ matrix.arch }}
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
+    env:
+      # Fork PRs and dependabot PRs run with a restricted token and no repository
+      # secrets, so they can't reach R2; they skip the backend setup and the
+      # remote-cache check below.
+      SECRETLESS: ${{ github.event.pull_request.head.repo.fork == true || github.actor == 'dependabot[bot]' }}
+    steps:
+    - name: Checkout
+      uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+    # Keep the toolchain version in sync with rust-toolchain.toml.
+    - name: Install Rust toolchain
+      uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772 # stable
+      with:
+        toolchain: "1.95.0"
+    # josh compose (and with it the sccache-proxy sidecar the Linux jobs use)
+    # needs podman and does not run on Windows, so point a plain sccache at the
+    # same R2 bucket instead. Version pinned as in images/rust-dev/Dockerfile.
+    - name: Install sccache
+      shell: pwsh
+      run: |
+        $version = "0.14.0"
+        $arch = if ($env:PROCESSOR_ARCHITECTURE -eq "ARM64") { "aarch64" } else { "x86_64" }
+        $name = "sccache-v$version-$arch-pc-windows-msvc"
+        $base = "https://github.com/mozilla/sccache/releases/download/v$version"
+        Invoke-WebRequest -OutFile "$env:TEMP\sccache.zip" "$base/$name.zip"
+        Invoke-WebRequest -OutFile "$env:TEMP\sccache.zip.sha256" "$base/$name.zip.sha256"
+        $expected = ((Get-Content "$env:TEMP\sccache.zip.sha256" -Raw) -split '\s')[0]
+        $actual = (Get-FileHash "$env:TEMP\sccache.zip" -Algorithm SHA256).Hash.ToLower()
+        if ($actual -ne $expected) { throw "sccache.zip checksum mismatch" }
+        Expand-Archive "$env:TEMP\sccache.zip" -DestinationPath "$env:TEMP\sccache"
+        Add-Content $env:GITHUB_PATH "$env:TEMP\sccache\$name"
+    # The same backend the Linux jobs reach through the sccache-proxy sidecar
+    # (ws/sccache-proxy.josh); the proxy exists only to hold the credentials,
+    # which this step supplies directly.
+    - name: Configure sccache R2 backend
+      if: env.SECRETLESS != 'true'
+      shell: pwsh
+      env:
+        AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+        AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+      run: |
+        Add-Content $env:GITHUB_ENV "SCCACHE_BUCKET=josh-project-cache"
+        Add-Content $env:GITHUB_ENV "SCCACHE_ENDPOINT=https://19f2dfdd7c93980184be5e5809e8b252.r2.cloudflarestorage.com"
+        Add-Content $env:GITHUB_ENV "SCCACHE_REGION=auto"
+        Add-Content $env:GITHUB_ENV "SCCACHE_S3_USE_SSL=true"
+        Add-Content $env:GITHUB_ENV "AWS_ACCESS_KEY_ID=$env:AWS_ACCESS_KEY_ID"
+        Add-Content $env:GITHUB_ENV "AWS_SECRET_ACCESS_KEY=$env:AWS_SECRET_ACCESS_KEY"
+    # aws-lc-sys' ARM assembly is GNU-syntax, which MSVC cannot assemble: the
+    # build then fails late in lib.exe, archiving objects that were never
+    # written. clang-cl assembles it and stays ABI-compatible with the MSVC
+    # toolchain the Rust side links with. An exact pinned LLVM is installed on
+    # both architectures, so the job never depends on what the image ships.
+    - name: Install LLVM (clang-cl) for C dependencies
+      shell: pwsh
+      run: |
+        # woa64 is the Windows-on-ARM64 installer.
+        $version = "22.1.8"
+        $suffix = if ($env:PROCESSOR_ARCHITECTURE -eq "ARM64") { "woa64" } else { "win64" }
+        $installer = "$env:TEMP\LLVM-$version-$suffix.exe"
+        Invoke-WebRequest -OutFile $installer `
+          "https://github.com/llvm/llvm-project/releases/download/llvmorg-$version/LLVM-$version-$suffix.exe"
+        Start-Process $installer -ArgumentList "/S" -Wait
+        Add-Content $env:GITHUB_PATH "$env:ProgramFiles\LLVM\bin"
+        # cc-rs splits these on whitespace, so the bare name has to resolve on PATH.
+        Add-Content $env:GITHUB_ENV "CC=clang-cl"
+        Add-Content $env:GITHUB_ENV "CXX=clang-cl"
+
+    # josh-ssh-shell is unix-only (unix sockets, fifos, raw fds), so the
+    # workspace does not build here.
+    - name: Build
+      run: cargo build --locked -p josh-proxy -p josh-cli
+    # josh compose needs podman and does not run on Windows, so the .t suites
+    # are out of reach; these are the crates whose unit tests run here.
+    - name: Unit tests
+      run: cargo test --locked -p josh-core -p josh-filter -p josh-gix-ext -p josh-git-serde -p josh-search -p josh-memodb
+    # sccache silently falls back to the local disk cache when the remote
+    # backend can't be reached; expected for secretless runs, a failure
+    # otherwise. Mirrors ws/check-sccache.sh from the Linux jobs.
+    - name: Check sccache stats
+      shell: pwsh
+      run: |
+        sccache --show-stats
+        $stats = sccache --show-stats --stats-format json | ConvertFrom-Json
+        if ($stats.cache_location -like 's3*') {
+          Write-Host "sccache: confirmed S3-backed cache"
+        } else {
+          Write-Host "::warning::SCCACHE_REMOTE_CACHE_MISSING: sccache is not using the S3 remote cache (cache_location: $($stats.cache_location))"
+          if ($env:SECRETLESS -ne 'true') { exit 1 }
+        }
+    # Drives the built binaries, since the .t suites cannot run here: the CLI
+    # against a local repository, and josh-proxy against a git server hosted by
+    # HttpListener, so the job needs nothing that Windows does not ship.
+    - name: Functional tests
+      run: pwsh tests/windows/run.ps1 target/debug -PathForms
