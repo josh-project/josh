@@ -1046,7 +1046,7 @@ impl Repository {
         let transaction_mirror = context.transaction_mirror.lock().unwrap();
         let commit_id = {
             let oid = if let Ok(id) = git2::Oid::from_str(&at) {
-                Some((id, transaction_mirror.odb().contains(id)))
+                Some((id, transaction_mirror.odb().contains(objects::gix_oid(id))))
             } else {
                 None
             };

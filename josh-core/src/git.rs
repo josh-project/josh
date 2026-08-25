@@ -248,7 +248,7 @@ impl GitCommand {
 /// lock-guarded global that also decodes author/committer/message) whenever a caller only
 /// needs the parent ids; memory-store hits are zero-copy.
 pub fn read_parent_ids(odb: &josh_memodb::Odb, oid: git2::Oid) -> anyhow::Result<Vec<git2::Oid>> {
-    let (kind, bytes) = odb.read(oid)?;
+    let (kind, bytes) = odb.read(crate::objects::gix_oid(oid))?;
     // A hard error, not an assert: this is reachable from inside git2 callback frames,
     // where unwinding across the FFI boundary would abort.
     if kind != gix_object::Kind::Commit {
@@ -267,7 +267,7 @@ pub fn read_parent_ids(odb: &josh_memodb::Odb, oid: git2::Oid) -> anyhow::Result
 /// Sibling of [`read_parent_ids`]: read a commit's tree OID without touching libgit2's
 /// commit parse cache.
 pub fn read_tree_id(odb: &josh_memodb::Odb, oid: git2::Oid) -> anyhow::Result<git2::Oid> {
-    let (kind, bytes) = odb.read(oid)?;
+    let (kind, bytes) = odb.read(crate::objects::gix_oid(oid))?;
     // Same hard-error rationale as read_parent_ids.
     if kind != gix_object::Kind::Commit {
         return Err(anyhow::anyhow!(
@@ -291,7 +291,7 @@ mod tests {
         let tree = repo.find_tree(tree_id).unwrap();
         let commit_id = repo.commit(None, &sig, &sig, "test", &tree, &[]).unwrap();
 
-        let objects_dir = josh_memodb::objects_dir(&repo);
+        let objects_dir = repo.commondir().join("objects");
         let store = josh_memodb::MemOdb::new(None, objects_dir.clone());
         let odb = josh_memodb::Odb::at(store, &objects_dir).unwrap();
         assert_eq!(

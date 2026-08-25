@@ -80,22 +80,18 @@ pub(crate) fn enqueue_chunk(store: Arc<MemOdb>) {
 
 /// Pack `store` to disk and block until it is done, so the objects are durable before the caller
 /// proceeds. Any queued chunks for the same store complete first (FIFO on the single worker).
-pub(crate) fn drain(store: Arc<MemOdb>) -> Result<(), git2::Error> {
+pub(crate) fn drain(store: Arc<MemOdb>) -> anyhow::Result<()> {
     let (ack_tx, ack_rx) = sync_channel::<Result<(), String>>(1);
     if FLUSHER
         .sender
         .send(Job::Drain { store, ack: ack_tx })
         .is_err()
     {
-        return Err(git2::Error::from_str(
-            "mem-odb flusher channel disconnected",
-        ));
+        return Err(anyhow::anyhow!("mem-odb flusher channel disconnected"));
     }
     match ack_rx.recv() {
         Ok(Ok(())) => Ok(()),
-        Ok(Err(msg)) => Err(git2::Error::from_str(&msg)),
-        Err(_) => Err(git2::Error::from_str(
-            "mem-odb flusher ack channel disconnected",
-        )),
+        Ok(Err(msg)) => Err(anyhow::anyhow!(msg)),
+        Err(_) => Err(anyhow::anyhow!("mem-odb flusher ack channel disconnected")),
     }
 }

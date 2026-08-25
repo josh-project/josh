@@ -60,7 +60,7 @@ impl DistributedCacheBackend {
 
     fn open(repo_path: impl AsRef<std::path::Path>, writable: bool) -> anyhow::Result<Self> {
         let repo = git2::Repository::open(repo_path.as_ref())?;
-        let objects_dir = josh_memodb::objects_dir(&repo);
+        let objects_dir = repo.commondir().join("objects");
         let mem_odb = josh_memodb::MemOdb::new(None, objects_dir.clone());
         let odb = josh_memodb::Odb::at(mem_odb.clone(), &objects_dir)?;
         Ok(Self {

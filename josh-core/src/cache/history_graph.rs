@@ -129,7 +129,7 @@ fn ensure_hint_cached(
     }
 
     let odb = transaction.odb();
-    if !odb.contains(input) {
+    if !odb.contains(crate::objects::gix_oid(input)) {
         return Err(anyhow!("ensure_hint_cached: input does not exist"));
     }
 
@@ -283,11 +283,13 @@ fn write_roots_blob(odb: &josh_memodb::Odb, roots: &[git2::Oid]) -> anyhow::Resu
     for r in roots {
         bytes.extend_from_slice(r.as_bytes());
     }
-    Ok(odb.write(gix_object::Kind::Blob, &bytes))
+    Ok(crate::objects::git2_oid(
+        &odb.write(gix_object::Kind::Blob, &bytes),
+    ))
 }
 
 fn read_roots_blob(odb: &josh_memodb::Odb, oid: git2::Oid) -> anyhow::Result<Vec<git2::Oid>> {
-    let (kind, content) = odb.read(oid)?;
+    let (kind, content) = odb.read(crate::objects::gix_oid(oid))?;
     if kind != gix_object::Kind::Blob {
         return Err(anyhow!("reachable_roots object {} is not a blob", oid));
     }

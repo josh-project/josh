@@ -1,8 +1,8 @@
 //! The transaction object-database facade: the [`MemOdb`] store consulted directly, backed by
 //! the repository's gitoxide object database for objects that are not buffered.
 //!
-//! Implements the [`gix_object`] object-access traits (memory-first, disk fallback) plus
-//! inherent helpers in `git2::Oid` currency; memory hits hand out zero-copy `Arc` buffers.
+//! Implements the [`gix_object`] object-access traits and `ObjectId`-typed inherent helpers
+//! (memory-first, disk fallback); memory hits hand out zero-copy `Arc` buffers.
 //!
 //! A store resolves `objects/info/alternates` when it opens, so an alternate registered at
 //! runtime (the proxy overlay's mirror) is a store of its own, consulted after the
@@ -137,10 +137,9 @@ impl Odb {
             .any(|alt| alt.gate.exists(id))
     }
 
-    /// Read the raw bytes and kind of `oid`; memory hits are zero-copy. A missing object is an
+    /// Read the raw bytes and kind of `id`; memory hits are zero-copy. A missing object is an
     /// error, like a plain odb read.
-    pub fn read(&self, oid: git2::Oid) -> anyhow::Result<(Kind, Bytes)> {
-        let id = josh_gix_ext::gix_oid(oid);
+    pub fn read(&self, id: ObjectId) -> anyhow::Result<(Kind, Bytes)> {
         if let Some((kind, data)) = self.mem.get(&id) {
             return Ok((kind, Bytes::Mem(data)));
         }
@@ -150,13 +149,13 @@ impl Odb {
         let mut buffer = Vec::new();
         if let Some(kind) = self
             .find_on_disk(&id, &mut buffer)
-            .map_err(|e| anyhow::anyhow!("failed to read {}: {}", oid, e))?
+            .map_err(|e| anyhow::anyhow!("failed to read {}: {}", id, e))?
         {
             return Ok((kind, Bytes::Disk(buffer)));
         }
         Err(anyhow::anyhow!(
             "object not found - no match for id ({})",
-            oid
+            id
         ))
     }
 
@@ -178,30 +177,28 @@ impl Odb {
         Ok(None)
     }
 
-    /// Kind and size of `oid` without reading (or decompressing) its bytes.
-    pub fn read_header(&self, oid: git2::Oid) -> anyhow::Result<(Kind, u64)> {
-        self.header(oid)?
-            .ok_or_else(|| anyhow::anyhow!("object not found - no match for id ({})", oid))
+    /// Kind and size of `id` without reading (or decompressing) its bytes.
+    pub fn read_header(&self, id: ObjectId) -> anyhow::Result<(Kind, u64)> {
+        self.header(id)?
+            .ok_or_else(|| anyhow::anyhow!("object not found - no match for id ({})", id))
     }
 
-    pub fn contains(&self, oid: git2::Oid) -> bool {
-        let id = josh_gix_ext::gix_oid(oid);
+    pub fn contains(&self, id: ObjectId) -> bool {
         self.mem.contains(&id) || self.disk.exists(&id) || self.in_alternate(&id)
     }
 
-    /// Kind of `oid`, or `None` if the object does not exist. Never decompresses. Resolves the
+    /// Kind of `id`, or `None` if the object does not exist. Never decompresses. Resolves the
     /// empty tree even when it is stored nowhere, so probes on possibly-empty trees belong
     /// here and never on [`contains`](Odb::contains).
-    pub fn try_kind(&self, oid: git2::Oid) -> anyhow::Result<Option<Kind>> {
-        Ok(self.header(oid)?.map(|(kind, _)| kind))
+    pub fn try_kind(&self, id: ObjectId) -> anyhow::Result<Option<Kind>> {
+        Ok(self.header(id)?.map(|(kind, _)| kind))
     }
 
-    /// Kind and size of `oid`, or `None` when no store holds it.
-    fn header(&self, oid: git2::Oid) -> anyhow::Result<Option<(Kind, u64)>> {
-        let id = josh_gix_ext::gix_oid(oid);
+    /// Kind and size of `id`, or `None` when no store holds it.
+    fn header(&self, id: ObjectId) -> anyhow::Result<Option<(Kind, u64)>> {
         Ok(self
             .try_header(&id)
-            .map_err(|e| anyhow::anyhow!("failed to read header of {}: {}", oid, e))?
+            .map_err(|e| anyhow::anyhow!("failed to read header of {}: {}", id, e))?
             .map(|header| (header.kind, header.size)))
     }
 
@@ -212,11 +209,11 @@ impl Odb {
     /// the repository's own on-disk objects: objects already durable there are buffered anyway
     /// and dropped at pack time, and a repository without alternates writes with zero
     /// filesystem I/O.
-    pub fn write(&self, kind: Kind, data: &[u8]) -> git2::Oid {
+    pub fn write(&self, kind: Kind, data: &[u8]) -> ObjectId {
         let id = gix_object::compute_hash(gix_hash::Kind::Sha1, kind, data)
             .expect("failed to compute hash");
         self.write_with_id(id, kind, data);
-        josh_gix_ext::git2_oid(&id)
+        id
     }
 
     /// [`Odb::write`] with a caller-computed content hash, trusted verbatim.
@@ -296,7 +293,7 @@ impl gix_object::Exists for Odb {
 
 impl gix_object::Write for Odb {
     fn write_buf(&self, object: Kind, from: &[u8]) -> Result<ObjectId, gix_object::write::Error> {
-        Ok(josh_gix_ext::gix_oid(self.write(object, from)))
+        Ok(self.write(object, from))
     }
 
     fn write_buf_with_known_id(
@@ -360,11 +357,17 @@ mod tests {
 
         // Not yet on disk.
         let fresh = git2::Repository::open(dir.path()).unwrap();
-        assert!(fresh.find_blob(oid).is_err());
+        assert!(fresh.find_blob(josh_gix_ext::git2_oid(&oid)).is_err());
 
         store.flush().unwrap();
         let fresh = git2::Repository::open(dir.path()).unwrap();
-        assert_eq!(fresh.find_blob(oid).unwrap().content(), b"facade blob");
+        assert_eq!(
+            fresh
+                .find_blob(josh_gix_ext::git2_oid(&oid))
+                .unwrap()
+                .content(),
+            b"facade blob"
+        );
     }
 
     /// The write gate: an object already in a registered runtime alternate is not buffered
@@ -389,14 +392,14 @@ mod tests {
 
         // Alternate hit: skipped, still readable through the alternate.
         let oid = odb.write(Kind::Blob, b"mirror blob");
-        assert_eq!(oid, in_alternate);
-        assert!(!store.contains(&josh_gix_ext::gix_oid(oid)));
+        assert_eq!(oid, josh_gix_ext::gix_oid(in_alternate));
+        assert!(!store.contains(&oid));
         assert!(matches!(odb.read(oid).unwrap().1, Bytes::Disk(_)));
 
         // Main-disk object: buffered — the gate does not probe the repository's own objects.
         let oid = odb.write(Kind::Blob, b"already on disk");
-        assert_eq!(oid, on_disk);
-        assert!(store.contains(&josh_gix_ext::gix_oid(oid)));
+        assert_eq!(oid, josh_gix_ext::gix_oid(on_disk));
+        assert!(store.contains(&oid));
         assert!(matches!(odb.read(oid).unwrap().1, Bytes::Mem(_)));
     }
 
@@ -409,7 +412,7 @@ mod tests {
         let mirror_dir = crate::pack::objects_dir(&mirror);
         // Packed before the alternate is registered.
         let mirror_store = MemOdb::new(None, mirror_dir.clone());
-        let packed = josh_gix_ext::git2_oid(&mirror_store.write(Kind::Blob, b"packed in mirror"));
+        let packed = mirror_store.write(Kind::Blob, b"packed in mirror");
         mirror_store.flush().unwrap();
 
         let repo = git2::Repository::init(tmp.path().join("overlay")).unwrap();
@@ -418,14 +421,14 @@ mod tests {
         odb.add_alternate(&mirror_dir).unwrap();
 
         assert_eq!(odb.write(Kind::Blob, b"packed in mirror"), packed);
-        assert!(!store.contains(&josh_gix_ext::gix_oid(packed)));
+        assert!(!store.contains(&packed));
 
         // Packed after registration: the gate does not go looking, so it buffers a duplicate.
-        let later = josh_gix_ext::git2_oid(&mirror_store.write(Kind::Blob, b"packed later"));
-        let unread = josh_gix_ext::git2_oid(&mirror_store.write(Kind::Blob, b"never written"));
+        let later = mirror_store.write(Kind::Blob, b"packed later");
+        let unread = mirror_store.write(Kind::Blob, b"never written");
         mirror_store.flush().unwrap();
         assert_eq!(odb.write(Kind::Blob, b"packed later"), later);
-        assert!(store.contains(&josh_gix_ext::gix_oid(later)));
+        assert!(store.contains(&later));
 
         // Reads do go looking, and find an object from that same pack.
         assert_eq!(&*odb.read(unread).unwrap().1, b"never written");
@@ -441,15 +444,19 @@ mod tests {
         let store = MemOdb::new(None, crate::pack::objects_dir(&repo));
         let odb = facade(&store, &repo);
 
-        let empty_tree = git2::Oid::from_str("4b825dc642cb6eb9a060e54bf8d69288fbee4904").unwrap();
-        assert!(!store.contains(&josh_gix_ext::gix_oid(empty_tree)));
+        let empty_tree = josh_gix_ext::gix_oid(
+            git2::Oid::from_str("4b825dc642cb6eb9a060e54bf8d69288fbee4904").unwrap(),
+        );
+        assert!(!store.contains(&empty_tree));
         assert_eq!(odb.try_kind(empty_tree).unwrap(), Some(Kind::Tree));
         assert_eq!(odb.read(empty_tree).unwrap().0, Kind::Tree);
         assert!(odb.read(empty_tree).unwrap().1.is_empty());
         assert!(!odb.contains(empty_tree));
 
         // A genuinely absent object is None; a buffered object reports its memory kind.
-        let absent = git2::Oid::from_str("0123456789012345678901234567890123456789").unwrap();
+        let absent = josh_gix_ext::gix_oid(
+            git2::Oid::from_str("0123456789012345678901234567890123456789").unwrap(),
+        );
         assert_eq!(odb.try_kind(absent).unwrap(), None);
         assert!(odb.read(absent).is_err());
         let blob = odb.write(Kind::Blob, b"probe");
@@ -468,13 +475,10 @@ mod tests {
         let oid = odb.write(Kind::Blob, b"facade blob");
 
         let mut buf = Vec::new();
-        let data = odb
-            .try_find(&josh_gix_ext::gix_oid(oid), &mut buf)
-            .unwrap()
-            .unwrap();
+        let data = odb.try_find(&oid, &mut buf).unwrap().unwrap();
         assert_eq!(data.kind, Kind::Blob);
         assert_eq!(data.data, b"facade blob");
-        assert!(odb.exists(&josh_gix_ext::gix_oid(oid)));
+        assert!(odb.exists(&oid));
     }
 
     /// A pack written after the facade was built is still found, which is how a flush, a
@@ -487,9 +491,8 @@ mod tests {
         let odb = facade(&store, &repo);
 
         // Miss first, so the store has settled on the packs it found at open.
-        let oid = gix_object::compute_hash(gix_hash::Kind::Sha1, Kind::Blob, b"packed later")
-            .map(|id| josh_gix_ext::git2_oid(&id))
-            .unwrap();
+        let oid =
+            gix_object::compute_hash(gix_hash::Kind::Sha1, Kind::Blob, b"packed later").unwrap();
         assert!(!odb.contains(oid));
 
         let store2 = MemOdb::new(None, crate::pack::objects_dir(&repo));
