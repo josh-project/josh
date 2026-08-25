@@ -1,6 +1,6 @@
 # git2 -> gix port: status
 
-Last updated: 2026-08-24 (post 3.3e, revision and configuration reads on gitoxide). See `PLAN.md` in this directory for the full phased plan.
+Last updated: 2026-08-25 (post 4.2, benchmark tree setup on gitoxide). See `PLAN.md` in this directory for the full phased plan.
 
 ## Landed on master (one commit per step, each suite-green and bench-validated)
 
@@ -65,6 +65,8 @@ Last updated: 2026-08-24 (post 3.3e, revision and configuration reads on gitoxid
 
 | 3.3e | 6c6652f6 | **Revision syntax and configuration reads are gitoxide.** The workspace enables gix's `revision` feature; `Transaction::rev_parse` uses `rev_parse_single`, preserving the unpeeled result and input-facing `None` contract for absent, malformed and ranged specs while propagating object-store, decode and I/O failures. `upstream_ref` uses `branch_remote_tracking_ref_name`, `config_string` reads the config snapshot, and `signature` converts gix's committer identity and raw date back to the still-public git2 signature currency. The shared repository now loads system, user and local config plus identity environment overrides, but continues to deny object-database environment overrides for a transaction opened at an explicit path. Reflog identity follows the same path; transaction path plumbing no longer consults the libgit2 handle. New unit tests pin revision operators, rejected user input, upstream refspec mapping, config strings and identity. The libgit2 handle is now porcelain-only: worktree/index operations, `FETCH_HEAD`, notes and the runtime alternate needed by those operations. Full workspace, integration suite and every core bench gate are green. | n/a (control paths; bench gates green) |
 
+| 4.2 | 0c5ad721 | **Benchmark tree fixture construction is gitoxide.** The workspace enables gix's `tree-editor`; all 26 `git2::build::TreeUpdateBuilder` uses in shared benchmark support, josh-core benches and the trigram bench become `Repository::edit_tree` rooted at the same empty or parent tree, with direct gitoxide entry kinds and tree writes. Small SHA-1 conversion helpers make the remaining boundary explicit: fixture blobs and commits stay on git2 until the Oid currency flip. Fresh isolated-cache rebuilds preserved every current fixture head. `ultrawide_pin` exposed a pre-existing stale expected head hidden by its month-old provision cache; rebuilding the parent with its unchanged git2 builder and rebuilding this step both produced `dec8381c`, so its constant now records the current fixture rather than attributing that earlier filter-rendering change to this port. | n/a (setup only) |
+
 | (tooling) | 8705d98e | The container test build renders cargo's diagnostics when it fails. It writes `--message-format=json` to a file and `set -e` exits before anything reads it, so a failure reached the run log as an exit code and nothing else -- which is how a full podman volume (`ld: final link failed: No space left on device`, 295 accumulated step-output volumes filling the VM's 200 GB) first read as a code error | n/a |
 
 Phase 1.2 is complete: no `treebuilder` use remains in `josh-core/src/filter/tree.rs`.
@@ -127,8 +129,10 @@ josh-compose's ephemeral reads — the prysk orchestrator itself). So 3.2 contin
    landable; design and measurements in `.agents/work/pack-lifetime/{NOTES,design}.md`.
    Carried forward from 3.3c: cold read-heavy walks pay for delta chains read in history order
    (see the section below), which an upstream gix-pack change would return.
-7. **Phase 4** Port bench setup, flip `josh_core::Oid` inner type, delete josh-memodb FFI
-   remnants, remove git2/libgit2-sys workspace-wide (`cargo tree -i git2` empty).
+7. **4.2 is landed**: benchmark tree fixtures use gitoxide's tree editor, and isolated-cache
+   rebuilds pin byte identity against the current fixture generators. Next: flip
+   `josh_core::Oid` to `ObjectId`, delete josh-memodb's FFI remnants, then remove
+   git2/libgit2-sys workspace-wide (`cargo tree -i git2` empty).
 
 Deferred from 1.5 (evaluate separately): lazy early-exit walks for
 find_original/find_oldest_similar/find_new_branch_base (change tie-breaks -> test churn);
