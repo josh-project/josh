@@ -336,11 +336,19 @@ fn to_absolute_remote_url(url: &str) -> anyhow::Result<String> {
     {
         Ok(url.to_owned())
     } else {
-        // For local paths, make them absolute
-        let path = std::fs::canonicalize(url)
+        // dunce, not std: on Windows std::fs::canonicalize returns an extended-length path
+        // (\\?\C:\...), which git rejects inside a file:// URL (issue #2288).
+        let path = dunce::canonicalize(url)
             .with_context(|| format!("Failed to resolve path {}", url))?
             .display()
             .to_string();
+
+        // A UNC path keeps its authority (file://server/share/...); a drive path does not.
+        #[cfg(windows)]
+        let path = match path.strip_prefix(r"\\") {
+            Some(unc) => unc.replace('\\', "/"),
+            None => format!("/{}", path.replace('\\', "/")),
+        };
 
         Ok(format!("file://{}", path))
     }

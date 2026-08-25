@@ -78,6 +78,8 @@ serde_json = "1.0.151"
 serde_yaml = "0.9.34"
 toml = "1.1.4"
 tracing-subscriber = { version = "0.3.23", features = ["env-filter"] }
+dunce = "1.0.5"
+socket2 = "0.6.3"
 tempfile = "3.27.0"
 hex = "0.4.3"
 secret-vault-value = "^1"

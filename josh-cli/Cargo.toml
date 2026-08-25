@@ -17,6 +17,7 @@ log.workspace = true
 serde_json.workspace = true
 defer.workspace = true
 clap.workspace = true
+dunce.workspace = true
 juniper.workspace = true
 git2.workspace = true
 gix-hash.workspace = true

@@ -104,7 +104,10 @@ pub fn update_gitmodules(
         .write_to(&mut output)
         .context("Failed to write gitmodules")?;
 
-    String::from_utf8(output).context("Invalid UTF-8 in gitmodules")
+    let content = String::from_utf8(output).context("Invalid UTF-8 in gitmodules")?;
+    // gix-config writes the platform's newline, but this ends up in a blob: the same
+    // filter has to produce the same object on every platform.
+    Ok(content.replace("\r\n", "\n"))
 }
 
 #[cfg(test)]

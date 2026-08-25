@@ -1,0 +1,77 @@
+name: rust-windows
+
+on:
+  push:
+    branches: [ master ]
+  pull_request:
+    branches: [ '**' ]
+    types: [opened, synchronize, reopened, ready_for_review]
+  merge_group:
+
+env:
+  CARGO_TERM_COLOR: always
+  # aws-lc-sys (rustls' default provider) assembles with NASM on x86-64; the
+  # crate ships prebuilt objects behind this switch, so the runner needs no
+  # extra install. ARM64 hosts need clang-cl instead.
+  AWS_LC_SYS_PREBUILT_NASM: 1
+
+jobs:
+  windows:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { arch: x86-64, os: windows-latest }
+          - { arch: arm64, os: windows-11-arm }
+    runs-on: ${{ matrix.os }}
+    name: Windows ${{ matrix.arch }}
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
+    steps:
+    - name: Checkout
+      uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+    - name: Install Rust toolchain
+      uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772 # stable
+      with:
+        toolchain: stable
+    # aws-lc-sys' ARM assembly is GNU-syntax, which MSVC cannot assemble: the
+    # build then fails late in lib.exe, archiving objects that were never
+    # written. clang-cl assembles it and stays ABI-compatible with the MSVC
+    # toolchain the Rust side links with. The runner image ships it; the step
+    # reports what it found, and warns loudly if it ever has to install one.
+    - name: Use clang-cl for C dependencies
+      if: matrix.arch == 'arm64'
+      shell: pwsh
+      run: |
+        $clang = Get-Command clang-cl -ErrorAction SilentlyContinue
+        if ($clang) {
+          Write-Host "clang-cl: $($clang.Source)"
+        } else {
+          $found = Get-ChildItem "$env:ProgramFiles\Microsoft Visual Studio", "$env:ProgramFiles\LLVM" `
+            -Recurse -Filter clang-cl.exe -ErrorAction SilentlyContinue |
+            Select-Object -First 1 -ExpandProperty DirectoryName
+          if ($found) {
+            Write-Host "::warning::clang-cl was not on PATH; using $found"
+            Add-Content $env:GITHUB_PATH $found
+          } else {
+            Write-Host "::warning::the runner image no longer ships clang-cl; installing LLVM"
+            choco install llvm -y --no-progress
+            Add-Content $env:GITHUB_PATH "$env:ProgramFiles\LLVM\bin"
+          }
+        }
+        # cc-rs splits these on whitespace, so the bare name has to resolve on PATH.
+        Add-Content $env:GITHUB_ENV "CC=clang-cl"
+        Add-Content $env:GITHUB_ENV "CXX=clang-cl"
+
+    # josh-ssh-shell is unix-only (unix sockets, fifos, raw fds), so the
+    # workspace does not build here.
+    - name: Build
+      run: cargo build --locked -p josh-proxy -p josh-cli
+    # josh compose needs podman and does not run on Windows, so the .t suites
+    # are out of reach; these are the crates whose unit tests run here.
+    - name: Unit tests
+      run: cargo test --locked -p josh-core -p josh-filter -p josh-gix-ext -p josh-git-serde -p josh-search -p josh-memodb
+    # Drives the built binaries, since the .t suites cannot run here: the CLI
+    # against a local repository, and josh-proxy against a git server hosted by
+    # HttpListener, so the job needs nothing that Windows does not ship.
+    - name: Functional tests
+      run: pwsh tests/windows/run.ps1 target/debug -PathForms
