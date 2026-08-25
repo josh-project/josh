@@ -765,7 +765,7 @@ fn intersect_inner(
 
 /// The raw bytes of a path component, for matching against tree entry names.
 fn component_bytes(c: &std::ffi::OsStr) -> &[u8] {
-    std::os::unix::ffi::OsStrExt::as_bytes(c)
+    josh_gix_ext::component_bytes(c)
 }
 
 /// Read `oid` as raw tree bytes, or `None` if it is missing or not a tree. Uncached: the

@@ -29,5 +29,6 @@
 # Contributing
 - [Testing](./contributing/testing.md)
 - [Development tools](./contributing/dev-tools.md)
+- [Windows](./contributing/windows.md)
 - [josh run](./contributing/josh-run.md)
 - [Tracing]()

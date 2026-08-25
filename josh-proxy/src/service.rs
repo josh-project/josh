@@ -399,6 +399,39 @@ fn create_repo_base(path: &PathBuf) -> anyhow::Result<crate::shell::Shell> {
     Ok(shell)
 }
 
+#[cfg(unix)]
+fn install_hook(josh_executable: &std::path::Path, hook: &std::path::Path) -> std::io::Result<()> {
+    std::os::unix::fs::symlink(josh_executable, hook)
+}
+
+/// Install the josh executable as a git hook, as a shim: symlinking requires elevated
+/// privileges on Windows. Dispatch keys off argv[0], which a shim cannot fake, so the shim
+/// names the hook in JOSH_PROXY_HOOK instead.
+#[cfg(windows)]
+fn install_hook(josh_executable: &std::path::Path, hook: &std::path::Path) -> std::io::Result<()> {
+    use std::fmt::Write as _;
+
+    let name = hook
+        .file_name()
+        .map(|n| n.to_string_lossy())
+        .unwrap_or_default();
+    // Absolute, because git runs hooks with GIT_DIR as the working directory; quoted, so no
+    // part of the path is a shell expansion. Canonicalizing does not rule out a single
+    // quote in the path (it is a legal filename character), hence the escape below.
+    let exe = dunce::canonicalize(josh_executable)
+        .unwrap_or_else(|_| josh_executable.to_path_buf())
+        .to_string_lossy()
+        .replace('\\', "/")
+        .replace('\'', r"'\''");
+
+    let mut script = String::new();
+    let _ = writeln!(script, "#!/bin/sh");
+    let _ = writeln!(script, "JOSH_PROXY_HOOK={name}");
+    let _ = writeln!(script, "export JOSH_PROXY_HOOK");
+    let _ = writeln!(script, r#"exec '{exe}' "$@""#);
+    std::fs::write(hook, script)
+}
+
 pub fn create_repo(
     path: &std::path::Path,
     josh_executable: Option<&std::path::Path>,
@@ -409,23 +442,20 @@ pub fn create_repo(
 
     let overlay_path = path.join("overlay");
     tracing::debug!("init overlay repo: {:?}", overlay_path);
-    let overlay_shell = create_repo_base(&overlay_path)?;
-    overlay_shell.command(&["mkdir", "hooks"]);
+    create_repo_base(&overlay_path)?;
+    std::fs::create_dir_all(overlay_path.join("hooks")).expect("can't create hooks dir");
 
     let josh_executable = josh_executable
         .map(|p| p.to_path_buf())
         .unwrap_or_else(|| std::env::current_exe().expect("can't find path to exe"));
-    std::os::unix::fs::symlink(
-        josh_executable.clone(),
-        overlay_path.join("hooks").join("update"),
-    )
-    .expect("can't symlink update hook");
+    install_hook(&josh_executable, &overlay_path.join("hooks").join("update"))
+        .expect("can't install update hook");
 
-    std::os::unix::fs::symlink(
-        josh_executable,
-        overlay_path.join("hooks").join("pre-receive"),
+    install_hook(
+        &josh_executable,
+        &overlay_path.join("hooks").join("pre-receive"),
     )
-    .expect("can't symlink pre-receive hook");
+    .expect("can't install pre-receive hook");
 
     if std::env::var_os("JOSH_KEEP_NS").is_none() {
         std::fs::remove_dir_all(overlay_path.join("refs/namespaces")).ok();
@@ -737,6 +767,21 @@ async fn ssh_list_refs(
     Ok(refs)
 }
 
+/// SSH serving relays git's stdio over the unix sockets josh-ssh-shell sets up, so there is
+/// nothing to connect to here.
+#[cfg(not(unix))]
+async fn serve_namespace(
+    _params: &josh_rpc::calls::ServeNamespace,
+    _repo_path: std::path::PathBuf,
+    _namespace: &str,
+    _repo_update: RepoUpdate,
+) -> anyhow::Result<()> {
+    Err(anyhow!(
+        "SSH serving requires unix sockets, which this platform does not support"
+    ))
+}
+
+#[cfg(unix)]
 async fn serve_namespace(
     params: &josh_rpc::calls::ServeNamespace,
     repo_path: std::path::PathBuf,

@@ -38,10 +38,17 @@ impl Default for PodmanRuntime {
 /// Host uid/gid of the invoking user — the identity container steps run as and
 /// artifacts are chowned to. This is a container mechanic; the scheduler never
 /// needs to know it.
+#[cfg(unix)]
 fn host_uid_gid() -> (u32, u32) {
     let uid = unsafe { libc::getuid() };
     let gid = unsafe { libc::getgid() };
     (uid, gid)
+}
+
+/// Unreachable: `josh compose` is refused on Windows before any container runs.
+#[cfg(windows)]
+fn host_uid_gid() -> (u32, u32) {
+    unreachable!("josh compose is not supported on Windows")
 }
 
 fn host_identity() -> String {

@@ -1828,6 +1828,9 @@ mod tests {
         assert!(seen.is_empty());
     }
 
+    // Windows cannot hold this ref at all: a device name is illegal as a path component, so
+    // an upstream whose path contains one cannot be mirrored there.
+    #[cfg(unix)]
     #[test]
     fn for_each_ref_prefixed_takes_a_prefix_no_worktree_could_hold() {
         // Upstream namespaces are percent-encoded repository paths, so a prefix component
@@ -1852,6 +1855,8 @@ mod tests {
         assert_eq!(seen, ["refs/josh/upstream/aux/refs/heads/main"]);
     }
 
+    // Identifies the file by inode, so it only makes sense on unix.
+    #[cfg(unix)]
     #[test]
     fn update_ref_to_the_value_a_ref_already_has_writes_nothing() {
         use std::os::unix::fs::MetadataExt;

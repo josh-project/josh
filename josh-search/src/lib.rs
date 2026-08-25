@@ -852,7 +852,7 @@ fn path_entry(
             return Ok(None);
         }
         let parsed = gix_object::TreeRef::from_bytes(&buffer, gix_hash::Kind::Sha1)?;
-        let name = std::os::unix::ffi::OsStrExt::as_bytes(component.as_os_str());
+        let name = josh_gix_ext::component_bytes(component.as_os_str());
         let Some(entry) = parsed.entries.iter().find(|e| e.filename == name) else {
             return Ok(None);
         };

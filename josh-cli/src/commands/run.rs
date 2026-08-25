@@ -21,6 +21,13 @@ pub fn handle_compose(
     args: &ComposeArgs,
     transaction: &josh_core::cache::Transaction,
 ) -> anyhow::Result<()> {
+    #[cfg(windows)]
+    {
+        let _ = (args, transaction);
+        anyhow::bail!("josh compose is not supported on Windows");
+    }
+
+    #[cfg(not(windows))]
     match &args.command {
         ComposeCommand::Run(run_args) => handle_run(run_args, transaction),
         ComposeCommand::ListImages(list_args) => handle_list_images(list_args, transaction),

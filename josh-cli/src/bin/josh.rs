@@ -331,13 +331,22 @@ fn to_absolute_remote_url(url: &str) -> anyhow::Result<String> {
     {
         Ok(url.to_owned())
     } else {
-        // For local paths, make them absolute
-        let path = std::fs::canonicalize(url)
-            .with_context(|| format!("Failed to resolve path {}", url))?
-            .display()
-            .to_string();
+        // dunce, not std, on Windows: std::fs::canonicalize returns an extended-length
+        // path (\\?\C:\...), which git rejects inside a file:// URL (issue #2288).
+        #[cfg(windows)]
+        let canonical = dunce::canonicalize(url);
+        #[cfg(not(windows))]
+        let canonical = std::fs::canonicalize(url);
+        let canonical = canonical.with_context(|| format!("Failed to resolve path {}", url))?;
 
-        Ok(format!("file://{}", path))
+        let url = url::Url::from_file_path(&canonical).map_err(|_| {
+            anyhow::anyhow!(
+                "Path {} is not absolute or not convertible to a file URL",
+                canonical.display()
+            )
+        })?;
+
+        Ok(url.to_string())
     }
 }
 
