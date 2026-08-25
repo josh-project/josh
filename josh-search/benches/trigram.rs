@@ -1,5 +1,6 @@
 use criterion::{BenchmarkId, Criterion, Throughput, criterion_group, criterion_main};
 use josh_core::git::josh_commit_signature;
+use josh_test_support::bench::{EntryKind, git2_oid, gix_oid};
 use rand::prelude::*;
 use std::path::PathBuf;
 
@@ -169,14 +170,19 @@ fn build_case(
     vocab: &[String],
     n_files: usize,
 ) -> anyhow::Result<git2::Oid> {
-    let mut builder = git2::build::TreeUpdateBuilder::new();
+    let gix_repo = gix::open(repo.path())?;
+    let baseline = repo.treebuilder(None)?.write()?;
+    let mut builder = gix_repo.edit_tree(gix_oid(baseline))?;
     for i in 0..n_files {
         let oid = repo.blob(file_content(vocab, n_files, i, 0).as_bytes())?;
-        builder.upsert(&path_for(i), oid, git2::FileMode::Blob);
+        builder.upsert(
+            path_for(i).to_str().expect("benchmark paths are UTF-8"),
+            EntryKind::Blob,
+            gix_oid(oid),
+        )?;
     }
 
-    let baseline = repo.find_tree(repo.treebuilder(None)?.write()?)?;
-    let root_tree = repo.find_tree(builder.create_updated(repo, &baseline)?)?;
+    let root_tree = repo.find_tree(git2_oid(builder.write()?.detach()))?;
 
     let sig = josh_commit_signature()?;
     // No ref update yet -- the tip ref is set once the history is complete.
@@ -187,18 +193,22 @@ fn build_case(
     for revision in 1..=K_CHURN {
         let parent = repo.find_commit(head)?;
         let tree = parent.tree()?;
-        let mut builder = git2::build::TreeUpdateBuilder::new();
+        let mut builder = gix_repo.edit_tree(gix_oid(tree.id()))?;
 
-        // Dedup: TreeUpdateBuilder rejects duplicate entries for the same path.
+        // Deduplicate the random indices so each path is rewritten once per commit.
         let churned: std::collections::BTreeSet<usize> = (0..n_churn_files)
             .map(|_| rng.random_range(0..n_files))
             .collect();
         for i in churned {
             let oid = repo.blob(file_content(vocab, n_files, i, revision).as_bytes())?;
-            builder.upsert(&path_for(i), oid, git2::FileMode::Blob);
+            builder.upsert(
+                path_for(i).to_str().expect("benchmark paths are UTF-8"),
+                EntryKind::Blob,
+                gix_oid(oid),
+            )?;
         }
 
-        let new_tree = repo.find_tree(builder.create_updated(repo, &tree)?)?;
+        let new_tree = repo.find_tree(git2_oid(builder.write()?.detach()))?;
         head = repo.commit(
             None,
             &sig,

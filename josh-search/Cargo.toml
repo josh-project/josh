@@ -21,6 +21,7 @@ gix-object.workspace = true
 
 [dev-dependencies]
 josh-gix-ext.workspace = true
+gix.workspace = true
 criterion2 = { version = "3.0.4" }
 rand = "0.10.2"
 tempfile.workspace = true

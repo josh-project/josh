@@ -1,10 +1,19 @@
 //! Repo-building and verification helpers shared by the criterion benches, which
 //! generate deterministic histories through [`provision_repo`](crate::provision_repo).
 
-use std::path::Path;
-
 use anyhow::Result;
+pub use gix::objs::tree::EntryKind;
 use rand::prelude::*;
+
+/// Convert the SHA-1 identifier used by the remaining benchmark APIs to gitoxide.
+pub fn gix_oid(oid: git2::Oid) -> gix::ObjectId {
+    gix::ObjectId::from_bytes_or_panic(oid.as_bytes())
+}
+
+/// Convert a gitoxide SHA-1 identifier for the remaining benchmark APIs.
+pub fn git2_oid(oid: impl AsRef<gix::hash::oid>) -> git2::Oid {
+    git2::Oid::from_bytes(oid.as_ref().as_bytes()).expect("gitoxide repository uses SHA-1")
+}
 
 /// Deterministic lowercase alphabetic string, used as churned blob content.
 pub fn random_string(rng: &mut StdRng, len: usize) -> String {
@@ -65,15 +74,16 @@ pub fn expected_tree(
         }
         git2::TreeWalkResult::Ok
     })?;
-    let mut builder = git2::build::TreeUpdateBuilder::new();
+    let baseline = repo.treebuilder(None)?.write()?;
+    let gix_repo = gix::open(repo.path())?;
+    let mut builder = gix_repo.edit_tree(gix_oid(baseline))?;
     for (path, oid, filemode) in &kept {
         let mode = match *filemode {
-            0o100755 => git2::FileMode::BlobExecutable,
-            0o120000 => git2::FileMode::Link,
-            _ => git2::FileMode::Blob,
+            0o100755 => EntryKind::BlobExecutable,
+            0o120000 => EntryKind::Link,
+            _ => EntryKind::Blob,
         };
-        builder.upsert(Path::new(path), *oid, mode);
+        builder.upsert(path.as_str(), mode, gix_oid(*oid))?;
     }
-    let baseline = repo.find_tree(repo.treebuilder(None)?.write()?)?;
-    Ok((builder.create_updated(repo, &baseline)?, kept.len()))
+    Ok((git2_oid(builder.write()?.detach()), kept.len()))
 }

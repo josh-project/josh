@@ -1,6 +1,7 @@
 use criterion::{BatchSize, BenchmarkId, Criterion, Throughput, criterion_group, criterion_main};
 use josh_core::filter::Filter;
 use josh_core::git::josh_commit_signature;
+use josh_test_support::bench::{EntryKind, git2_oid, gix_oid};
 use rand::prelude::*;
 use std::path::{Path, PathBuf};
 
@@ -184,14 +185,20 @@ fn build_case(repo: &git2::Repository, n_commits: usize) -> anyhow::Result<git2:
 
     // Deterministic root tree: file `i` lives at `dir_{i % N_DIRS}/file_{i}`; split the paths into the
     // filtered subdir (`dir_00`) and the rest so churn can target each set independently.
-    let mut builder = git2::build::TreeUpdateBuilder::new();
+    let gix_repo = gix::open(repo.path())?;
+    let baseline = repo.treebuilder(None)?.write()?;
+    let mut builder = gix_repo.edit_tree(gix_oid(baseline))?;
     let mut subdir_paths = vec![];
     let mut other_paths = vec![];
     for i in 0..TREE_FILES {
         let dir = i % N_DIRS;
         let path = PathBuf::from(format!("dir_{dir:02}")).join(format!("file_{i:04}"));
         let oid = repo.blob(path.to_string_lossy().as_bytes())?;
-        builder.upsert(&path, oid, git2::FileMode::Blob);
+        builder.upsert(
+            path.to_str().expect("benchmark paths are UTF-8"),
+            EntryKind::Blob,
+            gix_oid(oid),
+        )?;
         if dir == 0 {
             subdir_paths.push(path);
         } else {
@@ -199,8 +206,7 @@ fn build_case(repo: &git2::Repository, n_commits: usize) -> anyhow::Result<git2:
         }
     }
 
-    let baseline = repo.find_tree(repo.treebuilder(None)?.write()?)?;
-    let root_tree = repo.find_tree(builder.create_updated(repo, &baseline)?)?;
+    let root_tree = repo.find_tree(git2_oid(builder.write()?.detach()))?;
 
     let sig = josh_commit_signature()?;
     // No ref update yet -- the tip ref is set once the history is complete.
@@ -210,7 +216,7 @@ fn build_case(repo: &git2::Repository, n_commits: usize) -> anyhow::Result<git2:
     for i in 0..n_commits {
         let parent = repo.find_commit(head)?;
         let tree = parent.tree()?;
-        let mut builder = git2::build::TreeUpdateBuilder::new();
+        let mut builder = gix_repo.edit_tree(gix_oid(tree.id()))?;
 
         // Always churn non-dir_00 files (guarantees a real input commit, no effect on the filter).
         // Dedup indices so a path is never upserted twice in the same commit.
@@ -221,16 +227,24 @@ fn build_case(repo: &git2::Repository, n_commits: usize) -> anyhow::Result<git2:
         for idx in idxs {
             let path = &other_paths[idx];
             let blob = repo.blob(random_string(&mut rng, CHURN_CONTENT_LEN).as_bytes())?;
-            builder.upsert(path, blob, git2::FileMode::Blob);
+            builder.upsert(
+                path.to_str().expect("benchmark paths are UTF-8"),
+                EntryKind::Blob,
+                gix_oid(blob),
+            )?;
         }
         // Rarely also touch dir_00, producing an output commit.
         if rng.random_bool(SUBDIR_CHANGE_PROB) {
             let path = &subdir_paths[rng.random_range(0..subdir_paths.len())];
             let blob = repo.blob(random_string(&mut rng, CHURN_CONTENT_LEN).as_bytes())?;
-            builder.upsert(path, blob, git2::FileMode::Blob);
+            builder.upsert(
+                path.to_str().expect("benchmark paths are UTF-8"),
+                EntryKind::Blob,
+                gix_oid(blob),
+            )?;
         }
 
-        let new_tree = repo.find_tree(builder.create_updated(repo, &tree)?)?;
+        let new_tree = repo.find_tree(git2_oid(builder.write()?.detach()))?;
         head = repo.commit(
             None,
             &sig,
