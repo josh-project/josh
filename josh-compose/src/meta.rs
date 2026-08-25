@@ -107,10 +107,9 @@ pub fn read_blob_entries(
 
 /// Parse a workspace's configuration from its git tree.
 ///
-/// Reads blobs named `label`, `output`, `cmd`, `cache`, `network`, `image`, and
-/// optionally `worktree` (falling back to `run` for backward compatibility) from the
-/// tree. Returns `None` for `image` and `worktree` when the workspace is
-/// orchestrator-only (no image to build and no files to mount).
+/// Reads blobs named `label`, `output`, `cmd`, `cache`, `network`, and `image`, plus
+/// the optional `worktree` subtree. Returns `None` for `image` and `worktree` when
+/// the workspace is orchestrator-only (no image to build and no files to mount).
 pub fn read_meta(
     transaction: &cache::Transaction,
     odb: &memodb::Odb,
@@ -146,12 +145,7 @@ pub fn read_meta(
         .transpose()?;
 
     let tree = tree::read_tree(transaction, odb, ws_tree)?;
-    // Prefer "worktree"; fall back to "run" for backward compatibility with
-    // workspaces authored before the rename.
-    let worktree = tree
-        .entry(b"worktree")
-        .or_else(|| tree.entry(b"run"))
-        .map(|e| objects::git2_oid(e.oid));
+    let worktree = tree.entry(b"worktree").map(|e| objects::git2_oid(e.oid));
 
     let sidecars = read_sidecars(transaction, odb, ws_tree)?;
 
