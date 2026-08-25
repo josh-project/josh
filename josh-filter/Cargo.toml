@@ -18,7 +18,6 @@ indoc = "2.0.7"
 itertools = "0.15.0"
 
 anyhow.workspace = true
-git2.workspace = true
 josh-memodb.workspace = true
 josh-gix-ext.workspace = true
 gix-object.workspace = true

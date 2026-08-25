@@ -100,7 +100,11 @@ fn blob_root_roundtrips() {
     let stage = Stage::new();
     let value = GitValue::blob_from_str("lone blob");
     let root = to_tree_oid(&stage, &value).unwrap();
-    assert_eq!(root, josh_gix_ext::hash_blob(b"lone blob"));
+    assert_eq!(
+        root,
+        gix_object::compute_hash(gix_hash::Kind::Sha1, gix_object::Kind::Blob, b"lone blob")
+            .unwrap()
+    );
     let back = from_tree_oid(&*stage.0.borrow(), root).unwrap();
     assert_eq!(value, back);
 }
@@ -127,10 +131,7 @@ fn written_tree_is_in_canonical_order() {
     let staging = stage.0.borrow();
     let mut buf = Vec::new();
     let (kind, object_hash) = {
-        let data = staging
-            .try_find(&josh_gix_ext::gix_oid(root), &mut buf)
-            .unwrap()
-            .unwrap();
+        let data = staging.try_find(&root, &mut buf).unwrap().unwrap();
         (data.kind, data.object_hash)
     };
     assert_eq!(kind, gix_object::Kind::Tree);
@@ -161,7 +162,7 @@ fn written_tree_is_in_canonical_order() {
         let name: &[u8] = entry.filename.as_ref();
         if name == b"foo" {
             assert_eq!(entry.mode.kind(), gix_object::tree::EntryKind::Tree);
-            let sub = from_tree_oid(&*staging, josh_gix_ext::git2_oid(entry.oid)).unwrap();
+            let sub = from_tree_oid(&*staging, entry.oid.to_owned()).unwrap();
             assert_eq!(
                 sub,
                 GitValue::Tree(BTreeMap::from([(
@@ -184,7 +185,7 @@ fn commit_object_is_rejected() {
     let mut staging = StagingOdb::new();
     // Contents are irrelevant: the kind alone must trigger the error.
     let commit = staging.write_raw(gix_object::Kind::Commit, b"tree".to_vec());
-    let err = from_tree_oid(&staging, josh_gix_ext::git2_oid(&commit)).unwrap_err();
+    let err = from_tree_oid(&staging, commit).unwrap_err();
     assert!(
         err.to_string().contains("not a tree or a blob"),
         "unexpected error: {err}"
@@ -194,7 +195,7 @@ fn commit_object_is_rejected() {
 #[test]
 fn missing_object_is_an_error() {
     let staging = StagingOdb::new();
-    let missing = git2::Oid::from_str("0123456789012345678901234567890123456789").unwrap();
+    let missing = gix_hash::ObjectId::from_bytes_or_panic(&[1; 20]);
     let err = from_tree_oid(&staging, missing).unwrap_err();
     assert!(
         err.to_string().contains("not found"),
@@ -222,7 +223,7 @@ fn executable_blob_entry_is_rejected() {
         gix_object::Kind::Tree,
         raw_tree(&[("100755", "exec", &blob)]),
     );
-    let err = from_tree_oid(&staging, josh_gix_ext::git2_oid(&tree)).unwrap_err();
+    let err = from_tree_oid(&staging, tree).unwrap_err();
     assert!(
         err.to_string().contains("unsupported mode"),
         "unexpected error: {err}"
@@ -238,7 +239,7 @@ fn duplicate_entry_names_are_rejected() {
         gix_object::Kind::Tree,
         raw_tree(&[("100644", "dup", &a), ("100644", "dup", &b)]),
     );
-    let err = from_tree_oid(&staging, josh_gix_ext::git2_oid(&tree)).unwrap_err();
+    let err = from_tree_oid(&staging, tree).unwrap_err();
     assert!(
         err.to_string().contains("duplicate entry name"),
         "unexpected error: {err}"

@@ -87,7 +87,7 @@ fn previous_value(expected: Expected) -> gix::refs::transaction::PreviousValue {
     }
 }
 
-static REF_CACHE: LazyLock<RwLock<HashMap<git2::Oid, HashMap<git2::Oid, git2::Oid>>>> =
+static REF_CACHE: LazyLock<RwLock<HashMap<gix_hash::ObjectId, HashMap<git2::Oid, git2::Oid>>>> =
     LazyLock::new(Default::default);
 
 static POPULATE_MAP: LazyLock<RwLock<HashMap<(git2::Oid, git2::Oid), git2::Oid>>> =
@@ -239,12 +239,12 @@ impl TransactionContext {
 
 #[allow(unused)]
 struct Transaction2 {
-    commit_map: HashMap<git2::Oid, HashMap<git2::Oid, git2::Oid>>,
-    apply_map: HashMap<git2::Oid, HashMap<git2::Oid, git2::Oid>>,
+    commit_map: HashMap<gix_hash::ObjectId, HashMap<git2::Oid, git2::Oid>>,
+    apply_map: HashMap<gix_hash::ObjectId, HashMap<git2::Oid, git2::Oid>>,
     subtract_map: HashMap<(git2::Oid, git2::Oid), git2::Oid>,
     intersect_map: HashMap<(git2::Oid, git2::Oid), git2::Oid>,
     overlay_map: HashMap<(git2::Oid, git2::Oid), git2::Oid>,
-    unapply_map: HashMap<git2::Oid, HashMap<git2::Oid, git2::Oid>>,
+    unapply_map: HashMap<gix_hash::ObjectId, HashMap<git2::Oid, git2::Oid>>,
     legalize_map: HashMap<(crate::filter::Filter, git2::Oid), crate::filter::Filter>,
     downstack_deps_map: HashMap<git2::Oid, std::collections::HashSet<crate::filter::DownstackDep>>,
     merge_trees_map: HashMap<(git2::Oid, git2::Oid, git2::Oid), git2::Oid>,

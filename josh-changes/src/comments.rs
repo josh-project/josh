@@ -246,7 +246,7 @@ fn read_comment(
     entry_oid: git2::Oid,
     file: Option<String>,
 ) -> anyhow::Result<Comment> {
-    let value = from_tree_oid(odb, entry_oid)?;
+    let value = from_tree_oid(odb, objects::gix_oid(entry_oid))?;
     let meta: CommentMeta = from_value(&value)?;
     Ok(Comment {
         id: id.to_string(),

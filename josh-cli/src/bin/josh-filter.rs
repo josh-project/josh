@@ -222,7 +222,7 @@ fn run_filter(args: Vec<String>) -> anyhow::Result<i32> {
     let input_ref = args.get_one::<String>("input").unwrap();
 
     let mut refs = vec![];
-    let mut ids: Vec<(git2::Oid, josh_core::filter::Filter)> = vec![];
+    let mut ids = vec![];
 
     let (input_ref, oid) = resolve_input_ref(&transaction, input_ref)?;
     refs.push((input_ref.clone(), oid));
@@ -243,7 +243,10 @@ fn run_filter(args: Vec<String>) -> anyhow::Result<i32> {
                 return Ok(());
             }
             let target = repo.find_object(oid, None)?.peel_to_commit()?.id();
-            ids.push((target, josh_core::filter::Filter::new().message(name)));
+            ids.push((
+                josh_core::objects::gix_oid(target),
+                josh_core::filter::Filter::new().message(name),
+            ));
             refs.push((name.to_string(), target));
             Ok(())
         })?;
@@ -260,7 +263,10 @@ fn run_filter(args: Vec<String>) -> anyhow::Result<i32> {
             if let [sha, name] = split.as_slice() {
                 let target = git2::Oid::from_str(sha)?;
                 let target = repo.find_object(target, None)?.peel_to_commit()?.id();
-                ids.push((target, josh_core::filter::Filter::new().message(name)));
+                ids.push((
+                    josh_core::objects::gix_oid(target),
+                    josh_core::filter::Filter::new().message(name),
+                ));
                 refs.push((name.to_string(), target));
             } else if !split.is_empty() {
                 eprintln!("Warning: malformed line: {:?}", line);

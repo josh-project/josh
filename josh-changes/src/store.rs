@@ -124,7 +124,7 @@ pub fn value_oid<T: serde::Serialize>(
         GitValue::Tree(_) => 0o0040000,
         GitValue::Blob(_) => git2::FileMode::Blob.into(),
     };
-    Ok((root, mode))
+    Ok((objects::git2_oid(&root), mode))
 }
 
 /// Place the already-written object `root` at `path` inside `scope`'s ref and
@@ -197,7 +197,7 @@ pub fn read_filtered<T: serde::de::DeserializeOwned>(
         filter,
         josh_core::filter::Rewrite::from_tree(root),
     )?;
-    let value = josh_git_serde::from_tree_oid(odb, filtered.tree_id())?;
+    let value = josh_git_serde::from_tree_oid(odb, objects::gix_oid(filtered.tree_id()))?;
     Ok(Some(josh_git_serde::from_value(&value)?))
 }
 
@@ -235,12 +235,18 @@ pub fn store_diff_data(
     let path = std::path::Path::new("diffs").join(encode_change_id_path(&change_id));
 
     if let Ok(Some(existing)) = tree::get_path_entry(transaction, odb, base_tree, &path) {
-        if objects::git2_oid(&existing.oid) == tree_oid {
+        if existing.oid == tree_oid {
             return Ok(());
         }
     }
 
-    let tree = tree::insert_oid(odb, base_tree, &path, tree_oid, 0o0040000)?;
+    let tree = tree::insert_oid(
+        odb,
+        base_tree,
+        &path,
+        objects::git2_oid(&tree_oid),
+        0o0040000,
+    )?;
 
     let sig = transaction.signature()?;
 

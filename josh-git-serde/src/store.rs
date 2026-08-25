@@ -16,9 +16,14 @@ use crate::value::GitValue;
 /// Tree entry names must be single path components: non-empty, no '/' or
 /// NUL, not "." or "..". Keys produced by the serializer always satisfy
 /// this; the check exists because [`GitValue`] is public.
-pub fn to_tree_oid(out: &impl gix_object::Write, value: &GitValue) -> anyhow::Result<git2::Oid> {
+pub fn to_tree_oid(
+    out: &impl gix_object::Write,
+    value: &GitValue,
+) -> anyhow::Result<gix_hash::ObjectId> {
     match value {
-        GitValue::Blob(data) => josh_gix_ext::write_blob(out, data),
+        GitValue::Blob(data) => out
+            .write_buf(gix_object::Kind::Blob, data)
+            .map_err(|e| anyhow::anyhow!("to_tree_oid: {e}")),
         GitValue::Tree(entries) => {
             let mut tree_entries = Vec::with_capacity(entries.len());
             for (name, child) in entries {
@@ -30,11 +35,14 @@ pub fn to_tree_oid(out: &impl gix_object::Write, value: &GitValue) -> anyhow::Re
                         GitValue::Blob(_) => gix_object::tree::EntryKind::Blob.into(),
                     },
                     filename: name.as_str().into(),
-                    oid: josh_gix_ext::gix_oid(oid),
+                    oid,
                 });
             }
             tree_entries.sort();
-            josh_gix_ext::write_tree_now(out, tree_entries)
+            out.write(&gix_object::Tree {
+                entries: tree_entries,
+            })
+            .map_err(|e| anyhow::anyhow!("to_tree_oid: {e}"))
         }
     }
 }
@@ -50,7 +58,10 @@ pub fn to_tree_oid(out: &impl gix_object::Write, value: &GitValue) -> anyhow::Re
 /// Nesting deeper than [`MAX_TREE_DEPTH`] is rejected rather than risking a
 /// stack overflow on adversarial objects, as are duplicate entry names
 /// (possible only in hand-crafted trees).
-pub fn from_tree_oid(source: &impl gix_object::Find, root: git2::Oid) -> anyhow::Result<GitValue> {
+pub fn from_tree_oid(
+    source: &impl gix_object::Find,
+    root: gix_hash::ObjectId,
+) -> anyhow::Result<GitValue> {
     read_tree_oid(source, root, 0)
 }
 
@@ -65,7 +76,7 @@ fn validate_entry_name(name: &str) -> anyhow::Result<()> {
 
 fn read_tree_oid(
     source: &impl gix_object::Find,
-    root: git2::Oid,
+    root: gix_hash::ObjectId,
     depth: usize,
 ) -> anyhow::Result<GitValue> {
     if depth > MAX_TREE_DEPTH {
@@ -76,7 +87,7 @@ fn read_tree_oid(
 
     let mut buf = Vec::new();
     let data = source
-        .try_find(&josh_gix_ext::gix_oid(root), &mut buf)
+        .try_find(&root, &mut buf)
         .map_err(|e| anyhow::anyhow!("from_tree_oid: {e}"))?
         .ok_or_else(|| anyhow::anyhow!("from_tree_oid: object {root} not found"))?;
     let object_hash = data.object_hash;
@@ -98,7 +109,7 @@ fn read_tree_oid(
                         entry.mode
                     ));
                 }
-                let child = read_tree_oid(source, josh_gix_ext::git2_oid(entry.oid), depth + 1)?;
+                let child = read_tree_oid(source, entry.oid.to_owned(), depth + 1)?;
                 if entries.insert(name.clone(), Box::new(child)).is_some() {
                     return Err(anyhow::anyhow!(
                         "from_tree_oid: duplicate entry name {name:?}"

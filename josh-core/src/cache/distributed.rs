@@ -34,7 +34,7 @@ pub struct DistributedCacheBackend {
     // Filter -> persisted tree id (`as_tree`), used to name cache refs. `as_tree` resolves
     // insert OIDs, so ref names always reference persisted, reachable filter trees even when
     // the filter passed in still contains unresolved ones.
-    tree_ids: std::sync::Mutex<HashMap<Filter, git2::Oid>>,
+    tree_ids: std::sync::Mutex<HashMap<Filter, gix_hash::ObjectId>>,
 }
 
 impl Drop for DistributedCacheBackend {
@@ -74,7 +74,11 @@ impl DistributedCacheBackend {
         })
     }
 
-    fn tree_id(&self, odb: &josh_memodb::Odb, filter: Filter) -> anyhow::Result<git2::Oid> {
+    fn tree_id(
+        &self,
+        odb: &josh_memodb::Odb,
+        filter: Filter,
+    ) -> anyhow::Result<gix_hash::ObjectId> {
         if let Some(oid) = self.tree_ids.lock().unwrap().get(&filter) {
             return Ok(*oid);
         }
@@ -197,7 +201,7 @@ impl DistributedCacheBackend {
 // To additionally limit the size of the trees the cache is also sharded by sequence
 // number in groups of 10000. Note that this does not limit the number of entries per bucket
 // as branches mean many commits share the same sequence number.
-fn ref_path(filter_tree_id: git2::Oid, shard: u64) -> String {
+fn ref_path(filter_tree_id: gix_hash::ObjectId, shard: u64) -> String {
     format!(
         "refs/josh/cache/{}/{}/{}",
         CACHE_VERSION, shard, filter_tree_id,
