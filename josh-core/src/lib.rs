@@ -26,43 +26,6 @@ pub mod trailers;
 pub use josh_gix_ext as objects;
 pub use josh_memodb as memodb;
 
-#[derive(
-    Clone, Hash, PartialEq, Eq, Copy, PartialOrd, Ord, Debug, serde::Serialize, serde::Deserialize,
-)]
-#[serde(try_from = "String", into = "String")]
-pub struct Oid(git2::Oid);
-
-impl Default for Oid {
-    fn default() -> Self {
-        Oid(git2::Oid::ZERO_SHA1)
-    }
-}
-
-impl std::convert::TryFrom<String> for Oid {
-    type Error = anyhow::Error;
-    fn try_from(s: String) -> anyhow::Result<Oid> {
-        Ok(Oid(git2::Oid::from_str(&s)?))
-    }
-}
-
-impl From<Oid> for String {
-    fn from(val: Oid) -> Self {
-        val.0.to_string()
-    }
-}
-
-impl From<Oid> for git2::Oid {
-    fn from(val: Oid) -> Self {
-        val.0
-    }
-}
-
-impl From<git2::Oid> for Oid {
-    fn from(oid: git2::Oid) -> Self {
-        Self(oid)
-    }
-}
-
 /// Determine the josh version number with the following precedence:
 ///
 /// 1. If in a git checkout, and `git` binary is present, use the
