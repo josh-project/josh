@@ -61,7 +61,7 @@ fn pathstree_inner(
             rebuild.keep(gix_object::tree::Entry {
                 mode: gix_object::tree::EntryKind::Blob.into(),
                 filename: entry.filename.to_owned(),
-                oid: objects::gix_oid(odb.write(gix_object::Kind::Blob, file_contents.as_bytes())),
+                oid: odb.write(gix_object::Kind::Blob, file_contents.as_bytes()),
             });
         }
     }
@@ -120,7 +120,7 @@ fn regex_replace_inner(
             rebuild.keep(gix_object::tree::Entry {
                 mode: entry.mode,
                 filename: entry.filename.to_owned(),
-                oid: objects::gix_oid(odb.write(gix_object::Kind::Blob, replaced.as_bytes())),
+                oid: odb.write(gix_object::Kind::Blob, replaced.as_bytes()),
             });
         }
     }
@@ -130,7 +130,7 @@ fn regex_replace_inner(
 /// The raw bytes of the blob `oid`, or `None` when the object is missing or not a blob --
 /// `find_blob`'s tolerance, in facade currency.
 pub fn blob_bytes(odb: &josh_memodb::Odb, oid: git2::Oid) -> Option<josh_memodb::Bytes> {
-    match odb.read(oid) {
+    match odb.read(objects::gix_oid(oid)) {
         Ok((gix_object::Kind::Blob, bytes)) => Some(bytes),
         _ => None,
     }
@@ -1135,7 +1135,7 @@ pub fn invert_paths(
                 odb,
                 result,
                 Path::new(&opath),
-                odb.write(gix_object::Kind::Blob, mpath.as_bytes()),
+                objects::git2_oid(&odb.write(gix_object::Kind::Blob, mpath.as_bytes())),
                 0o0100644,
             )
             .unwrap();
@@ -1200,8 +1200,14 @@ pub fn populate(
     }
 
     use gix_object::Kind;
-    let paths_kind = odb.read_header(paths).map(|(kind, _)| kind).ok();
-    let content_kind = odb.read_header(content).map(|(kind, _)| kind).ok();
+    let paths_kind = odb
+        .read_header(objects::gix_oid(paths))
+        .map(|(kind, _)| kind)
+        .ok();
+    let content_kind = odb
+        .read_header(objects::gix_oid(content))
+        .map(|(kind, _)| kind)
+        .ok();
 
     let mut result_tree = empty_id();
     if let (Some(Kind::Blob), Some(Kind::Blob)) = (paths_kind, content_kind) {

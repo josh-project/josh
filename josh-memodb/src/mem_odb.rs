@@ -189,7 +189,7 @@ impl MemOdb {
     /// ref ends. Everything *readable* through the store has to become durable, so a chained
     /// store drains what it reads through too. Runs on the background flusher behind any queued
     /// overflow chunks; a store holding nothing skips the round trip.
-    pub fn flush(self: &Arc<Self>) -> Result<(), git2::Error> {
+    pub fn flush(self: &Arc<Self>) -> anyhow::Result<()> {
         if let Some(behind) = &self.read_through {
             behind.flush()?;
         }
@@ -234,7 +234,7 @@ impl MemOdb {
     /// no repository handle involved. The snapshot shares the object buffers (`Arc`), and the
     /// objects stay in the map while the pack is written, so concurrent reads keep resolving until
     /// eviction — which happens only once the pack is on disk.
-    pub(crate) fn pack_to_disk(self: &Arc<Self>) -> Result<(), git2::Error> {
+    pub(crate) fn pack_to_disk(self: &Arc<Self>) -> anyhow::Result<()> {
         // One packer per store at a time: the flusher's own jobs are already serialised, but the
         // process-exit flush packs inline and would otherwise snapshot and evict concurrently.
         let _packing = self.pack_lock.lock();

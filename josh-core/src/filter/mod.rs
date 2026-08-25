@@ -548,7 +548,9 @@ fn get_rev_filter(
         } else {
             return Err(anyhow!("unresolved lazy ref"));
         };
-        if match_op != &RevMatch::Default && !transaction.odb().contains(*filter_tip) {
+        if match_op != &RevMatch::Default
+            && !transaction.odb().contains(objects::gix_oid(*filter_tip))
+        {
             return Err(anyhow!("`:rev(...)` with nonexistent OID: {}", filter_tip));
         }
         let matches = match match_op {
@@ -614,7 +616,7 @@ pub fn apply_to_commit2(
         Op::Squash(None) => {
             let odb = transaction.odb();
             let commit = objects::CommitData::read(odb, commit_id)?;
-            odb.read_header(commit.tree_id()?)?;
+            odb.read_header(objects::gix_oid(commit.tree_id()?))?;
             return Some(history::rewrite_commit(
                 odb,
                 &commit,
@@ -649,7 +651,7 @@ pub fn apply_to_commit2(
     // no parse). Without this gate, an apply over a partially unreadable input can buffer
     // fresh objects into the store before a later read aborts the walk, and the partial
     // write would change the next flush's pack.
-    odb.read_header(commit.tree_id()?)?;
+    odb.read_header(objects::gix_oid(commit.tree_id()?))?;
 
     let rewrite_data = match &op {
         Op::Squash(Some(ids)) => {
@@ -1344,7 +1346,9 @@ fn apply_impl(
                             odb,
                             result_tree,
                             &submodule_path.join(".link.josh"),
-                            odb.write(gix_object::Kind::Blob, link_content.as_bytes()),
+                            objects::git2_oid(
+                                &odb.write(gix_object::Kind::Blob, link_content.as_bytes()),
+                            ),
                             0o0100644,
                         )?;
                     }
@@ -1388,7 +1392,7 @@ fn apply_impl(
                     odb,
                     result_tree,
                     &link_path.join(".link.josh"),
-                    odb.write(gix_object::Kind::Blob, link_content.as_bytes()),
+                    objects::git2_oid(&odb.write(gix_object::Kind::Blob, link_content.as_bytes())),
                     0o0100644,
                 )?;
             }
@@ -1434,7 +1438,7 @@ fn apply_impl(
                     odb,
                     result_tree,
                     &root.join(".link.josh"),
-                    odb.write(gix_object::Kind::Blob, link_content.as_bytes()),
+                    objects::git2_oid(&odb.write(gix_object::Kind::Blob, link_content.as_bytes())),
                     0o0100644,
                 )?;
             }
@@ -1478,13 +1482,13 @@ fn apply_impl(
         Op::Insert(dest_path, content) => {
             let (oid, mode, is_tree) = match content {
                 InsertContent::Inline(s) => (
-                    odb.write(gix_object::Kind::Blob, s.as_bytes()),
+                    objects::git2_oid(&odb.write(gix_object::Kind::Blob, s.as_bytes())),
                     git2::FileMode::Blob.into(),
                     false,
                 ),
                 // The kind comes from the header alone; a missing oid folds into the
                 // "neither" arm below.
-                InsertContent::Oid(oid) => match odb.try_kind(*oid) {
+                InsertContent::Oid(oid) => match odb.try_kind(objects::gix_oid(*oid)) {
                     Ok(Some(gix_object::Kind::Blob)) => (*oid, git2::FileMode::Blob.into(), false),
                     Ok(Some(gix_object::Kind::Tree)) => (*oid, git2::FileMode::Tree.into(), true),
                     _ => {
@@ -1622,7 +1626,8 @@ fn apply_impl(
         Op::ObjectRef(path) => {
             if let Ok(Some(entry)) = tree::get_path_entry(transaction, odb, x.tree_id(), path) {
                 let oid_str = objects::git2_oid(&entry.oid).to_string();
-                let blob_oid = odb.write(gix_object::Kind::Blob, oid_str.as_bytes());
+                let blob_oid =
+                    objects::git2_oid(&odb.write(gix_object::Kind::Blob, oid_str.as_bytes()));
                 Ok(x.with_tree(tree::insert_oid(
                     odb,
                     tree::empty_id(),
@@ -1654,7 +1659,7 @@ fn apply_impl(
             if let Ok(oid) = git2::Oid::from_str(&oid_str) {
                 // Kind by header, never by `contains`: `read_header`'s disk fallback
                 // virtualizes the empty tree, `exists` does not.
-                let (oid, mode) = match odb.try_kind(oid) {
+                let (oid, mode) = match odb.try_kind(objects::gix_oid(oid)) {
                     Ok(Some(gix_object::Kind::Tree)) => (oid, git2::FileMode::Tree.into()),
                     Ok(Some(gix_object::Kind::Blob)) => (oid, git2::FileMode::Blob.into()),
                     _ => {
@@ -1664,7 +1669,7 @@ fn apply_impl(
                 Ok(x.with_tree(tree::insert_oid(odb, tree::empty_id(), path, oid, mode)?))
             } else {
                 // Content is not a valid OID: insert empty blob at path.
-                let empty_blob = odb.write(gix_object::Kind::Blob, b"");
+                let empty_blob = objects::git2_oid(&odb.write(gix_object::Kind::Blob, b""));
                 Ok(x.with_tree(tree::insert_oid(
                     odb,
                     tree::empty_id(),
@@ -1995,7 +2000,7 @@ fn pre_process_tree(
         odb,
         tree,
         path,
-        odb.write(gix_object::Kind::Blob, blob.as_bytes()),
+        objects::git2_oid(&odb.write(gix_object::Kind::Blob, blob.as_bytes())),
         git2::FileMode::Blob.into(), // Should this handle filemode?
     )?;
 

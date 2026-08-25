@@ -292,7 +292,7 @@ pub fn rewrite_commit(
     let mut b = vec![];
     gix_object::WriteTo::write_to(&commit, &mut b)?;
 
-    Ok(odb.write(gix_object::Kind::Commit, &b))
+    Ok(objects::git2_oid(&odb.write(gix_object::Kind::Commit, &b)))
 }
 
 // Given an OID of an unfiltered commit and a filter,
@@ -426,7 +426,7 @@ pub fn unapply_filter(
     // The old filtered oid can be missing from the repo (e.g. a new branch);
     // there is no range to exclude then, so take everything reachable.
     let old_filtered_exists = matches!(
-        odb.read_header(old_filtered_oid),
+        odb.read_header(objects::gix_oid(old_filtered_oid)),
         Ok((gix_object::Kind::Commit, _))
     );
     let revs = if old_filtered_exists {

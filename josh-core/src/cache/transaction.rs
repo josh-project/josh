@@ -346,7 +346,7 @@ impl Transaction {
 
         // An ephemeral transaction must not contribute to a store that outlives it, so it
         // buffers privately and reads through to the shared one.
-        let objects_dir = josh_memodb::objects_dir(&repo);
+        let objects_dir = gix_repo.objects.path().to_owned();
         let shared = josh_memodb::registry::shared(mem_odb_limit, &objects_dir);
         let mem_odb = if ephemeral {
             josh_memodb::MemOdb::chained(mem_odb_limit, objects_dir, shared)
@@ -451,7 +451,7 @@ impl Transaction {
         if let Some(bytes) = self.t2.borrow().tree_cache.get(oid) {
             return Ok(Some(TreeBytes::Cached(bytes)));
         }
-        let (kind, bytes) = odb.read(oid)?;
+        let (kind, bytes) = odb.read(crate::objects::gix_oid(oid))?;
         if kind != gix_object::Kind::Tree {
             return Ok(None);
         }
@@ -1224,7 +1224,7 @@ impl Transaction {
         let oid = t2.cache.read_propagate(filter, tree, hint, true).ok()??;
         // Per-subtree index trees are anchored by no ref, so gc may have pruned a
         // cached one; treat a dangling hit as a miss and reindex.
-        if self.odb().contains(oid) {
+        if self.odb().contains(crate::objects::gix_oid(oid)) {
             Some(oid)
         } else {
             None
@@ -1259,7 +1259,7 @@ impl Transaction {
     pub fn get_ref(&self, filter: crate::filter::Filter, from: git2::Oid) -> Option<git2::Oid> {
         if let Some(m) = REF_CACHE.read().unwrap().get(&filter.id())
             && let Some(oid) = m.get(&from)
-            && self.odb().contains(*oid)
+            && self.odb().contains(crate::objects::gix_oid(*oid))
         {
             return Some(*oid);
         }
@@ -1398,7 +1398,7 @@ impl Transaction {
                 return Ok(Some(oid));
             }
 
-            if self.odb().contains(oid) {
+            if self.odb().contains(crate::objects::gix_oid(oid)) {
                 // Only report an object as cached if it exists in the object database.
                 // This forces a rebuild in case the object was garbage collected.
                 return Ok(Some(oid));
@@ -2193,9 +2193,11 @@ mod tests {
 
         let oid = {
             let transaction = context.open().unwrap();
-            let oid = transaction
-                .odb()
-                .write(gix_object::Kind::Blob, b"published");
+            let oid = crate::objects::git2_oid(
+                &transaction
+                    .odb()
+                    .write(gix_object::Kind::Blob, b"published"),
+            );
             transaction
                 .update_ref("refs/josh/blob", Expected::Absent, oid, "test")
                 .unwrap();
@@ -2224,7 +2226,8 @@ mod tests {
     fn flush_mem_odb_publishes_pending_refs_after_objects() {
         let (dir, context) = test_context();
         let transaction = context.open().unwrap();
-        let oid = transaction.odb().write(gix_object::Kind::Blob, b"boundary");
+        let oid =
+            crate::objects::git2_oid(&transaction.odb().write(gix_object::Kind::Blob, b"boundary"));
         transaction
             .update_ref("refs/josh/blob", Expected::Absent, oid, "test")
             .unwrap();
