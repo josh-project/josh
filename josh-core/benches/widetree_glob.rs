@@ -1,7 +1,9 @@
 use criterion::{BatchSize, BenchmarkId, Criterion, Throughput, criterion_group, criterion_main};
 use josh_core::filter::Filter;
 use josh_core::git::josh_commit_signature;
-use josh_test_support::bench::{build_index, expected_tree, random_string};
+use josh_test_support::bench::{
+    EntryKind, build_index, expected_tree, git2_oid, gix_oid, random_string,
+};
 use rand::prelude::*;
 use std::path::{Path, PathBuf};
 
@@ -226,11 +228,17 @@ fn file_path(i: usize) -> PathBuf {
 /// `refs/heads/case_<n_files>` so the head is recoverable after the repo round-trips through the
 /// cache.
 fn build_case(repo: &git2::Repository, n_files: usize) -> anyhow::Result<git2::Oid> {
-    let mut builder = git2::build::TreeUpdateBuilder::new();
+    let gix_repo = gix::open(repo.path())?;
+    let baseline = repo.treebuilder(None)?.write()?;
+    let mut builder = gix_repo.edit_tree(gix_oid(baseline))?;
     for i in 0..n_files {
         let path = file_path(i);
         let oid = repo.blob(path.to_string_lossy().as_bytes())?;
-        builder.upsert(&path, oid, git2::FileMode::Blob);
+        builder.upsert(
+            path.to_str().expect("benchmark paths are UTF-8"),
+            EntryKind::Blob,
+            gix_oid(oid),
+        )?;
     }
     // Planted sparse files -- the only `.toml` blobs (see N_SPARSE above).
     for k in 0..N_SPARSE {
@@ -238,11 +246,14 @@ fn build_case(repo: &git2::Repository, n_files: usize) -> anyhow::Result<git2::O
             .join("dir_00")
             .join(format!("config_{k:02}.toml"));
         let oid = repo.blob(path.to_string_lossy().as_bytes())?;
-        builder.upsert(&path, oid, git2::FileMode::Blob);
+        builder.upsert(
+            path.to_str().expect("benchmark paths are UTF-8"),
+            EntryKind::Blob,
+            gix_oid(oid),
+        )?;
     }
 
-    let baseline = repo.find_tree(repo.treebuilder(None)?.write()?)?;
-    let root_tree = repo.find_tree(builder.create_updated(repo, &baseline)?)?;
+    let root_tree = repo.find_tree(git2_oid(builder.write()?.detach()))?;
 
     let sig = josh_commit_signature()?;
     // No ref update yet -- the tip ref is set once the history is complete.
@@ -253,16 +264,20 @@ fn build_case(repo: &git2::Repository, n_files: usize) -> anyhow::Result<git2::O
     for commit_idx in 0..N_COMMITS - 1 {
         let parent = repo.find_commit(head)?;
         let tree = parent.tree()?;
-        let mut builder = git2::build::TreeUpdateBuilder::new();
+        let mut builder = gix_repo.edit_tree(gix_oid(tree.id()))?;
 
         for j in 0..CHURN_PER_COMMIT {
             let path = file_path((commit_idx * 31 + j) % n_files);
             let content = random_string(&mut rng, 10);
             let blob = repo.blob(content.as_bytes())?;
-            builder.upsert(&path, blob, git2::FileMode::Blob);
+            builder.upsert(
+                path.to_str().expect("benchmark paths are UTF-8"),
+                EntryKind::Blob,
+                gix_oid(blob),
+            )?;
         }
 
-        let new_tree = repo.find_tree(builder.create_updated(repo, &tree)?)?;
+        let new_tree = repo.find_tree(git2_oid(builder.write()?.detach()))?;
         head = repo.commit(
             None,
             &sig,

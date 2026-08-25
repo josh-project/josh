@@ -1,7 +1,9 @@
 use criterion::{BatchSize, BenchmarkId, Criterion, Throughput, criterion_group, criterion_main};
 use josh_core::filter::Filter;
 use josh_core::git::josh_commit_signature;
-use josh_test_support::bench::{build_index, expected_tree, random_string};
+use josh_test_support::bench::{
+    EntryKind, build_index, expected_tree, git2_oid, gix_oid, random_string,
+};
 use rand::prelude::*;
 use std::path::{Path, PathBuf};
 
@@ -246,12 +248,18 @@ fn glob_pred(pattern: &str) -> impl Fn(&str) -> bool {
 fn build_case(repo: &git2::Repository, n_commits: usize) -> anyhow::Result<git2::Oid> {
     use rand::RngExt;
 
-    let mut builder = git2::build::TreeUpdateBuilder::new();
+    let gix_repo = gix::open(repo.path())?;
+    let baseline = repo.treebuilder(None)?.write()?;
+    let mut builder = gix_repo.edit_tree(gix_oid(baseline))?;
     let mut all_paths = vec![];
     for i in 0..TREE_FILES {
         let path = file_path(i);
         let oid = repo.blob(path.to_string_lossy().as_bytes())?;
-        builder.upsert(&path, oid, git2::FileMode::Blob);
+        builder.upsert(
+            path.to_str().expect("benchmark paths are UTF-8"),
+            EntryKind::Blob,
+            gix_oid(oid),
+        )?;
         all_paths.push(path);
     }
 
@@ -260,7 +268,11 @@ fn build_case(repo: &git2::Repository, n_commits: usize) -> anyhow::Result<git2:
     for j in 0..N_SUB_FILES {
         let path = PathBuf::from("dir_00").join("sub").join(format!("c_{j}.c"));
         let oid = repo.blob(path.to_string_lossy().as_bytes())?;
-        builder.upsert(&path, oid, git2::FileMode::Blob);
+        builder.upsert(
+            path.to_str().expect("benchmark paths are UTF-8"),
+            EntryKind::Blob,
+            gix_oid(oid),
+        )?;
         all_paths.push(path);
     }
 
@@ -268,11 +280,10 @@ fn build_case(repo: &git2::Repository, n_commits: usize) -> anyhow::Result<git2:
     // churned.
     for path in ["dir_01/.hidden.rs", "dir_01/.hiddendir/inner.rs"] {
         let oid = repo.blob(path.as_bytes())?;
-        builder.upsert(Path::new(path), oid, git2::FileMode::Blob);
+        builder.upsert(path, EntryKind::Blob, gix_oid(oid))?;
     }
 
-    let baseline = repo.find_tree(repo.treebuilder(None)?.write()?)?;
-    let root_tree = repo.find_tree(builder.create_updated(repo, &baseline)?)?;
+    let root_tree = repo.find_tree(git2_oid(builder.write()?.detach()))?;
 
     let sig = josh_commit_signature()?;
     // No ref update yet -- the tip ref is set once the history is complete.
@@ -283,7 +294,7 @@ fn build_case(repo: &git2::Repository, n_commits: usize) -> anyhow::Result<git2:
     for i in 0..n_commits {
         let parent = repo.find_commit(head)?;
         let tree = parent.tree()?;
-        let mut builder = git2::build::TreeUpdateBuilder::new();
+        let mut builder = gix_repo.edit_tree(gix_oid(tree.id()))?;
 
         let churned = all_paths
             .iter()
@@ -294,10 +305,14 @@ fn build_case(repo: &git2::Repository, n_commits: usize) -> anyhow::Result<git2:
         for path in &churned {
             let content = random_string(&mut rng, CHURN_CONTENT_LEN);
             let blob = repo.blob(content.as_bytes())?;
-            builder.upsert(path, blob, git2::FileMode::Blob);
+            builder.upsert(
+                path.to_str().expect("benchmark paths are UTF-8"),
+                EntryKind::Blob,
+                gix_oid(blob),
+            )?;
         }
 
-        let new_tree = repo.find_tree(builder.create_updated(repo, &tree)?)?;
+        let new_tree = repo.find_tree(git2_oid(builder.write()?.detach()))?;
         head = repo.commit(
             None,
             &sig,
@@ -338,18 +353,28 @@ fn make_edit_commit(
 ) -> anyhow::Result<git2::Oid> {
     let parent = repo.find_commit(parent)?;
     let tree = parent.tree()?;
-    let mut builder = git2::build::TreeUpdateBuilder::new();
+    let gix_repo = gix::open(repo.path())?;
+    let mut builder = gix_repo.edit_tree(gix_oid(tree.id()))?;
     let blob = repo.blob(format!("local edit {n}").as_bytes())?;
     for &i in EDIT_INDICES {
-        builder.upsert(&file_path(i), blob, git2::FileMode::Blob);
+        builder.upsert(
+            file_path(i).to_str().expect("benchmark paths are UTF-8"),
+            EntryKind::Blob,
+            gix_oid(blob),
+        )?;
     }
     let rotating = ((n % TREE_FILES as u64) as usize * 7) % TREE_FILES;
-    // TreeUpdateBuilder rejects duplicate paths, so skip the rotating edit when it happens to land
-    // on one of the fixed indices.
+    // Skip the rotating edit when it lands on one of the fixed indices.
     if !EDIT_INDICES.contains(&rotating) {
-        builder.upsert(&file_path(rotating), blob, git2::FileMode::Blob);
+        builder.upsert(
+            file_path(rotating)
+                .to_str()
+                .expect("benchmark paths are UTF-8"),
+            EntryKind::Blob,
+            gix_oid(blob),
+        )?;
     }
-    let new_tree = repo.find_tree(builder.create_updated(repo, &tree)?)?;
+    let new_tree = repo.find_tree(git2_oid(builder.write()?.detach()))?;
     let sig = josh_commit_signature()?;
     Ok(repo.commit(
         None,

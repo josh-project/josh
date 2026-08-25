@@ -1,5 +1,6 @@
 use criterion::{BatchSize, Criterion, criterion_group, criterion_main};
 use josh_core::git::josh_commit_signature;
+use josh_test_support::bench::{EntryKind, git2_oid, gix_oid};
 use rand::prelude::*;
 use std::cell::RefCell;
 use std::ops::DerefMut;
@@ -17,7 +18,7 @@ const NESTING_LEVEL: usize = 3;
 /// changing any of the build parameters above changes the produced oid, which
 /// then fails the strict check in `provision_repo` and reports the new value to
 /// paste here. Filled in by running the bench once after a build change.
-const EXPECTED_HEAD: &str = "6daa53b5eaae0d6642b3ad846e327e899095f5c7";
+const EXPECTED_HEAD: &str = "dec8381c11bbbf281cfec78d8bf9b19283971f99";
 
 /// Fixed commit timestamp fed to `josh_commit_signature()` via `JOSH_COMMIT_TIME`
 /// so the built history is reproducible. Without it the signature uses the wall
@@ -121,7 +122,9 @@ fn build_initial_state(
     let files_in_folder =
         rand::distr::Uniform::try_from(N_PER_SUBFOLDER_MIN..=N_PER_SUBFOLDER_MAX)?;
 
-    let mut builder = git2::build::TreeUpdateBuilder::new();
+    let gix_repo = gix::open(repo.path())?;
+    let baseline = repo.treebuilder(None)?.write()?;
+    let mut builder = gix_repo.edit_tree(gix_oid(baseline))?;
     let mut all_paths = vec![];
     let mut total_files = 0usize;
 
@@ -144,7 +147,11 @@ fn build_initial_state(
             let oid = repo.blob(file_name.as_bytes())?;
 
             all_paths.push(full_path.clone());
-            builder.upsert(full_path, oid, git2::FileMode::Blob);
+            builder.upsert(
+                full_path.to_str().expect("benchmark paths are UTF-8"),
+                EntryKind::Blob,
+                gix_oid(oid),
+            )?;
         }
 
         total_files += to_add;
@@ -156,12 +163,9 @@ fn build_initial_state(
     // empty filtered parent.
     let workspace = josh_filter::as_file(paths_to_compose(&all_paths), 2);
     let blob = repo.blob(workspace.as_bytes())?;
-    builder.upsert("workspace/workspace.josh", blob, git2::FileMode::Blob);
+    builder.upsert("workspace/workspace.josh", EntryKind::Blob, gix_oid(blob))?;
 
-    let baseline = repo.treebuilder(None)?.write()?;
-    let baseline = repo.find_tree(baseline)?;
-
-    let new_tree = builder.create_updated(&repo, &baseline)?;
+    let new_tree = git2_oid(builder.write()?.detach());
     let new_tree = repo.find_tree(new_tree)?;
 
     let sig = josh_commit_signature()?;
@@ -192,6 +196,7 @@ fn build_history(
 
     // Shouldn't matter for this benchmark, we don't look into blobs
     const BLOB_CONTENT_LEN: usize = 10;
+    let gix_repo = gix::open(repo.path())?;
 
     let rng = RefCell::new(StdRng::seed_from_u64(0));
     let include_path = || rng.borrow_mut().random_bool(PROB_FILE_UPDATED);
@@ -209,7 +214,7 @@ fn build_history(
     for i_commit in 0..N_COMMITS {
         let parent = repo.find_commit(head)?;
         let tree = parent.tree()?;
-        let mut builder = git2::build::TreeUpdateBuilder::new();
+        let mut builder = gix_repo.edit_tree(gix_oid(tree.id()))?;
 
         let updated_paths = paths
             .iter()
@@ -232,7 +237,11 @@ fn build_history(
             let updated_content = random_string(rng.borrow_mut().deref_mut(), BLOB_CONTENT_LEN);
             let blob = repo.blob(updated_content.as_bytes())?;
 
-            builder.upsert(updated_path, blob, git2::FileMode::Blob);
+            builder.upsert(
+                updated_path.to_str().expect("benchmark paths are UTF-8"),
+                EntryKind::Blob,
+                gix_oid(blob),
+            )?;
         }
 
         // Pin the entire held-back set on top of the wide compose so those paths' updates
@@ -249,10 +258,10 @@ fn build_history(
         let workspace = josh_filter::as_file(filter, 2);
         let blob = repo.blob(workspace.as_bytes())?;
 
-        builder.upsert("workspace/workspace.josh", blob, git2::FileMode::Blob);
+        builder.upsert("workspace/workspace.josh", EntryKind::Blob, gix_oid(blob))?;
 
         // Commit the updated tree on top of the current head.
-        let new_tree = builder.create_updated(repo, &tree)?;
+        let new_tree = git2_oid(builder.write()?.detach());
         let new_tree = repo.find_tree(new_tree)?;
 
         let sig = josh_commit_signature()?;
