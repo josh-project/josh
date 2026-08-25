@@ -5,6 +5,7 @@ use josh_core::history::{OrphansMode, unapply_filter};
 use josh_test_support::bench::{EntryKind, git2_oid, gix_oid};
 use rand::prelude::*;
 use std::path::PathBuf;
+use std::str::FromStr;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 // Benches the unapply (push) path of josh: a client pushes commits built on the FILTERED
@@ -47,11 +48,11 @@ const JOSH_BENCH_COMMIT_TIME: &str = "1700000000";
 
 struct SizeCase {
     n_commits: usize,
-    head: git2::Oid,
-    filtered_head: git2::Oid,
+    head: gix_hash::ObjectId,
+    filtered_head: gix_hash::ObjectId,
     /// A filtered commit roughly in the middle of the filtered history (first-parent
     /// chase), the tip of the simulated new-branch push.
-    filtered_mid: git2::Oid,
+    filtered_mid: gix_hash::ObjectId,
 }
 
 struct UnapplyBench {
@@ -72,7 +73,8 @@ impl UnapplyBench {
 
         let provisioned = josh_test_support::provision_repo::provision_repo(
             "unapply",
-            &git2::Oid::from_str(EXPECTED_HEAD).expect("EXPECTED_HEAD must be a valid oid"),
+            &gix_hash::ObjectId::from_str(EXPECTED_HEAD)
+                .expect("EXPECTED_HEAD must be a valid oid"),
             |repo| {
                 let mut heads = vec![];
                 for &n_commits in HISTORY_SIZES {
@@ -101,7 +103,7 @@ impl UnapplyBench {
             let transaction = context.open()?;
             let repo = transaction.git2_repo();
             for &n_commits in HISTORY_SIZES {
-                let head = repo.refname_to_id(&format!("refs/heads/case_{n_commits}"))?;
+                let head = gix_oid(repo.refname_to_id(&format!("refs/heads/case_{n_commits}"))?);
                 let filtered_head = josh_core::filter_commit(&transaction, filter, head)?;
                 // The first-parent chase below reads the filtered commits through the
                 // repository handle, which only sees what is on disk.
@@ -110,9 +112,9 @@ impl UnapplyBench {
                 // First-parent chase to the middle of the filtered history.
                 let mut filtered_mid = filtered_head;
                 for _ in 0..n_commits / 2 {
-                    let commit = repo.find_commit(filtered_mid)?;
+                    let commit = repo.find_commit(git2_oid(filtered_mid))?;
                     match commit.parent_id(0) {
-                        Ok(p) => filtered_mid = p,
+                        Ok(p) => filtered_mid = gix_oid(p),
                         Err(_) => break,
                     }
                 }
@@ -147,7 +149,7 @@ fn random_string(rng: &mut StdRng, len: usize) -> String {
 
 /// deephistory-style case builder: fixed tree, `n_commits` of ~10% churn, tip tagged as
 /// `refs/heads/case_<n_commits>`.
-fn build_case(repo: &git2::Repository, n_commits: usize) -> anyhow::Result<git2::Oid> {
+fn build_case(repo: &git2::Repository, n_commits: usize) -> anyhow::Result<gix_hash::ObjectId> {
     use rand::RngExt;
 
     let gix_repo = gix::open(repo.path())?;
@@ -210,15 +212,18 @@ fn build_case(repo: &git2::Repository, n_commits: usize) -> anyhow::Result<git2:
         "bench case tip",
     )?;
 
-    Ok(head)
+    Ok(gix_oid(head))
 }
 
-fn build_index(repo: &git2::Repository, heads: &[git2::Oid]) -> anyhow::Result<git2::Oid> {
+fn build_index(
+    repo: &git2::Repository,
+    heads: &[gix_hash::ObjectId],
+) -> anyhow::Result<gix_hash::ObjectId> {
     let sig = josh_commit_signature()?;
     let empty_tree = repo.find_tree(repo.treebuilder(None)?.write()?)?;
     let parents = heads
         .iter()
-        .map(|oid| repo.find_commit(*oid))
+        .map(|oid| repo.find_commit(git2_oid(*oid)))
         .collect::<Result<Vec<_>, _>>()?;
     let parent_refs = parents.iter().collect::<Vec<_>>();
     let index = repo.commit(
@@ -229,7 +234,7 @@ fn build_index(repo: &git2::Repository, heads: &[git2::Oid]) -> anyhow::Result<g
         &empty_tree,
         &parent_refs,
     )?;
-    Ok(index)
+    Ok(gix_oid(index))
 }
 
 /// Build `PUSH_LEN` commits on top of `base` in FILTERED space, each touching the filtered
@@ -237,27 +242,27 @@ fn build_index(repo: &git2::Repository, heads: &[git2::Oid]) -> anyhow::Result<g
 /// of commits the caches have never seen.
 fn extend_filtered(
     repo: &git2::Repository,
-    base: git2::Oid,
+    base: gix_hash::ObjectId,
     salt: usize,
-) -> anyhow::Result<git2::Oid> {
+) -> anyhow::Result<gix_hash::ObjectId> {
     let sig = josh_commit_signature()?;
     let mut head = base;
     let gix_repo = gix::open(repo.path())?;
     for i in 0..PUSH_LEN {
-        let parent = repo.find_commit(head)?;
+        let parent = repo.find_commit(git2_oid(head))?;
         let tree = parent.tree()?;
         let mut builder = gix_repo.edit_tree(gix_oid(tree.id()))?;
         let blob = repo.blob(format!("push {salt} {i}").as_bytes())?;
         builder.upsert("file_0000", EntryKind::Blob, gix_oid(blob))?;
         let new_tree = repo.find_tree(git2_oid(builder.write()?.detach()))?;
-        head = repo.commit(
+        head = gix_oid(repo.commit(
             None,
             &sig,
             &sig,
             &format!("push {salt} {i}"),
             &new_tree,
             &[&parent],
-        )?;
+        )?);
     }
     Ok(head)
 }
@@ -350,7 +355,7 @@ fn unapply_new_branch(c: &mut Criterion) {
             &transaction,
             bench.filter,
             case.head,
-            git2::Oid::ZERO_SHA1,
+            gix_hash::ObjectId::null(gix_hash::Kind::Sha1),
             case.filtered_mid,
             OrphansMode::Fail,
             None,
@@ -380,7 +385,7 @@ fn unapply_new_branch(c: &mut Criterion) {
                         &transaction,
                         bench.filter,
                         case.head,
-                        git2::Oid::ZERO_SHA1,
+                        gix_hash::ObjectId::null(gix_hash::Kind::Sha1),
                         case.filtered_mid,
                         OrphansMode::Fail,
                         None,

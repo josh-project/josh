@@ -29,7 +29,7 @@ use super::transaction::Transaction;
 #[derive(Debug, Clone)]
 pub struct HistoryGraphInfo {
     pub sequence_number: u64,
-    pub reachable_roots: Vec<git2::Oid>,
+    pub reachable_roots: Vec<gix_hash::ObjectId>,
 }
 
 /// Returns just the sequence number for `input`.
@@ -38,7 +38,10 @@ pub struct HistoryGraphInfo {
 /// sequence number is available directly from the cached hint, so callers that
 /// only compare sequence numbers avoid a per-commit `find_blob` + parse that
 /// would otherwise be discarded.
-pub fn compute_sequence_number(transaction: &Transaction, input: git2::Oid) -> anyhow::Result<u64> {
+pub fn compute_sequence_number(
+    transaction: &Transaction,
+    input: gix_hash::ObjectId,
+) -> anyhow::Result<u64> {
     Ok(ensure_hint_cached(transaction, input)?.0.sequence_number)
 }
 
@@ -47,7 +50,7 @@ pub fn compute_sequence_number(transaction: &Transaction, input: git2::Oid) -> a
 /// eligibility decisions without any commit read.
 pub fn compute_history_hint(
     transaction: &Transaction,
-    input: git2::Oid,
+    input: gix_hash::ObjectId,
 ) -> anyhow::Result<HistoryGraphHint> {
     Ok(ensure_hint_cached(transaction, input)?.0)
 }
@@ -60,7 +63,7 @@ pub fn compute_history_hint(
 /// commit reuses its parent's blob OID, avoiding read/write entirely.
 pub fn collect_history_graph_info(
     transaction: &Transaction,
-    input: git2::Oid,
+    input: gix_hash::ObjectId,
 ) -> anyhow::Result<HistoryGraphInfo> {
     let (hint, blob) = ensure_hint_cached(transaction, input)?;
 
@@ -78,16 +81,20 @@ pub fn collect_history_graph_info(
 /// `Ok(false)` (matching `merge_base_many`'s error behavior on invalid input).
 pub fn parents_share_root(
     transaction: &Transaction,
-    parent_ids: &[git2::Oid],
+    parent_ids: &[gix_hash::ObjectId],
 ) -> anyhow::Result<bool> {
-    if parent_ids.is_empty() || parent_ids.iter().any(|x| *x == git2::Oid::ZERO_SHA1) {
+    if parent_ids.is_empty()
+        || parent_ids
+            .iter()
+            .any(|x| *x == gix_hash::ObjectId::null(gix_hash::Kind::Sha1))
+    {
         return Ok(false);
     }
 
     // Ensure each parent's graph info is cached, then collect the cached blob
     // OIDs. If all parents reference the same blob, their root sets are
     // identical — they trivially share every root without reading any blob.
-    let parent_blobs: Vec<git2::Oid> = parent_ids
+    let parent_blobs: Vec<gix_hash::ObjectId> = parent_ids
         .iter()
         .map(|p| Ok(ensure_hint_cached(transaction, *p)?.1))
         .collect::<anyhow::Result<Vec<_>>>()?;
@@ -98,7 +105,7 @@ pub fn parents_share_root(
     }
 
     // Parents disagree on the roots blob: read each blob and intersect.
-    let mut common: std::collections::BTreeSet<git2::Oid> =
+    let mut common: std::collections::BTreeSet<gix_hash::ObjectId> =
         read_roots_blob(transaction.odb(), first_blob)?
             .into_iter()
             .collect();
@@ -122,21 +129,21 @@ pub fn parents_share_root(
 /// and writes.
 fn ensure_hint_cached(
     transaction: &Transaction,
-    input: git2::Oid,
-) -> anyhow::Result<(HistoryGraphHint, git2::Oid)> {
+    input: gix_hash::ObjectId,
+) -> anyhow::Result<(HistoryGraphHint, gix_hash::ObjectId)> {
     if let Some(hint) = try_read_cached_hint(transaction, input)? {
         return Ok(hint);
     }
 
     let odb = transaction.odb();
-    if !odb.contains(crate::objects::gix_oid(input)) {
+    if !odb.contains(input) {
         return Err(anyhow!("ensure_hint_cached: input does not exist"));
     }
 
     let parent_ids = crate::git::read_parent_ids(odb, input)?;
 
     // Fast path: every parent already has both pieces cached.
-    let parents_hint: Option<Vec<(u64, git2::Oid)>> = parent_ids
+    let parents_hint: Option<Vec<(u64, gix_hash::ObjectId)>> = parent_ids
         .iter()
         .map(|p| {
             Ok(try_read_cached_hint(transaction, *p)?
@@ -170,7 +177,7 @@ fn ensure_hint_cached(
     })?;
 
     for &oid in sorted.iter().rev() {
-        let parents_hint: Vec<(u64, git2::Oid)> = crate::git::read_parent_ids(odb, oid)?
+        let parents_hint: Vec<(u64, gix_hash::ObjectId)> = crate::git::read_parent_ids(odb, oid)?
             .into_iter()
             .map(|p| {
                 try_read_cached_hint(transaction, p)?
@@ -192,9 +199,9 @@ fn ensure_hint_cached(
 /// OID (or, for the root case, writes a single-element blob).
 fn derive_from_parents(
     odb: &josh_memodb::Odb,
-    self_oid: git2::Oid,
-    parents_hint: &[(u64, git2::Oid)],
-) -> anyhow::Result<(HistoryGraphHint, git2::Oid)> {
+    self_oid: gix_hash::ObjectId,
+    parents_hint: &[(u64, gix_hash::ObjectId)],
+) -> anyhow::Result<(HistoryGraphHint, gix_hash::ObjectId)> {
     if parents_hint.is_empty() {
         // Parentless: this commit *is* its own only reachable root.
         return Ok((
@@ -230,7 +237,7 @@ fn derive_from_parents(
     let roots_blob = if parents_hint.iter().all(|(_, b)| *b == first_blob) {
         first_blob
     } else {
-        let mut set: std::collections::BTreeSet<git2::Oid> = Default::default();
+        let mut set: std::collections::BTreeSet<gix_hash::ObjectId> = Default::default();
         for (_, blob_oid) in parents_hint {
             set.extend(read_roots_blob(odb, *blob_oid)?);
         }
@@ -251,8 +258,8 @@ fn derive_from_parents(
 
 fn try_read_cached_hint(
     transaction: &Transaction,
-    input: git2::Oid,
-) -> anyhow::Result<Option<(HistoryGraphHint, git2::Oid)>> {
+    input: gix_hash::ObjectId,
+) -> anyhow::Result<Option<(HistoryGraphHint, gix_hash::ObjectId)>> {
     let Some(seq) = transaction.get(crate::filter::sequence_number(), input)? else {
         return Ok(None);
     };
@@ -264,8 +271,8 @@ fn try_read_cached_hint(
 
 fn store_hint(
     transaction: &Transaction,
-    input: git2::Oid,
-    hint: (HistoryGraphHint, git2::Oid),
+    input: gix_hash::ObjectId,
+    hint: (HistoryGraphHint, gix_hash::ObjectId),
 ) -> anyhow::Result<()> {
     let (hint, roots_blob) = hint;
     transaction.insert(
@@ -278,18 +285,22 @@ fn store_hint(
     Ok(())
 }
 
-fn write_roots_blob(odb: &josh_memodb::Odb, roots: &[git2::Oid]) -> anyhow::Result<git2::Oid> {
+fn write_roots_blob(
+    odb: &josh_memodb::Odb,
+    roots: &[gix_hash::ObjectId],
+) -> anyhow::Result<gix_hash::ObjectId> {
     let mut bytes = Vec::with_capacity(roots.len() * 20);
     for r in roots {
         bytes.extend_from_slice(r.as_bytes());
     }
-    Ok(crate::objects::git2_oid(
-        &odb.write(gix_object::Kind::Blob, &bytes),
-    ))
+    Ok(odb.write(gix_object::Kind::Blob, &bytes))
 }
 
-fn read_roots_blob(odb: &josh_memodb::Odb, oid: git2::Oid) -> anyhow::Result<Vec<git2::Oid>> {
-    let (kind, content) = odb.read(crate::objects::gix_oid(oid))?;
+fn read_roots_blob(
+    odb: &josh_memodb::Odb,
+    oid: gix_hash::ObjectId,
+) -> anyhow::Result<Vec<gix_hash::ObjectId>> {
+    let (kind, content) = odb.read(oid)?;
     if kind != gix_object::Kind::Blob {
         return Err(anyhow!("reachable_roots object {} is not a blob", oid));
     }
@@ -303,7 +314,7 @@ fn read_roots_blob(odb: &josh_memodb::Odb, oid: git2::Oid) -> anyhow::Result<Vec
     }
     let mut out = Vec::with_capacity(content.len() / 20);
     for chunk in content.chunks_exact(20) {
-        out.push(git2::Oid::from_bytes(chunk)?);
+        out.push(gix_hash::ObjectId::try_from(chunk)?);
     }
     Ok(out)
 }
@@ -313,18 +324,18 @@ fn read_roots_blob(odb: &josh_memodb::Odb, oid: git2::Oid) -> anyhow::Result<Vec
 /// parent is the second parent, bits 0-6 the jump delta (saturated at 127).
 /// Byte 11 holds the parent count (capped at 255) and bytes 12-19 the
 /// big-endian sequence number.
-pub(crate) fn oid_from_hint(hint: HistoryGraphHint) -> git2::Oid {
+pub(crate) fn oid_from_hint(hint: HistoryGraphHint) -> gix_hash::ObjectId {
     let mut bytes = [0u8; 20];
     bytes[10] = ((hint.jump_is_second as u8) << 7) | hint.jump_delta;
     bytes[11] = hint.parent_count;
     // place the 8 integer bytes at the end (big-endian)
     bytes[20 - 8..].copy_from_slice(&hint.sequence_number.to_be_bytes());
     // Safe: length is exactly 20
-    git2::Oid::from_bytes(&bytes).expect("20-byte OID construction cannot fail")
+    gix_hash::ObjectId::from_bytes_or_panic(&bytes)
 }
 
 /// Decode a hint from an OID encoded by `oid_from_hint`.
-pub(crate) fn hint_from_oid(oid: git2::Oid) -> HistoryGraphHint {
+pub(crate) fn hint_from_oid(oid: gix_hash::ObjectId) -> HistoryGraphHint {
     let b = oid.as_bytes();
     let mut n = [0u8; 8];
     n.copy_from_slice(&b[20 - 8..]); // take the last 8 bytes

@@ -3,6 +3,7 @@ use crate::service::{JoshProxyService, UpstreamProtocol};
 use crate::{FetchError, auth, run_git_with_auth};
 use anyhow::{Context, anyhow};
 use backon::BackoffBuilder;
+use std::str::FromStr;
 
 use josh_changes::{PushMode, baseref_and_options, build_to_push};
 use josh_core::cache::{CacheStack, TransactionContext};
@@ -339,11 +340,11 @@ pub fn process_repo_update(repo_update: RepoUpdate) -> anyhow::Result<String> {
         transaction
             .add_disk_alternate(transaction_mirror.path().join("objects").to_str().unwrap())?;
 
-        let old = git2::Oid::from_str(old)?;
+        let old = gix_hash::ObjectId::from_str(old)?;
         let author = push_options.author.as_deref().unwrap_or("");
         let (baseref, push_to, options, push_mode) = baseref_and_options(refname, author)?;
 
-        let old = if old == git2::Oid::ZERO_SHA1 {
+        let old = if old == gix_hash::ObjectId::null(gix_hash::Kind::Sha1) {
             let rev = format!("refs/namespaces/{}/{}", repo_update.git_ns, &baseref);
             let oid = transaction.resolve_ref(&rev)?.unwrap_or(old);
 
@@ -412,7 +413,7 @@ pub fn process_repo_update(repo_update: RepoUpdate) -> anyhow::Result<String> {
         };
 
         let filter = josh_core::filter::parse(&repo_update.filter_spec)?;
-        let new_oid = git2::Oid::from_str(new)?;
+        let new_oid = gix_hash::ObjectId::from_str(new)?;
         let backward_new_oid = {
             let unapply_result = josh_core::history::unapply_filter(
                 &transaction,
@@ -546,7 +547,7 @@ pub fn process_repo_update(repo_update: RepoUpdate) -> anyhow::Result<String> {
 pub fn push_head_url(
     transaction: &josh_core::cache::Transaction,
     alternate: &str,
-    oid: git2::Oid,
+    oid: gix_hash::ObjectId,
     refname: &str,
     url: &str,
     remote_auth: &RemoteAuth,

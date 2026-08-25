@@ -102,14 +102,14 @@ impl CacheBackend for SledCacheBackend {
     fn read(
         &self,
         filter: Filter,
-        from: git2::Oid,
+        from: gix_hash::ObjectId,
         _hint: HistoryGraphHint,
         // Sled stores records by filter alone, so the key kind needs no special handling.
         _tree_keyed: bool,
-    ) -> anyhow::Result<Option<git2::Oid>> {
+    ) -> anyhow::Result<Option<gix_hash::ObjectId>> {
         let tree = STATE.lock().unwrap().tree(filter)?;
         if let Some(oid) = tree.get(from.as_bytes())? {
-            Ok(Some(git2::Oid::from_bytes(&oid)?))
+            Ok(Some(gix_hash::ObjectId::try_from(&oid[..])?))
         } else {
             Ok(None)
         }
@@ -118,8 +118,8 @@ impl CacheBackend for SledCacheBackend {
     fn write(
         &self,
         filter: Filter,
-        from: git2::Oid,
-        to: git2::Oid,
+        from: gix_hash::ObjectId,
+        to: gix_hash::ObjectId,
         _hint: HistoryGraphHint,
         _tree_keyed: bool,
     ) -> anyhow::Result<()> {

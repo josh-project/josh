@@ -7,7 +7,7 @@ struct GraphQLHelper {
     repo_path: std::path::PathBuf,
     cache: std::sync::Arc<CacheStack>,
     ref_prefix: String,
-    commit_id: git2::Oid,
+    commit_id: gix_hash::ObjectId,
 }
 
 impl GraphQLHelper {
@@ -53,7 +53,7 @@ impl GraphQLHelper {
         let tree = josh_core::objects::CommitData::read(odb, self.commit_id)?.tree_id()?;
         let entry = josh_core::objects::path_entry(odb, tree, &path)?
             .ok_or_else(|| anyhow!("no such path: {}", path.display()))?;
-        let query = josh_core::objects::blob_text(odb, josh_core::objects::git2_oid(&entry.oid));
+        let query = josh_core::objects::blob_text(odb, entry.oid.to_owned());
 
         let mut variables = juniper::Variables::new();
 
@@ -125,7 +125,7 @@ pub fn render(
     transaction: &cache::Transaction,
     cache: std::sync::Arc<CacheStack>,
     ref_prefix: &str,
-    commit_id: git2::Oid,
+    commit_id: gix_hash::ObjectId,
     query_and_params: &str,
     split_odb: bool,
 ) -> anyhow::Result<Option<(String, std::collections::BTreeMap<String, String>)>> {
@@ -160,7 +160,7 @@ pub fn render(
     };
 
     let template = if entry.mode.is_blob() {
-        let content = josh_core::objects::blob_text(odb, josh_core::objects::git2_oid(&entry.oid));
+        let content = josh_core::objects::blob_text(odb, entry.oid.to_owned());
         let file = content.as_str();
         if cmd == "get" {
             return Ok(Some((file.to_string(), params)));

@@ -6,6 +6,7 @@ use josh_test_support::bench::{
 };
 use rand::prelude::*;
 use std::path::{Path, PathBuf};
+use std::str::FromStr;
 
 // The scaling parameter of this benchmark is tree *width*, not history length. History stays a
 // fixed, short N_COMMITS while the number of files grows per case; each `filter_commit` apply of a
@@ -74,7 +75,7 @@ const JOSH_BENCH_COMMIT_TIME: &str = "1700000000";
 /// One tree width and the head of its generated history.
 struct SizeCase {
     n_files: usize,
-    head: git2::Oid,
+    head: gix_hash::ObjectId,
 }
 
 struct GlobBench {
@@ -103,7 +104,8 @@ impl GlobBench {
         // `EXPECTED_HEAD`.
         let provisioned = josh_test_support::provision_repo::provision_repo(
             CACHE_NAME,
-            &git2::Oid::from_str(EXPECTED_HEAD).expect("EXPECTED_HEAD must be a valid oid"),
+            &gix_hash::ObjectId::from_str(EXPECTED_HEAD)
+                .expect("EXPECTED_HEAD must be a valid oid"),
             |repo| {
                 let mut heads = vec![];
                 for &n_files in TREE_SIZES {
@@ -122,7 +124,10 @@ impl GlobBench {
             let repo = &provisioned.repo;
             for &n_files in TREE_SIZES {
                 let head = repo.refname_to_id(&format!("refs/heads/case_{n_files}"))?;
-                cases.push(SizeCase { n_files, head });
+                cases.push(SizeCase {
+                    n_files,
+                    head: gix_oid(head),
+                });
             }
         }
 
@@ -152,11 +157,11 @@ impl GlobBench {
                 // The gate compares against an independent git2 reference model, which only
                 // sees what is on disk.
                 transaction.flush_mem_odb()?;
-                let got = repo.find_commit(filtered)?.tree_id();
+                let got = repo.find_commit(git2_oid(filtered))?.tree_id();
                 let (want, kept) = expected_tree(repo, case.head, &|p| p.ends_with(".rs"))?;
                 anyhow::ensure!(kept > 0, "recursive gate kept no blobs -- would be a no-op");
                 anyhow::ensure!(
-                    got == want,
+                    gix_oid(got) == want,
                     "`::{PATTERN_RECURSIVE}` produced {got}, expected {want} (n_files {})",
                     case.n_files
                 );
@@ -168,13 +173,13 @@ impl GlobBench {
                 let filter = Filter::new().pattern(PATTERN_PREFIX).expect("valid glob");
                 let filtered = josh_core::filter_commit(&transaction, filter, case.head)?;
                 transaction.flush_mem_odb()?;
-                let got_tree = repo.find_commit(filtered)?.tree()?;
+                let got_tree = repo.find_commit(git2_oid(filtered))?.tree()?;
                 anyhow::ensure!(
                     got_tree.len() == 1,
                     "`::{PATTERN_PREFIX}` result must have exactly one top-level entry"
                 );
                 let raw_subtree = repo
-                    .find_commit(case.head)?
+                    .find_commit(git2_oid(case.head))?
                     .tree()?
                     .get_path(Path::new(PREFIX_DIR))?
                     .id();
@@ -187,14 +192,14 @@ impl GlobBench {
                 let filter = Filter::new().pattern(PATTERN_SPARSE).expect("valid glob");
                 let filtered = josh_core::filter_commit(&transaction, filter, case.head)?;
                 transaction.flush_mem_odb()?;
-                let got = repo.find_commit(filtered)?.tree_id();
+                let got = repo.find_commit(git2_oid(filtered))?.tree_id();
                 let (want, kept) = expected_tree(repo, case.head, &|p| p.ends_with(".toml"))?;
                 anyhow::ensure!(
                     kept == N_SPARSE,
                     "sparse gate kept {kept} blobs, expected exactly {N_SPARSE}"
                 );
                 anyhow::ensure!(
-                    got == want,
+                    gix_oid(got) == want,
                     "`::{PATTERN_SPARSE}` produced {got}, expected {want} (n_files {})",
                     case.n_files
                 );
@@ -227,7 +232,7 @@ fn file_path(i: usize) -> PathBuf {
 /// CHURN_PER_COMMIT files at deterministic indices. The tip is tagged with
 /// `refs/heads/case_<n_files>` so the head is recoverable after the repo round-trips through the
 /// cache.
-fn build_case(repo: &git2::Repository, n_files: usize) -> anyhow::Result<git2::Oid> {
+fn build_case(repo: &git2::Repository, n_files: usize) -> anyhow::Result<gix_hash::ObjectId> {
     let gix_repo = gix::open(repo.path())?;
     let baseline = repo.treebuilder(None)?.write()?;
     let mut builder = gix_repo.edit_tree(gix_oid(baseline))?;
@@ -298,7 +303,7 @@ fn build_case(repo: &git2::Repository, n_files: usize) -> anyhow::Result<git2::O
         "bench case tip",
     )?;
 
-    Ok(head)
+    Ok(gix_oid(head))
 }
 
 fn widetree_glob(c: &mut Criterion) {

@@ -256,10 +256,11 @@ impl ChangesRef {
 }
 
 /// Return the changes ref's target OID, if it exists.
-pub fn read_ref_oid(repo: &git2::Repository, scope: &ChangesRef) -> Option<git2::Oid> {
+pub fn read_ref_oid(repo: &git2::Repository, scope: &ChangesRef) -> Option<gix_hash::ObjectId> {
     repo.find_reference(&scope.ref_name())
         .ok()
         .and_then(|r| r.target())
+        .map(josh_core::objects::gix_oid)
 }
 
 /// Read HEAD and return the current branch shorthand. Errors on a

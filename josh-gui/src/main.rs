@@ -76,7 +76,7 @@ fn app() -> Element {
     let current_scope = use_signal(|| initial_scope.clone());
 
     // Views subscribe to this signal to invalidate ref-derived data.
-    let mut changes_ref_oid: Signal<Option<git2::Oid>> = use_signal(|| {
+    let mut changes_ref_oid: Signal<Option<gix_hash::ObjectId>> = use_signal(|| {
         git2::Repository::discover(".")
             .ok()
             .and_then(|r| josh_changes::read_ref_oid(&r, &current_scope.read()))

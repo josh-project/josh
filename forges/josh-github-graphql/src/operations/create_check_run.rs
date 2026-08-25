@@ -8,7 +8,7 @@ use crate::connection::GithubApiConnection;
 impl GithubApiConnection {
     pub async fn create_check_run(
         &self,
-        head_sha: &git2::Oid,
+        head_sha: &gix_hash::ObjectId,
         name: &str,
         repository_id: &str,
         status: create_check_run::RequestableCheckStatusState,

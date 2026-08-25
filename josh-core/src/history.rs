@@ -16,7 +16,7 @@ pub(crate) fn history_flag(value: Option<&str>, flag: &str) -> bool {
 
 pub fn walk2(
     filter: filter::Filter,
-    input: git2::Oid,
+    input: gix_hash::ObjectId,
     transaction: &cache::Transaction,
 ) -> anyhow::Result<()> {
     if transaction.known(filter, input)? {
@@ -69,16 +69,16 @@ fn find_unapply_base(
     // Used as a cache to avoid re-applying the filter to the same commit -
     // this function is called during revwalk so there be a lot of repeated
     // calls
-    filtered_to_original: &mut HashMap<git2::Oid, git2::Oid>,
+    filtered_to_original: &mut HashMap<gix_hash::ObjectId, gix_hash::ObjectId>,
     filter: filter::Filter,
     // When building the filtered_to_original mapping use this as a starting point
     // for the search for originals. If there are multiple originals that map to the
     // same filtered commit (which is common) use one that is reachable from contained_in.
     // Or, in other words, one that is contained in the history of contained_in.
-    contained_in: git2::Oid,
+    contained_in: gix_hash::ObjectId,
     // Filtered OID to compare against
-    filtered: git2::Oid,
-) -> anyhow::Result<git2::Oid> {
+    filtered: gix_hash::ObjectId,
+) -> anyhow::Result<gix_hash::ObjectId> {
     // Consult the running map first: during an unapply walk we insert every
     // freshly created commit here, so a later commit can find its parent even
     // when there is no `contained_in` hint (e.g. a no-base push of an orphan
@@ -89,13 +89,13 @@ fn find_unapply_base(
         return Ok(*original);
     }
 
-    if contained_in == git2::Oid::ZERO_SHA1 {
+    if contained_in == gix_hash::ObjectId::null(gix_hash::Kind::Sha1) {
         tracing::info!("contained in zero",);
-        return Ok(git2::Oid::ZERO_SHA1);
+        return Ok(gix_hash::ObjectId::null(gix_hash::Kind::Sha1));
     }
 
     let oid = filter::apply_to_commit(filter, contained_in, transaction)?;
-    if oid != git2::Oid::ZERO_SHA1 {
+    if oid != gix_hash::ObjectId::null(gix_hash::Kind::Sha1) {
         filtered_to_original.insert(oid, contained_in);
     }
 
@@ -110,7 +110,7 @@ fn find_unapply_base(
     let mut walk = objects::RevWalk::new(odb);
     walk.push(contained_in)?;
 
-    let mut result: Option<(git2::Oid, git2::Oid)> = None;
+    let mut result: Option<(gix_hash::ObjectId, gix_hash::ObjectId)> = None;
     let mut unlocked = HashSet::new();
     let mut pending = HashSet::new();
     unlocked.insert(contained_in);
@@ -152,7 +152,7 @@ fn find_unapply_base(
         }
         None => {
             tracing::info!("Didn't find original",);
-            Ok(git2::Oid::ZERO_SHA1)
+            Ok(gix_hash::ObjectId::null(gix_hash::Kind::Sha1))
         }
     }
 }
@@ -160,12 +160,12 @@ fn find_unapply_base(
 pub fn find_original(
     transaction: &cache::Transaction,
     filter: filter::Filter,
-    contained_in: git2::Oid,
-    filtered: git2::Oid,
+    contained_in: gix_hash::ObjectId,
+    filtered: gix_hash::ObjectId,
     linear: bool,
-) -> anyhow::Result<git2::Oid> {
-    if contained_in == git2::Oid::ZERO_SHA1 {
-        return Ok(git2::Oid::ZERO_SHA1);
+) -> anyhow::Result<gix_hash::ObjectId> {
+    if contained_in == gix_hash::ObjectId::null(gix_hash::Kind::Sha1) {
+        return Ok(gix_hash::ObjectId::null(gix_hash::Kind::Sha1));
     }
     if filter.is_nop() {
         return Ok(filtered);
@@ -191,7 +191,7 @@ pub fn find_original(
         }
     }
 
-    Ok(git2::Oid::ZERO_SHA1)
+    Ok(gix_hash::ObjectId::null(gix_hash::Kind::Sha1))
 }
 
 // takes everything from base except its tree and replaces it with the tree
@@ -199,10 +199,10 @@ pub fn find_original(
 pub fn rewrite_commit(
     odb: &josh_memodb::Odb,
     base: &objects::CommitData,
-    parents: &[git2::Oid],
+    parents: &[gix_hash::ObjectId],
     rewrite_data: filter::Rewrite,
     gpgsig: GpgsigMode,
-) -> anyhow::Result<git2::Oid> {
+) -> anyhow::Result<gix_hash::ObjectId> {
     use gix_object::bstr::BString;
 
     // gix_object::CommitRef uses byte strings for Oids, but in hex representation, not raw bytes.
@@ -292,7 +292,7 @@ pub fn rewrite_commit(
     let mut b = vec![];
     gix_object::WriteTo::write_to(&commit, &mut b)?;
 
-    Ok(objects::git2_oid(&odb.write(gix_object::Kind::Commit, &b)))
+    Ok(odb.write(gix_object::Kind::Commit, &b))
 }
 
 // Given an OID of an unfiltered commit and a filter,
@@ -301,8 +301,8 @@ pub fn rewrite_commit(
 fn find_oldest_similar_commit(
     transaction: &cache::Transaction,
     filter: filter::Filter,
-    unfiltered: git2::Oid,
-) -> anyhow::Result<git2::Oid> {
+    unfiltered: gix_hash::ObjectId,
+) -> anyhow::Result<gix_hash::ObjectId> {
     let odb = transaction.odb();
     let mut walk = objects::RevWalk::new(odb);
     walk.push(unfiltered)?;
@@ -323,12 +323,12 @@ fn find_oldest_similar_commit(
 
 fn find_new_branch_base(
     transaction: &cache::Transaction,
-    filtered_to_original: &mut HashMap<git2::Oid, git2::Oid>,
+    filtered_to_original: &mut HashMap<gix_hash::ObjectId, gix_hash::ObjectId>,
     filter: filter::Filter,
     // See "contained_in" in find_unapply_base
-    contained_in: git2::Oid,
-    filtered: git2::Oid,
-) -> anyhow::Result<git2::Oid> {
+    contained_in: gix_hash::ObjectId,
+    filtered: gix_hash::ObjectId,
+) -> anyhow::Result<gix_hash::ObjectId> {
     let odb = transaction.odb();
     let mut walk = objects::RevWalk::new(odb);
     walk.push(filtered)?;
@@ -338,7 +338,7 @@ fn find_new_branch_base(
     for rev in walk.into_topo_vec(|_| false)? {
         if let Ok(base) =
             find_unapply_base(transaction, filtered_to_original, filter, contained_in, rev)
-            && base != git2::Oid::ZERO_SHA1
+            && base != gix_hash::ObjectId::null(gix_hash::Kind::Sha1)
         {
             tracing::info!("new branch base: {:?} mapping to {:?}", base, rev);
             let base = if let Ok(new_base) = find_oldest_similar_commit(transaction, filter, base) {
@@ -354,7 +354,7 @@ fn find_new_branch_base(
         }
     }
     tracing::info!("new branch base not found");
-    Ok(git2::Oid::ZERO_SHA1)
+    Ok(gix_hash::ObjectId::null(gix_hash::Kind::Sha1))
 }
 
 #[derive(Clone, Debug)]
@@ -368,16 +368,16 @@ pub enum OrphansMode {
 pub fn unapply_filter(
     transaction: &cache::Transaction,
     filter: filter::Filter,
-    original_target: git2::Oid,
-    old_filtered_oid: git2::Oid,
-    new_filtered_oid: git2::Oid,
+    original_target: gix_hash::ObjectId,
+    old_filtered_oid: gix_hash::ObjectId,
+    new_filtered_oid: gix_hash::ObjectId,
     orphans_mode: OrphansMode,
-    reparent_orphans: Option<git2::Oid>,
-) -> anyhow::Result<git2::Oid> {
+    reparent_orphans: Option<gix_hash::ObjectId>,
+) -> anyhow::Result<gix_hash::ObjectId> {
     let mut filtered_to_original = HashMap::new();
     let mut ret = original_target;
 
-    let old_filtered_oid = if old_filtered_oid == git2::Oid::ZERO_SHA1 {
+    let old_filtered_oid = if old_filtered_oid == gix_hash::ObjectId::null(gix_hash::Kind::Sha1) {
         match find_new_branch_base(
             transaction,
             &mut filtered_to_original,
@@ -426,7 +426,7 @@ pub fn unapply_filter(
     // The old filtered oid can be missing from the repo (e.g. a new branch);
     // there is no range to exclude then, so take everything reachable.
     let old_filtered_exists = matches!(
-        odb.read_header(objects::gix_oid(old_filtered_oid)),
+        odb.read_header(old_filtered_oid),
         Ok((gix_object::Kind::Commit, _))
     );
     let revs = if old_filtered_exists {
@@ -470,7 +470,7 @@ pub fn unapply_filter(
                 OrphansMode::Fail => {
                     return Err(anyhow!(indoc::formatdoc!(
                         r###"
-                        Rejecting new orphan branch at {:?} ({:?})
+                        Rejecting new orphan branch at {:?} ({})
                         Specify one of these options:
                           '-o allow_orphans' to keep the history as is
                           '-o merge' to import new history by creating merge commit
@@ -497,7 +497,7 @@ pub fn unapply_filter(
             })
             .filter(|unapply_base| {
                 if let Ok(oid) = unapply_base {
-                    *oid != git2::Oid::ZERO_SHA1
+                    *oid != gix_hash::ObjectId::null(gix_hash::Kind::Sha1)
                 } else {
                     true
                 }
@@ -555,7 +555,7 @@ pub fn unapply_filter(
             Ok(new_trees) => new_trees,
             Err(e) => {
                 return Err(anyhow!(
-                    "\nCan't apply {:?} ({:?})\n{}",
+                    "\nCan't apply {:?} ({})\n{}",
                     commit_message,
                     module_commit.id(),
                     e
@@ -594,7 +594,7 @@ pub fn unapply_filter(
             // This will typically be parent_count == 2 and mean we are dealing with a merge
             // where the parents have differences outside of the filter.
             parent_count => {
-                let mut tid = git2::Oid::ZERO_SHA1;
+                let mut tid = gix_hash::ObjectId::null(gix_hash::Kind::Sha1);
                 for i in 0..parent_count {
                     // If one of the parents is a descendant of the target branch and the other is
                     // not, pick the tree of the one that is a descendant.
@@ -610,7 +610,7 @@ pub fn unapply_filter(
                     }
                 }
 
-                if tid == git2::Oid::ZERO_SHA1 && parent_count == 2 {
+                if tid == gix_hash::ObjectId::null(gix_hash::Kind::Sha1) && parent_count == 2 {
                     // If we could not select one of the parents, try to merge them.
                     // We expect conflicts to occur only in the paths that are present in
                     // the filtered commit.
@@ -657,7 +657,7 @@ pub fn unapply_filter(
                     }
                 }
 
-                if tid == git2::Oid::ZERO_SHA1 {
+                if tid == gix_hash::ObjectId::null(gix_hash::Kind::Sha1) {
                     // We give up. If we see this message again we need to investigate once
                     // more and maybe consider allowing a manual override as last resort.
                     tracing::warn!("rejecting merge");
@@ -679,7 +679,7 @@ pub fn unapply_filter(
 
         let apply = filter::Rewrite::from_tree(new_tree);
 
-        let original_parent_oids: Vec<git2::Oid> =
+        let original_parent_oids: Vec<gix_hash::ObjectId> =
             original_parents.iter().map(|c| c.id()).collect();
         ret = rewrite_commit(
             odb,
@@ -711,9 +711,9 @@ pub fn unapply_filter(
 fn select_parent_commits(
     odb: &josh_memodb::Odb,
     original_commit: &objects::CommitData,
-    filtered_tree_id: git2::Oid,
-    filtered_parents: &[(git2::Oid, git2::Oid)],
-) -> anyhow::Result<Vec<git2::Oid>> {
+    filtered_tree_id: gix_hash::ObjectId,
+    filtered_parents: &[(gix_hash::ObjectId, gix_hash::ObjectId)],
+) -> anyhow::Result<Vec<gix_hash::ObjectId>> {
     let affects_filtered = filtered_parents
         .iter()
         .any(|(_, tree_id)| filtered_tree_id != *tree_id);
@@ -737,15 +737,15 @@ fn select_parent_commits(
 // parents={none, linear, keep-trivial, default}
 
 pub fn drop_commit(
-    original_commit: git2::Oid,
-    filtered_parent_ids: Vec<git2::Oid>,
+    original_commit: gix_hash::ObjectId,
+    filtered_parent_ids: Vec<gix_hash::ObjectId>,
     transaction: &cache::Transaction,
     filter: filter::Filter,
-) -> anyhow::Result<git2::Oid> {
+) -> anyhow::Result<gix_hash::ObjectId> {
     let r = if let Some(id) = filtered_parent_ids.first() {
         *id
     } else {
-        git2::Oid::ZERO_SHA1
+        gix_hash::ObjectId::null(gix_hash::Kind::Sha1)
     };
 
     transaction.insert(filter, original_commit, r, false)?;
@@ -755,12 +755,12 @@ pub fn drop_commit(
 
 pub fn create_filtered_commit_with_meta(
     original_commit: &objects::CommitData,
-    filtered_parent_ids: Vec<git2::Oid>,
+    filtered_parent_ids: Vec<gix_hash::ObjectId>,
     rewrite_data: filter::Rewrite,
     transaction: &cache::Transaction,
     filter: filter::Filter,
     meta: std::collections::BTreeMap<String, String>,
-) -> anyhow::Result<git2::Oid> {
+) -> anyhow::Result<gix_hash::ObjectId> {
     let (r, is_new) = create_filtered_commit2(
         transaction,
         original_commit,
@@ -778,11 +778,11 @@ pub fn create_filtered_commit_with_meta(
 
 pub fn create_filtered_commit(
     original_commit: &objects::CommitData,
-    filtered_parent_ids: Vec<git2::Oid>,
+    filtered_parent_ids: Vec<gix_hash::ObjectId>,
     rewrite_data: filter::Rewrite,
     transaction: &cache::Transaction,
     filter: filter::Filter,
-) -> anyhow::Result<git2::Oid> {
+) -> anyhow::Result<gix_hash::ObjectId> {
     create_filtered_commit_with_meta(
         original_commit,
         filtered_parent_ids,
@@ -796,14 +796,14 @@ pub fn create_filtered_commit(
 fn create_filtered_commit2(
     transaction: &cache::Transaction,
     original_commit: &objects::CommitData,
-    filtered_parent_ids: Vec<git2::Oid>,
+    filtered_parent_ids: Vec<gix_hash::ObjectId>,
     rewrite_data: filter::Rewrite,
     options: BTreeMap<String, String>,
-) -> anyhow::Result<(git2::Oid, bool)> {
+) -> anyhow::Result<(gix_hash::ObjectId, bool)> {
     let odb = transaction.odb();
-    let mut filtered_parents: Vec<(git2::Oid, git2::Oid)> = filtered_parent_ids
+    let mut filtered_parents: Vec<(gix_hash::ObjectId, gix_hash::ObjectId)> = filtered_parent_ids
         .iter()
-        .filter(|x| **x != git2::Oid::ZERO_SHA1)
+        .filter(|x| **x != gix_hash::ObjectId::null(gix_hash::Kind::Sha1))
         .map(|x| Ok((*x, filtered_parent_tree_id(transaction, *x)?)))
         .collect::<anyhow::Result<_>>()?;
 
@@ -819,7 +819,7 @@ fn create_filtered_commit2(
         let nonzero_parent_ids: Vec<_> = filtered_parent_ids
             .iter()
             .copied()
-            .filter(|x| *x != git2::Oid::ZERO_SHA1)
+            .filter(|x| *x != gix_hash::ObjectId::null(gix_hash::Kind::Sha1))
             .collect();
         let is_initial_merge = nonzero_parent_ids.len() > 1
             && !cache::parents_share_root(transaction, &nonzero_parent_ids)?;
@@ -859,7 +859,7 @@ fn create_filtered_commit2(
         }
     }
 
-    let selected_filtered_parent_ids: Vec<git2::Oid> = select_parent_commits(
+    let selected_filtered_parent_ids: Vec<gix_hash::ObjectId> = select_parent_commits(
         odb,
         original_commit,
         rewrite_data.tree_id(),
@@ -875,7 +875,7 @@ fn create_filtered_commit2(
             return Ok((filtered_parents[0].0, false));
         }
         if rewrite_data.tree_id() == filter::tree::empty_id() {
-            return Ok((git2::Oid::ZERO_SHA1, false));
+            return Ok((gix_hash::ObjectId::null(gix_hash::Kind::Sha1), false));
         }
     }
 
@@ -905,8 +905,8 @@ fn create_filtered_commit2(
 /// parsing the commit from the odb.
 pub(crate) fn filtered_parent_tree_id(
     transaction: &cache::Transaction,
-    oid: git2::Oid,
-) -> anyhow::Result<git2::Oid> {
+    oid: gix_hash::ObjectId,
+) -> anyhow::Result<gix_hash::ObjectId> {
     if let Some((last, tree_id)) = transaction.last_written_commit() {
         if last == oid {
             return Ok(tree_id);
@@ -920,7 +920,7 @@ pub(crate) fn filtered_parent_tree_id(
 fn is_empty_root(
     transaction: &cache::Transaction,
     odb: &josh_memodb::Odb,
-    oid: git2::Oid,
+    oid: gix_hash::ObjectId,
 ) -> anyhow::Result<bool> {
     if oid == filter::tree::empty_id() {
         return Ok(true);
@@ -933,13 +933,13 @@ fn is_empty_root(
     Ok(tree
         .entries
         .iter()
-        .all(|e| e.mode.is_tree() && is_empty_subtree(transaction, odb, objects::git2_oid(e.oid))))
+        .all(|e| e.mode.is_tree() && is_empty_subtree(transaction, odb, e.oid.to_owned())))
 }
 
 fn is_empty_subtree(
     transaction: &cache::Transaction,
     odb: &josh_memodb::Odb,
-    oid: git2::Oid,
+    oid: gix_hash::ObjectId,
 ) -> bool {
     if oid == filter::tree::empty_id() {
         return true;
@@ -952,12 +952,13 @@ fn is_empty_subtree(
     };
     tree.entries
         .iter()
-        .all(|e| e.mode.is_tree() && is_empty_subtree(transaction, odb, objects::git2_oid(e.oid)))
+        .all(|e| e.mode.is_tree() && is_empty_subtree(transaction, odb, e.oid.to_owned()))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::str::FromStr;
 
     // A root is "empty" iff it contains nothing but (recursively) empty trees: the empty tree
     // itself and nested empty chains qualify; any blob or gitlink anywhere disqualifies.
@@ -981,20 +982,22 @@ mod tests {
         data.extend_from_slice(b"40000 sub");
         data.push(0);
         data.extend_from_slice(empty.as_bytes());
-        let chain = repo
-            .odb()
-            .unwrap()
-            .write(git2::ObjectType::Tree, &data)
-            .unwrap();
+        let chain = objects::gix_oid(
+            repo.odb()
+                .unwrap()
+                .write(git2::ObjectType::Tree, &data)
+                .unwrap(),
+        );
         let mut data = Vec::new();
         data.extend_from_slice(b"40000 nested");
         data.push(0);
         data.extend_from_slice(chain.as_bytes());
-        let chain2 = repo
-            .odb()
-            .unwrap()
-            .write(git2::ObjectType::Tree, &data)
-            .unwrap();
+        let chain2 = objects::gix_oid(
+            repo.odb()
+                .unwrap()
+                .write(git2::ObjectType::Tree, &data)
+                .unwrap(),
+        );
         assert!(is_empty_root(&t, odb, chain2).unwrap());
 
         // A blob anywhere makes the root non-empty; so does a gitlink.
@@ -1002,15 +1005,18 @@ mod tests {
         let mut b = git2::build::TreeUpdateBuilder::new();
         b.upsert("a/b/file.txt", blob, git2::FileMode::Blob);
         let base = repo.treebuilder(None).unwrap().write().unwrap();
-        let with_blob = b
-            .create_updated(&repo, &repo.find_tree(base).unwrap())
-            .unwrap();
+        let with_blob = objects::gix_oid(
+            b.create_updated(&repo, &repo.find_tree(base).unwrap())
+                .unwrap(),
+        );
         assert!(!is_empty_root(&t, odb, with_blob).unwrap());
 
-        let gitlink = git2::Oid::from_str("0123456789012345678901234567890123456789").unwrap();
+        let gitlink =
+            gix_hash::ObjectId::from_str("0123456789012345678901234567890123456789").unwrap();
         let mut b = repo.treebuilder(None).unwrap();
-        b.insert("sub", gitlink, 0o160000).unwrap();
-        let with_gitlink = b.write().unwrap();
+        b.insert("sub", objects::git2_oid(&gitlink), 0o160000)
+            .unwrap();
+        let with_gitlink = objects::gix_oid(b.write().unwrap());
         assert!(!is_empty_root(&t, odb, with_gitlink).unwrap());
     }
 }

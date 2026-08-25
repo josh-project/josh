@@ -26,7 +26,7 @@ pub fn read_revisions(
     };
 
     // The change's diffs subtree, when the commit has one.
-    let diffs_of = |tree: git2::Oid| -> Option<git2::Oid> {
+    let diffs_of = |tree: gix_hash::ObjectId| -> Option<gix_hash::ObjectId> {
         crate::store::get_tree(
             transaction,
             odb,

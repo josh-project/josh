@@ -3,6 +3,7 @@
 //! feedback back to GitHub.
 
 use anyhow::{Context, anyhow};
+use std::str::FromStr;
 
 use josh_core::git::normalize_repo_path;
 use josh_github_graphql::connection::GithubApiConnection;
@@ -268,7 +269,7 @@ struct GithubSyncCtx<'a> {
     owner: &'a str,
     repo_name: &'a str,
     remote_name: &'a str,
-    target_branch_shas: &'a std::collections::HashMap<String, git2::Oid>,
+    target_branch_shas: &'a std::collections::HashMap<String, gix_hash::ObjectId>,
 }
 
 impl GithubSyncCtx<'_> {
@@ -279,14 +280,14 @@ impl GithubSyncCtx<'_> {
         let (existing_change_id, _) =
             josh_core::trailers::parse_change_meta(&pr.head_commit_message);
 
-        let head_oid =
-            git2::Oid::from_str(&pr.head_oid).map_err(|e| anyhow!("bad head OID: {}", e))?;
+        let head_oid = gix_hash::ObjectId::from_str(&pr.head_oid)
+            .map_err(|e| anyhow!("bad head OID: {}", e))?;
         let odb = self.transaction.odb();
         josh_core::objects::CommitData::read(odb, head_oid)
             .map_err(|_| anyhow!("head commit {} not available from GitHub", pr.head_oid))?;
 
-        let base_oid =
-            git2::Oid::from_str(&pr.base_ref_oid).map_err(|e| anyhow!("bad base OID: {}", e))?;
+        let base_oid = gix_hash::ObjectId::from_str(&pr.base_ref_oid)
+            .map_err(|e| anyhow!("bad base OID: {}", e))?;
         josh_core::objects::CommitData::read(odb, base_oid)
             .map_err(|_| anyhow!("base commit {} not available from GitHub", pr.base_ref_oid))?;
 
@@ -405,11 +406,11 @@ struct PrMeta {
     /// `{owner}/{repo}/pull/{N}` id.
     change_id: String,
     remote_scope: josh_changes::ChangesRef,
-    head: git2::Oid,
+    head: gix_hash::ObjectId,
     /// Immediate base commit of the PR.
-    target: git2::Oid,
+    target: gix_hash::ObjectId,
     /// Resolved change base for change-id'd heads; `None` for synthetic merges.
-    change_base: Option<git2::Oid>,
+    change_base: Option<gix_hash::ObjectId>,
     pr_data: josh_github_graphql::operations::pull_request::PrData,
 }
 
@@ -828,7 +829,7 @@ fn fetch_sync_objects(
     owner: &str,
     repo_name: &str,
     prs: &[PrSummary],
-) -> anyhow::Result<std::collections::HashMap<String, git2::Oid>> {
+) -> anyhow::Result<std::collections::HashMap<String, gix_hash::ObjectId>> {
     const SCRATCH: &str = "refs/josh/sync-tips";
 
     let github_url = format!("https://github.com/{}/{}", owner, repo_name);

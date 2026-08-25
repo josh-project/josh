@@ -37,7 +37,8 @@ fn sled_lock_follows_transaction_lifetime() {
         let tree = git
             .find_tree(git.treebuilder(None).unwrap().write().unwrap())
             .unwrap();
-        let commit = git.commit(None, &sig, &sig, "c", &tree, &[]).unwrap();
+        let commit =
+            josh_core::objects::gix_oid(git.commit(None, &sig, &sig, "c", &tree, &[]).unwrap());
         transaction
             .insert(filter::parse(":/").unwrap(), commit, commit, true)
             .unwrap();

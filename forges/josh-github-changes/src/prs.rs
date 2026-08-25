@@ -31,7 +31,7 @@ pub fn read_pr_data(
 pub struct PrInfo {
     pub head_branch: String,
     pub base_branch: String,
-    pub base_oid: git2::Oid,
+    pub base_oid: gix_hash::ObjectId,
     pub title: String,
     pub body: String,
 }
@@ -46,8 +46,8 @@ pub fn collect_pr_infos(
     struct ByIdEntry {
         head_branch: Option<String>,
         base_branch: Option<String>,
-        head_oid: Option<git2::Oid>,
-        base_oid: Option<git2::Oid>,
+        head_oid: Option<gix_hash::ObjectId>,
+        base_oid: Option<gix_hash::ObjectId>,
     }
 
     fn branch_name(refname: &str) -> &str {
@@ -313,6 +313,7 @@ pub async fn create_or_update_prs(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::str::FromStr;
 
     const TIP: &str = "1111111111111111111111111111111111111111";
     const OTHER: &str = "2222222222222222222222222222222222222222";
@@ -321,7 +322,7 @@ mod tests {
         PrInfo {
             head_branch: "@changes/main/a@b.com/feature".to_string(),
             base_branch: "@base/main/a@b.com/feature".to_string(),
-            base_oid: git2::Oid::from_str(base_oid).unwrap(),
+            base_oid: gix_hash::ObjectId::from_str(base_oid).unwrap(),
             title: "t".to_string(),
             body: "b".to_string(),
         }

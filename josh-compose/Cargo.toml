@@ -12,7 +12,7 @@ version = "26.7.28"
 [dependencies]
 anyhow.workspace = true
 defer.workspace = true
-git2.workspace = true
+gix-hash.workspace = true
 josh-core.workspace = true
 josh-filter.workspace = true
 josh-compose-backend.workspace = true

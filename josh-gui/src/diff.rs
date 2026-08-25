@@ -1,4 +1,5 @@
 use dioxus::prelude::*;
+use std::str::FromStr;
 
 use crate::Page;
 use crate::common::{FlatComment, parse_hunk_header, render_comment_card};
@@ -49,8 +50,8 @@ fn selected_file_line(items: &[DiffItem], sel: Option<usize>) -> Option<u32> {
 
 fn load_file_diff(sha: &str, path: &str, context_lines: u32) -> anyhow::Result<Vec<DiffLine>> {
     let repo = git2::Repository::discover(".")?;
-    let oid = git2::Oid::from_str(sha)?;
-    let commit = repo.find_commit(oid)?;
+    let oid = gix_hash::ObjectId::from_str(sha)?;
+    let commit = repo.find_commit(josh_core::objects::git2_oid(&oid))?;
 
     let parent_tree = commit.parent(0).ok().and_then(|p| p.tree().ok());
     let mut opts = git2::DiffOptions::new();
@@ -202,7 +203,7 @@ pub fn FileDiffView(
     scope: josh_changes::ChangesRef,
     mut page: Signal<Page>,
 ) -> Element {
-    let changes_ref_oid = use_context::<Signal<Option<git2::Oid>>>();
+    let changes_ref_oid = use_context::<Signal<Option<gix_hash::ObjectId>>>();
     let mut detail = use_signal(|| detail::load_detail(&sha, &scope));
     let mut prev_sha = use_signal(|| sha.clone());
     let mut prev_oid = use_signal(|| *changes_ref_oid.peek());

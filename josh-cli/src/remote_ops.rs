@@ -73,7 +73,7 @@ pub fn resolve_default_branch(
 pub fn get_backing_refs(
     transaction: &josh_core::cache::Transaction,
     remote_name: &str,
-) -> anyhow::Result<Vec<(String, git2::Oid)>> {
+) -> anyhow::Result<Vec<(String, gix_hash::ObjectId)>> {
     let mut input_refs = Vec::new();
     transaction.for_each_ref_prefixed(
         &format!("refs/josh/remotes/{}/", remote_name),
@@ -125,16 +125,17 @@ pub fn apply_josh_filtering(
     let steps = flatten_chain(filter);
 
     // Seed with the raw backing refs
-    let mut current_commits: Vec<(String, git2::Oid)> = get_backing_refs(transaction, remote_name)?
-        .into_iter()
-        .map(|(refname, oid)| {
-            let branch = refname
-                .strip_prefix(&prefix)
-                .unwrap_or(&refname)
-                .to_string();
-            (branch, oid)
-        })
-        .collect();
+    let mut current_commits: Vec<(String, gix_hash::ObjectId)> =
+        get_backing_refs(transaction, remote_name)?
+            .into_iter()
+            .map(|(refname, oid)| {
+                let branch = refname
+                    .strip_prefix(&prefix)
+                    .unwrap_or(&refname)
+                    .to_string();
+                (branch, oid)
+            })
+            .collect();
 
     // Apply each step, writing filtered refs along the way
     for (step_idx, step_filter) in steps.iter().enumerate() {
@@ -152,7 +153,7 @@ pub fn apply_josh_filtering(
         let mut next_commits = Vec::new();
 
         for (branch_name, filtered_oid) in &filtered {
-            if *filtered_oid == git2::Oid::ZERO_SHA1 {
+            if *filtered_oid == gix_hash::ObjectId::null(gix_hash::Kind::Sha1) {
                 continue;
             }
 

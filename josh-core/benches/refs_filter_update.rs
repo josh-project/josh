@@ -4,6 +4,7 @@ use josh_core::git::josh_commit_signature;
 use josh_test_support::bench::{EntryKind, build_index, git2_oid, gix_oid, random_string};
 use rand::prelude::*;
 use std::path::{Path, PathBuf};
+use std::str::FromStr;
 
 // This bench measures the *reference* surface: enumerating refs by prefix, resolving each to an oid,
 // looking up the (cache-hot) filtered result per ref, and force-writing the filtered refs back. The
@@ -60,7 +61,7 @@ const JOSH_BENCH_COMMIT_TIME: &str = "1700000000";
 /// One ref-count case and the head of its generated history.
 struct SizeCase {
     n_refs: usize,
-    head: git2::Oid,
+    head: gix_hash::ObjectId,
 }
 
 struct RefsBench {
@@ -91,7 +92,8 @@ impl RefsBench {
         // checked against `EXPECTED_HEAD`.
         let provisioned = josh_test_support::provision_repo::provision_repo(
             CACHE_NAME,
-            &git2::Oid::from_str(EXPECTED_HEAD).expect("EXPECTED_HEAD must be a valid oid"),
+            &gix_hash::ObjectId::from_str(EXPECTED_HEAD)
+                .expect("EXPECTED_HEAD must be a valid oid"),
             |repo| {
                 let mut heads = vec![];
                 for &n_refs in REF_COUNTS {
@@ -110,7 +112,10 @@ impl RefsBench {
             let repo = &provisioned.repo;
             for &n_refs in REF_COUNTS {
                 let head = repo.refname_to_id(&format!("refs/heads/case_{n_refs}_tip"))?;
-                cases.push(SizeCase { n_refs, head });
+                cases.push(SizeCase {
+                    n_refs,
+                    head: gix_oid(head),
+                });
             }
         }
 
@@ -134,9 +139,9 @@ impl RefsBench {
             // sees what is on disk.
             transaction.flush_mem_odb()?;
             let repo = transaction.git2_repo();
-            let filtered_tree = repo.find_commit(filtered)?.tree()?.id();
+            let filtered_tree = repo.find_commit(git2_oid(filtered))?.tree()?.id();
             let raw_subdir_tree = repo
-                .find_commit(case.head)?
+                .find_commit(git2_oid(case.head))?
                 .tree()?
                 .get_path(Path::new(SUBDIR))?
                 .id();
@@ -169,7 +174,7 @@ impl RefsBench {
 /// directories, then generate `n_refs` churn commits, pointing `refs/heads/case_<n>/change_<i>` at
 /// each. The tip additionally gets `refs/heads/case_<n>_tip` so the head is recoverable after
 /// the repo round-trips through the cache.
-fn build_case(repo: &git2::Repository, n_refs: usize) -> anyhow::Result<git2::Oid> {
+fn build_case(repo: &git2::Repository, n_refs: usize) -> anyhow::Result<gix_hash::ObjectId> {
     use rand::RngExt;
 
     let gix_repo = gix::open(repo.path())?;
@@ -243,7 +248,7 @@ fn build_case(repo: &git2::Repository, n_refs: usize) -> anyhow::Result<git2::Oi
         "bench case tip",
     )?;
 
-    Ok(head)
+    Ok(gix_oid(head))
 }
 
 fn refs_filter_update(c: &mut Criterion) {

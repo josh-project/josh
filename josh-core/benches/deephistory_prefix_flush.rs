@@ -4,6 +4,7 @@ use josh_core::git::josh_commit_signature;
 use josh_test_support::bench::{EntryKind, build_index, git2_oid, gix_oid, random_string};
 use rand::prelude::*;
 use std::path::{Path, PathBuf};
+use std::str::FromStr;
 
 // This bench measures the object *write* path: unlike `:/<subdir>` (which only selects existing
 // subtrees, so the filtered output reuses existing tree objects), a `:prefix=<path>` filter writes
@@ -71,7 +72,7 @@ const JOSH_BENCH_COMMIT_TIME: &str = "1700000000";
 /// One history length and the head of its generated history.
 struct SizeCase {
     n_commits: usize,
-    head: git2::Oid,
+    head: gix_hash::ObjectId,
 }
 
 struct PrefixFlushBench {
@@ -101,7 +102,8 @@ impl PrefixFlushBench {
         // stamp checked against `EXPECTED_HEAD`.
         let provisioned = josh_test_support::provision_repo::provision_repo(
             CACHE_NAME,
-            &git2::Oid::from_str(EXPECTED_HEAD).expect("EXPECTED_HEAD must be a valid oid"),
+            &gix_hash::ObjectId::from_str(EXPECTED_HEAD)
+                .expect("EXPECTED_HEAD must be a valid oid"),
             |repo| {
                 let mut heads = vec![];
                 for &n_commits in HISTORY_SIZES {
@@ -120,7 +122,10 @@ impl PrefixFlushBench {
             let repo = &provisioned.repo;
             for &n_commits in HISTORY_SIZES {
                 let head = repo.refname_to_id(&format!("refs/heads/case_{n_commits}"))?;
-                cases.push(SizeCase { n_commits, head });
+                cases.push(SizeCase {
+                    n_commits,
+                    head: gix_oid(head),
+                });
             }
         }
 
@@ -148,7 +153,7 @@ impl PrefixFlushBench {
             let filtered_tree = josh_core::objects::CommitData::read(odb, filtered)?.tree_id()?;
             let nested_tree =
                 josh_core::objects::path_entry(odb, filtered_tree, Path::new(PREFIX))?
-                    .map(|entry| josh_core::objects::git2_oid(&entry.oid))
+                    .map(|entry| entry.oid)
                     .ok_or_else(|| anyhow::anyhow!("prefix filter produced no `{PREFIX}` entry"))?;
             let raw_tree = josh_core::objects::CommitData::read(odb, case.head)?.tree_id()?;
             anyhow::ensure!(
@@ -172,7 +177,7 @@ impl PrefixFlushBench {
 /// directories, then generate an `n_commits` history that churns ~`CHURN_FRACTION` of the files per
 /// commit. The tip is tagged with `refs/heads/case_<n_commits>` so the head is recoverable after
 /// the repo round-trips through the cache.
-fn build_case(repo: &git2::Repository, n_commits: usize) -> anyhow::Result<git2::Oid> {
+fn build_case(repo: &git2::Repository, n_commits: usize) -> anyhow::Result<gix_hash::ObjectId> {
     use rand::RngExt;
 
     let gix_repo = gix::open(repo.path())?;
@@ -240,7 +245,7 @@ fn build_case(repo: &git2::Repository, n_commits: usize) -> anyhow::Result<git2:
         "bench case tip",
     )?;
 
-    Ok(head)
+    Ok(gix_oid(head))
 }
 
 fn deephistory_prefix_flush(c: &mut Criterion) {

@@ -1,6 +1,5 @@
 use crate::change::{Change, get_changes, split_changes};
 use crate::stacked::PushRef;
-use anyhow::anyhow;
 
 /// A valid Gerrit Change-Id is the letter `I` followed by 40 hex digits.
 fn is_gerrit_change_id(id: &str) -> bool {
@@ -18,8 +17,7 @@ fn gerrit_change_id(josh_id: &str) -> anyhow::Result<String> {
     if is_gerrit_change_id(josh_id) {
         return Ok(josh_id.to_string());
     }
-    let oid = git2::Oid::hash_object(git2::ObjectType::Blob, josh_id.as_bytes())
-        .map_err(|e| anyhow!("failed to derive Gerrit Change-Id: {}", e))?;
+    let oid = josh_core::objects::hash_blob(josh_id.as_bytes());
     Ok(format!("I{}", oid))
 }
 
@@ -75,13 +73,13 @@ fn message_with_gerrit_change_id(message: &str, gerrit_id: &str) -> String {
 /// change rather than a duplicate.
 fn rewrite_chain_with_gerrit_ids(
     transaction: &josh_core::cache::Transaction,
-    tip: git2::Oid,
-    base: git2::Oid,
-) -> anyhow::Result<git2::Oid> {
+    tip: gix_hash::ObjectId,
+    base: gix_hash::ObjectId,
+) -> anyhow::Result<gix_hash::ObjectId> {
     let odb = transaction.odb();
 
     // Collect the chain from tip down to (but excluding) base, first parent only.
-    let mut chain: Vec<git2::Oid> = Vec::new();
+    let mut chain: Vec<gix_hash::ObjectId> = Vec::new();
     let mut cur = tip;
     while cur != base {
         chain.push(cur);
@@ -92,7 +90,7 @@ fn rewrite_chain_with_gerrit_ids(
     }
     chain.reverse();
 
-    let mut new_parent = (base != git2::Oid::ZERO_SHA1).then_some(base);
+    let mut new_parent = (base != gix_hash::ObjectId::null(gix_hash::Kind::Sha1)).then_some(base);
     for oid in chain {
         let commit = josh_core::objects::CommitData::read(odb, oid)?;
         let (josh_id, _) = josh_core::trailers::commit_change_meta(&commit);
@@ -135,8 +133,8 @@ fn rewrite_chain_with_gerrit_ids(
 pub fn build_gerrit_push(
     transaction: &josh_core::cache::Transaction,
     branch: &str,
-    tip: git2::Oid,
-    base: git2::Oid,
+    tip: gix_hash::ObjectId,
+    base: gix_hash::ObjectId,
 ) -> anyhow::Result<Vec<PushRef>> {
     if tip == base {
         return Ok(vec![]);
@@ -165,8 +163,8 @@ pub fn build_gerrit_push(
 pub fn build_gerrit_independent_push(
     transaction: &josh_core::cache::Transaction,
     branch: &str,
-    tip: git2::Oid,
-    base: git2::Oid,
+    tip: gix_hash::ObjectId,
+    base: gix_hash::ObjectId,
 ) -> anyhow::Result<Vec<PushRef>> {
     let odb = transaction.odb();
     let changes = get_changes(transaction, tip, base)?;
@@ -188,7 +186,7 @@ pub fn build_gerrit_independent_push(
         let parent = josh_core::objects::CommitData::read(odb, change.commit)?
             .parent_ids()
             .next();
-        let has_no_deps = if base == git2::Oid::ZERO_SHA1 {
+        let has_no_deps = if base == gix_hash::ObjectId::null(gix_hash::Kind::Sha1) {
             parent.is_none()
         } else {
             parent == Some(base)

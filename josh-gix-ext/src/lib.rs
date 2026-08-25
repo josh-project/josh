@@ -1,23 +1,4 @@
-//! In-memory object staging over a single object database.
-//!
-//! This is the transition vehicle for the incremental git2 -> gix port: all gix-object compute
-//! (tree construction, commit parsing and serialization, hashing) works against this adapter,
-//! which stages written objects in memory and reads through to the one repository object
-//! database. At no point does a second repository handle perform I/O -- the lesson from the
-//! reverted side-by-side gitoxide integration (cd6dc206) is that gix is used for pure in-memory
-//! compute while a single ODB owns all I/O.
-//!
-//! Objects are staged as raw `(kind, bytes)` pairs keyed by their content hash, computed with
-//! [`gix_object::compute_hash`] -- no repository access, no zlib, no filesystem. [`flush`] batch
-//! writes the staged objects to the repository ODB at an explicit boundary, skipping objects that
-//! already exist (on some platforms `exists()` is cheaper in terms of I/O than `write()`, because
-//! `write()` updates the file access time in the loose object backend).
-//!
-//! The adapter implements [`gix_object::Find`] (and friends), so gix readers -- `TreeRef`
-//! parsing, `CommitRefIter`, the tree editor, the topo walk -- see staged-but-unflushed objects
-//! and disk objects through one interface.
-//!
-//! [`flush`]: StagingOdb::flush
+//! Git object helpers over trait-based object stores.
 
 use std::collections::HashMap;
 
@@ -31,8 +12,7 @@ pub use graph::{is_descendant_of, merge_base, merge_base_octopus};
 pub use merge::{merge_commits, merge_trees};
 pub use revwalk::{RangeWalk, RevWalk};
 
-/// Map the kind of a raw object between the two libraries. Infallible: both enums cover exactly
-/// the four git object kinds.
+/// Convert a gitoxide object kind to libgit2.
 pub fn git2_kind(kind: gix_object::Kind) -> git2::ObjectType {
     match kind {
         gix_object::Kind::Tree => git2::ObjectType::Tree,
@@ -42,7 +22,7 @@ pub fn git2_kind(kind: gix_object::Kind) -> git2::ObjectType {
     }
 }
 
-/// See [`git2_kind`]. Fails only for `Any`/`Ref`, which are not object kinds.
+/// Convert a libgit2 object kind when it represents an object.
 pub fn gix_kind(kind: git2::ObjectType) -> Option<gix_object::Kind> {
     match kind {
         git2::ObjectType::Tree => Some(gix_object::Kind::Tree),
@@ -53,31 +33,29 @@ pub fn gix_kind(kind: git2::ObjectType) -> Option<gix_object::Kind> {
     }
 }
 
-/// Zero-cost oid conversion: both libraries use the same 20-byte binary representation.
+/// Convert a SHA-1 object ID to gitoxide.
 pub fn gix_oid(oid: git2::Oid) -> gix_hash::ObjectId {
     gix_hash::ObjectId::from_bytes_or_panic(oid.as_bytes())
 }
 
-/// See [`gix_oid`].
+/// Convert a SHA-1 object ID to libgit2.
 pub fn git2_oid(oid: &gix_hash::oid) -> git2::Oid {
     git2::Oid::from_bytes(oid.as_bytes()).expect("oid sizes match")
 }
 
-/// Hash `data` as a blob without writing it anywhere.
-pub fn hash_blob(data: &[u8]) -> git2::Oid {
-    git2_oid(
-        &gix_object::compute_hash(gix_hash::Kind::Sha1, gix_object::Kind::Blob, data)
-            .expect("failed to compute hash"),
-    )
+/// Hash a blob without writing it.
+pub fn hash_blob(data: &[u8]) -> gix_hash::ObjectId {
+    gix_object::compute_hash(gix_hash::Kind::Sha1, gix_object::Kind::Blob, data)
+        .expect("failed to compute hash")
 }
 
 /// Follow `oid` to the commit it names, unwrapping annotated tags on the way. Errors when the
 /// object is missing or resolves to something that is not a commit.
 pub fn peel_to_commit(
     src: &(impl gix_object::Find + ?Sized),
-    oid: git2::Oid,
-) -> anyhow::Result<git2::Oid> {
-    let mut current = gix_oid(oid);
+    oid: gix_hash::ObjectId,
+) -> anyhow::Result<gix_hash::ObjectId> {
+    let mut current = oid;
     let mut buffer = Vec::new();
     loop {
         let data = src
@@ -85,7 +63,7 @@ pub fn peel_to_commit(
             .map_err(|e| anyhow::anyhow!("peel {}: {}", current, e))?
             .ok_or_else(|| anyhow::anyhow!("object {} not found", current))?;
         match data.kind {
-            gix_object::Kind::Commit => return Ok(git2_oid(&current)),
+            gix_object::Kind::Commit => return Ok(current),
             gix_object::Kind::Tag => {
                 current = gix_object::TagRefIter::from_bytes(&buffer, gix_hash::Kind::Sha1)
                     .target_id()?;
@@ -105,11 +83,11 @@ pub fn peel_to_commit(
 /// Errors when the object is missing or is not a tree.
 pub fn read_tree_entries(
     src: &(impl gix_object::Find + ?Sized),
-    oid: git2::Oid,
+    oid: gix_hash::ObjectId,
 ) -> anyhow::Result<Vec<gix_object::tree::Entry>> {
     let mut buffer = Vec::new();
     let data = src
-        .try_find(&gix_oid(oid), &mut buffer)
+        .try_find(&oid, &mut buffer)
         .map_err(|e| anyhow::anyhow!("read tree {}: {}", oid, e))?
         .ok_or_else(|| anyhow::anyhow!("object {} not found", oid))?;
     if data.kind != gix_object::Kind::Tree {
@@ -126,7 +104,7 @@ pub fn read_tree_entries(
 /// entry on the way; the final entry may be of any kind.
 pub fn path_entry(
     src: &(impl gix_object::Find + ?Sized),
-    oid: git2::Oid,
+    oid: gix_hash::ObjectId,
     path: &std::path::Path,
 ) -> anyhow::Result<Option<gix_object::tree::Entry>> {
     let mut current = oid;
@@ -134,7 +112,7 @@ pub fn path_entry(
     while let Some(component) = components.next() {
         let mut buffer = Vec::new();
         let Some(data) = src
-            .try_find(&gix_oid(current), &mut buffer)
+            .try_find(&current, &mut buffer)
             .map_err(|e| anyhow::anyhow!("read tree {}: {}", current, e))?
         else {
             return Ok(None);
@@ -150,7 +128,7 @@ pub fn path_entry(
         if components.peek().is_none() {
             return Ok(Some((*entry).into()));
         }
-        current = git2_oid(entry.oid);
+        current = entry.oid.to_owned();
     }
     Ok(None)
 }
@@ -158,9 +136,9 @@ pub fn path_entry(
 /// The text of the blob `oid`, or `""` when it is missing, is not a blob, holds a NUL byte or
 /// is not valid UTF-8 -- the tolerance the display and script paths want, where a file that
 /// cannot be shown is the same as a file that is not there.
-pub fn blob_text(src: &(impl gix_object::Find + ?Sized), oid: git2::Oid) -> String {
+pub fn blob_text(src: &(impl gix_object::Find + ?Sized), oid: gix_hash::ObjectId) -> String {
     let mut buffer = Vec::new();
-    let Ok(Some(data)) = src.try_find(&gix_oid(oid), &mut buffer) else {
+    let Ok(Some(data)) = src.try_find(&oid, &mut buffer) else {
         return String::new();
     };
     if data.kind != gix_object::Kind::Blob || buffer.contains(&0) {
@@ -179,7 +157,7 @@ pub fn blob_text(src: &(impl gix_object::Find + ?Sized), oid: git2::Oid) -> Stri
 /// the merge commits it creates.
 pub fn walk_tree_preorder(
     src: &impl gix_object::Find,
-    root: git2::Oid,
+    root: gix_hash::ObjectId,
     cb: &mut dyn FnMut(&str, &gix_object::tree::EntryRef<'_>) -> anyhow::Result<()>,
 ) -> anyhow::Result<()> {
     let mut path = String::new();
@@ -188,13 +166,13 @@ pub fn walk_tree_preorder(
 
 fn walk_tree_preorder_inner(
     src: &impl gix_object::Find,
-    tree: git2::Oid,
+    tree: gix_hash::ObjectId,
     path: &mut String,
     cb: &mut dyn FnMut(&str, &gix_object::tree::EntryRef<'_>) -> anyhow::Result<()>,
 ) -> anyhow::Result<()> {
     let mut buf = Vec::new();
     let data = src
-        .try_find(&gix_oid(tree), &mut buf)
+        .try_find(&tree, &mut buf)
         .map_err(|e| anyhow::anyhow!("walk_tree_preorder: {e}"))?
         .ok_or_else(|| anyhow::anyhow!("object {} not found", tree))?;
     if data.kind != gix_object::Kind::Tree {
@@ -215,7 +193,7 @@ fn walk_tree_preorder_inner(
                 path.push('/');
             }
             path.push_str(name);
-            walk_tree_preorder_inner(src, git2_oid(entry.oid), path, cb)?;
+            walk_tree_preorder_inner(src, entry.oid.to_owned(), path, cb)?;
             path.truncate(base);
         }
     }
@@ -233,7 +211,7 @@ fn walk_tree_preorder_inner(
 pub fn write_tree_now(
     out: &impl gix_object::Write,
     entries: Vec<gix_object::tree::Entry>,
-) -> anyhow::Result<git2::Oid> {
+) -> anyhow::Result<gix_hash::ObjectId> {
     // Exact-fit upper bound: mode (<= 6 octal digits) + space + name + NUL + 20 oid bytes.
     let mut buffer = Vec::with_capacity(
         entries
@@ -258,15 +236,15 @@ pub fn write_tree_now(
     let id = out
         .write_buf(gix_object::Kind::Tree, &buffer)
         .map_err(|e| anyhow::anyhow!("write_tree_now: {e}"))?;
-    Ok(git2_oid(&id))
+    Ok(id)
 }
 
 /// Write `data` as a blob to `out`.
-pub fn write_blob(out: &impl gix_object::Write, data: &[u8]) -> anyhow::Result<git2::Oid> {
+pub fn write_blob(out: &impl gix_object::Write, data: &[u8]) -> anyhow::Result<gix_hash::ObjectId> {
     let id = out
         .write_buf(gix_object::Kind::Blob, data)
         .map_err(|e| anyhow::anyhow!("write_blob: {e}"))?;
-    Ok(git2_oid(&id))
+    Ok(id)
 }
 
 /// Serialize a new commit and write it to `out`. Signatures carry the seconds and UTC
@@ -274,15 +252,15 @@ pub fn write_blob(out: &impl gix_object::Write, data: &[u8]) -> anyhow::Result<g
 /// the caller's business.
 pub fn write_commit(
     out: &impl gix_object::Write,
-    tree: git2::Oid,
-    parents: &[git2::Oid],
+    tree: gix_hash::ObjectId,
+    parents: &[gix_hash::ObjectId],
     author: &git2::Signature<'_>,
     committer: &git2::Signature<'_>,
     message: &str,
-) -> anyhow::Result<git2::Oid> {
+) -> anyhow::Result<gix_hash::ObjectId> {
     let commit = gix_object::Commit {
-        tree: gix_oid(tree),
-        parents: parents.iter().map(|p| gix_oid(*p)).collect(),
+        tree,
+        parents: parents.to_vec().into(),
         author: gix_signature(author)?,
         committer: gix_signature(committer)?,
         encoding: None,
@@ -294,7 +272,7 @@ pub fn write_commit(
     let id = out
         .write_buf(gix_object::Kind::Commit, &buffer)
         .map_err(|e| anyhow::anyhow!("write_commit: {e}"))?;
-    Ok(git2_oid(&id))
+    Ok(id)
 }
 
 /// Serialize a new commit whose author and committer are taken from `base`, and write it to
@@ -302,14 +280,14 @@ pub fn write_commit(
 pub fn write_commit_with_signatures_of(
     out: &impl gix_object::Write,
     base: &CommitData,
-    tree: git2::Oid,
-    parents: &[git2::Oid],
+    tree: gix_hash::ObjectId,
+    parents: &[gix_hash::ObjectId],
     message: &str,
-) -> anyhow::Result<git2::Oid> {
+) -> anyhow::Result<gix_hash::ObjectId> {
     let parsed = base.parsed()?;
     let commit = gix_object::Commit {
-        tree: gix_oid(tree),
-        parents: parents.iter().map(|p| gix_oid(*p)).collect(),
+        tree,
+        parents: parents.to_vec().into(),
         author: parsed.author()?.into(),
         committer: parsed.committer()?.into(),
         encoding: None,
@@ -321,7 +299,7 @@ pub fn write_commit_with_signatures_of(
     let id = out
         .write_buf(gix_object::Kind::Commit, &buffer)
         .map_err(|e| anyhow::anyhow!("write_commit: {e}"))?;
-    Ok(git2_oid(&id))
+    Ok(id)
 }
 
 /// The gix spelling of a git2 signature: name and email verbatim, and the timestamp as
@@ -343,17 +321,20 @@ pub fn gix_signature(sig: &git2::Signature<'_>) -> anyhow::Result<gix_actor::Sig
 /// The internal representation can become `Arc<[u8]>` later without any signature change.
 #[derive(Clone, Debug)]
 pub struct CommitData {
-    id: git2::Oid,
+    id: gix_hash::ObjectId,
     bytes: Vec<u8>,
 }
 
 impl CommitData {
     /// Errors if the object is missing or not a commit. `src` is the transaction's facade in
     /// practice, so unflushed in-memory commits resolve.
-    pub fn read(src: &impl gix_object::Find, oid: git2::Oid) -> anyhow::Result<CommitData> {
+    pub fn read(
+        src: &impl gix_object::Find,
+        oid: gix_hash::ObjectId,
+    ) -> anyhow::Result<CommitData> {
         let mut bytes = Vec::new();
         let data = src
-            .try_find(&gix_oid(oid), &mut bytes)
+            .try_find(&oid, &mut bytes)
             .map_err(|e| anyhow::anyhow!("CommitData::read: {e}"))?
             .ok_or_else(|| anyhow::anyhow!("object {} not found", oid))?;
         if data.kind != gix_object::Kind::Commit {
@@ -366,7 +347,7 @@ impl CommitData {
         Ok(CommitData { id: oid, bytes })
     }
 
-    pub fn id(&self) -> git2::Oid {
+    pub fn id(&self) -> gix_hash::ObjectId {
         self.id
     }
 
@@ -384,10 +365,10 @@ impl CommitData {
         )?)
     }
 
-    pub fn tree_id(&self) -> anyhow::Result<git2::Oid> {
+    pub fn tree_id(&self) -> anyhow::Result<gix_hash::ObjectId> {
         let id =
             gix_object::CommitRefIter::from_bytes(&self.bytes, gix_hash::Kind::Sha1).tree_id()?;
-        Ok(git2_oid(&id))
+        Ok(id)
     }
 
     /// The stored message verbatim, by way of a full commit parse -- an unparseable commit
@@ -413,13 +394,11 @@ impl CommitData {
 
     /// Binary parent ids read from the parsed commit header id array via
     /// `CommitRefIter::parent_ids`; never does odb lookups.
-    pub fn parent_ids(&self) -> impl Iterator<Item = git2::Oid> + '_ {
-        gix_object::CommitRefIter::from_bytes(&self.bytes, gix_hash::Kind::Sha1)
-            .parent_ids()
-            .map(|p| git2_oid(&p))
+    pub fn parent_ids(&self) -> impl Iterator<Item = gix_hash::ObjectId> + '_ {
+        gix_object::CommitRefIter::from_bytes(&self.bytes, gix_hash::Kind::Sha1).parent_ids()
     }
 
-    pub fn first_parent_id(&self) -> Option<git2::Oid> {
+    pub fn first_parent_id(&self) -> Option<gix_hash::ObjectId> {
         self.parent_ids().next()
     }
 
@@ -646,33 +625,20 @@ impl gix_object::Write for Git2Odb<'_> {
 mod tests {
     use super::*;
 
-    #[test]
-    fn hash_blob_matches_git2() {
-        for data in [&b""[..], b"x", b"1:{\"a\":1}\n"] {
-            assert_eq!(
-                super::hash_blob(data),
-                git2::Oid::hash_object(git2::ObjectType::Blob, data).unwrap()
-            );
-        }
-        assert_eq!(
-            super::hash_blob(b"").to_string(),
-            "e69de29bb2d1d6434b8b29ae775ad8c2e48c5391"
-        );
-    }
-
-    /// Write a commit with `message` verbatim through the raw odb, so non-UTF-8 messages can
-    /// be expressed too.
-    fn commit_with_message(repo: &git2::Repository, message: &[u8]) -> git2::Oid {
+    /// Write raw commit bytes, including non-UTF-8 messages.
+    fn commit_with_message(repo: &git2::Repository, message: &[u8]) -> gix_hash::ObjectId {
         let tree = repo.treebuilder(None).unwrap().write().unwrap();
         let mut data = Vec::new();
         data.extend_from_slice(format!("tree {}\n", tree).as_bytes());
         data.extend_from_slice(b"author t <t@e> 0 +0000\n");
         data.extend_from_slice(b"committer t <t@e> 0 +0000\n\n");
         data.extend_from_slice(message);
-        repo.odb()
-            .unwrap()
-            .write(git2::ObjectType::Commit, &data)
-            .unwrap()
+        gix_oid(
+            repo.odb()
+                .unwrap()
+                .write(git2::ObjectType::Commit, &data)
+                .unwrap(),
+        )
     }
 
     /// Commits written here must be byte-identical to the ones libgit2 writes for the same
@@ -684,17 +650,17 @@ mod tests {
         let repo = git2::Repository::init_bare(dir.path()).unwrap();
         let odb = repo.odb().unwrap();
 
-        let tree = repo.treebuilder(None).unwrap().write().unwrap();
+        let tree = gix_oid(repo.treebuilder(None).unwrap().write().unwrap());
         let blob = repo.blob(b"x").unwrap();
         let mut b = repo.treebuilder(None).unwrap();
         b.insert("f", blob, 0o100644).unwrap();
-        let tree2 = b.write().unwrap();
+        let tree2 = gix_oid(b.write().unwrap());
 
         let sig = |name: &str, email: &str, secs: i64, offset: i32| {
             git2::Signature::new(name, email, &git2::Time::new(secs, offset)).unwrap()
         };
 
-        let cases: Vec<(git2::Signature, git2::Signature, &str, git2::Oid)> = vec![
+        let cases: Vec<(git2::Signature, git2::Signature, &str, gix_hash::ObjectId)> = vec![
             (
                 sig("A", "a@e", 0, 0),
                 sig("A", "a@e", 0, 0),
@@ -719,30 +685,33 @@ mod tests {
         for (author, committer, message, tree) in &cases {
             for parents in [vec![], vec![0usize], vec![0, 1]] {
                 // Build the parent commits with git2 so both writers see identical inputs.
-                let parent_ids: Vec<git2::Oid> = parents
+                let parent_ids: Vec<gix_hash::ObjectId> = parents
                     .iter()
                     .map(|i| {
-                        let t = repo.find_tree(*tree).unwrap();
-                        repo.commit(None, author, committer, &format!("parent {i}"), &t, &[])
-                            .unwrap()
+                        let t = repo.find_tree(git2_oid(tree)).unwrap();
+                        gix_oid(
+                            repo.commit(None, author, committer, &format!("parent {i}"), &t, &[])
+                                .unwrap(),
+                        )
                     })
                     .collect();
                 let parent_commits: Vec<git2::Commit> = parent_ids
                     .iter()
-                    .map(|id| repo.find_commit(*id).unwrap())
+                    .map(|id| repo.find_commit(git2_oid(id)).unwrap())
                     .collect();
                 let parent_refs: Vec<&git2::Commit> = parent_commits.iter().collect();
 
-                let want = repo
-                    .commit(
+                let want = gix_oid(
+                    repo.commit(
                         None,
                         author,
                         committer,
                         message,
-                        &repo.find_tree(*tree).unwrap(),
+                        &repo.find_tree(git2_oid(tree)).unwrap(),
                         &parent_refs,
                     )
-                    .unwrap();
+                    .unwrap(),
+                );
                 let got = write_commit(
                     &Git2Odb(&odb),
                     *tree,
@@ -804,9 +773,9 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let repo = git2::Repository::init_bare(dir.path()).unwrap();
         let odb = repo.odb().unwrap();
-        let blob = repo.blob(b"x").unwrap();
+        let blob = gix_oid(repo.blob(b"x").unwrap());
 
-        let write_tree = |entries: &[(&str, &str, git2::Oid)]| -> git2::Oid {
+        let write_tree = |entries: &[(&str, &str, gix_hash::ObjectId)]| -> gix_hash::ObjectId {
             let mut data = Vec::new();
             for (mode, name, oid) in entries {
                 data.extend_from_slice(mode.as_bytes());
@@ -815,10 +784,12 @@ mod tests {
                 data.push(0);
                 data.extend_from_slice(oid.as_bytes());
             }
-            repo.odb()
-                .unwrap()
-                .write(git2::ObjectType::Tree, &data)
-                .unwrap()
+            gix_oid(
+                repo.odb()
+                    .unwrap()
+                    .write(git2::ObjectType::Tree, &data)
+                    .unwrap(),
+            )
         };
 
         let deep = write_tree(&[("100644", "leaf.txt", blob)]);
@@ -862,21 +833,22 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let repo = git2::Repository::init_bare(dir.path()).unwrap();
         let odb = repo.odb().unwrap();
-        let blob = repo.blob(b"x").unwrap();
+        let blob = gix_oid(repo.blob(b"x").unwrap());
 
         let mut inner = repo.treebuilder(None).unwrap();
-        inner.insert("f.txt", blob, 0o100644).unwrap();
+        inner.insert("f.txt", git2_oid(&blob), 0o100644).unwrap();
         let inner = inner.write().unwrap();
 
         let mut data = Vec::new();
         data.extend_from_slice(b"40000 bad\xff");
         data.push(0);
         data.extend_from_slice(inner.as_bytes());
-        let root = repo
-            .odb()
-            .unwrap()
-            .write(git2::ObjectType::Tree, &data)
-            .unwrap();
+        let root = gix_oid(
+            repo.odb()
+                .unwrap()
+                .write(git2::ObjectType::Tree, &data)
+                .unwrap(),
+        );
 
         assert!(walk_tree_preorder(&Git2Odb(&odb), root, &mut |_, _| Ok(())).is_err());
     }

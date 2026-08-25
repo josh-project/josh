@@ -4,6 +4,7 @@ use josh_test_support::bench::{EntryKind, git2_oid, gix_oid};
 use rand::prelude::*;
 use std::cell::RefCell;
 use std::ops::DerefMut;
+use std::str::FromStr;
 
 const N_FILES: usize = if cfg!(debug_assertions) { 50 } else { 500 };
 
@@ -33,7 +34,7 @@ struct PinBench {
     // A fresh transaction is opened from this for every iteration.
     context: josh_core::cache::TransactionContext,
     filter: josh_core::filter::Filter,
-    head: git2::Oid,
+    head: gix_hash::ObjectId,
 }
 
 impl PinBench {
@@ -54,7 +55,8 @@ impl PinBench {
         // cached and copied into a tempdir for this run.
         let provisioned = josh_test_support::provision_repo::provision_repo(
             "ultrawide_pin",
-            &git2::Oid::from_str(EXPECTED_HEAD).expect("EXPECTED_HEAD must be a valid oid"),
+            &gix_hash::ObjectId::from_str(EXPECTED_HEAD)
+                .expect("EXPECTED_HEAD must be a valid oid"),
             |repo| {
                 let (head, paths) = tracing::info_span!(target: "bench", "build_initial_state")
                     .in_scope(|| build_initial_state(repo))?;
@@ -113,7 +115,7 @@ fn paths_to_compose(paths: &[std::path::PathBuf]) -> josh_filter::Filter {
 
 fn build_initial_state(
     repo: &git2::Repository,
-) -> anyhow::Result<(git2::Oid, Vec<std::path::PathBuf>)> {
+) -> anyhow::Result<(gix_hash::ObjectId, Vec<std::path::PathBuf>)> {
     const PATH_COMPONENT_LENGTH: usize = 15;
 
     // Create multiple nested subfolders in the benchmark repo; aiming for a uniform
@@ -178,14 +180,14 @@ fn build_initial_state(
         &[],
     )?;
 
-    Ok((head, all_paths))
+    Ok((gix_oid(head), all_paths))
 }
 
 fn build_history(
     repo: &git2::Repository,
     paths: &[std::path::PathBuf],
-    mut head: git2::Oid,
-) -> anyhow::Result<git2::Oid> {
+    mut head: gix_hash::ObjectId,
+) -> anyhow::Result<gix_hash::ObjectId> {
     use rand::RngExt;
 
     // In every commit, we update 10% files in the repo
@@ -212,7 +214,7 @@ fn build_history(
     let mut pinned = std::collections::BTreeSet::<std::path::PathBuf>::new();
 
     for i_commit in 0..N_COMMITS {
-        let parent = repo.find_commit(head)?;
+        let parent = repo.find_commit(git2_oid(head))?;
         let tree = parent.tree()?;
         let mut builder = gix_repo.edit_tree(gix_oid(tree.id()))?;
 
@@ -265,14 +267,14 @@ fn build_history(
         let new_tree = repo.find_tree(new_tree)?;
 
         let sig = josh_commit_signature()?;
-        head = repo.commit(
+        head = gix_oid(repo.commit(
             Some("refs/heads/main"),
             &sig,
             &sig,
             &format!("commit {i_commit}"),
             &new_tree,
             &[&parent],
-        )?;
+        )?);
     }
 
     Ok(head)

@@ -3313,6 +3313,7 @@ dependencies = [
  "anyhow",
  "chrono",
  "git2",
+ "gix-hash",
  "josh-core",
  "josh-git-serde",
  "serde",
@@ -3330,6 +3331,7 @@ dependencies = [
  "dirs",
  "env_logger",
  "git2",
+ "gix-hash",
  "glob",
  "josh-changes",
  "josh-compose",
@@ -3349,6 +3351,7 @@ dependencies = [
  "reqwest-middleware",
  "serde",
  "serde_json",
+ "tempfile",
  "tokio",
 ]
 
@@ -3368,7 +3371,7 @@ version = "26.7.28"
 dependencies = [
  "anyhow",
  "defer",
- "git2",
+ "gix-hash",
  "josh-compose-backend",
  "josh-core",
  "josh-filter",
@@ -3448,6 +3451,7 @@ dependencies = [
  "axum",
  "clap",
  "git2",
+ "gix-hash",
  "josh-core",
  "josh-github-webhooks",
  "josh-link",
@@ -3535,7 +3539,7 @@ name = "josh-github-changes"
 version = "26.7.28"
 dependencies = [
  "anyhow",
- "git2",
+ "gix-hash",
  "josh-changes",
  "josh-core",
  "josh-git-serde",
@@ -3567,7 +3571,7 @@ version = "26.7.28"
 dependencies = [
  "anyhow",
  "async-trait",
- "git2",
+ "gix-hash",
  "graphql_client",
  "http",
  "josh-github-auth",
@@ -3639,6 +3643,7 @@ dependencies = [
  "anyhow",
  "chrono",
  "git2",
+ "gix-hash",
  "glob",
  "josh-core",
  "josh-search",
@@ -3657,6 +3662,7 @@ version = "26.7.28"
 dependencies = [
  "anyhow",
  "git2",
+ "gix-hash",
  "josh-core",
 ]
 
@@ -3693,6 +3699,7 @@ dependencies = [
  "futures",
  "git2",
  "gix",
+ "gix-hash",
  "gix-packetline",
  "gix-transport",
  "hex",
@@ -3782,6 +3789,7 @@ dependencies = [
  "allocative",
  "anyhow",
  "git2",
+ "gix-hash",
  "gix-object",
  "josh-filter",
  "josh-gix-ext",
@@ -3794,7 +3802,7 @@ version = "26.7.28"
 dependencies = [
  "anyhow",
  "form_urlencoded",
- "git2",
+ "gix-hash",
  "handlebars",
  "josh-core",
  "josh-graphql",

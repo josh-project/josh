@@ -5,6 +5,7 @@ use josh_filter::check_experimental_features_enabled;
 pub use josh_filter::experimental_features_enabled;
 
 use std::path::Path;
+use std::str::FromStr;
 use std::sync::LazyLock;
 
 // Re-export from josh-filter
@@ -23,21 +24,30 @@ pub use josh_filter::{as_file, pretty, spec};
 pub mod text;
 pub mod tree;
 
-pub fn as_tree(transaction: &cache::Transaction, filter: Filter) -> anyhow::Result<git2::Oid> {
-    Ok(objects::git2_oid(&josh_filter::persist::as_tree(
-        transaction.odb(),
-        filter,
-    )?))
+pub fn as_tree(
+    transaction: &cache::Transaction,
+    filter: Filter,
+) -> anyhow::Result<gix_hash::ObjectId> {
+    josh_filter::persist::as_tree(transaction.odb(), filter)
 }
 
-pub fn from_tree(transaction: &cache::Transaction, tree_oid: git2::Oid) -> anyhow::Result<Filter> {
-    josh_filter::persist::from_tree(transaction.odb(), objects::gix_oid(tree_oid))
+pub fn from_tree(
+    transaction: &cache::Transaction,
+    tree_oid: gix_hash::ObjectId,
+) -> anyhow::Result<Filter> {
+    josh_filter::persist::from_tree(transaction.odb(), tree_oid)
 }
 
-static WORKSPACES: LazyLock<std::sync::Mutex<std::collections::HashMap<git2::Oid, Filter>>> =
-    LazyLock::new(Default::default);
+static WORKSPACES: LazyLock<
+    std::sync::Mutex<std::collections::HashMap<gix_hash::ObjectId, Filter>>,
+> = LazyLock::new(Default::default);
 static ANCESTORS: LazyLock<
-    std::sync::Mutex<std::collections::HashMap<git2::Oid, std::collections::HashSet<git2::Oid>>>,
+    std::sync::Mutex<
+        std::collections::HashMap<
+            gix_hash::ObjectId,
+            std::collections::HashSet<gix_hash::ObjectId>,
+        >,
+    >,
 > = LazyLock::new(Default::default);
 
 /// Clear the process-global workspace and ancestor caches.
@@ -71,26 +81,26 @@ pub enum SigRewrite {
 /// when (and only when) they need its contents.
 #[derive(Debug, Clone)]
 pub struct Rewrite {
-    tree: git2::Oid,
-    commit: git2::Oid,
+    tree: gix_hash::ObjectId,
+    commit: gix_hash::ObjectId,
     pub author: Option<SigRewrite>,
     pub committer: Option<SigRewrite>,
     pub message: Option<BString>,
 }
 
 impl Rewrite {
-    pub fn from_tree(tree: git2::Oid) -> Self {
+    pub fn from_tree(tree: gix_hash::ObjectId) -> Self {
         Rewrite {
             tree,
             author: None,
-            commit: git2::Oid::ZERO_SHA1,
+            commit: gix_hash::ObjectId::null(gix_hash::Kind::Sha1),
             committer: None,
             message: None,
         }
     }
 
     pub fn from_tree_with_metadata(
-        tree: git2::Oid,
+        tree: gix_hash::ObjectId,
         author: Option<SigRewrite>,
         committer: Option<SigRewrite>,
         message: Option<BString>,
@@ -98,7 +108,7 @@ impl Rewrite {
         Rewrite {
             tree,
             author,
-            commit: git2::Oid::ZERO_SHA1,
+            commit: gix_hash::ObjectId::null(gix_hash::Kind::Sha1),
             committer,
             message,
         }
@@ -140,11 +150,11 @@ impl Rewrite {
         }
     }
 
-    pub fn with_tree(self, tree: git2::Oid) -> Self {
+    pub fn with_tree(self, tree: gix_hash::ObjectId) -> Self {
         Rewrite { tree, ..self }
     }
 
-    pub fn tree_id(&self) -> git2::Oid {
+    pub fn tree_id(&self) -> gix_hash::ObjectId {
         self.tree
     }
 }
@@ -212,11 +222,14 @@ fn lazy_refs2(op: &Op) -> Vec<String> {
     lr
 }
 
-pub fn resolve_refs(refs: &std::collections::HashMap<String, git2::Oid>, filter: Filter) -> Filter {
+pub fn resolve_refs(
+    refs: &std::collections::HashMap<String, gix_hash::ObjectId>,
+    filter: Filter,
+) -> Filter {
     to_filter(resolve_refs2(refs, &to_op(filter)))
 }
 
-fn resolve_refs2(refs: &std::collections::HashMap<String, git2::Oid>, op: &Op) -> Op {
+fn resolve_refs2(refs: &std::collections::HashMap<String, gix_hash::ObjectId>, op: &Op) -> Op {
     match op {
         Op::Compose(filters) => {
             Op::Compose(filters.iter().map(|f| resolve_refs(refs, *f)).collect())
@@ -233,7 +246,7 @@ fn resolve_refs2(refs: &std::collections::HashMap<String, git2::Oid>, op: &Op) -
                     let f = resolve_refs(refs, *f);
                     let resolved_r = if let LazyRef::Lazy(s) = r {
                         if let Some(res) = refs.get(s) {
-                            LazyRef::Resolved(objects::gix_oid(*res))
+                            LazyRef::Resolved(*res)
                         } else {
                             r.clone()
                         }
@@ -251,7 +264,7 @@ fn resolve_refs2(refs: &std::collections::HashMap<String, git2::Oid>, op: &Op) -
                 .map(|(r, m)| {
                     if let LazyRef::Lazy(s) = r {
                         if let Some(res) = refs.get(s) {
-                            (LazyRef::Resolved(objects::gix_oid(*res)), *m)
+                            (LazyRef::Resolved(*res), *m)
                         } else {
                             (r.clone(), *m)
                         }
@@ -264,7 +277,7 @@ fn resolve_refs2(refs: &std::collections::HashMap<String, git2::Oid>, op: &Op) -
         }
         Op::Downstack(LazyRef::Lazy(s)) => {
             if let Some(res) = refs.get(s) {
-                Op::Downstack(LazyRef::Resolved(objects::gix_oid(*res)))
+                Op::Downstack(LazyRef::Resolved(*res))
             } else {
                 op.clone()
             }
@@ -359,9 +372,9 @@ fn propagate_meta(filter: Filter, meta: &std::collections::BTreeMap<String, Stri
 /// for the first time and thus should generally be done asynchronously.
 pub fn apply_to_commit(
     filter: Filter,
-    commit: git2::Oid,
+    commit: gix_hash::ObjectId,
     transaction: &cache::Transaction,
-) -> anyhow::Result<git2::Oid> {
+) -> anyhow::Result<gix_hash::ObjectId> {
     let filter = opt::optimize(filter);
     loop {
         let filtered = apply_to_commit2(filter, commit, transaction)?;
@@ -416,7 +429,7 @@ fn resolve_workspace_redirect(
 fn get_workspace(
     transaction: &cache::Transaction,
     odb: &josh_memodb::Odb,
-    tree: git2::Oid,
+    tree: gix_hash::ObjectId,
     reader: &tree::TreeReader,
     path: &Path,
 ) -> Filter {
@@ -435,7 +448,7 @@ fn get_workspace(
 fn get_stored(
     transaction: &cache::Transaction,
     odb: &josh_memodb::Odb,
-    tree: git2::Oid,
+    tree: gix_hash::ObjectId,
     reader: &tree::TreeReader,
     path: &Path,
 ) -> Filter {
@@ -450,7 +463,7 @@ fn get_stored(
 fn get_starlark(
     transaction: &cache::Transaction,
     odb: &josh_memodb::Odb,
-    tree: git2::Oid,
+    tree: gix_hash::ObjectId,
     reader: &tree::TreeReader,
     path: &Path,
     subfilter: Filter,
@@ -476,7 +489,7 @@ fn get_starlark(
 fn get_filter(
     transaction: &cache::Transaction,
     odb: &josh_memodb::Odb,
-    tree: git2::Oid,
+    tree: gix_hash::ObjectId,
     reader: &tree::TreeReader,
     path: &Path,
 ) -> Filter {
@@ -484,7 +497,7 @@ fn get_filter(
     // One descent resolves both the WORKSPACES cache key (the workspace.josh entry oid)
     // and the blob to parse.
     let ws_id = match tree::get_path_entry_at(transaction, odb, reader, &ws_path) {
-        Ok(Some(entry)) => objects::git2_oid(&entry.oid),
+        Ok(Some(entry)) => entry.oid,
         _ => {
             return to_filter(Op::Empty);
         }
@@ -521,7 +534,7 @@ fn read_josh_link(
     let link_entry = tree::get_path_entry_at(transaction, odb, reader, &link_path)
         .ok()
         .flatten()?;
-    let link_blob = tree::blob_bytes(odb, objects::git2_oid(&link_entry.oid))?;
+    let link_blob = tree::blob_bytes(odb, link_entry.oid)?;
     let b = std::str::from_utf8(&link_blob)
         .with_context(|| format!("invalid utf8 in {}", filename))
         .ok()?;
@@ -541,19 +554,17 @@ fn read_josh_link(
 
 fn get_rev_filter(
     transaction: &cache::Transaction,
-    commit_id: git2::Oid,
+    commit_id: gix_hash::ObjectId,
     filters: &[(RevMatch, LazyRef, Filter)],
 ) -> anyhow::Result<Filter> {
     // First match wins - iterate in order
     for (match_op, filter_tip_ref, startfilter) in filters.iter() {
         let filter_tip = if let LazyRef::Resolved(filter_tip) = filter_tip_ref {
-            objects::git2_oid(filter_tip.as_ref())
+            filter_tip.to_owned()
         } else {
             return Err(anyhow!("unresolved lazy ref"));
         };
-        if match_op != &RevMatch::Default
-            && !transaction.odb().contains(objects::gix_oid(filter_tip))
-        {
+        if match_op != &RevMatch::Default && !transaction.odb().contains(filter_tip) {
             return Err(anyhow!("`:rev(...)` with nonexistent OID: {}", filter_tip));
         }
         let matches = match match_op {
@@ -589,9 +600,9 @@ fn get_rev_filter(
 
 pub fn apply_to_commit2(
     filter: Filter,
-    commit_id: git2::Oid,
+    commit_id: gix_hash::ObjectId,
     transaction: &cache::Transaction,
-) -> anyhow::Result<Option<git2::Oid>> {
+) -> anyhow::Result<Option<gix_hash::ObjectId>> {
     let op = peel_op(filter);
 
     if filter == Filter::new() {
@@ -601,12 +612,12 @@ pub fn apply_to_commit2(
     // First match: oid-only fast paths, no object loads. The commit bytes are only read
     // after the memo gate below, so memo hits stay zero-I/O.
     match &op {
-        Op::Empty => return Ok(Some(git2::Oid::ZERO_SHA1)),
+        Op::Empty => return Ok(Some(gix_hash::ObjectId::null(gix_hash::Kind::Sha1))),
 
         Op::Chain(_) => {
             let mut current_oid = commit_id;
             for f in flatten_chain(filter) {
-                if current_oid == git2::Oid::ZERO_SHA1 {
+                if current_oid == gix_hash::ObjectId::null(gix_hash::Kind::Sha1) {
                     break;
                 }
                 let r = some_or!(apply_to_commit2(f, current_oid, transaction)?, {
@@ -619,7 +630,7 @@ pub fn apply_to_commit2(
         Op::Squash(None) => {
             let odb = transaction.odb();
             let commit = objects::CommitData::read(odb, commit_id)?;
-            odb.read_header(objects::gix_oid(commit.tree_id()?))?;
+            odb.read_header(commit.tree_id()?)?;
             return Some(history::rewrite_commit(
                 odb,
                 &commit,
@@ -633,7 +644,7 @@ pub fn apply_to_commit2(
             if let Some(oid) = transaction.get(filter, commit_id)? {
                 return Ok(Some(oid));
             }
-            let new_oid = downstack(transaction, commit_id, objects::git2_oid(base.as_ref()))?;
+            let new_oid = downstack(transaction, commit_id, base.to_owned())?;
             transaction.insert(filter, commit_id, new_oid, false)?;
             return Ok(Some(new_oid));
         }
@@ -654,11 +665,11 @@ pub fn apply_to_commit2(
     // no parse). Without this gate, an apply over a partially unreadable input can buffer
     // fresh objects into the store before a later read aborts the walk, and the partial
     // write would change the next flush's pack.
-    odb.read_header(objects::gix_oid(commit.tree_id()?))?;
+    odb.read_header(commit.tree_id()?)?;
 
     let rewrite_data = match &op {
         Op::Squash(Some(ids)) => {
-            if let Some(sq) = ids.get(&LazyRef::Resolved(objects::gix_oid(commit.id()))) {
+            if let Some(sq) = ids.get(&LazyRef::Resolved(commit.id())) {
                 let oid = if let Some(oid) = apply_to_commit2(
                     filter::Filter::new().squash(None).chain(*sq),
                     commit_id,
@@ -732,7 +743,7 @@ pub fn apply_to_commit2(
                     .collect::<anyhow::Result<Option<_>>>()?
             };
 
-            let mut filtered_parent_ids: Vec<git2::Oid> =
+            let mut filtered_parent_ids: Vec<gix_hash::ObjectId> =
                 some_or!(filtered_parent_ids, { return Ok(None) });
 
             // TODO: remove all parents that don't have a .link.josh
@@ -763,7 +774,7 @@ pub fn apply_to_commit2(
                 ".link.josh",
             ) {
                 if let Some(commit_str) = link_file.get_meta("commit") {
-                    if let Ok(commit_oid) = git2::Oid::from_str(&commit_str) {
+                    if let Ok(commit_oid) = gix_hash::ObjectId::from_str(&commit_str) {
                         if filtered_parent_ids.contains(&commit_oid) {
                             while filtered_parent_ids[0] != commit_oid {
                                 filtered_parent_ids.rotate_right(1);
@@ -793,13 +804,13 @@ pub fn apply_to_commit2(
                     .collect::<anyhow::Result<Option<_>>>()?
             };
 
-            let mut filtered_parent_ids: Vec<git2::Oid> =
+            let mut filtered_parent_ids: Vec<gix_hash::ObjectId> =
                 some_or!(filtered_parent_ids, { return Ok(None) });
 
             let mut link_parents = vec![];
             for (link_path, link_file) in find_link_files(odb, commit.tree_id()?)?.into_iter() {
                 if let Some(commit_str) = link_file.get_meta("commit") {
-                    if let Ok(commit_oid) = git2::Oid::from_str(&commit_str) {
+                    if let Ok(commit_oid) = gix_hash::ObjectId::from_str(&commit_str) {
                         if let Some(cmt) =
                             transaction.get(to_filter(Op::Prefix(link_path)), commit_oid)?
                         {
@@ -875,7 +886,7 @@ pub fn apply_to_commit2(
                 let normal_parents = commit
                     .parent_ids()
                     .map(|parent| transaction.get(filter, parent))
-                    .collect::<anyhow::Result<Option<Vec<git2::Oid>>>>()?;
+                    .collect::<anyhow::Result<Option<Vec<gix_hash::ObjectId>>>>()?;
 
                 let normal_parents = some_or!(normal_parents, { return Ok(None) });
 
@@ -1010,7 +1021,7 @@ pub fn apply_to_commit2(
 
             let filtered_parent_ids = some_or!(filtered_parent_ids, { return Ok(None) });
 
-            let trees: Vec<git2::Oid> = filtered_parent_ids
+            let trees: Vec<gix_hash::ObjectId> = filtered_parent_ids
                 .iter()
                 .map(|x| history::filtered_parent_tree_id(transaction, *x))
                 .collect::<anyhow::Result<_>>()?;
@@ -1040,7 +1051,7 @@ pub fn apply_to_commit2(
             check_experimental_features_enabled("unapply filter")?;
             if let LazyRef::Resolved(target) = target {
                 /* dbg!(target); */
-                let target = objects::CommitData::read(odb, objects::git2_oid(target.as_ref()))?;
+                let target = objects::CommitData::read(odb, target.to_owned())?;
                 // Only a root commit (no first parent) skips link detection; a
                 // first parent that is present must be readable.
                 if let Some(parent_id) = target.first_parent_id() {
@@ -1058,12 +1069,10 @@ pub fn apply_to_commit2(
                         ".link.josh",
                     ) {
                         if let Some(commit_str) = link.get_meta("commit") {
-                            if let Ok(link_commit) = git2::Oid::from_str(&commit_str) {
+                            if let Ok(link_commit) = gix_hash::ObjectId::from_str(&commit_str) {
                                 if commit.id() == link_commit {
-                                    let unapply = to_filter(Op::Unapply(
-                                        LazyRef::Resolved(objects::gix_oid(parent.id())),
-                                        *uf,
-                                    ));
+                                    let unapply =
+                                        to_filter(Op::Unapply(LazyRef::Resolved(parent.id()), *uf));
                                     let r = some_or!(transaction.get(unapply, link_commit)?, {
                                         return Ok(None);
                                     });
@@ -1093,12 +1102,9 @@ pub fn apply_to_commit2(
             let tree_reader = tree::read_tree(transaction, odb, tree)?;
             if let Some(link) = read_josh_link(transaction, odb, &tree_reader, path, ".link.josh") {
                 let subdir = filter::invert(link.peel())?;
-                let unapply = to_filter(Op::Unapply(
-                    LazyRef::Resolved(objects::gix_oid(commit.id())),
-                    subdir,
-                ));
+                let unapply = to_filter(Op::Unapply(LazyRef::Resolved(commit.id()), subdir));
                 if let Some(commit_str) = link.get_meta("commit") {
-                    if let Ok(commit_oid) = git2::Oid::from_str(&commit_str) {
+                    if let Ok(commit_oid) = gix_hash::ObjectId::from_str(&commit_str) {
                         let r = some_or!(transaction.get(unapply, commit_oid)?, {
                             return Ok(None);
                         });
@@ -1107,7 +1113,7 @@ pub fn apply_to_commit2(
                     }
                 }
             }
-            return Ok(Some(git2::Oid::ZERO_SHA1));
+            return Ok(Some(gix_hash::ObjectId::null(gix_hash::Kind::Sha1)));
         }
 
         _ => apply(transaction, filter, Rewrite::from_commit_data(&commit)?)?,
@@ -1137,11 +1143,11 @@ pub fn apply_to_commit2(
 fn extract_submodule_commits(
     transaction: &cache::Transaction,
     odb: &josh_memodb::Odb,
-    tree: git2::Oid,
+    tree: gix_hash::ObjectId,
 ) -> anyhow::Result<
     std::collections::BTreeMap<
         std::path::PathBuf,
-        (git2::Oid, crate::submodules::ParsedSubmoduleEntry),
+        (gix_hash::ObjectId, crate::submodules::ParsedSubmoduleEntry),
     >,
 > {
     use crate::submodules::{ParsedSubmoduleEntry, parse_gitmodules};
@@ -1172,7 +1178,7 @@ fn extract_submodule_commits(
 
     let mut submodule_commits: std::collections::BTreeMap<
         std::path::PathBuf,
-        (git2::Oid, ParsedSubmoduleEntry),
+        (gix_hash::ObjectId, ParsedSubmoduleEntry),
     > = std::collections::BTreeMap::new();
 
     for parsed in submodule_entries {
@@ -1181,7 +1187,7 @@ fn extract_submodule_commits(
             tree::get_path_entry_at(transaction, odb, &tree_reader, &submodule_path)
         {
             if entry.mode.is_commit() {
-                let commit_oid = objects::git2_oid(&entry.oid);
+                let commit_oid = entry.oid;
                 submodule_commits.insert(submodule_path, (commit_oid, parsed));
             }
         }
@@ -1193,7 +1199,7 @@ fn extract_submodule_commits(
 fn get_link_roots(
     transaction: &cache::Transaction,
     odb: &josh_memodb::Odb,
-    tree: git2::Oid,
+    tree: gix_hash::ObjectId,
 ) -> anyhow::Result<Vec<std::path::PathBuf>> {
     let link_filter = to_filter(Op::pattern("**/.link.josh")?);
     let link_tree = apply_impl(transaction, odb, link_filter, Rewrite::from_tree(tree))?;
@@ -1261,7 +1267,7 @@ fn apply_impl(
         Op::Message(m, r) => {
             // Rewriting a message leaves the tree alone, so with neither a commit nor a
             // message to transform this is identity, like the other history-only filters.
-            if x.commit == git2::Oid::ZERO_SHA1 && x.message.is_none() {
+            if x.commit == gix_hash::ObjectId::null(gix_hash::Kind::Sha1) && x.message.is_none() {
                 return Ok(x);
             }
 
@@ -1319,8 +1325,8 @@ fn apply_impl(
                                     .ok()
                                     .flatten()
                                 })
-                                .map(|e| objects::git2_oid(&e.oid))
-                                .unwrap_or(git2::Oid::ZERO_SHA1)
+                                .map(|e| e.oid)
+                                .unwrap_or(gix_hash::ObjectId::null(gix_hash::Kind::Sha1))
                                 .to_string(),
                         ),
                         _ => None,
@@ -1354,9 +1360,7 @@ fn apply_impl(
                             odb,
                             result_tree,
                             &submodule_path.join(".link.josh"),
-                            objects::git2_oid(
-                                &odb.write(gix_object::Kind::Blob, link_content.as_bytes()),
-                            ),
+                            odb.write(gix_object::Kind::Blob, link_content.as_bytes()),
                             0o0100644,
                         )?;
                     }
@@ -1366,7 +1370,7 @@ fn apply_impl(
                         odb,
                         result_tree,
                         std::path::Path::new(".gitmodules"),
-                        git2::Oid::ZERO_SHA1,
+                        gix_hash::ObjectId::null(gix_hash::Kind::Sha1),
                         0o0100644,
                     )?;
                 }
@@ -1381,7 +1385,7 @@ fn apply_impl(
                 odb,
                 tree,
                 std::path::Path::new(".link.josh"),
-                git2::Oid::ZERO_SHA1,
+                gix_hash::ObjectId::null(gix_hash::Kind::Sha1),
                 0o0100644,
             )?))
         }
@@ -1390,8 +1394,13 @@ fn apply_impl(
             use crate::link::find_link_files;
             let mut result_tree = x.tree;
             for (link_path, link_file) in find_link_files(odb, result_tree)?.iter() {
-                result_tree =
-                    tree::insert_oid(odb, result_tree, link_path, git2::Oid::ZERO_SHA1, 0o0100644)?;
+                result_tree = tree::insert_oid(
+                    odb,
+                    result_tree,
+                    link_path,
+                    gix_hash::ObjectId::null(gix_hash::Kind::Sha1),
+                    0o0100644,
+                )?;
 
                 // The link_file is already a filter with metadata, just serialize it
                 let link_content = as_file(*link_file, 0);
@@ -1400,7 +1409,7 @@ fn apply_impl(
                     odb,
                     result_tree,
                     &link_path.join(".link.josh"),
-                    objects::git2_oid(&odb.write(gix_object::Kind::Blob, link_content.as_bytes())),
+                    odb.write(gix_object::Kind::Blob, link_content.as_bytes()),
                     0o0100644,
                 )?;
             }
@@ -1419,7 +1428,7 @@ fn apply_impl(
                 // Get commit from metadata
                 let commit_oid = link_file
                     .get_meta("commit")
-                    .and_then(|s| git2::Oid::from_str(&s).ok())
+                    .and_then(|s| gix_hash::ObjectId::from_str(&s).ok())
                     .ok_or_else(|| anyhow!("Link file missing commit metadata"))?;
 
                 let submodule_tree = git::read_tree_id(odb, commit_oid)?;
@@ -1446,7 +1455,7 @@ fn apply_impl(
                     odb,
                     result_tree,
                     &root.join(".link.josh"),
-                    objects::git2_oid(&odb.write(gix_object::Kind::Blob, link_content.as_bytes())),
+                    odb.write(gix_object::Kind::Blob, link_content.as_bytes()),
                     0o0100644,
                 )?;
             }
@@ -1464,7 +1473,7 @@ fn apply_impl(
 
         Op::Pattern(cp) => {
             let input = x.tree_id();
-            let key = objects::git2_oid(peel_filter(filter).id().as_ref());
+            let key = peel_filter(filter).id();
             let t = if cp.fallback {
                 // More components than the NFA state mask can hold: match full paths.
                 tree::remove_pred(
@@ -1490,23 +1499,19 @@ fn apply_impl(
         Op::Insert(dest_path, content) => {
             let (oid, mode, is_tree) = match content {
                 InsertContent::Inline(s) => (
-                    objects::git2_oid(&odb.write(gix_object::Kind::Blob, s.as_bytes())),
+                    odb.write(gix_object::Kind::Blob, s.as_bytes()),
                     git2::FileMode::Blob.into(),
                     false,
                 ),
                 // The kind comes from the header alone; a missing oid folds into the
                 // "neither" arm below.
                 InsertContent::Oid(oid) => match odb.try_kind(*oid) {
-                    Ok(Some(gix_object::Kind::Blob)) => (
-                        objects::git2_oid(oid.as_ref()),
-                        git2::FileMode::Blob.into(),
-                        false,
-                    ),
-                    Ok(Some(gix_object::Kind::Tree)) => (
-                        objects::git2_oid(oid.as_ref()),
-                        git2::FileMode::Tree.into(),
-                        true,
-                    ),
+                    Ok(Some(gix_object::Kind::Blob)) => {
+                        (oid.to_owned(), git2::FileMode::Blob.into(), false)
+                    }
+                    Ok(Some(gix_object::Kind::Tree)) => {
+                        (oid.to_owned(), git2::FileMode::Tree.into(), true)
+                    }
                     _ => {
                         return Err(anyhow::anyhow!(
                             "insert: {} is neither a blob nor a tree",
@@ -1539,8 +1544,11 @@ fn apply_impl(
             // entry; lookup failures fold into the fallback.
             let (file, mode) =
                 match tree::get_path_entry(transaction, odb, x.tree_id(), source_path) {
-                    Ok(Some(e)) => (objects::git2_oid(&e.oid), e.mode.value() as i32),
-                    _ => (git2::Oid::ZERO_SHA1, git2::FileMode::Blob.into()),
+                    Ok(Some(e)) => (e.oid, e.mode.value() as i32),
+                    _ => (
+                        gix_hash::ObjectId::null(gix_hash::Kind::Sha1),
+                        git2::FileMode::Blob.into(),
+                    ),
                 };
             Ok(x.with_tree(tree::insert_oid(
                 odb,
@@ -1555,7 +1563,7 @@ fn apply_impl(
             // A missing path, a non-tree entry (e.g. a blob), or a failed lookup has no
             // subtree.
             let subtree = match tree::get_path_entry(transaction, odb, x.tree_id(), path) {
-                Ok(Some(entry)) if entry.mode.is_tree() => objects::git2_oid(&entry.oid),
+                Ok(Some(entry)) if entry.mode.is_tree() => entry.oid,
                 _ => tree::empty_id(),
             };
             Ok(x.with_tree(subtree))
@@ -1641,9 +1649,8 @@ fn apply_impl(
         }
         Op::ObjectRef(path) => {
             if let Ok(Some(entry)) = tree::get_path_entry(transaction, odb, x.tree_id(), path) {
-                let oid_str = objects::git2_oid(&entry.oid).to_string();
-                let blob_oid =
-                    objects::git2_oid(&odb.write(gix_object::Kind::Blob, oid_str.as_bytes()));
+                let oid_str = entry.oid.to_string();
+                let blob_oid = odb.write(gix_object::Kind::Blob, oid_str.as_bytes());
                 Ok(x.with_tree(tree::insert_oid(
                     odb,
                     tree::empty_id(),
@@ -1662,7 +1669,7 @@ fn apply_impl(
                 _ => return Ok(x),
             };
             // Path exists: read OID string from blob content.
-            let oid_str = if let Some(blob) = tree::blob_bytes(odb, objects::git2_oid(&entry.oid)) {
+            let oid_str = if let Some(blob) = tree::blob_bytes(odb, entry.oid) {
                 std::str::from_utf8(&blob)?
                     .lines()
                     .next()
@@ -1672,10 +1679,10 @@ fn apply_impl(
             } else {
                 String::new()
             };
-            if let Ok(oid) = git2::Oid::from_str(&oid_str) {
+            if let Ok(oid) = gix_hash::ObjectId::from_str(&oid_str) {
                 // Kind by header, never by `contains`: `read_header`'s disk fallback
                 // virtualizes the empty tree, `exists` does not.
-                let (oid, mode) = match odb.try_kind(objects::gix_oid(oid)) {
+                let (oid, mode) = match odb.try_kind(oid) {
                     Ok(Some(gix_object::Kind::Tree)) => (oid, git2::FileMode::Tree.into()),
                     Ok(Some(gix_object::Kind::Blob)) => (oid, git2::FileMode::Blob.into()),
                     _ => {
@@ -1685,7 +1692,7 @@ fn apply_impl(
                 Ok(x.with_tree(tree::insert_oid(odb, tree::empty_id(), path, oid, mode)?))
             } else {
                 // Content is not a valid OID: insert empty blob at path.
-                let empty_blob = objects::git2_oid(&odb.write(gix_object::Kind::Blob, b""));
+                let empty_blob = odb.write(gix_object::Kind::Blob, b"");
                 Ok(x.with_tree(tree::insert_oid(
                     odb,
                     tree::empty_id(),
@@ -1721,10 +1728,10 @@ fn apply_impl(
         Op::Unapply(target, uf) => {
             check_experimental_features_enabled("unapply filter")?;
             if let LazyRef::Resolved(target) = target {
-                let target = objects::CommitData::read(odb, objects::git2_oid(target.as_ref()))?;
+                let target = objects::CommitData::read(odb, target.to_owned())?;
                 // The message must parse as an oid, so non-UTF-8 is an error.
                 let target_msg = target.message()?;
-                let target = git2::Oid::from_str(std::str::from_utf8(target_msg)?)?;
+                let target = gix_hash::ObjectId::from_str(std::str::from_utf8(target_msg)?)?;
                 let target_tree = git::read_tree_id(odb, target)?;
                 /* dbg!(&uf); */
                 Ok(Rewrite::from_tree(filter::unapply(
@@ -1754,10 +1761,10 @@ fn apply_impl(
 pub fn unapply(
     transaction: &cache::Transaction,
     filter: Filter,
-    tree: git2::Oid,
-    parent_tree: git2::Oid,
-    commits: Option<(git2::Oid, git2::Oid)>,
-) -> anyhow::Result<git2::Oid> {
+    tree: gix_hash::ObjectId,
+    parent_tree: gix_hash::ObjectId,
+    commits: Option<(gix_hash::ObjectId, gix_hash::ObjectId)>,
+) -> anyhow::Result<gix_hash::ObjectId> {
     // A `:rev(...)` filter has no static inverse (`invert` returns `Err`, like `:workspace` /
     // `:stored` / `:starlark`), so this generic path is automatically skipped for it and it falls
     // through to the per-commit handler / chain recursion below.
@@ -1845,9 +1852,9 @@ fn reverse_strip_overlay(
     transaction: &cache::Transaction,
     filter: Filter,
     original_filter: Filter,
-    tree: git2::Oid,
-    parent_tree: git2::Oid,
-) -> anyhow::Result<git2::Oid> {
+    tree: gix_hash::ObjectId,
+    parent_tree: gix_hash::ObjectId,
+) -> anyhow::Result<gix_hash::ObjectId> {
     let filtered = apply(
         transaction,
         original_filter,
@@ -1867,7 +1874,7 @@ fn reverse_strip_overlay(
 fn resolve_commit_filter(
     transaction: &cache::Transaction,
     op: &Op,
-    commit: git2::Oid,
+    commit: gix_hash::ObjectId,
 ) -> anyhow::Result<Filter> {
     match op {
         Op::Rev(revs) => get_rev_filter(transaction, commit, revs),
@@ -1885,10 +1892,10 @@ fn is_commit_resolved_filter(op: &Op) -> bool {
 fn unapply_per_rev_filter(
     transaction: &cache::Transaction,
     op: &Op,
-    tree: git2::Oid,
-    parent_tree: git2::Oid,
-    commits: Option<(git2::Oid, git2::Oid)>,
-) -> anyhow::Result<Option<git2::Oid>> {
+    tree: gix_hash::ObjectId,
+    parent_tree: gix_hash::ObjectId,
+    commits: Option<(gix_hash::ObjectId, gix_hash::ObjectId)>,
+) -> anyhow::Result<Option<gix_hash::ObjectId>> {
     if is_commit_resolved_filter(op) {
         // `:rev`/`:hook` select their sub-filter from commit identity (mirroring the forward
         // `Op::Rev`/`Op::Hook` paths): resolve it for the commit being reconstructed and for the
@@ -1993,8 +2000,8 @@ fn unapply_per_rev_filter(
 
 fn pre_process_tree(
     transaction: &cache::Transaction,
-    tree: git2::Oid,
-) -> anyhow::Result<git2::Oid> {
+    tree: gix_hash::ObjectId,
+) -> anyhow::Result<gix_hash::ObjectId> {
     let odb = transaction.odb();
     let path = Path::new("workspace.josh");
     let ws_file = tree::get_blob(transaction, odb, tree, path);
@@ -2016,7 +2023,7 @@ fn pre_process_tree(
         odb,
         tree,
         path,
-        objects::git2_oid(&odb.write(gix_object::Kind::Blob, blob.as_bytes())),
+        odb.write(gix_object::Kind::Blob, blob.as_bytes()),
         git2::FileMode::Blob.into(), // Should this handle filemode?
     )?;
 
@@ -2027,7 +2034,7 @@ fn pre_process_tree(
 pub fn compute_warnings(
     transaction: &cache::Transaction,
     filter: Filter,
-    tree: git2::Oid,
+    tree: gix_hash::ObjectId,
 ) -> Vec<String> {
     let mut warnings = Vec::new();
     let mut filter = filter;
@@ -2074,7 +2081,7 @@ pub fn compute_warnings(
 fn compute_warnings2(
     transaction: &cache::Transaction,
     filter: Filter,
-    tree: git2::Oid,
+    tree: gix_hash::ObjectId,
 ) -> Vec<String> {
     let mut warnings = Vec::new();
 
@@ -2092,8 +2099,8 @@ fn compute_warnings2(
 /// Creates a cache for a given `tip` so repeated queries with the same `tip` are more efficient.
 pub fn is_ancestor_of(
     transaction: &cache::Transaction,
-    commit: git2::Oid,
-    tip: git2::Oid,
+    commit: gix_hash::ObjectId,
+    tip: gix_hash::ObjectId,
 ) -> anyhow::Result<bool> {
     if let Ok(tip_sequence_number) = cache::compute_sequence_number(transaction, tip) {
         if cache::compute_sequence_number(transaction, commit)? > tip_sequence_number {
@@ -2160,7 +2167,7 @@ fn legalize_stored(
     t: &cache::Transaction,
     odb: &josh_memodb::Odb,
     f: Filter,
-    tree: git2::Oid,
+    tree: gix_hash::ObjectId,
     reader: &tree::TreeReader,
 ) -> anyhow::Result<Filter> {
     if !needs_legalization(f) {
@@ -2245,9 +2252,9 @@ fn legalize_stored(
 fn compute_splice_parents(
     transaction: &cache::Transaction,
     commit_filter: Filter,
-    parent_filters: Vec<(git2::Oid, Filter)>,
+    parent_filters: Vec<(gix_hash::ObjectId, Filter)>,
     meta: &std::collections::BTreeMap<String, String>,
-) -> anyhow::Result<Option<Vec<git2::Oid>>> {
+) -> anyhow::Result<Option<Vec<gix_hash::ObjectId>>> {
     // This is only reached when history splicing is enabled, and `per_rev_filter` rejects `:pin`
     // in that case, so the filters here are pin-free -- no pin handling is needed.
     let splice_parents = parent_filters
@@ -2271,7 +2278,7 @@ fn compute_splice_parents(
     Ok(Some(
         splice_parents
             .into_iter()
-            .filter(|&oid| oid != git2::Oid::ZERO_SHA1)
+            .filter(|&oid| oid != gix_hash::ObjectId::null(gix_hash::Kind::Sha1))
             .collect(),
     ))
 }
@@ -2281,8 +2288,8 @@ fn per_rev_filter(
     commit: &objects::CommitData,
     filter: Filter,
     commit_filter: Filter,
-    parent_filters: Vec<(git2::Oid, Filter)>,
-) -> anyhow::Result<Option<git2::Oid>> {
+    parent_filters: Vec<(gix_hash::ObjectId, Filter)>,
+) -> anyhow::Result<Option<gix_hash::ObjectId>> {
     // Propagate any meta-options from the outer filter (e.g. :~(gpgsig="norm-lf")[:rev(...)])
     // into the per-commit filter so they are applied during commit rewriting.
     let meta = filter.into_meta();
@@ -2317,7 +2324,7 @@ fn per_rev_filter(
     let normal_parents = commit
         .parent_ids()
         .map(|parent| transaction.get(filter, parent))
-        .collect::<anyhow::Result<Option<Vec<git2::Oid>>>>()?;
+        .collect::<anyhow::Result<Option<Vec<gix_hash::ObjectId>>>>()?;
     let normal_parents = some_or!(normal_parents, { return Ok(None) });
 
     // Special case: `:pin` filter needs to be aware of filtered history
@@ -2358,7 +2365,7 @@ fn per_rev_filter(
         let mut target = None;
         for id in filtered_parent_ids
             .iter()
-            .filter(|x| **x != git2::Oid::ZERO_SHA1)
+            .filter(|x| **x != gix_hash::ObjectId::null(gix_hash::Kind::Sha1))
         {
             let seq = cache::compute_sequence_number(transaction, *id)?;
             if target.map(|(top, _)| seq > top).unwrap_or(true) {
@@ -2370,10 +2377,9 @@ fn per_rev_filter(
         // two preserved lineages join only inside the squashed region and one
         // of them would silently become unreachable. Fail instead.
         if let Some((_, target_id)) = target {
-            for id in filtered_parent_ids
-                .iter()
-                .filter(|x| **x != git2::Oid::ZERO_SHA1 && **x != target_id)
-            {
+            for id in filtered_parent_ids.iter().filter(|x| {
+                **x != gix_hash::ObjectId::null(gix_hash::Kind::Sha1) && **x != target_id
+            }) {
                 if !objects::is_descendant_of(transaction.odb(), target_id, *id)? {
                     return Err(anyhow!(
                         "cannot squash {}: its filtered parents {} and {} do not descend \
@@ -2422,9 +2428,9 @@ fn per_rev_filter(
 /// onto the minimised base via a 3-way merge. Returns the new tip OID.
 pub fn downstack(
     transaction: &cache::Transaction,
-    change_oid: git2::Oid,
-    base_oid: git2::Oid,
-) -> anyhow::Result<git2::Oid> {
+    change_oid: gix_hash::ObjectId,
+    base_oid: gix_hash::ObjectId,
+) -> anyhow::Result<gix_hash::ObjectId> {
     if !objects::is_descendant_of(transaction.odb(), change_oid, base_oid)? {
         return Err(anyhow!(
             "change {} is not a descendant of base {}",
@@ -2553,10 +2559,10 @@ pub fn downstack(
 /// unrelated operations.
 fn cached_merge_trees(
     transaction: &cache::Transaction,
-    a: git2::Oid,
-    b: git2::Oid,
-    c: git2::Oid,
-) -> anyhow::Result<git2::Oid> {
+    a: gix_hash::ObjectId,
+    b: gix_hash::ObjectId,
+    c: gix_hash::ObjectId,
+) -> anyhow::Result<gix_hash::ObjectId> {
     // Conventional 3-way identities. When the ancestor matches one side, the
     // merge result is the other side -- common in a clean linear stack where
     // the rebuilt parent's tree already equals the original intermediate's
@@ -2612,7 +2618,7 @@ fn downstack_commit_deps(
         .first_parent_id()
         .map(|p| git::read_tree_id(odb, p))
         .transpose()?
-        .unwrap_or(git2::Oid::ZERO_SHA1);
+        .unwrap_or(gix_hash::ObjectId::null(gix_hash::Kind::Sha1));
     let commit_tree_id = commit.tree_id()?;
 
     let mut deps = std::collections::HashSet::new();
@@ -2828,9 +2834,10 @@ mod tests {
             b.upsert(p, oid, git2::FileMode::Blob);
         }
         let empty = repo.treebuilder(None).unwrap().write().unwrap();
-        let tree = b
-            .create_updated(&repo, &repo.find_tree(empty).unwrap())
-            .unwrap();
+        let tree = objects::gix_oid(
+            b.create_updated(&repo, &repo.find_tree(empty).unwrap())
+                .unwrap(),
+        );
 
         let cachestack = std::sync::Arc::new(
             cache::CacheStack::new().with_backend(cache::SledCacheBackend::new(td.path())),
@@ -2838,7 +2845,7 @@ mod tests {
         let ctx = cache::TransactionContext::new(td.path(), cachestack);
         let t = ctx.open().unwrap();
 
-        let apply_tree = |f: Filter| -> anyhow::Result<git2::Oid> {
+        let apply_tree = |f: Filter| -> anyhow::Result<gix_hash::ObjectId> {
             Ok(apply(&t, f, Rewrite::from_tree(tree))?.tree_id())
         };
 
@@ -2947,27 +2954,34 @@ mod tests {
         let td = tempfile::tempdir().unwrap();
         let repo = git2::Repository::init_bare(td.path()).unwrap();
 
-        let mk_tree = |files: &[(&str, &str)]| -> git2::Oid {
+        let mk_tree = |files: &[(&str, &str)]| -> gix_hash::ObjectId {
             let mut b = git2::build::TreeUpdateBuilder::new();
             for (p, c) in files {
                 let oid = repo.blob(c.as_bytes()).unwrap();
                 b.upsert(*p, oid, git2::FileMode::Blob);
             }
             let empty = repo.treebuilder(None).unwrap().write().unwrap();
-            b.create_updated(&repo, &repo.find_tree(empty).unwrap())
-                .unwrap()
+            objects::gix_oid(
+                b.create_updated(&repo, &repo.find_tree(empty).unwrap())
+                    .unwrap(),
+            )
         };
 
         let sig = git2::Signature::new("t", "t@e", &git2::Time::new(0, 0)).unwrap();
-        let mk_commit = |tree: git2::Oid, parents: &[git2::Oid], msg: &str| -> git2::Oid {
-            let tree = repo.find_tree(tree).unwrap();
+        let mk_commit = |tree: gix_hash::ObjectId,
+                         parents: &[gix_hash::ObjectId],
+                         msg: &str|
+         -> gix_hash::ObjectId {
+            let tree = repo.find_tree(objects::git2_oid(&tree)).unwrap();
             let parent_commits: Vec<git2::Commit> = parents
                 .iter()
-                .map(|p| repo.find_commit(*p).unwrap())
+                .map(|p| repo.find_commit(objects::git2_oid(p)).unwrap())
                 .collect();
             let parent_refs: Vec<&git2::Commit> = parent_commits.iter().collect();
-            repo.commit(None, &sig, &sig, msg, &tree, &parent_refs)
-                .unwrap()
+            objects::gix_oid(
+                repo.commit(None, &sig, &sig, msg, &tree, &parent_refs)
+                    .unwrap(),
+            )
         };
 
         // base <- side, and a merge of the two is the change being published.
@@ -2986,24 +3000,24 @@ mod tests {
         let t = ctx.open().unwrap();
 
         let out = repo
-            .find_commit(downstack(&t, merge, base).unwrap())
+            .find_commit(objects::git2_oid(&downstack(&t, merge, base).unwrap()))
             .unwrap();
         assert_eq!(out.parent_count(), 2, "merge change lost its second parent");
         assert_eq!(
             out.parent_id(0).unwrap(),
-            base,
+            objects::git2_oid(&base),
             "first parent should be the minimal base"
         );
         assert_eq!(
             out.parent_id(1).unwrap(),
-            side,
+            objects::git2_oid(&side),
             "second parent should be carried through"
         );
 
         // A single-parent change is unaffected by the parent-preserving rewrite.
         let linear = mk_commit(mk_tree(&[("a", "1"), ("n", "n")]), &[base], "linear change");
         let out_linear = repo
-            .find_commit(downstack(&t, linear, base).unwrap())
+            .find_commit(objects::git2_oid(&downstack(&t, linear, base).unwrap()))
             .unwrap();
         assert_eq!(out_linear.parent_count(), 1);
     }

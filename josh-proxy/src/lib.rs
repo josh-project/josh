@@ -287,7 +287,7 @@ pub fn merge_meta(
     transaction: &josh_core::cache::Transaction,
     transaction_mirror: &josh_core::cache::Transaction,
     meta_add: &std::collections::HashMap<std::path::PathBuf, Vec<String>>,
-) -> anyhow::Result<Option<(String, git2::Oid)>> {
+) -> anyhow::Result<Option<(String, gix_hash::ObjectId)>> {
     if meta_add.is_empty() {
         return Ok(None);
     }
@@ -304,11 +304,8 @@ pub fn merge_meta(
     for (path, add_lines) in meta_add.iter() {
         let prev = match josh_core::filter::tree::get_path_entry(transaction, odb, tree, path)? {
             Some(entry) => {
-                let blob = josh_core::filter::tree::blob_bytes(
-                    odb,
-                    josh_core::objects::git2_oid(&entry.oid),
-                )
-                .ok_or_else(|| anyhow!("not a blob: {}", entry.oid))?;
+                let blob = josh_core::filter::tree::blob_bytes(odb, entry.oid.to_owned())
+                    .ok_or_else(|| anyhow!("not a blob: {}", entry.oid))?;
                 std::str::from_utf8(&blob)?.to_owned()
             }
             None => "".to_owned(),

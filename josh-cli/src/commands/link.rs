@@ -1,4 +1,5 @@
 use anyhow::{Context, anyhow};
+use std::str::FromStr;
 
 use josh_link::make_signature;
 
@@ -117,7 +118,7 @@ fn handle_link_add(
         .context("Failed to apply export filter")?;
 
     // If the export filter found no local content, fall back to fetching the remote.
-    let initial_oid = if export_oid != git2::Oid::ZERO_SHA1 {
+    let initial_oid = if export_oid != gix_hash::ObjectId::null(gix_hash::Kind::Sha1) {
         eprintln!(
             "Using local content at '{}' ({})",
             normalized_path, export_oid
@@ -133,14 +134,14 @@ fn handle_link_add(
             .spawn_git(&["fetch", &args.url, target], &[])
             .context("Failed to execute git fetch")?;
 
-        // PORT: FETCH_HEAD pseudo-ref read stays on the git2 handle until flag day
-        // (gix multi-entry FETCH_HEAD semantics still unresolved).
-        let fetched_oid = repo
-            .find_reference("FETCH_HEAD")
-            .context("Failed to find FETCH_HEAD after fetch")?
-            .peel_to_commit()
-            .context("Failed to peel FETCH_HEAD to commit")?
-            .id();
+        // Preserve libgit2's multi-entry FETCH_HEAD resolution.
+        let fetched_oid = josh_core::objects::gix_oid(
+            repo.find_reference("FETCH_HEAD")
+                .context("Failed to find FETCH_HEAD after fetch")?
+                .peel_to_commit()
+                .context("Failed to peel FETCH_HEAD to commit")?
+                .id(),
+        );
 
         eprintln!("Using fetched commit {}", fetched_oid);
         fetched_oid
@@ -223,10 +224,10 @@ fn handle_link_fetch(
     let mut skipped = 0;
 
     for link_ref in &link_refs {
-        let oid = git2::Oid::from_str(&link_ref.commit)
+        let oid = gix_hash::ObjectId::from_str(&link_ref.commit)
             .with_context(|| format!("Invalid commit SHA in link file: {}", link_ref.commit))?;
 
-        if odb.exists(oid) {
+        if odb.exists(josh_core::objects::git2_oid(&oid)) {
             skipped += 1;
             continue;
         }
@@ -280,7 +281,7 @@ fn handle_link_update(
         );
         let filtered_oid = josh_core::filter_commit(transaction, roundtrip, head_commit)
             .context("Failed to apply filter")?;
-        if filtered_oid == git2::Oid::ZERO_SHA1 {
+        if filtered_oid == gix_hash::ObjectId::null(gix_hash::Kind::Sha1) {
             vec![]
         } else {
             let odb = transaction.odb();
@@ -320,14 +321,14 @@ fn handle_link_update(
             .spawn_git(&["fetch", &remote, &branch], &[])
             .with_context(|| format!("git fetch failed for '{}'", path.display()))?;
 
-        // PORT: FETCH_HEAD pseudo-ref read stays on the git2 handle until flag day
-        // (gix multi-entry FETCH_HEAD semantics still unresolved).
-        let new_oid = repo
-            .find_reference("FETCH_HEAD")
-            .context("Failed to find FETCH_HEAD")?
-            .peel_to_commit()
-            .context("Failed to get FETCH_HEAD commit")?
-            .id();
+        // Preserve libgit2's multi-entry FETCH_HEAD resolution.
+        let new_oid = josh_core::objects::gix_oid(
+            repo.find_reference("FETCH_HEAD")
+                .context("Failed to find FETCH_HEAD")?
+                .peel_to_commit()
+                .context("Failed to get FETCH_HEAD commit")?
+                .id(),
+        );
 
         links_to_update.push((path.clone(), new_oid));
     }
@@ -397,7 +398,7 @@ fn handle_link_push(
     let exported_commit = josh_core::filter_commit(transaction, combined_filter, head_commit)
         .context("Failed to apply export filter")?;
 
-    if exported_commit == git2::Oid::ZERO_SHA1 {
+    if exported_commit == gix_hash::ObjectId::null(gix_hash::Kind::Sha1) {
         return Err(anyhow!("No content found at path '{}' to push", args.path));
     }
 

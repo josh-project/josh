@@ -1,12 +1,13 @@
 use crate::evaluate::evaluate;
 use josh_filter::spec;
+use std::str::FromStr;
 
 #[test]
 fn test_simple_filter() -> anyhow::Result<()> {
     let temp_dir = std::env::temp_dir().join("josh_starlark_test");
     let _ = std::fs::remove_dir_all(&temp_dir);
     let repo = git2::Repository::init(&temp_dir)?;
-    let empty_tree_oid = git2::Oid::from_str("4b825dc642cb6eb9a060e54bf8d69288fbee4904")?;
+    let empty_tree_oid = gix_hash::ObjectId::from_str("4b825dc642cb6eb9a060e54bf8d69288fbee4904")?;
 
     let script = r#"
 filter = filter.subdir("src")
@@ -23,7 +24,7 @@ fn test_chain_filter() -> anyhow::Result<()> {
     let temp_dir = std::env::temp_dir().join("josh_starlark_test2");
     let _ = std::fs::remove_dir_all(&temp_dir);
     let repo = git2::Repository::init(&temp_dir)?;
-    let empty_tree_oid = git2::Oid::from_str("4b825dc642cb6eb9a060e54bf8d69288fbee4904")?;
+    let empty_tree_oid = gix_hash::ObjectId::from_str("4b825dc642cb6eb9a060e54bf8d69288fbee4904")?;
 
     let script = r#"
 filter = filter.subdir("src").prefix("lib")
@@ -40,7 +41,7 @@ fn test_file_filter() -> anyhow::Result<()> {
     let temp_dir = std::env::temp_dir().join("josh_starlark_test3");
     let _ = std::fs::remove_dir_all(&temp_dir);
     let repo = git2::Repository::init(&temp_dir)?;
-    let empty_tree_oid = git2::Oid::from_str("4b825dc642cb6eb9a060e54bf8d69288fbee4904")?;
+    let empty_tree_oid = gix_hash::ObjectId::from_str("4b825dc642cb6eb9a060e54bf8d69288fbee4904")?;
 
     let script = r#"
 filter = filter.file("README.md")
@@ -58,7 +59,7 @@ fn test_compose() -> anyhow::Result<()> {
     let temp_dir = std::env::temp_dir().join("josh_starlark_test4");
     let _ = std::fs::remove_dir_all(&temp_dir);
     let repo = git2::Repository::init(&temp_dir)?;
-    let empty_tree_oid = git2::Oid::from_str("4b825dc642cb6eb9a060e54bf8d69288fbee4904")?;
+    let empty_tree_oid = gix_hash::ObjectId::from_str("4b825dc642cb6eb9a060e54bf8d69288fbee4904")?;
 
     let script = r#"
 f1 = filter.subdir("src")
@@ -74,7 +75,7 @@ filter = compose([f1, f2])
 }
 
 // Helper function to create a test repository with files and directories
-fn create_test_repo() -> anyhow::Result<(git2::Repository, git2::Oid)> {
+fn create_test_repo() -> anyhow::Result<(git2::Repository, gix_hash::ObjectId)> {
     // Process id and a counter keep the directory unique across parallel tests; the
     // timestamp alone collides when two tests read the clock in the same tick.
     static DIR_COUNTER: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
@@ -119,7 +120,7 @@ fn create_test_repo() -> anyhow::Result<(git2::Repository, git2::Oid)> {
         root_builder.write()?
     };
 
-    Ok((repo, root_tree_oid))
+    Ok((repo, josh_gix_ext::gix_oid(root_tree_oid)))
 }
 
 #[test]

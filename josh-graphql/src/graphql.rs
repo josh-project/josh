@@ -7,16 +7,17 @@ use josh_core::objects;
 use josh_core::objects::CommitData;
 use josh_core::{cache, filter, history};
 use juniper::{EmptyMutation, EmptySubscription, FieldResult, graphql_object};
+use std::str::FromStr;
 
 pub struct Revision {
     filter: filter::Filter,
-    commit_id: git2::Oid,
+    commit_id: gix_hash::ObjectId,
 }
 
 fn find_paths(
     transaction: &cache::Transaction,
     odb: &josh_core::memodb::Odb,
-    tree: git2::Oid,
+    tree: gix_hash::ObjectId,
     at: Option<String>,
     depth: Option<i32>,
     kind: git2::ObjectType,
@@ -28,7 +29,7 @@ fn find_paths(
             if !entry.mode.is_tree() {
                 return Err(anyhow!("not a directory: {}", at));
             }
-            objects::git2_oid(&entry.oid)
+            entry.oid.to_owned()
         }
         _ => tree,
     };
@@ -45,7 +46,7 @@ fn find_paths(
 fn collect_paths(
     transaction: &cache::Transaction,
     odb: &josh_core::memodb::Odb,
-    tree: git2::Oid,
+    tree: gix_hash::ObjectId,
     prefix: &std::path::Path,
     level: i32,
     depth: Option<i32>,
@@ -72,7 +73,7 @@ fn collect_paths(
             collect_paths(
                 transaction,
                 odb,
-                objects::git2_oid(&entry.oid),
+                entry.oid.to_owned(),
                 &path,
                 level + 1,
                 depth,
@@ -88,7 +89,7 @@ fn collect_paths(
 fn filtered_commit(
     transaction: &cache::Transaction,
     filter: filter::Filter,
-    commit_id: git2::Oid,
+    commit_id: gix_hash::ObjectId,
 ) -> anyhow::Result<CommitData> {
     let filtered = filter::apply_to_commit(filter, commit_id, transaction)?;
     CommitData::read(transaction.odb(), filtered)
@@ -229,7 +230,7 @@ impl Revision {
                     id,
                     false,
                 )
-                .unwrap_or_else(|_| git2::Oid::ZERO_SHA1),
+                .unwrap_or_else(|_| gix_hash::ObjectId::null(gix_hash::Kind::Sha1)),
             })
             .collect();
 
@@ -266,7 +267,7 @@ impl Revision {
                 let orig =
                     history::find_original(&transaction, self.filter, contained_in, ids[i], true)?;
 
-                if orig != git2::Oid::ZERO_SHA1 {
+                if orig != gix_hash::ObjectId::null(gix_hash::Kind::Sha1) {
                     ids[i] = orig;
                     contained_in = josh_core::git::read_parent_ids(transaction.odb(), ids[i])?
                         .into_iter()
@@ -318,7 +319,10 @@ impl Revision {
         let odb = transaction.odb();
         let (parent_id, parent_tree_id) = match filter_commit.first_parent_id() {
             Some(parent) => (parent, josh_core::git::read_tree_id(odb, parent)?),
-            None => (git2::Oid::ZERO_SHA1, git2::Oid::ZERO_SHA1),
+            None => (
+                gix_hash::ObjectId::null(gix_hash::Kind::Sha1),
+                gix_hash::ObjectId::null(gix_hash::Kind::Sha1),
+            ),
         };
 
         let filter_tree_id = filter_commit.tree_id()?;
@@ -500,9 +504,9 @@ impl Warning {
 #[derive(Clone)]
 pub struct Path {
     path: std::path::PathBuf,
-    commit_id: git2::Oid,
+    commit_id: gix_hash::ObjectId,
     filter: filter::Filter,
-    tree: git2::Oid,
+    tree: gix_hash::ObjectId,
 }
 
 #[derive(Clone)]
@@ -539,7 +543,7 @@ impl SearchResult {
 pub fn linecount(
     transaction: &cache::Transaction,
     odb: &josh_core::memodb::Odb,
-    id: git2::Oid,
+    id: gix_hash::ObjectId,
 ) -> usize {
     if let Some(blob) = tree::blob_bytes(odb, id) {
         return blob.iter().filter(|x| **x == b'\n').count() + if blob.is_empty() { 0 } else { 1 };
@@ -548,7 +552,7 @@ pub fn linecount(
     if let Ok(reader) = tree::read_tree(transaction, odb, id) {
         return reader
             .entries()
-            .map(|e| linecount(transaction, odb, objects::git2_oid(&e.oid)))
+            .map(|e| linecount(transaction, odb, e.oid.to_owned()))
             .sum();
     }
     0
@@ -556,7 +560,7 @@ pub fn linecount(
 
 struct Markers {
     path: std::path::PathBuf,
-    commit_id: git2::Oid,
+    commit_id: gix_hash::ObjectId,
     filter: filter::Filter,
     topic: String,
 }
@@ -590,7 +594,7 @@ impl Markers {
 
         let prev = match tree::get_path_entry(&transaction, odb, tree, &path)? {
             Some(entry) => {
-                let blob = tree::blob_bytes(odb, objects::git2_oid(&entry.oid))
+                let blob = tree::blob_bytes(odb, entry.oid.to_owned())
                     .ok_or_else(|| anyhow!("not a blob: {}", entry.oid))?;
                 std::str::from_utf8(&blob)?.to_owned()
             }
@@ -605,8 +609,8 @@ impl Markers {
                 Document {
                     id: s
                         .next()
-                        .and_then(|x| git2::Oid::from_str(x).ok())
-                        .unwrap_or(git2::Oid::ZERO_SHA1),
+                        .and_then(|x| gix_hash::ObjectId::from_str(x).ok())
+                        .unwrap_or(gix_hash::ObjectId::null(gix_hash::Kind::Sha1)),
                     value: s
                         .next()
                         .and_then(|x| serde_json::from_str::<serde_json::Value>(x).ok())
@@ -637,7 +641,7 @@ impl Markers {
                 .ok()
                 .flatten()
                 .filter(|entry| entry.mode.is_tree())
-                .map(|entry| objects::git2_oid(&entry.oid))
+                .map(|entry| entry.oid.to_owned())
                 .unwrap_or_else(filter::tree::empty_id);
 
         let mtree = if self.filter.is_nop() {
@@ -651,7 +655,7 @@ impl Markers {
             )?
         };
         if let Ok(Some(p)) = tree::get_path_entry(&transaction, odb, mtree, &self.path) {
-            return Ok(linecount(&transaction, odb, objects::git2_oid(&p.oid)) as i32);
+            return Ok(linecount(&transaction, odb, p.oid.to_owned()) as i32);
         } else if self.path == std::path::Path::new("") {
             return Ok(linecount(&transaction, odb, mtree) as i32);
         }
@@ -663,7 +667,7 @@ impl Path {
     fn internal_serialize<R>(
         &self,
         context: &Context,
-        to_result: impl FnOnce(&cache::Transaction, git2::Oid) -> FieldResult<R>,
+        to_result: impl FnOnce(&cache::Transaction, gix_hash::ObjectId) -> FieldResult<R>,
     ) -> FieldResult<R> {
         let transaction = context.transaction.lock().unwrap();
 
@@ -673,7 +677,7 @@ impl Path {
             let odb = transaction.odb();
             let entry = tree::get_path_entry(&transaction, odb, self.tree, &self.path)?
                 .ok_or_else(|| anyhow!("no such path: {}", self.path.display()))?;
-            objects::git2_oid(&entry.oid)
+            entry.oid.to_owned()
         };
         to_result(&transaction, id)
     }
@@ -760,7 +764,7 @@ impl Path {
 }
 
 pub struct Document {
-    id: git2::Oid,
+    id: gix_hash::ObjectId,
     value: serde_json::Value,
 }
 
@@ -808,7 +812,7 @@ impl Document {
         if let serde_json::Value::Array(a) = &self.pointer(at) {
             for x in a.iter() {
                 v.push(Document {
-                    id: git2::Oid::ZERO_SHA1,
+                    id: gix_hash::ObjectId::null(gix_hash::Kind::Sha1),
                     value: x.clone(),
                 });
             }
@@ -820,7 +824,7 @@ impl Document {
 
     fn value(&self, at: String) -> Option<Document> {
         self.value.pointer(&at).map(|x| Document {
-            id: git2::Oid::ZERO_SHA1,
+            id: gix_hash::ObjectId::null(gix_hash::Kind::Sha1),
             value: x.to_owned(),
         })
     }
@@ -858,7 +862,7 @@ impl Reference {
 }
 
 type ToPushSet = std::sync::Arc<
-    std::sync::Mutex<std::collections::HashSet<(git2::Oid, String, Option<String>)>>,
+    std::sync::Mutex<std::collections::HashSet<(gix_hash::ObjectId, String, Option<String>)>>,
 >;
 
 #[derive(PartialEq, Eq, Clone, Copy)]
@@ -941,8 +945,11 @@ impl RevMut {
     fn push(&self, target: String, repo: Option<String>, context: &Context) -> FieldResult<bool> {
         let transaction = context.transaction.lock().unwrap();
 
-        let filter_commit =
-            filtered_commit(&transaction, self.filter, git2::Oid::from_str(&self.at)?)?;
+        let filter_commit = filtered_commit(
+            &transaction,
+            self.filter,
+            gix_hash::ObjectId::from_str(&self.at)?,
+        )?;
 
         if let Ok(mut to_push) = context.to_push.lock() {
             to_push.insert((filter_commit.id(), target, repo));
@@ -990,7 +997,7 @@ impl RepositoryMut {
         let transaction_mirror = context.transaction_mirror.lock().unwrap();
 
         // Just check that the commit exists
-        CommitData::read(transaction_mirror.odb(), git2::Oid::from_str(&at)?)?;
+        CommitData::read(transaction_mirror.odb(), gix_hash::ObjectId::from_str(&at)?)?;
 
         let filter = if let Some(spec) = filter {
             filter::parse(&spec)?
@@ -1045,8 +1052,8 @@ impl Repository {
 
         let transaction_mirror = context.transaction_mirror.lock().unwrap();
         let commit_id = {
-            let oid = if let Ok(id) = git2::Oid::from_str(&at) {
-                Some((id, transaction_mirror.odb().contains(objects::gix_oid(id))))
+            let oid = if let Ok(id) = gix_hash::ObjectId::from_str(&at) {
+                Some((id, transaction_mirror.odb().contains(id)))
             } else {
                 None
             };
@@ -1097,7 +1104,7 @@ pub fn context(transaction: cache::Transaction, transaction_mirror: cache::Trans
 pub type CommitSchema =
     juniper::RootNode<Revision, EmptyMutation<Context>, EmptySubscription<Context>>;
 
-pub fn commit_schema(commit_id: git2::Oid) -> CommitSchema {
+pub fn commit_schema(commit_id: gix_hash::ObjectId) -> CommitSchema {
     CommitSchema::new(
         Revision {
             commit_id,

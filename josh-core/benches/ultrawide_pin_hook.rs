@@ -4,6 +4,7 @@ use josh_test_support::bench::{EntryKind, git2_oid, gix_oid};
 use rand::prelude::*;
 use std::collections::HashMap;
 use std::path::PathBuf;
+use std::str::FromStr;
 use std::sync::Arc;
 
 // Tree sizes (number of files) benchmarked. Kept small in debug builds so `--test` runs stay fast.
@@ -73,14 +74,14 @@ const JOSH_BENCH_COMMIT_TIME: &str = "1700000000";
 // pin through a stored `workspace.josh`, which pays a filter parse+legalize per commit; the hook
 // serves a pre-built per-commit filter by oid instead, isolating the pin evaluation itself.
 struct BenchPinHook {
-    per_path: HashMap<git2::Oid, josh_filter::Filter>,
-    one_tree: HashMap<git2::Oid, josh_filter::Filter>,
+    per_path: HashMap<gix_hash::ObjectId, josh_filter::Filter>,
+    one_tree: HashMap<gix_hash::ObjectId, josh_filter::Filter>,
 }
 
 impl josh_core::cache::FilterHook for BenchPinHook {
     fn filter_for_commit(
         &self,
-        commit_oid: git2::Oid,
+        commit_oid: gix_hash::ObjectId,
         arg: &str,
     ) -> anyhow::Result<josh_filter::Filter> {
         let map = match arg {
@@ -98,7 +99,7 @@ impl josh_core::cache::FilterHook for BenchPinHook {
 /// shared hook.
 struct SizeCase {
     size: usize,
-    head: git2::Oid,
+    head: gix_hash::ObjectId,
 }
 
 struct PinBench {
@@ -133,7 +134,8 @@ impl PinBench {
         // `EXPECTED_HEAD`.
         let provisioned = josh_test_support::provision_repo::provision_repo(
             "ultrawide_pin_hook",
-            &git2::Oid::from_str(EXPECTED_HEAD).expect("EXPECTED_HEAD must be a valid oid"),
+            &gix_hash::ObjectId::from_str(EXPECTED_HEAD)
+                .expect("EXPECTED_HEAD must be a valid oid"),
             |repo| {
                 let mut heads = vec![];
                 for &size in SIZES {
@@ -156,7 +158,7 @@ impl PinBench {
         {
             let repo = &provisioned.repo;
             for &size in SIZES {
-                let head = repo.refname_to_id(&format!("refs/heads/case_{size}"))?;
+                let head = gix_oid(repo.refname_to_id(&format!("refs/heads/case_{size}"))?);
                 record_case(repo, head, &mut per_path, &mut one_tree)?;
                 cases.push(SizeCase { size, head });
             }
@@ -299,7 +301,7 @@ fn pin_filter_tree(
 /// per commit. The tip is tagged with `refs/heads/case_<size>` so the head is recoverable after the
 /// repo round-trips through the cache; the pinned set and per-commit pin filters are not recorded here
 /// -- they are reconstructed from tree diffs in `record_case`.
-fn build_case(repo: &git2::Repository, size: usize) -> anyhow::Result<git2::Oid> {
+fn build_case(repo: &git2::Repository, size: usize) -> anyhow::Result<gix_hash::ObjectId> {
     use rand::RngExt;
 
     // Distribute files uniformly across nested subfolders.
@@ -383,18 +385,21 @@ fn build_case(repo: &git2::Repository, size: usize) -> anyhow::Result<git2::Oid>
         "bench case tip",
     )?;
 
-    Ok(head)
+    Ok(gix_oid(head))
 }
 
 /// Aggregate every case tip under one index commit. Its oid changes whenever any case head changes,
 /// making it a faithful content-addressed cache stamp for the entire repo, and it keeps all cases
 /// reachable so provision_repo's `git prune` retains the full history. It is never filtered.
-fn build_index(repo: &git2::Repository, heads: &[git2::Oid]) -> anyhow::Result<git2::Oid> {
+fn build_index(
+    repo: &git2::Repository,
+    heads: &[gix_hash::ObjectId],
+) -> anyhow::Result<gix_hash::ObjectId> {
     let sig = josh_commit_signature()?;
     let empty_tree = repo.find_tree(repo.treebuilder(None)?.write()?)?;
     let parents = heads
         .iter()
-        .map(|oid| repo.find_commit(*oid))
+        .map(|oid| repo.find_commit(git2_oid(*oid)))
         .collect::<Result<Vec<_>, _>>()?;
     let parent_refs = parents.iter().collect::<Vec<_>>();
     let index = repo.commit(
@@ -405,7 +410,7 @@ fn build_index(repo: &git2::Repository, heads: &[git2::Oid]) -> anyhow::Result<g
         &empty_tree,
         &parent_refs,
     )?;
-    Ok(index)
+    Ok(gix_oid(index))
 }
 
 /// Walk a case's linear history root-to-tip, reconstructing each commit's pinned set and recording
@@ -418,26 +423,26 @@ fn build_index(repo: &git2::Repository, heads: &[git2::Oid]) -> anyhow::Result<g
 /// copied from cache.
 fn record_case(
     repo: &git2::Repository,
-    head: git2::Oid,
-    per_path: &mut HashMap<git2::Oid, josh_filter::Filter>,
-    one_tree: &mut HashMap<git2::Oid, josh_filter::Filter>,
+    head: gix_hash::ObjectId,
+    per_path: &mut HashMap<gix_hash::ObjectId, josh_filter::Filter>,
+    one_tree: &mut HashMap<gix_hash::ObjectId, josh_filter::Filter>,
 ) -> anyhow::Result<()> {
     // Collect the linear history oldest-first so the pinned set can be folded forward across commits.
     let mut chain = vec![];
     let mut oid = head;
     loop {
-        let commit = repo.find_commit(oid)?;
+        let commit = repo.find_commit(git2_oid(oid))?;
         chain.push(oid);
         if commit.parent_count() == 0 {
             break;
         }
-        oid = commit.parent_id(0)?;
+        oid = gix_oid(commit.parent_id(0)?);
     }
     chain.reverse();
 
     let mut pinned = std::collections::BTreeSet::<PathBuf>::new();
     for (commit_index, &oid) in chain.iter().enumerate() {
-        let commit = repo.find_commit(oid)?;
+        let commit = repo.find_commit(git2_oid(oid))?;
 
         // Re-roll the hold status of every churned path; unchurned paths keep the status they carried
         // over. The root commit has no parent, so its churned set is empty and the pinned set stays

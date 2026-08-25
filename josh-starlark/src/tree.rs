@@ -13,7 +13,7 @@ use std::path::PathBuf;
 /// We wrap a git tree by storing its OID and a raw pointer to the object source it came from.
 #[derive(Clone, ProvidesStaticType, NoSerialize)]
 pub(crate) struct StarlarkTree {
-    pub tree_oid: git2::Oid,
+    pub tree_oid: gix_hash::ObjectId,
     // SAFETY: StarlarkTree is only constructed inside `evaluate()`, which is
     // synchronous and spawns no threads. The referenced object source must
     // remain alive and at a stable address for that entire duration so this raw
@@ -68,7 +68,7 @@ impl StarlarkTree {
     /// construct `StarlarkTree` values in contexts that guarantee the object source
     /// outlives the tree and all of its clones, such as the synchronous
     /// `evaluate()` flow described in the struct-level safety comments.
-    pub(crate) fn new(tree_oid: git2::Oid, objects: &dyn gix_object::Find) -> Self {
+    pub(crate) fn new(tree_oid: gix_hash::ObjectId, objects: &dyn gix_object::Find) -> Self {
         let objects: *const (dyn gix_object::Find + '_) = objects;
         Self {
             tree_oid,
@@ -85,12 +85,12 @@ impl StarlarkTree {
     }
 
     /// Get empty tree OID
-    fn empty_tree_oid() -> git2::Oid {
-        git2::Oid::from_str("4b825dc642cb6eb9a060e54bf8d69288fbee4904").unwrap()
+    fn empty_tree_oid() -> gix_hash::ObjectId {
+        gix_hash::ObjectId::empty_tree(gix_hash::Kind::Sha1)
     }
 
     /// Navigate to a path in the tree, returning the OID of the tree at that path
-    fn navigate_to_path_oid(&self, path: &str) -> anyhow::Result<git2::Oid> {
+    fn navigate_to_path_oid(&self, path: &str) -> anyhow::Result<gix_hash::ObjectId> {
         if path.is_empty() {
             return Ok(self.tree_oid);
         }
@@ -113,7 +113,7 @@ impl StarlarkTree {
                 return Err(anyhow!("Path component '{}' is not a directory", component));
             }
 
-            current_tree_oid = josh_gix_ext::git2_oid(&entry.oid);
+            current_tree_oid = entry.oid;
         }
 
         Ok(current_tree_oid)
@@ -130,7 +130,7 @@ impl StarlarkTree {
         if !entry.mode.is_blob() {
             return String::new();
         }
-        josh_gix_ext::blob_text(objects, josh_gix_ext::git2_oid(&entry.oid))
+        josh_gix_ext::blob_text(objects, entry.oid)
     }
 
     /// The full paths of the entries at `path` that satisfy `keep`, in stored tree order.

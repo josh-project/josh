@@ -20,6 +20,7 @@ josh-changes = { path = "../josh-changes" }
 josh-core = { path = "../josh-core" }
 josh-github-changes = { path = "../forges/josh-github-changes" }
 git2 = { version = "0.21.0", default-features = false, features = ["vendored-libgit2"] }
+gix-hash = { version = "^0.26", features = ["sha1"] }
 tokio = { version = "1", features = ["time"] }
 
 # Same as the root workspace: use the vendored glob fork, which keeps the

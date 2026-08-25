@@ -1,4 +1,5 @@
 use std::collections::HashSet;
+use std::str::FromStr;
 
 use josh_core::cache;
 use josh_core::memodb;
@@ -23,13 +24,13 @@ use crate::naming;
 pub fn collect_image_oids(
     transaction: &cache::Transaction,
     odb: &memodb::Odb,
-    ws_tree: git2::Oid,
+    ws_tree: gix_hash::ObjectId,
     ignore_cache: bool,
     runtime: &dyn ArtifactBackend,
-) -> anyhow::Result<Vec<git2::Oid>> {
-    let mut out: Vec<git2::Oid> = vec![];
-    let mut image_seen: HashSet<git2::Oid> = HashSet::new();
-    let mut ws_seen: HashSet<git2::Oid> = HashSet::new();
+) -> anyhow::Result<Vec<gix_hash::ObjectId>> {
+    let mut out: Vec<gix_hash::ObjectId> = vec![];
+    let mut image_seen: HashSet<gix_hash::ObjectId> = HashSet::new();
+    let mut ws_seen: HashSet<gix_hash::ObjectId> = HashSet::new();
     walk_workspace(
         transaction,
         odb,
@@ -54,12 +55,12 @@ pub fn collect_image_oids(
 pub fn collect_job_hashes(
     transaction: &cache::Transaction,
     odb: &memodb::Odb,
-    ws_tree: git2::Oid,
+    ws_tree: gix_hash::ObjectId,
     ignore_cache: bool,
     runtime: &dyn ArtifactBackend,
-) -> anyhow::Result<Vec<git2::Oid>> {
-    let mut out: Vec<git2::Oid> = vec![];
-    let mut ws_seen: HashSet<git2::Oid> = HashSet::new();
+) -> anyhow::Result<Vec<gix_hash::ObjectId>> {
+    let mut out: Vec<gix_hash::ObjectId> = vec![];
+    let mut ws_seen: HashSet<gix_hash::ObjectId> = HashSet::new();
     walk_workspace_jobs(
         transaction,
         odb,
@@ -75,12 +76,12 @@ pub fn collect_job_hashes(
 fn walk_workspace(
     transaction: &cache::Transaction,
     odb: &memodb::Odb,
-    ws_tree: git2::Oid,
+    ws_tree: gix_hash::ObjectId,
     ignore_cache: bool,
     runtime: &dyn ArtifactBackend,
-    out: &mut Vec<git2::Oid>,
-    image_seen: &mut HashSet<git2::Oid>,
-    ws_seen: &mut HashSet<git2::Oid>,
+    out: &mut Vec<gix_hash::ObjectId>,
+    image_seen: &mut HashSet<gix_hash::ObjectId>,
+    ws_seen: &mut HashSet<gix_hash::ObjectId>,
 ) -> anyhow::Result<()> {
     if !ws_seen.insert(ws_tree) {
         return Ok(());
@@ -97,7 +98,7 @@ fn walk_workspace(
     }
 
     for (dep_name, dep_sha) in meta::read_blob_entries(transaction, odb, ws_tree, "inputs") {
-        let dep_tree = git2::Oid::from_str(dep_sha.trim())
+        let dep_tree = gix_hash::ObjectId::from_str(dep_sha.trim())
             .map_err(|_| anyhow::anyhow!("dependency {dep_name}: invalid tree SHA {dep_sha:?}"))?;
         walk_workspace(
             transaction,
@@ -124,11 +125,11 @@ fn walk_workspace(
 fn walk_workspace_jobs(
     transaction: &cache::Transaction,
     odb: &memodb::Odb,
-    ws_tree: git2::Oid,
+    ws_tree: gix_hash::ObjectId,
     ignore_cache: bool,
     runtime: &dyn ArtifactBackend,
-    out: &mut Vec<git2::Oid>,
-    ws_seen: &mut HashSet<git2::Oid>,
+    out: &mut Vec<gix_hash::ObjectId>,
+    ws_seen: &mut HashSet<gix_hash::ObjectId>,
 ) -> anyhow::Result<()> {
     if !ws_seen.insert(ws_tree) {
         return Ok(());
@@ -141,7 +142,7 @@ fn walk_workspace_jobs(
     }
 
     for (dep_name, dep_sha) in meta::read_blob_entries(transaction, odb, ws_tree, "inputs") {
-        let dep_tree = git2::Oid::from_str(dep_sha.trim())
+        let dep_tree = gix_hash::ObjectId::from_str(dep_sha.trim())
             .map_err(|_| anyhow::anyhow!("dependency {dep_name}: invalid tree SHA {dep_sha:?}"))?;
         walk_workspace_jobs(
             transaction,
@@ -162,7 +163,7 @@ fn walk_workspace_jobs(
 /// require the output volume when the workspace produces one. A skippable workspace
 /// won't be executed by a run, so its image and sidecar images are not needed.
 fn workspace_is_skippable(
-    ws_tree: git2::Oid,
+    ws_tree: gix_hash::ObjectId,
     meta: &WorkspaceMeta,
     runtime: &dyn ArtifactBackend,
 ) -> anyhow::Result<bool> {
@@ -185,16 +186,16 @@ fn workspace_is_skippable(
 fn collect_image_with_bases(
     transaction: &cache::Transaction,
     odb: &memodb::Odb,
-    image_oid: git2::Oid,
-    out: &mut Vec<git2::Oid>,
-    image_seen: &mut HashSet<git2::Oid>,
+    image_oid: gix_hash::ObjectId,
+    out: &mut Vec<gix_hash::ObjectId>,
+    image_seen: &mut HashSet<gix_hash::ObjectId>,
 ) -> anyhow::Result<()> {
     if image_seen.contains(&image_oid) {
         return Ok(());
     }
 
     for (base_name, base_sha) in meta::read_blob_entries(transaction, odb, image_oid, "bases") {
-        let base_oid = git2::Oid::from_str(base_sha.trim())
+        let base_oid = gix_hash::ObjectId::from_str(base_sha.trim())
             .map_err(|_| anyhow::anyhow!("invalid base SHA for {base_name}: {base_sha:?}"))?;
         collect_image_with_bases(transaction, odb, base_oid, out, image_seen)?;
     }
