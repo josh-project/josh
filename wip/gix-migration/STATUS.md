@@ -1,6 +1,6 @@
 # git2 -> gix port: status
 
-Last updated: 2026-08-25 (post 4.2, benchmark tree setup on gitoxide). See `PLAN.md` in this directory for the full phased plan.
+Last updated: 2026-08-26 (phase 4 complete; git2 and libgit2-sys removed workspace-wide). See `PLAN.md` in this directory for the full phased plan.
 
 ## Landed on master (one commit per step, each suite-green and bench-validated)
 
@@ -69,6 +69,10 @@ Last updated: 2026-08-25 (post 4.2, benchmark tree setup on gitoxide). See `PLAN
 
 | (tooling) | 8705d98e | The container test build renders cargo's diagnostics when it fails. It writes `--message-format=json` to a file and `set -e` exits before anything reads it, so a failure reached the run log as an exit code and nothing else -- which is how a full podman volume (`ld: final link failed: No space left on device`, 295 accumulated step-output volumes filling the VM's 200 GB) first read as a code error | n/a |
 
+| 4.3 | 02d76ed4–d4429f76 | **The workspace object-ID currency and remaining production repository users are gitoxide.** The obsolete `josh_core::Oid` wrapper was deleted rather than ported because its last consumer was dead. Persisted IDs, shared signatures and file modes, change refs, CQ, GraphQL, and proxy repository handling moved to gitoxide-backed types and transactions. The remaining libgit2 dependency was test/tooling-only. | n/a |
+
+| 4.4 | d88ae2cc–b6054889 | **libgit2 is gone workspace-wide.** Production compatibility adapters were removed first, then every crate's independent test fixture and the two devtools were rebuilt on gitoxide. The final workspace dependency, `libgit2-sys`, vendored C build, and container packages disappeared with `git2`; `cargo tree -i git2` and `cargo tree -i libgit2-sys` both have no matching package. `josh-memodb` remains as the pure-Rust shared staging and pack store. | n/a |
+
 Phase 1.2 is complete: no `treebuilder` use remains in `josh-core/src/filter/tree.rs`.
 
 Phase 1.3 (commit/blob creation) required no work: every commit write already goes through
@@ -130,9 +134,13 @@ josh-compose's ephemeral reads — the prysk orchestrator itself). So 3.2 contin
    Carried forward from 3.3c: cold read-heavy walks pay for delta chains read in history order
    (see the section below), which an upstream gix-pack change would return.
 7. **4.2 is landed**: benchmark tree fixtures use gitoxide's tree editor, and isolated-cache
-   rebuilds pin byte identity against the current fixture generators. Next: flip
-   `josh_core::Oid` to `ObjectId`, delete josh-memodb's FFI remnants, then remove
-   git2/libgit2-sys workspace-wide (`cargo tree -i git2` empty).
+   rebuilds pin byte identity against the current fixture generators.
+8. **4.3 is landed**: the obsolete `josh_core::Oid` wrapper is deleted, workspace object IDs
+   are gitoxide-native, and every production repository user is on gitoxide-backed APIs.
+9. **4.4 is landed**: the test/tooling tail, compatibility adapters, vendored C build, and
+   container packages are gone. Neither `git2` nor `libgit2-sys` exists in a workspace cargo
+   tree. The planned migration is complete; remaining deferred items below are independent
+   follow-ups, not migration blockers.
 
 Deferred from 1.5 (evaluate separately): lazy early-exit walks for
 find_original/find_oldest_similar/find_new_branch_base (change tie-breaks -> test churn);
