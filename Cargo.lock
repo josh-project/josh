@@ -3451,7 +3451,7 @@ dependencies = [
  "anyhow",
  "axum",
  "clap",
- "git2",
+ "gix",
  "gix-hash",
  "josh-core",
  "josh-github-webhooks",
