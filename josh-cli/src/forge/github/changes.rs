@@ -19,17 +19,15 @@ use crate::forge::Forge;
 /// the async sync on a fresh tokio runtime.
 pub fn sync(
     transaction: &josh_core::cache::Transaction,
-    repo: &git2::Repository,
     remote_name: &str,
     policy: &CachePolicy,
     push: bool,
 ) -> anyhow::Result<()> {
-    let (owner, repo_name) = resolve_github_remote(repo, Some(remote_name))?;
+    let (owner, repo_name) = resolve_github_remote(transaction, Some(remote_name))?;
 
     let rt = tokio::runtime::Runtime::new()?;
     rt.block_on(run_sync(
         transaction,
-        repo,
         remote_name,
         &owner,
         &repo_name,
@@ -42,7 +40,6 @@ pub fn sync(
 /// changes whose PRs closed, and optionally push local feedback.
 async fn run_sync(
     transaction: &josh_core::cache::Transaction,
-    repo: &git2::Repository,
     remote_name: &str,
     owner: &str,
     repo_name: &str,
@@ -60,7 +57,7 @@ async fn run_sync(
         return Ok(());
     }
 
-    let target_branch_shas = fetch_sync_objects(transaction, repo, owner, repo_name, &prs)?;
+    let target_branch_shas = fetch_sync_objects(transaction, owner, repo_name, &prs)?;
 
     let ctx = GithubSyncCtx {
         transaction,
@@ -808,11 +805,11 @@ fn remote_scope_for(remote_name: &str, target_branch: &str) -> josh_changes::Cha
 
 /// Read the remote config and return the GitHub (owner, repo) pair.
 fn resolve_github_remote(
-    repo: &git2::Repository,
+    transaction: &josh_core::cache::Transaction,
     remote: Option<&str>,
 ) -> anyhow::Result<(String, String)> {
     let remote_name = remote.unwrap_or("origin");
-    let repo_path = normalize_repo_path(repo.path());
+    let repo_path = normalize_repo_path(transaction.path());
     let remote_config = read_remote_config(&repo_path, remote_name)
         .with_context(|| format!("Failed to read remote config for '{}'", remote_name))?;
 
@@ -825,7 +822,6 @@ fn resolve_github_remote(
 
 fn fetch_sync_objects(
     transaction: &josh_core::cache::Transaction,
-    repo: &git2::Repository,
     owner: &str,
     repo_name: &str,
     prs: &[PrSummary],
@@ -872,7 +868,5 @@ fn fetch_sync_objects(
         tips.insert(target, oid);
     }
 
-    // Refresh ODB so git2 sees the newly fetched objects.
-    repo.odb()?.refresh()?;
     Ok(tips)
 }

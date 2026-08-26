@@ -223,23 +223,18 @@ fn run_standalone(cmd: &StandaloneCommand) -> anyhow::Result<()> {
 }
 
 fn run_repo(cmd: &RepoCommand, distributed_cache: bool) -> anyhow::Result<()> {
-    // For clone, do the initial repo setup before creating transaction
-    let repo_path = if let RepoCommand::Clone(args) = cmd {
-        // For clone, we're not in a git repo initially, so clone first and use that path
-        clone_repo(args)?
+    let (repo_path, git_common_dir) = if let RepoCommand::Clone(args) = cmd {
+        // For clone, we're not in a git repo initially, so clone first.
+        let repo = gix::open(clone_repo(args)?)?;
+        (
+            repo.workdir().unwrap_or_else(|| repo.git_dir()).to_owned(),
+            repo.common_dir().to_owned(),
+        )
     } else {
-        // For other commands, we need to be in a git repo
-        let repo = git2::Repository::open_from_env().context("Not in a git repository")?;
-        normalize_repo_path(repo.path())
+        let paths =
+            josh_core::git::discover_repository_paths().context("Not in a git repository")?;
+        (paths.workdir_or_gitdir, paths.common_dir)
     };
-
-    // The josh cache lives in the repository's common git directory so it is
-    // shared across linked worktrees. Reconstructing `<workdir>/.git` would be
-    // wrong from a worktree, where the gitdir is shared but located elsewhere.
-    let git_common_dir = git2::Repository::open(&repo_path)
-        .context("Failed to open repository")?
-        .commondir()
-        .to_path_buf();
 
     let is_compose = matches!(cmd, RepoCommand::Compose(_));
 
@@ -352,7 +347,7 @@ fn clone_repo(args: &CloneArgs) -> anyhow::Result<std::path::PathBuf> {
 
     std::fs::create_dir_all(&output_dir)?;
 
-    git2::Repository::init(&output_dir).context("Failed to initialize git repository")?;
+    gix::init(&output_dir).context("Failed to initialize git repository")?;
 
     let remote_add_args = RemoteAddArgs {
         name: "origin".to_string(),
@@ -372,8 +367,6 @@ fn handle_clone(
     transaction: &josh_core::cache::Transaction,
     distributed_cache: bool,
 ) -> anyhow::Result<()> {
-    let repo = transaction.git2_repo();
-
     // Create FetchArgs from CloneArgs
     let fetch_args = FetchArgs {
         remote: "origin".to_string(),
@@ -427,7 +420,7 @@ fn handle_clone(
         )
         .with_context(|| format!("Failed to set upstream for branch {}", default_branch))?;
 
-    let output_dir = normalize_repo_path(repo.path());
+    let output_dir = normalize_repo_path(transaction.path());
     let output_dir = output_dir.display().to_string();
 
     let output_dir = if let Ok(testtmp) = std::env::var("TESTTMP") {
@@ -453,8 +446,8 @@ fn handle_remote(
 }
 
 fn handle_remote_add_repo(args: &RemoteAddArgs, repo_path: &std::path::Path) -> anyhow::Result<()> {
-    let repo = git2::Repository::open(repo_path).context("Failed to open repository")?;
-    let workdir = normalize_repo_path(repo_path);
+    let repo = gix::open(repo_path).context("Failed to open repository")?;
+    let workdir = repo.workdir().unwrap_or_else(|| repo.git_dir()).to_owned();
 
     // Store the remote information in .git/josh/remotes/<name>.josh file
     let remote_url = to_absolute_remote_url(&args.url)?;
@@ -497,7 +490,7 @@ fn handle_remote_add_repo(args: &RemoteAddArgs, repo_path: &std::path::Path) -> 
     // Add remote pointing to current directory
     let repo_remote = to_absolute_remote_url(&workdir.display().to_string())?;
     GitCommand::new(
-        repo.path(),
+        repo.git_dir(),
         ["remote", "add", &args.name, &repo_remote],
         std::iter::empty::<(&str, &str)>(),
     )
@@ -509,7 +502,7 @@ fn handle_remote_add_repo(args: &RemoteAddArgs, repo_path: &std::path::Path) -> 
     let uploadpack_cmd = format!("env GIT_NAMESPACE={} git upload-pack", namespace);
 
     GitCommand::new(
-        repo.path(),
+        repo.git_dir(),
         [
             "config",
             &format!("remote.{}.uploadpack", args.name),

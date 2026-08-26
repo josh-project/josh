@@ -3331,6 +3331,7 @@ dependencies = [
  "dirs",
  "env_logger",
  "git2",
+ "gix",
  "gix-actor",
  "gix-hash",
  "glob",
