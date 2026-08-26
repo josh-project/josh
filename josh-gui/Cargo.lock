@@ -4408,7 +4408,6 @@ dependencies = [
  "chrono",
  "clap",
  "dioxus",
- "git2",
  "gix-hash",
  "josh-changes",
  "josh-core",

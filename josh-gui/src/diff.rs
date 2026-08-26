@@ -49,82 +49,53 @@ fn selected_file_line(items: &[DiffItem], sel: Option<usize>) -> Option<u32> {
 }
 
 fn load_file_diff(sha: &str, path: &str, context_lines: u32) -> anyhow::Result<Vec<DiffLine>> {
-    let repo = git2::Repository::discover(".")?;
+    let transaction = crate::common::open_transaction()?;
     let oid = gix_hash::ObjectId::from_str(sha)?;
-    let commit = repo.find_commit(josh_core::objects::git2_oid(&oid))?;
+    let patch = josh_core::git::file_patch(&transaction, oid, path, context_lines)?;
+    let mut lines = Vec::with_capacity(patch.len());
+    let mut old_ln = 0;
+    let mut new_ln = 0;
 
-    let parent_tree = commit.parent(0).ok().and_then(|p| p.tree().ok());
-    let mut opts = git2::DiffOptions::new();
-    opts.context_lines(context_lines);
-    let diff =
-        repo.diff_tree_to_tree(parent_tree.as_ref(), Some(&commit.tree()?), Some(&mut opts))?;
-
-    let mut patch_idx = None;
-    for i in 0..diff.deltas().len() {
-        let delta = diff.deltas().nth(i).unwrap();
-        let p = delta
-            .new_file()
-            .path()
-            .or_else(|| delta.old_file().path())
-            .and_then(|p| p.to_str())
-            .unwrap_or("");
-        if p == path {
-            patch_idx = Some(i);
-            break;
+    for (index, line) in patch.into_iter().enumerate() {
+        if line.origin == '@' {
+            (old_ln, new_ln) = parse_hunk_header(&line.content);
+            lines.push(DiffLine {
+                kind: DiffLineKind::Hunk,
+                text: line.content,
+                old_ln: None,
+                new_ln: None,
+                line_number: index + 1,
+            });
+            continue;
         }
-    }
 
-    let mut lines = Vec::new();
-    if let Some(idx) = patch_idx {
-        let patch = git2::Patch::from_diff(&diff, idx)?;
-        if let Some(patch) = patch {
-            let mut n = 0;
-            for h in 0..patch.num_hunks() {
-                let (hunk, hunk_lines) = patch.hunk(h)?;
-                let header = String::from_utf8_lossy(hunk.header());
-                let (mut old_ln, mut new_ln) = parse_hunk_header(&header);
-                n += 1;
-                lines.push(DiffLine {
-                    kind: DiffLineKind::Hunk,
-                    text: header.to_string(),
-                    old_ln: None,
-                    new_ln: None,
-                    line_number: n,
-                });
-                for l in 0..hunk_lines {
-                    n += 1;
-                    let line = patch.line_in_hunk(h, l)?;
-                    let origin = line.origin();
-                    let (kind, old, new) = match origin {
-                        '+' => {
-                            let curr = new_ln;
-                            new_ln += 1;
-                            (DiffLineKind::Add, None, Some(curr))
-                        }
-                        '-' => {
-                            let curr = old_ln;
-                            old_ln += 1;
-                            (DiffLineKind::Del, Some(curr), None)
-                        }
-                        ' ' => {
-                            let o = old_ln;
-                            let n = new_ln;
-                            old_ln += 1;
-                            new_ln += 1;
-                            (DiffLineKind::Context, Some(o), Some(n))
-                        }
-                        _ => (DiffLineKind::Context, None, None),
-                    };
-                    lines.push(DiffLine {
-                        kind,
-                        text: String::from_utf8_lossy(line.content()).to_string(),
-                        old_ln: old,
-                        new_ln: new,
-                        line_number: n,
-                    });
-                }
+        let (kind, old, new) = match line.origin {
+            '+' => {
+                let current = new_ln;
+                new_ln += 1;
+                (DiffLineKind::Add, None, Some(current))
             }
-        }
+            '-' => {
+                let current = old_ln;
+                old_ln += 1;
+                (DiffLineKind::Del, Some(current), None)
+            }
+            ' ' => {
+                let old = old_ln;
+                let new = new_ln;
+                old_ln += 1;
+                new_ln += 1;
+                (DiffLineKind::Context, Some(old), Some(new))
+            }
+            _ => (DiffLineKind::Context, None, None),
+        };
+        lines.push(DiffLine {
+            kind,
+            text: line.content,
+            old_ln: old,
+            new_ln: new,
+            line_number: index + 1,
+        });
     }
 
     Ok(lines)

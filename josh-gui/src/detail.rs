@@ -291,41 +291,27 @@ pub fn DetailView(sha: String, scope: josh_changes::ChangesRef, mut page: Signal
 pub fn load_detail(sha: &str, scope: &josh_changes::ChangesRef) -> anyhow::Result<DetailData> {
     let transaction = crate::common::open_transaction()?;
     let oid = gix_hash::ObjectId::from_str(sha)?;
-    let repo = transaction.git2_repo();
-    let commit = repo.find_commit(josh_core::objects::git2_oid(&oid))?;
-
-    let msg = commit.message().unwrap_or("");
+    let commit = josh_core::objects::CommitData::read(transaction.odb(), oid)?;
+    let parsed = commit.parsed()?;
+    let msg = std::str::from_utf8(commit.message_raw()?.as_ref()).unwrap_or("");
     let subject = msg.lines().next().unwrap_or("").to_string();
     let message = msg.to_string();
-    let author = commit.author().email().unwrap_or("").to_string();
-    let date = chrono::DateTime::from_timestamp(commit.time().seconds(), 0)
+    let author = std::str::from_utf8(parsed.author()?.email.as_ref())
+        .unwrap_or("")
+        .to_string();
+    let date = chrono::DateTime::from_timestamp(parsed.time()?.seconds, 0)
         .map(|dt| dt.format("%Y-%m-%d %H:%M").to_string())
         .unwrap_or_default();
     let (change_id, series) = josh_changes::parse_change_meta(msg);
 
-    let parent_tree = commit.parent(0).ok().and_then(|p| p.tree().ok());
-    let diff = repo.diff_tree_to_tree(parent_tree.as_ref(), Some(&commit.tree()?), None)?;
-
-    let mut files: Vec<FileStat> = Vec::new();
-    for i in 0..diff.deltas().len() {
-        let delta = diff.deltas().nth(i).unwrap();
-        let path = delta
-            .new_file()
-            .path()
-            .or_else(|| delta.old_file().path())
-            .and_then(|p| p.to_str())
-            .unwrap_or("");
-        let patch = git2::Patch::from_diff(&diff, i)?;
-        let (_, adds, dels) = patch
-            .as_ref()
-            .map(|p| p.line_stats().unwrap_or((0, 0, 0)))
-            .unwrap_or((0, 0, 0));
-        files.push(FileStat {
-            path: path.to_string(),
-            adds,
-            dels,
-        });
-    }
+    let files = josh_core::git::file_stats(&transaction, oid)?
+        .into_iter()
+        .map(|stat| FileStat {
+            path: stat.path,
+            adds: stat.adds,
+            dels: stat.dels,
+        })
+        .collect();
 
     let mut change = josh_changes::Change::new(&transaction, oid)?;
 
@@ -352,10 +338,21 @@ pub fn load_detail(sha: &str, scope: &josh_changes::ChangesRef) -> anyhow::Resul
             }
         }
         for oid in change.contributing(&transaction).unwrap_or_default() {
-            if let Ok(c) = repo.find_commit(josh_core::objects::git2_oid(&oid)) {
-                let msg = c.message().unwrap_or("");
+            if let Ok(commit) = josh_core::objects::CommitData::read(transaction.odb(), oid)
+                && let Ok(parsed) = commit.parsed()
+            {
+                let msg = commit
+                    .message_raw()
+                    .ok()
+                    .and_then(|msg| std::str::from_utf8(msg.as_ref()).ok())
+                    .unwrap_or("");
                 let c_subject = msg.lines().next().unwrap_or("").to_string();
-                let c_author = c.author().email().unwrap_or("").to_string();
+                let c_author = parsed
+                    .author()
+                    .ok()
+                    .and_then(|signature| std::str::from_utf8(signature.email.as_ref()).ok())
+                    .unwrap_or("")
+                    .to_string();
                 let (_, c_series) = josh_changes::parse_change_meta(msg);
                 stack.push(StackCommit {
                     sha: oid.to_string(),
