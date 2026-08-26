@@ -12,7 +12,6 @@ RUN apk add --no-cache \
     zlib \
     openssl \
     libexpat \
-    libgit2 \
     libgcc \
     libcurl \
     ca-certificates \

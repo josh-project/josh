@@ -29,7 +29,6 @@ RUN apk add --no-cache \
     py3-pip \
     tree \
     autoconf \
-    libgit2-dev \
     psmisc \
     gcompat \
     libgcc
