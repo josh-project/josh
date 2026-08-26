@@ -4387,7 +4387,6 @@ name = "josh-gix-ext"
 version = "26.7.28"
 dependencies = [
  "anyhow",
- "git2",
  "gix-actor",
  "gix-command",
  "gix-diff",

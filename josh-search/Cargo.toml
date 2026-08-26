@@ -20,7 +20,7 @@ gix-object.workspace = true
 
 [dev-dependencies]
 git2.workspace = true
-josh-gix-ext.workspace = true
+josh-gix-ext = { workspace = true, features = ["git2"] }
 gix.workspace = true
 criterion2 = { version = "3.0.4" }
 rand = "0.10.2"

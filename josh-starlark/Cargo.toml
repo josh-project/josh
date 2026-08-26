@@ -23,4 +23,5 @@ gix-object.workspace = true
 
 [dev-dependencies]
 git2.workspace = true
+josh-gix-ext = { workspace = true, features = ["git2"] }
 
