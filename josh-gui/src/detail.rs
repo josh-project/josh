@@ -437,9 +437,9 @@ pub fn bump_changes_ref_oid(
     mut changes_ref_oid: Signal<Option<gix_hash::ObjectId>>,
     scope: &josh_changes::ChangesRef,
 ) {
-    let new_oid = git2::Repository::discover(".")
+    let new_oid = crate::common::open_transaction()
         .ok()
-        .and_then(|r| josh_changes::read_ref_oid(&r, scope));
+        .and_then(|transaction| josh_changes::read_ref_oid(&transaction, scope));
     if new_oid != *changes_ref_oid.peek() {
         changes_ref_oid.set(new_oid);
     }

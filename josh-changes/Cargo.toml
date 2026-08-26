@@ -11,7 +11,7 @@ keywords = ["git", "monorepo", "workflow", "scm"]
 [dependencies]
 anyhow.workspace = true
 chrono.workspace = true
-git2.workspace = true
+
 gix-actor.workspace = true
 gix-hash.workspace = true
 serde.workspace = true
