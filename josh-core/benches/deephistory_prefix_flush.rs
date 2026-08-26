@@ -1,7 +1,7 @@
 use criterion::{BatchSize, BenchmarkId, Criterion, Throughput, criterion_group, criterion_main};
 use josh_core::filter::Filter;
-use josh_test_support::bench::josh_commit_signature;
-use josh_test_support::bench::{EntryKind, build_index, git2_oid, gix_oid, random_string};
+use josh_core::git::josh_actor_signature;
+use josh_test_support::bench::{EntryKind, build_index, random_string};
 use rand::prelude::*;
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
@@ -64,7 +64,7 @@ const CACHE_NAME: &str = if cfg!(debug_assertions) {
     "deephistory_prefix_flush"
 };
 
-/// Fixed commit timestamp fed to `josh_commit_signature()` via `JOSH_COMMIT_TIME` so the built
+/// Fixed commit timestamp fed to `josh_actor_signature()` via `JOSH_COMMIT_TIME` so the built
 /// history is reproducible. Without it the signature uses the wall clock, every run produces
 /// different head oids, and `EXPECTED_HEAD` can never be stable. The value itself is arbitrary.
 const JOSH_BENCH_COMMIT_TIME: &str = "1700000000";
@@ -111,7 +111,7 @@ impl PrefixFlushBench {
                         .in_scope(|| build_case(repo, n_commits))?;
                     heads.push(head);
                 }
-                build_index(repo, &josh_commit_signature()?, &heads)
+                build_index(repo, &josh_actor_signature()?, &heads)
             },
         )?;
 
@@ -121,10 +121,13 @@ impl PrefixFlushBench {
         {
             let repo = &provisioned.repo;
             for &n_commits in HISTORY_SIZES {
-                let head = repo.refname_to_id(&format!("refs/heads/case_{n_commits}"))?;
+                let head = josh_test_support::bench::ref_target(
+                    repo,
+                    &format!("refs/heads/case_{n_commits}"),
+                )?;
                 cases.push(SizeCase {
                     n_commits,
-                    head: gix_oid(head),
+                    head: head,
                 });
             }
         }
@@ -177,36 +180,36 @@ impl PrefixFlushBench {
 /// directories, then generate an `n_commits` history that churns ~`CHURN_FRACTION` of the files per
 /// commit. The tip is tagged with `refs/heads/case_<n_commits>` so the head is recoverable after
 /// the repo round-trips through the cache.
-fn build_case(repo: &git2::Repository, n_commits: usize) -> anyhow::Result<gix_hash::ObjectId> {
+fn build_case(repo: &gix::Repository, n_commits: usize) -> anyhow::Result<gix_hash::ObjectId> {
     use rand::RngExt;
 
-    let gix_repo = gix::open(repo.path())?;
-    let baseline = repo.treebuilder(None)?.write()?;
-    let mut builder = gix_repo.edit_tree(gix_oid(baseline))?;
+    let baseline = josh_test_support::bench::empty_tree(repo)?;
+    let mut builder = repo.edit_tree(baseline)?;
     let mut all_paths = vec![];
     for i in 0..TREE_FILES {
         let path = PathBuf::from(format!("dir_{:02}", i % N_DIRS)).join(format!("file_{i:04}"));
-        let oid = repo.blob(path.to_string_lossy().as_bytes())?;
+        let oid = josh_gix_ext::write_blob(&repo.objects, path.to_string_lossy().as_bytes())?;
         builder.upsert(
             path.to_str().expect("benchmark paths are UTF-8"),
             EntryKind::Blob,
-            gix_oid(oid),
+            oid,
         )?;
         all_paths.push(path);
     }
 
-    let root_tree = repo.find_tree(git2_oid(builder.write()?.detach()))?;
+    let root_tree = builder.write()?.detach();
 
-    let sig = josh_commit_signature()?;
+    let sig = josh_actor_signature()?;
     // No ref update yet -- the tip ref is set once the history is complete.
-    let mut head = repo.commit(None, &sig, &sig, "content", &root_tree, &[])?;
+    let mut head =
+        josh_gix_ext::write_commit(&repo.objects, root_tree, &[], &sig, &sig, "content")?;
 
     // Deterministic history: each commit churns a fresh random ~CHURN_FRACTION of the files.
     let mut rng = StdRng::seed_from_u64(1);
     for i in 0..n_commits {
-        let parent = repo.find_commit(head)?;
-        let tree = parent.tree()?;
-        let mut builder = gix_repo.edit_tree(gix_oid(tree.id()))?;
+        let parent = josh_gix_ext::CommitData::read(&repo.objects, head)?;
+        let tree = parent.tree_id()?;
+        let mut builder = repo.edit_tree(tree)?;
 
         let churned = all_paths
             .iter()
@@ -216,22 +219,22 @@ fn build_case(repo: &git2::Repository, n_commits: usize) -> anyhow::Result<gix_h
 
         for path in &churned {
             let content = random_string(&mut rng, CHURN_CONTENT_LEN);
-            let blob = repo.blob(content.as_bytes())?;
+            let blob = josh_gix_ext::write_blob(&repo.objects, content.as_bytes())?;
             builder.upsert(
                 path.to_str().expect("benchmark paths are UTF-8"),
                 EntryKind::Blob,
-                gix_oid(blob),
+                blob,
             )?;
         }
 
-        let new_tree = repo.find_tree(git2_oid(builder.write()?.detach()))?;
-        head = repo.commit(
-            None,
+        let new_tree = builder.write()?.detach();
+        head = josh_gix_ext::write_commit(
+            &repo.objects,
+            new_tree,
+            &[head],
             &sig,
             &sig,
             &format!("commit {i}"),
-            &new_tree,
-            &[&parent],
         )?;
     }
 
@@ -239,13 +242,13 @@ fn build_case(repo: &git2::Repository, n_commits: usize) -> anyhow::Result<gix_h
     // callback never runs. Also keeps the whole history reachable, so provision_repo's `git prune`
     // retains it.
     repo.reference(
-        &format!("refs/heads/case_{n_commits}"),
+        format!("refs/heads/case_{n_commits}"),
         head,
-        true,
+        gix::refs::transaction::PreviousValue::Any,
         "bench case tip",
     )?;
 
-    Ok(gix_oid(head))
+    Ok(head)
 }
 
 fn deephistory_prefix_flush(c: &mut Criterion) {

@@ -5,33 +5,9 @@ use anyhow::Result;
 pub use gix::objs::tree::EntryKind;
 use rand::prelude::*;
 
-/// Convert the SHA-1 identifier used by the remaining benchmark APIs to gitoxide.
-pub fn gix_oid(oid: git2::Oid) -> gix::ObjectId {
-    gix::ObjectId::from_bytes_or_panic(oid.as_bytes())
-}
-
-/// Convert a gitoxide SHA-1 identifier for the remaining benchmark APIs.
-pub fn git2_oid(oid: impl AsRef<gix::hash::oid>) -> git2::Oid {
-    git2::Oid::from_bytes(oid.as_ref().as_bytes()).expect("gitoxide repository uses SHA-1")
-}
-/// Open a benchmark's libgit2 reference-model view without repository discovery.
-pub fn open_git2_repo(path: impl AsRef<std::path::Path>) -> Result<git2::Repository> {
-    Ok(git2::Repository::open_ext(
-        path,
-        git2::RepositoryOpenFlags::NO_SEARCH,
-        &[] as &[&std::ffi::OsStr],
-    )?)
-}
-
-/// Josh's fixed libgit2 identity for deterministic benchmark fixtures.
-pub fn josh_commit_signature<'a>() -> Result<git2::Signature<'a>> {
-    const NAME: &str = "JOSH";
-    const EMAIL: &str = "josh@josh-project.dev";
-
-    Ok(match std::env::var("JOSH_COMMIT_TIME") {
-        Ok(time) => git2::Signature::new(NAME, EMAIL, &git2::Time::new(time.parse()?, 0))?,
-        Err(_) => git2::Signature::now(NAME, EMAIL)?,
-    })
+/// Open a benchmark's gitoxide view from an explicit repository path.
+pub fn open_repo(path: impl AsRef<std::path::Path>) -> Result<gix::Repository> {
+    Ok(gix::open(path.as_ref())?)
 }
 
 /// Deterministic lowercase alphabetic string, used as churned blob content.
@@ -44,65 +20,96 @@ pub fn random_string(rng: &mut StdRng, len: usize) -> String {
         })
         .collect()
 }
+/// Write the canonical empty tree fixture.
+pub fn empty_tree(repo: &gix::Repository) -> Result<gix::ObjectId> {
+    Ok(repo
+        .write_object(gix::objs::Tree {
+            entries: Vec::new(),
+        })?
+        .detach())
+}
+/// Resolve a benchmark fixture ref to its direct object target.
+pub fn ref_target(repo: &gix::Repository, name: &str) -> Result<gix::ObjectId> {
+    Ok(repo.find_reference(name)?.into_fully_peeled_id()?.detach())
+}
+
+/// Read a commit's root tree identifier.
+pub fn commit_tree(repo: &gix::Repository, commit: gix::ObjectId) -> Result<gix::ObjectId> {
+    josh_gix_ext::CommitData::read(&repo.objects, commit)?.tree_id()
+}
+
+/// Resolve `path` from a commit's root tree.
+pub fn commit_path(
+    repo: &gix::Repository,
+    commit: gix::ObjectId,
+    path: &std::path::Path,
+) -> Result<Option<gix::ObjectId>> {
+    let tree = commit_tree(repo, commit)?;
+    Ok(josh_gix_ext::path_entry(&repo.objects, tree, path)?.map(|entry| entry.oid))
+}
+
+/// Count commits reachable from `head`.
+pub fn count_history(repo: &gix::Repository, head: gix::ObjectId) -> Result<usize> {
+    let mut walk = josh_gix_ext::RevWalk::new(&repo.objects);
+    walk.push(head)?;
+    Ok(walk.into_topo_vec(|_| false)?.len())
+}
 
 /// Aggregate every case tip under one index commit. Its oid changes whenever any case head
 /// changes, making it a faithful content-addressed cache stamp for the entire repo, and it keeps
 /// all cases reachable so provision_repo's `git prune` retains the full history. It is never
 /// filtered.
 pub fn build_index(
-    repo: &git2::Repository,
-    sig: &git2::Signature,
+    repo: &gix::Repository,
+    sig: &gix::actor::Signature,
     heads: &[gix::ObjectId],
 ) -> Result<gix::ObjectId> {
-    let empty_tree = repo.find_tree(repo.treebuilder(None)?.write()?)?;
-    let parents = heads
-        .iter()
-        .map(|oid| repo.find_commit(git2_oid(*oid)))
-        .collect::<Result<Vec<_>, _>>()?;
-    let parent_refs = parents.iter().collect::<Vec<_>>();
-    let index = repo.commit(
-        Some("refs/heads/bench-index"),
-        sig,
-        sig,
+    let empty_tree = empty_tree(repo)?;
+    let index =
+        josh_gix_ext::write_commit(&repo.objects, empty_tree, heads, sig, sig, "bench index")?;
+    repo.reference(
+        "refs/heads/bench-index",
+        index,
+        gix::refs::transaction::PreviousValue::Any,
         "bench index",
-        &empty_tree,
-        &parent_refs,
     )?;
-    Ok(gix_oid(index))
+    Ok(index)
 }
 
-/// Rebuild, with plain git2 tree walking (no josh code), the tree a pattern filter must produce:
-/// keep exactly the blobs whose full path satisfies `keep`, at their ORIGINAL paths (a pattern
-/// filter preserves paths; it does not lift subtrees to the root). Returns the tree oid and the
-/// number of kept blobs. Whether a string predicate is an exact stand-in for glob matching is the
-/// caller's concern (dot-leading path components never match `*`/`**` under
-/// `require_literal_leading_dot`; a glob-based predicate is exact regardless).
+/// Rebuild, with a plain gitoxide tree walk (no josh filtering code), the tree a pattern filter
+/// must produce: keep exactly the blobs whose full path satisfies `keep`, at their original paths.
+/// Returns the tree oid and the number of kept blobs. Whether a string predicate is an exact
+/// stand-in for glob matching is the caller's concern.
 pub fn expected_tree(
-    repo: &git2::Repository,
+    repo: &gix::Repository,
     head: gix::ObjectId,
     keep: &dyn Fn(&str) -> bool,
 ) -> Result<(gix::ObjectId, usize)> {
-    let tree = repo.find_commit(git2_oid(head))?.tree()?;
-    let mut kept: Vec<(String, git2::Oid, i32)> = vec![];
-    tree.walk(git2::TreeWalkMode::PreOrder, |root, entry| {
-        if entry.kind() == Some(git2::ObjectType::Blob) {
-            let path = format!("{}{}", root, entry.name().unwrap_or_default());
+    let tree = josh_gix_ext::CommitData::read(&repo.objects, head)?.tree_id()?;
+    let mut kept = Vec::new();
+    josh_gix_ext::walk_tree_preorder(&repo.objects, tree, &mut |parent, entry| {
+        let mode = entry.mode.kind();
+        if matches!(
+            mode,
+            EntryKind::Blob | EntryKind::BlobExecutable | EntryKind::Link
+        ) {
+            let name = std::str::from_utf8(entry.filename)?;
+            let path = if parent.is_empty() {
+                name.to_owned()
+            } else {
+                format!("{parent}/{name}")
+            };
             if keep(&path) {
-                kept.push((path, entry.id(), entry.filemode()));
+                kept.push((path, entry.oid.to_owned(), mode));
             }
         }
-        git2::TreeWalkResult::Ok
+        Ok(())
     })?;
-    let baseline = repo.treebuilder(None)?.write()?;
-    let gix_repo = gix::open(repo.path())?;
-    let mut builder = gix_repo.edit_tree(gix_oid(baseline))?;
-    for (path, oid, filemode) in &kept {
-        let mode = match *filemode {
-            0o100755 => EntryKind::BlobExecutable,
-            0o120000 => EntryKind::Link,
-            _ => EntryKind::Blob,
-        };
-        builder.upsert(path.as_str(), mode, gix_oid(*oid))?;
+
+    let empty_tree = empty_tree(repo)?;
+    let mut builder = repo.edit_tree(empty_tree)?;
+    for (path, oid, mode) in &kept {
+        builder.upsert(path.as_str(), *mode, *oid)?;
     }
     Ok((builder.write()?.detach(), kept.len()))
 }

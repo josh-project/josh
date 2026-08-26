@@ -10,16 +10,16 @@ use anyhow::{anyhow, bail, Context, Result};
 
 /// A benchmark repo provisioned into a throwaway tempdir.
 ///
-/// The canonical form is cached under the user's cache directory; this handle
-/// owns a fresh copy in a tempdir together with the [`git2::Repository`] opened
-/// from it. Drop the value to delete the tempdir.
+/// The canonical form is cached under the user's cache directory; this handle owns a fresh copy
+/// in a tempdir together with the [`gix::Repository`] opened from it. Drop the value to delete the
+/// tempdir.
 pub struct ProvisionedRepo {
     /// Keeps the on-disk tempdir alive for as long as the repo handle is used.
     _tmp: tempfile::TempDir,
     /// A bare repo opened from the tempdir copy.
-    pub repo: git2::Repository,
-    /// The head oid the callback produced (always equal to the `expected` that
-    /// was passed to [`provision_repo`]).
+    pub repo: gix::Repository,
+    /// The head oid the callback produced (always equal to the `expected` that was passed to
+    /// [`provision_repo`]).
     pub head: gix::ObjectId,
 }
 
@@ -33,24 +33,21 @@ impl ProvisionedRepo {
 /// Provision a benchmark repo for `testcase`, caching the canonical build under
 /// `<cache_dir>/josh/benches/<testcase>`.
 ///
-/// If the cache already contains the `expected` object, the cached bare repo is
-/// copied into a fresh tempdir and returned. Otherwise a new bare repo is built
-/// by invoking `callback` (erasing any stale cache), repacked into a single
-/// packfile, verified to produce `expected`, cached, and copied into a tempdir.
+/// If the cache already contains the `expected` object, the cached bare repo is copied into a
+/// fresh tempdir and returned. Otherwise a new bare repo is built by invoking `callback` (erasing
+/// any stale cache), repacked into a single packfile, verified to produce `expected`, cached, and
+/// copied into a tempdir.
 ///
-/// `expected` is a content-addressed version stamp: changing the build (file
-/// counts, history length, etc.) changes the head oid the callback returns,
-/// which no longer matches `expected`, so the strict check fires and the cache
-/// is treated as invalid. On the first run after such a change, the error
-/// message reports the oid the callback produced so it can be pasted in as the
-/// new `expected`.
+/// `expected` is a content-addressed version stamp: changing the build (file counts, history
+/// length, etc.) changes the head oid the callback returns, which no longer matches `expected`, so
+/// the strict check fires and reports the new oid to paste in.
 pub fn provision_repo<C>(
     testcase: &str,
     expected: &gix::ObjectId,
     callback: C,
 ) -> Result<ProvisionedRepo>
 where
-    C: FnMut(&git2::Repository) -> Result<gix::ObjectId>,
+    C: FnMut(&gix::Repository) -> Result<gix::ObjectId>,
 {
     let expected = *expected;
     let cache_root = cache_root_for(testcase)?;
@@ -72,18 +69,17 @@ fn cache_root_for(testcase: &str) -> Result<PathBuf> {
 
 /// A cached repo is reusable if it opens as a bare repo and contains `expected`.
 fn cache_hit(cache_root: &Path, expected: gix::ObjectId) -> bool {
-    let Ok(repo) = git2::Repository::open_bare(cache_root) else {
+    let Ok(repo) = gix::open(cache_root) else {
         return false;
     };
-    repo.odb()
-        .map(|odb| odb.exists(crate::bench::git2_oid(expected)))
-        .unwrap_or(false)
+    let found = repo.find_object(expected).is_ok();
+    found
 }
 
 /// Build `testcase` from scratch into `cache_root`, erasing any prior cache.
 fn rebuild<C>(cache_root: &Path, expected: gix::ObjectId, callback: &mut C) -> Result<()>
 where
-    C: FnMut(&git2::Repository) -> Result<gix::ObjectId>,
+    C: FnMut(&gix::Repository) -> Result<gix::ObjectId>,
 {
     if cache_root.exists() {
         std::fs::remove_dir_all(cache_root)
@@ -94,14 +90,13 @@ where
             .with_context(|| format!("creating cache parent {}", parent.display()))?;
     }
 
-    let repo = git2::Repository::init_bare(cache_root)
+    let repo = gix::init_bare(cache_root)
         .with_context(|| format!("initializing bare repo at {}", cache_root.display()))?;
 
     let produced = callback(&repo)?;
 
-    // Pack everything into a single packfile so the tempdir copy is cheap, then
-    // drop unreachable loose objects the pack did not absorb (e.g. the empty-tree
-    // baseline a treebuilder may leave behind).
+    // Pack everything into a single packfile so the tempdir copy is cheap, then drop unreachable
+    // loose objects the pack did not absorb (for example, temporary tree-editor roots).
     let status = Command::new("git")
         .arg("-C")
         .arg(cache_root)
@@ -136,7 +131,7 @@ fn copy_to_tempdir(cache_root: &Path, expected: gix::ObjectId) -> Result<Provisi
     let tmp = tempfile::tempdir().context("creating tempdir for repo copy")?;
     copy_dir_recursive(cache_root, tmp.path())
         .with_context(|| format!("copying {} to tempdir", cache_root.display()))?;
-    let repo = git2::Repository::open_bare(tmp.path()).context("opening copied bare repo")?;
+    let repo = gix::open(tmp.path()).context("opening copied bare repo")?;
     Ok(ProvisionedRepo {
         _tmp: tmp,
         repo,
