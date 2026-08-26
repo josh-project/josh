@@ -38,21 +38,14 @@ pub fn handle_track(
     mode: &str,
     transaction: &josh_core::cache::Transaction,
 ) -> anyhow::Result<String> {
-    let repo = transaction.git2_repo();
-
     let refs = crate::remote::list_refs(url)?;
 
     transaction.spawn_git(&["fetch", url, "HEAD"], &[])?;
 
-    // PORT: FETCH_HEAD pseudo-ref read stays on the git2 handle until flag day
-    // (gix multi-entry FETCH_HEAD semantics still unresolved).
-    let fetch_head_ref = repo
-        .find_reference("FETCH_HEAD")
-        .context("Failed to find FETCH_HEAD")?;
-    let fetched_commit = fetch_head_ref
-        .peel_to_commit()
-        .context("Failed to peel FETCH_HEAD to commit")?
-        .id();
+    // This fetch requests exactly one remote revision, so FETCH_HEAD has one merge candidate.
+    let fetched_commit = transaction
+        .rev_parse("FETCH_HEAD^{commit}")?
+        .context("Failed to peel FETCH_HEAD to commit")?;
 
     let head = transaction.head().context("Failed to get HEAD")?;
 
@@ -68,7 +61,7 @@ pub fn handle_track(
         url,
         None,
         "HEAD",
-        josh_core::objects::gix_oid(fetched_commit),
+        fetched_commit,
         josh_core::objects::CommitData::read(transaction.odb(), head.commit)?.tree_id()?,
         link_mode,
     )?

@@ -1,8 +1,6 @@
 use anyhow::Context;
 use clap::Parser;
 
-use josh_core::git::normalize_repo_path;
-
 #[derive(Parser)]
 #[command(about = "Josh Commit Queue")]
 struct Cli {
@@ -68,14 +66,14 @@ fn open_repo(
     josh_core::cache::Transaction,
 )> {
     let repo = match data_dir {
-        Some(dir) => git2::Repository::open(dir).context("Failed to open git repository")?,
-        None => git2::Repository::open_from_env().context("Not in a git repository")?,
+        Some(dir) => gix::open(dir).context("Failed to open git repository")?,
+        None => gix::discover_with_environment_overrides(".").context("Not in a git repository")?,
     };
-    let repo_path = normalize_repo_path(repo.path());
-
-    let cache = std::sync::Arc::new(josh_core::cache::CacheStack::new().with_backend(
-        josh_core::cache::SledCacheBackend::new(repo_path.join(".git")),
-    ));
+    let repo_path = repo.workdir().unwrap_or_else(|| repo.git_dir()).to_owned();
+    let cache = std::sync::Arc::new(
+        josh_core::cache::CacheStack::new()
+            .with_backend(josh_core::cache::SledCacheBackend::new(repo.common_dir())),
+    );
 
     let transaction = josh_core::cache::TransactionContext::new(&repo_path, cache.clone())
         .open()
