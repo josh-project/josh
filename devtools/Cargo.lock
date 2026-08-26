@@ -1388,7 +1388,7 @@ dependencies = [
 name = "git-tree-trace"
 version = "0.1.0"
 dependencies = [
- "git2",
+ "gix",
  "reqwest",
  "serde",
 ]
@@ -1771,7 +1771,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1a791e6620676a875f362f3156ed213e73ca099a09bf992c18812abe65cc37b1"
 dependencies = [
  "bstr",
- "hashbrown 0.15.5",
+ "hashbrown 0.17.1",
 ]
 
 [[package]]
@@ -1810,6 +1810,32 @@ checksum = "d4c69157820343bf1c6e4b88b9808e920900de02e18aaf5862b30ada43814848"
 dependencies = [
  "gix-tempfile",
  "gix-utils",
+ "thiserror 2.0.19",
+]
+
+[[package]]
+name = "gix-merge"
+version = "0.19.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c7b2e202fa474a3dd0bbd551be35adf199be0bf5c925fd7707fff2fdb520f651"
+dependencies = [
+ "bstr",
+ "gix-command",
+ "gix-diff",
+ "gix-filter",
+ "gix-fs",
+ "gix-hash",
+ "gix-imara-diff",
+ "gix-index",
+ "gix-object",
+ "gix-path",
+ "gix-quote",
+ "gix-revision",
+ "gix-revwalk",
+ "gix-tempfile",
+ "gix-trace",
+ "gix-worktree",
+ "nonempty",
  "thiserror 2.0.19",
 ]
 
@@ -2174,6 +2200,7 @@ checksum = "31eb8e675122e83585e461fe28f68ff8c5ed55b49017b697e7e76423ff973424"
 dependencies = [
  "bstr",
  "gix-attributes",
+ "gix-features",
  "gix-fs",
  "gix-glob",
  "gix-hash",
@@ -2869,7 +2896,7 @@ dependencies = [
  "axum",
  "axum-cgi",
  "futures",
- "git2",
+ "gix",
  "headers",
  "tempfile",
  "tokio",
@@ -2878,12 +2905,31 @@ dependencies = [
 ]
 
 [[package]]
+name = "josh-gix-ext"
+version = "26.7.28"
+dependencies = [
+ "anyhow",
+ "gix-actor",
+ "gix-command",
+ "gix-diff",
+ "gix-filter",
+ "gix-glob",
+ "gix-hash",
+ "gix-merge",
+ "gix-object",
+ "gix-revision",
+ "gix-revwalk",
+ "gix-worktree",
+]
+
+[[package]]
 name = "josh-test-support"
 version = "0.1.0"
 dependencies = [
  "anyhow",
  "dirs",
- "git2",
+ "gix",
+ "josh-gix-ext",
  "rand",
  "tempfile",
  "tracing",
