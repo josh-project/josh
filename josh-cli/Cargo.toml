@@ -18,7 +18,7 @@ serde_json.workspace = true
 defer.workspace = true
 clap.workspace = true
 juniper.workspace = true
-git2.workspace = true
+gix.workspace = true
 gix-hash.workspace = true
 tokio = { workspace = true, features = ["rt-multi-thread", "macros"] }
 serde.workspace = true
@@ -44,6 +44,7 @@ josh-templates.workspace = true
 
 [dev-dependencies]
 gix-actor.workspace = true
+git2.workspace = true
 tempfile.workspace = true
 
 [features]

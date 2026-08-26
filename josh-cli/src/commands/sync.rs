@@ -30,8 +30,6 @@ pub fn handle_sync(
     args: &SyncArgs,
     transaction: &josh_core::cache::Transaction,
 ) -> anyhow::Result<()> {
-    let repo = transaction.git2_repo();
-
     let head = transaction.head()?;
     let branch = head.short_branch().map(|s| s.to_string());
 
@@ -55,9 +53,7 @@ pub fn handle_sync(
     }
 
     match &resolved {
-        josh_changes::ChangesRef::Remote { remote, .. } => {
-            sync_remote(args, transaction, repo, remote)
-        }
+        josh_changes::ChangesRef::Remote { remote, .. } => sync_remote(args, transaction, remote),
         josh_changes::ChangesRef::Local { branch } => {
             sync_local(args, transaction, branch, head.commit, base_oid)
         }
@@ -113,9 +109,8 @@ fn sync_local(
 fn sync_remote(
     args: &SyncArgs,
     transaction: &josh_core::cache::Transaction,
-    repo: &git2::Repository,
     remote_name: &str,
 ) -> anyhow::Result<()> {
     let policy = github::cache::CachePolicy::new(args.no_cache, args.cache_ttl);
-    github::changes::sync(transaction, repo, remote_name, &policy, args.push)
+    github::changes::sync(transaction, remote_name, &policy, args.push)
 }

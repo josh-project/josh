@@ -139,7 +139,7 @@ fn make_app() -> clap::Command {
 }
 
 struct GitNotesFilterHook {
-    repo: std::sync::Mutex<git2::Repository>,
+    notes: josh_core::git::NoteReader,
 }
 
 impl josh_core::cache::FilterHook for GitNotesFilterHook {
@@ -153,15 +153,8 @@ impl josh_core::cache::FilterHook for GitNotesFilterHook {
         } else {
             format!("refs/notes/{}", arg)
         };
-        let repo = self.repo.lock().unwrap();
-        let note = repo
-            .find_note(
-                Some(notes_ref.as_str()),
-                josh_core::objects::git2_oid(&commit_oid),
-            )
-            .context("missing git note for commit")?;
-        let msg = note.message().context("empty git note")?;
-        josh_core::filter::parse(msg)
+        let msg = self.notes.message(&notes_ref, commit_oid)?;
+        josh_core::filter::parse(&msg)
     }
 }
 
@@ -179,8 +172,7 @@ fn run_filter(args: Vec<String>) -> anyhow::Result<i32> {
         .and_then(|f| read_to_string(f).ok())
         .unwrap_or(specstr.to_string());
 
-    let repo = git2::Repository::open_from_env()?;
-    let repo_path = repo.path().to_path_buf();
+    let repo_path = josh_core::git::discover_repository_paths()?.git_dir;
 
     let cache = std::sync::Arc::new({
         let mut cache = josh_core::cache::CacheStack::new();
@@ -200,13 +192,8 @@ fn run_filter(args: Vec<String>) -> anyhow::Result<i32> {
         .with_mem_odb_limit(josh_cli::MAX_MEM_PACK_SIZE)
         .open()?;
 
-    let repo_for_hook = git2::Repository::open_ext(
-        transaction.path(),
-        git2::RepositoryOpenFlags::NO_SEARCH,
-        &[] as &[&std::ffi::OsStr],
-    )?;
     let hook = GitNotesFilterHook {
-        repo: std::sync::Mutex::new(repo_for_hook),
+        notes: josh_core::git::NoteReader::open(transaction.path())?,
     };
     transaction = transaction.with_filter_hook(std::sync::Arc::new(hook));
 

@@ -37,10 +37,21 @@ impl RemoteConfig {
 /// invoked from a worktree, where the gitdir is `<main>/.git/worktrees/<name>`
 /// but the shared config still lives under `<main>/.git`.
 fn remotes_dir(repo_path: &std::path::Path) -> anyhow::Result<std::path::PathBuf> {
-    let repo = git2::Repository::open(repo_path)
+    let repo = gix::open(repo_path)
         .with_context(|| format!("Failed to open repository at {}", repo_path.display()))?;
 
-    Ok(repo.commondir().join("josh").join("remotes"))
+    Ok(repo.common_dir().join("josh").join("remotes"))
+}
+
+fn config_string(repo: &gix::Repository, key: &str) -> anyhow::Result<Option<String>> {
+    repo.config_snapshot()
+        .string(key)
+        .map(|value| {
+            std::str::from_utf8(value.as_ref())
+                .map(ToOwned::to_owned)
+                .map_err(Into::into)
+        })
+        .transpose()
 }
 
 pub fn migrate_legacy_config(
@@ -48,15 +59,14 @@ pub fn migrate_legacy_config(
     remote_name: &str,
 ) -> anyhow::Result<RemoteConfig> {
     // File doesn't exist, try legacy git config
-    let repo = git2::Repository::open(repo_path)
-        .context("Failed to open repository for legacy config migration")?;
-
-    let config = repo.config().context("Failed to get git config")?;
+    let repo =
+        gix::open(repo_path).context("Failed to open repository for legacy config migration")?;
 
     // Try to read from legacy josh-remote config
-    let url = match config.get_string(&format!("josh-remote.{}.url", remote_name)) {
-        Ok(url) => url,
-        Err(_) => {
+    let url_key = format!("josh-remote.{}.url", remote_name);
+    let url = match config_string(&repo, &url_key)? {
+        Some(url) => url,
+        None => {
             let remote_file = remotes_dir(repo_path)?.join(format!("{}.josh", remote_name));
 
             return Err(anyhow!(
@@ -68,12 +78,10 @@ pub fn migrate_legacy_config(
         }
     };
 
-    let filter_str = config
-        .get_string(&format!("josh-remote.{}.filter", remote_name))
+    let filter_str = config_string(&repo, &format!("josh-remote.{}.filter", remote_name))?
         .with_context(|| format!("Legacy config missing filter for remote '{}'", remote_name))?;
 
-    let fetch = config
-        .get_string(&format!("josh-remote.{}.fetch", remote_name))
+    let fetch = config_string(&repo, &format!("josh-remote.{}.fetch", remote_name))?
         .with_context(|| format!("Legacy config missing fetch for remote '{}'", remote_name))?;
 
     // Migrate to new format by writing the file

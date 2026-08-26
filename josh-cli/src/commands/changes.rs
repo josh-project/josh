@@ -177,12 +177,7 @@ pub fn handle_show(
     println!("Subject:   {}", subject);
 
     println!();
-    // Line statistics still use libgit2's patch machinery.
-    let repo = transaction.git2_repo();
-    let files = file_stats(
-        repo,
-        &repo.find_commit(josh_core::objects::git2_oid(&change.commit()))?,
-    )?;
+    let files = josh_core::git::file_stats(transaction, change.commit())?;
     let total_adds: usize = files.iter().map(|f| f.adds).sum();
     let total_dels: usize = files.iter().map(|f| f.dels).sum();
     println!(
@@ -288,35 +283,6 @@ fn resolve_change_by_id(
                 scope_label(scope)
             )
         })
-}
-
-struct FileStat {
-    path: String,
-    adds: usize,
-    dels: usize,
-}
-
-fn file_stats(repo: &git2::Repository, commit: &git2::Commit) -> anyhow::Result<Vec<FileStat>> {
-    let parent_tree = commit.parent(0).ok().and_then(|p| p.tree().ok());
-    let diff = repo.diff_tree_to_tree(parent_tree.as_ref(), Some(&commit.tree()?), None)?;
-    let mut files = Vec::with_capacity(diff.deltas().len());
-    for i in 0..diff.deltas().len() {
-        let delta = diff.deltas().nth(i).unwrap();
-        let path = delta
-            .new_file()
-            .path()
-            .or_else(|| delta.old_file().path())
-            .and_then(|p| p.to_str())
-            .unwrap_or("")
-            .to_string();
-        let patch = git2::Patch::from_diff(&diff, i)?;
-        let (_, adds, dels) = patch
-            .as_ref()
-            .map(|p| p.line_stats().unwrap_or((0, 0, 0)))
-            .unwrap_or((0, 0, 0));
-        files.push(FileStat { path, adds, dels });
-    }
-    Ok(files)
 }
 
 fn print_comment_threads(comments: &[josh_changes::Comment]) {

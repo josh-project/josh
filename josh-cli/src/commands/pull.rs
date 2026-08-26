@@ -321,8 +321,6 @@ pub fn integrate(
     transaction: &josh_core::cache::Transaction,
     remote: &str,
 ) -> anyhow::Result<IntegrateReport> {
-    let repo = transaction.git2_repo();
-
     let head = transaction.head().context("Failed to resolve HEAD")?;
     let branch_ref = head
         .branch()
@@ -409,12 +407,8 @@ pub fn integrate(
 
     // Update the worktree first (safe: refuses to clobber conflicting local
     // modifications), only then move the branch ref.
-    let new_tip_commit = repo.find_commit(josh_core::objects::git2_oid(&new_tip))?;
-    repo.checkout_tree(
-        new_tip_commit.as_object(),
-        Some(git2::build::CheckoutBuilder::new().safe()),
-    )
-    .context("failed to update working tree; local changes conflict with the pulled state")?;
+    josh_core::git::checkout_commit(transaction, new_tip)
+        .context("failed to update working tree; local changes conflict with the pulled state")?;
     transaction.update_ref(
         &branch_ref,
         josh_core::cache::Expected::At(old_target),
@@ -428,10 +422,7 @@ pub fn integrate(
 /// Stash uncommitted changes to tracked files so the worktree update in
 /// `integrate` cannot conflict with them. Returns true if a stash was created.
 fn autostash_push(transaction: &josh_core::cache::Transaction) -> anyhow::Result<bool> {
-    let repo = transaction.git2_repo();
-    let mut opts = git2::StatusOptions::new();
-    opts.include_untracked(false);
-    if repo.statuses(Some(&mut opts))?.is_empty() {
+    if !josh_core::git::has_tracked_changes(transaction)? {
         return Ok(false);
     }
 

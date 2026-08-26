@@ -161,6 +161,110 @@ pub fn normalize_repo_path(repo_path: &std::path::Path) -> PathBuf {
     }
 }
 
+/// Repository paths discovered with Git's environment overrides.
+pub struct RepositoryPaths {
+    pub workdir_or_gitdir: PathBuf,
+    pub git_dir: PathBuf,
+    pub common_dir: PathBuf,
+}
+
+pub fn discover_repository_paths() -> anyhow::Result<RepositoryPaths> {
+    let repo = git2::Repository::open_from_env()?;
+    Ok(RepositoryPaths {
+        workdir_or_gitdir: repo.workdir().unwrap_or_else(|| repo.path()).to_owned(),
+        git_dir: repo.path().to_owned(),
+        common_dir: repo.commondir().to_owned(),
+    })
+}
+
+/// A per-file line-count summary for a commit diff.
+pub struct FileStat {
+    pub path: String,
+    pub adds: usize,
+    pub dels: usize,
+}
+
+/// Compare `commit_oid` with its first parent and count changed lines per path.
+pub fn file_stats(
+    transaction: &crate::cache::Transaction,
+    commit_oid: gix_hash::ObjectId,
+) -> anyhow::Result<Vec<FileStat>> {
+    let repo = transaction.git2_repo();
+    let commit = repo.find_commit(crate::objects::git2_oid(&commit_oid))?;
+    let parent_tree = commit.parent(0).ok().and_then(|parent| parent.tree().ok());
+    let diff = repo.diff_tree_to_tree(parent_tree.as_ref(), Some(&commit.tree()?), None)?;
+    let mut files = Vec::with_capacity(diff.deltas().len());
+    for (index, delta) in diff.deltas().enumerate() {
+        let path = delta
+            .new_file()
+            .path()
+            .or_else(|| delta.old_file().path())
+            .and_then(|path| path.to_str())
+            .unwrap_or("")
+            .to_string();
+        let patch = git2::Patch::from_diff(&diff, index)?;
+        let (_, adds, dels) = patch
+            .as_ref()
+            .map(|patch| patch.line_stats().unwrap_or((0, 0, 0)))
+            .unwrap_or((0, 0, 0));
+        files.push(FileStat { path, adds, dels });
+    }
+    Ok(files)
+}
+
+/// Safely update the worktree to `commit_oid` without overwriting conflicting changes.
+pub fn checkout_commit(
+    transaction: &crate::cache::Transaction,
+    commit_oid: gix_hash::ObjectId,
+) -> anyhow::Result<()> {
+    let repo = transaction.git2_repo();
+    let commit = repo.find_commit(crate::objects::git2_oid(&commit_oid))?;
+    repo.checkout_tree(
+        commit.as_object(),
+        Some(git2::build::CheckoutBuilder::new().safe()),
+    )?;
+    Ok(())
+}
+
+/// Whether tracked files differ from the index or worktree.
+pub fn has_tracked_changes(transaction: &crate::cache::Transaction) -> anyhow::Result<bool> {
+    let mut options = git2::StatusOptions::new();
+    options.include_untracked(false);
+    Ok(!transaction
+        .git2_repo()
+        .statuses(Some(&mut options))?
+        .is_empty())
+}
+
+/// A reusable reader for Git notes at the remaining libgit2 porcelain boundary.
+pub struct NoteReader {
+    repo: std::sync::Mutex<git2::Repository>,
+}
+
+impl NoteReader {
+    pub fn open(repo_path: impl AsRef<std::path::Path>) -> anyhow::Result<Self> {
+        Ok(Self {
+            repo: std::sync::Mutex::new(git2::Repository::open_ext(
+                repo_path,
+                git2::RepositoryOpenFlags::NO_SEARCH,
+                &[] as &[&std::ffi::OsStr],
+            )?),
+        })
+    }
+
+    pub fn message(
+        &self,
+        notes_ref: &str,
+        commit_oid: gix_hash::ObjectId,
+    ) -> anyhow::Result<String> {
+        let repo = self.repo.lock().unwrap();
+        let note = repo
+            .find_note(Some(notes_ref), crate::objects::git2_oid(&commit_oid))
+            .context("missing git note for commit")?;
+        Ok(note.message().context("empty git note")?.to_owned())
+    }
+}
+
 /// Spawn a git command. By default, when used in TTY environment,
 /// forwards stdout/stderr to user's TTY
 pub struct GitCommand {
