@@ -562,8 +562,14 @@ mod tests {
             std::sync::Arc::new(josh_core::cache::CacheStack::new()),
         );
         let transaction = context.open().unwrap();
-        let signature =
-            git2::Signature::new("Test", "test@example.com", &git2::Time::new(0, 0)).unwrap();
+        let signature = gix_actor::Signature {
+            name: "Test".into(),
+            email: "test@example.com".into(),
+            time: gix_actor::date::Time {
+                seconds: 0,
+                offset: 0,
+            },
+        };
         let commit = |parents: &[gix_hash::ObjectId], change: Option<&str>| {
             let message = change
                 .map(|id| format!("Subject\n\nChange: {id}\n"))

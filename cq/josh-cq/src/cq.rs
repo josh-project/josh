@@ -90,14 +90,8 @@ pub fn handle_track(
 
     let refs_path = std::path::Path::new("remotes").join(id).join("refs.json");
 
-    let final_tree = tree::insert_oid(
-        odb,
-        tree_with_link_oid,
-        &refs_path,
-        refs_blob,
-        git2::FileMode::Blob.into(),
-    )
-    .context("Failed to insert refs.json into tree")?;
+    let final_tree = tree::insert_oid(odb, tree_with_link_oid, &refs_path, refs_blob, 0o100644)
+        .context("Failed to insert refs.json into tree")?;
 
     let final_commit = josh_core::objects::write_commit(
         odb,

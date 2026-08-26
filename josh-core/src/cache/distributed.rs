@@ -146,7 +146,7 @@ impl DistributedCacheBackend {
                     .map_err(|e| anyhow::anyhow!("write cache tree: {e}"))
             })?;
 
-            let signature = crate::git::josh_commit_signature()?;
+            let signature = crate::git::josh_actor_signature()?;
             let commit = objects::write_commit(
                 odb,
                 updated,

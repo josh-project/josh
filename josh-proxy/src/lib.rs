@@ -326,7 +326,7 @@ pub fn merge_meta(
         tree = josh_core::filter::tree::insert_oid(odb, tree, path, blob, 0o0100644)?;
     }
 
-    let signature = josh_core::git::josh_commit_signature()?;
+    let signature = josh_core::git::josh_actor_signature()?;
     let oid =
         josh_core::objects::write_commit(odb, tree, &parents, &signature, &signature, "marker")?;
 

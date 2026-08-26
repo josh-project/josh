@@ -63,6 +63,13 @@ pub fn write_outbox_vote(
     )
 }
 
+fn configured_email(transaction: &Transaction) -> anyhow::Result<String> {
+    let signature = transaction.signature()?;
+    Ok(std::str::from_utf8(signature.email.as_ref())
+        .unwrap_or("unknown")
+        .to_owned())
+}
+
 fn write_vote_inner(
     transaction: &Transaction,
     change: &Change,
@@ -83,11 +90,7 @@ fn write_vote_inner(
 
     let user = match author {
         Some(name) => name.to_string(),
-        None => transaction
-            .signature()?
-            .email()
-            .unwrap_or("unknown")
-            .to_string(),
+        None => configured_email(transaction)?,
     };
 
     let path = std::path::Path::new(path_prefix)
@@ -106,11 +109,7 @@ pub fn read_vote(
 ) -> anyhow::Result<Option<VoteData>> {
     let user = match user {
         Some(name) => name.to_string(),
-        None => transaction
-            .signature()?
-            .email()
-            .unwrap_or("unknown")
-            .to_string(),
+        None => configured_email(transaction)?,
     };
 
     let Some(data) =

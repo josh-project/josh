@@ -442,7 +442,7 @@ pub fn process_repo_update(repo_update: RepoUpdate) -> anyhow::Result<String> {
 
         let oid_to_push = if push_options.merge {
             if let Some(base_commit_id) = transaction_mirror.resolve_ref(&original_target_ref)? {
-                let signature = josh_core::git::josh_commit_signature()?;
+                let signature = josh_core::git::josh_actor_signature()?;
                 let odb = transaction.odb();
                 let merged_tree =
                     josh_core::objects::merge_commits(odb, base_commit_id, backward_new_oid, None)?;

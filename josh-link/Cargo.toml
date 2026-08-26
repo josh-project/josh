@@ -9,7 +9,7 @@ repository = "https://github.com/josh-project/josh"
 keywords = ["git", "monorepo", "workflow", "scm"]
 
 [dependencies]
-git2.workspace = true
+gix-actor.workspace = true
 gix-hash.workspace = true
 anyhow.workspace = true
 

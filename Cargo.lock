@@ -3313,6 +3313,7 @@ dependencies = [
  "anyhow",
  "chrono",
  "git2",
+ "gix-actor",
  "gix-hash",
  "josh-core",
  "josh-git-serde",
@@ -3331,6 +3332,7 @@ dependencies = [
  "dirs",
  "env_logger",
  "git2",
+ "gix-actor",
  "gix-hash",
  "glob",
  "josh-changes",
@@ -3661,7 +3663,7 @@ name = "josh-link"
 version = "26.7.28"
 dependencies = [
  "anyhow",
- "git2",
+ "gix-actor",
  "gix-hash",
  "josh-core",
 ]

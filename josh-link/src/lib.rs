@@ -16,7 +16,7 @@ impl PreparedLinkAdd {
         self,
         transaction: &josh_core::cache::Transaction,
         head_commit: gix_hash::ObjectId,
-        signature: &git2::Signature,
+        signature: &gix_actor::Signature,
     ) -> anyhow::Result<gix_hash::ObjectId> {
         josh_core::objects::write_commit(
             transaction.odb(),
@@ -101,17 +101,18 @@ pub fn collect_all_link_refs(
 
 pub fn make_signature(
     transaction: &josh_core::cache::Transaction,
-) -> anyhow::Result<git2::Signature<'static>> {
+) -> anyhow::Result<gix_actor::Signature> {
     if let Ok(time) = std::env::var("JOSH_COMMIT_TIME") {
-        git2::Signature::new(
-            "JOSH",
-            "josh@josh-project.dev",
-            &git2::Time::new(time.parse().context("Failed to parse JOSH_COMMIT_TIME")?, 0),
-        )
-        .context("Failed to create signature")
+        Ok(gix_actor::Signature {
+            name: "JOSH".into(),
+            email: "josh@josh-project.dev".into(),
+            time: gix_actor::date::Time {
+                seconds: time.parse().context("Failed to parse JOSH_COMMIT_TIME")?,
+                offset: 0,
+            },
+        })
     } else {
-        let sig = transaction.signature().context("Failed to get signature")?;
-        Ok(sig.to_owned())
+        transaction.signature().context("Failed to get signature")
     }
 }
 
@@ -149,14 +150,8 @@ pub fn prepare_link_add(
     let link_blob = josh_core::objects::write_blob(odb, link_content.as_bytes())?;
     let link_path = path.join(".link.josh");
 
-    let new_tree = tree::insert_oid(
-        odb,
-        head_tree,
-        &link_path,
-        link_blob,
-        git2::FileMode::Blob.into(),
-    )
-    .context("Failed to insert link file into tree")?;
+    let new_tree = tree::insert_oid(odb, head_tree, &link_path, link_blob, 0o0100644)
+        .context("Failed to insert link file into tree")?;
 
     Ok(PreparedLinkAdd {
         tree_oid: new_tree,
@@ -168,7 +163,7 @@ pub fn update_links(
     transaction: &josh_core::cache::Transaction,
     head_commit: gix_hash::ObjectId,
     links_to_update: Vec<(PathBuf, gix_hash::ObjectId)>,
-    signature: &git2::Signature,
+    signature: &gix_actor::Signature,
 ) -> anyhow::Result<Option<UpdateLinksResult>> {
     let odb = transaction.odb();
     let head_tree_id =
