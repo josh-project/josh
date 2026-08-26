@@ -12,6 +12,7 @@ pub use graph::{is_descendant_of, merge_base, merge_base_octopus};
 pub use merge::{merge_commits, merge_trees};
 pub use revwalk::{RangeWalk, RevWalk};
 
+#[cfg(any(test, feature = "git2"))]
 /// Convert a gitoxide object kind to libgit2.
 pub fn git2_kind(kind: gix_object::Kind) -> git2::ObjectType {
     match kind {
@@ -22,6 +23,7 @@ pub fn git2_kind(kind: gix_object::Kind) -> git2::ObjectType {
     }
 }
 
+#[cfg(any(test, feature = "git2"))]
 /// Convert a libgit2 object kind when it represents an object.
 pub fn gix_kind(kind: git2::ObjectType) -> Option<gix_object::Kind> {
     match kind {
@@ -33,11 +35,13 @@ pub fn gix_kind(kind: git2::ObjectType) -> Option<gix_object::Kind> {
     }
 }
 
+#[cfg(any(test, feature = "git2"))]
 /// Convert a SHA-1 object ID to gitoxide.
 pub fn gix_oid(oid: git2::Oid) -> gix_hash::ObjectId {
     gix_hash::ObjectId::from_bytes_or_panic(oid.as_bytes())
 }
 
+#[cfg(any(test, feature = "git2"))]
 /// Convert a SHA-1 object ID to libgit2.
 pub fn git2_oid(oid: &gix_hash::oid) -> git2::Oid {
     git2::Oid::from_bytes(oid.as_bytes()).expect("oid sizes match")
@@ -508,12 +512,12 @@ impl gix_object::Exists for StagingOdb {
     }
 }
 
-/// [`gix_object`] object access over a bare `git2::Odb`: reads/exists resolve through the
-/// odb's backends (including a registered memodb and alternates), writes go through
-/// `git_odb_write`. The bridge for code that has a git2 odb handle but no memodb store —
-/// walker unit tests, and `persist::as_tree` on repositories below the cache stack.
+#[cfg(any(test, feature = "git2"))]
+/// [`gix_object`] object access over a bare `git2::Odb` for compatibility tests. Reads and
+/// existence checks resolve through the odb's configured backends; writes use `git_odb_write`.
 pub struct Git2Odb<'a>(pub &'a git2::Odb<'a>);
 
+#[cfg(any(test, feature = "git2"))]
 impl gix_object::Find for Git2Odb<'_> {
     fn try_find<'b>(
         &self,
@@ -538,6 +542,7 @@ impl gix_object::Find for Git2Odb<'_> {
     }
 }
 
+#[cfg(any(test, feature = "git2"))]
 impl gix_object::FindHeader for Git2Odb<'_> {
     fn try_header(
         &self,
@@ -558,12 +563,14 @@ impl gix_object::FindHeader for Git2Odb<'_> {
     }
 }
 
+#[cfg(any(test, feature = "git2"))]
 impl gix_object::Exists for Git2Odb<'_> {
     fn exists(&self, id: &gix_hash::oid) -> bool {
         self.0.exists(git2_oid(id))
     }
 }
 
+#[cfg(any(test, feature = "git2"))]
 impl gix_object::Write for Git2Odb<'_> {
     fn write_buf(
         &self,
