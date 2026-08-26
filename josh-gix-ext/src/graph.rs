@@ -85,34 +85,45 @@ mod tests {
 
     struct TestRepo {
         _dir: tempfile::TempDir,
-        repo: git2::Repository,
+        repo: gix::Repository,
+        tree: gix_hash::ObjectId,
     }
 
     impl TestRepo {
         fn new() -> Self {
             let dir = tempfile::tempdir().unwrap();
-            let repo = git2::Repository::init_bare(dir.path()).unwrap();
-            TestRepo { _dir: dir, repo }
+            let repo = gix::init_bare(dir.path()).unwrap();
+            let tree = gix_object::Write::write(
+                &repo.objects,
+                &gix_object::Tree {
+                    entries: Vec::new(),
+                },
+            )
+            .unwrap();
+            TestRepo {
+                _dir: dir,
+                repo,
+                tree,
+            }
         }
 
         /// Commits are dated by their index so the merge-base walk sees a plausible history;
         /// equal timestamps would still be correct, just slower to settle.
         fn commit(&self, seconds: i64, parents: &[gix_hash::ObjectId]) -> gix_hash::ObjectId {
-            let sig =
-                git2::Signature::new("Test", "test@example.com", &git2::Time::new(seconds, 0))
-                    .unwrap();
-            let tree_id = self.repo.treebuilder(None).unwrap().write().unwrap();
-            let tree = self.repo.find_tree(tree_id).unwrap();
-            let parents: Vec<_> = parents
-                .iter()
-                .map(|p| self.repo.find_commit(crate::git2_oid(p)).unwrap())
-                .collect();
-            let parent_refs: Vec<&git2::Commit> = parents.iter().collect();
-            crate::gix_oid(
-                self.repo
-                    .commit(None, &sig, &sig, "c", &tree, &parent_refs)
-                    .unwrap(),
+            let signature = gix_actor::Signature {
+                name: "Test".into(),
+                email: "test@example.com".into(),
+                time: gix_actor::date::Time { seconds, offset: 0 },
+            };
+            crate::write_commit(
+                &self.repo.objects,
+                self.tree,
+                parents,
+                &signature,
+                &signature,
+                "c",
             )
+            .unwrap()
         }
     }
 
@@ -122,13 +133,11 @@ mod tests {
         let root = t.commit(1000, &[]);
         let mid = t.commit(1001, &[root]);
         let tip = t.commit(1002, &[mid]);
-        let odb = t.repo.odb().unwrap();
-        let objects = crate::Git2Odb(&odb);
 
-        assert!(is_descendant_of(&objects, tip, root).unwrap());
-        assert!(is_descendant_of(&objects, tip, mid).unwrap());
-        assert!(!is_descendant_of(&objects, root, tip).unwrap());
-        assert!(!is_descendant_of(&objects, tip, tip).unwrap());
+        assert!(is_descendant_of(&t.repo.objects, tip, root).unwrap());
+        assert!(is_descendant_of(&t.repo.objects, tip, mid).unwrap());
+        assert!(!is_descendant_of(&t.repo.objects, root, tip).unwrap());
+        assert!(!is_descendant_of(&t.repo.objects, tip, tip).unwrap());
     }
 
     #[test]
@@ -137,29 +146,25 @@ mod tests {
         let root = t.commit(1000, &[]);
         let a = t.commit(1001, &[root]);
         let b = t.commit(1002, &[root]);
-        let odb = t.repo.odb().unwrap();
-        let objects = crate::Git2Odb(&odb);
 
-        assert_eq!(merge_base(&objects, a, b).unwrap(), root);
-        assert_eq!(merge_base(&objects, a, root).unwrap(), root);
-        assert_eq!(merge_base(&objects, a, a).unwrap(), a);
+        assert_eq!(merge_base(&t.repo.objects, a, b).unwrap(), root);
+        assert_eq!(merge_base(&t.repo.objects, a, root).unwrap(), root);
+        assert_eq!(merge_base(&t.repo.objects, a, a).unwrap(), a);
 
         let unrelated = t.commit(1003, &[]);
-        assert!(merge_base(&objects, a, unrelated).is_err());
+        assert!(merge_base(&t.repo.objects, a, unrelated).is_err());
     }
 
     #[test]
     fn a_missing_commit_is_an_error() {
         let t = TestRepo::new();
         let root = t.commit(1000, &[]);
-        let odb = t.repo.odb().unwrap();
-        let objects = crate::Git2Odb(&odb);
         let missing =
             gix_hash::ObjectId::from_str("1234567890123456789012345678901234567890").unwrap();
 
-        assert!(is_descendant_of(&objects, missing, root).is_err());
-        assert!(merge_base_octopus(&objects, &[root, missing]).is_err());
+        assert!(is_descendant_of(&t.repo.objects, missing, root).is_err());
+        assert!(merge_base_octopus(&t.repo.objects, &[root, missing]).is_err());
 
-        assert!(merge_base_octopus(&objects, &[]).is_err());
+        assert!(merge_base_octopus(&t.repo.objects, &[]).is_err());
     }
 }

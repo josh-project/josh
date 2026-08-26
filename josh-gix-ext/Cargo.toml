@@ -28,6 +28,5 @@ gix-object.workspace = true
 gix-revision.workspace = true
 
 [dev-dependencies]
-git2.workspace = true
-
+gix.workspace = true
 tempfile.workspace = true

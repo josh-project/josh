@@ -18,10 +18,8 @@
 //! are NOT peeled: any non-commit input is an error (josh only ever walks
 //! commit oids; the git2 walks this module replaces peeled).
 //!
-//! Differential tests below pin the yield sets against an independent
-//! reference model (and against `git2::Revwalk` for [`RevWalk`], where the
-//! sets provably coincide), and pin topological validity and order
-//! determinism, over fixed shapes and seeded random DAGs.
+//! Differential tests pin the yield sets against an independent reference model, and pin
+//! topological validity and order determinism, over fixed shapes and seeded random DAGs.
 
 use std::collections::HashMap;
 use std::ops::ControlFlow;
@@ -469,38 +467,52 @@ mod tests {
 
     struct TestRepo {
         _dir: tempfile::TempDir,
-        repo: git2::Repository,
+        repo: gix::Repository,
+        tree: gix_hash::ObjectId,
     }
 
     impl TestRepo {
         fn new() -> Self {
             let dir = tempfile::tempdir().unwrap();
-            let repo = git2::Repository::init_bare(dir.path()).unwrap();
-            TestRepo { _dir: dir, repo }
+            let repo = gix::init_bare(dir.path()).unwrap();
+            let tree = gix_object::Write::write(
+                &repo.objects,
+                &gix_object::Tree {
+                    entries: Vec::new(),
+                },
+            )
+            .unwrap();
+            TestRepo {
+                _dir: dir,
+                repo,
+                tree,
+            }
         }
 
         fn commit(&self, msg: &str, parents: &[gix_hash::ObjectId]) -> gix_hash::ObjectId {
-            let sig = git2::Signature::new("Test", "test@example.com", &git2::Time::new(1000, 0))
-                .unwrap();
-            let tree_id = self.repo.treebuilder(None).unwrap().write().unwrap();
-            let tree = self.repo.find_tree(tree_id).unwrap();
-            let parents: Vec<_> = parents
-                .iter()
-                .map(|p| self.repo.find_commit(crate::git2_oid(p)).unwrap())
-                .collect();
-            let parent_refs: Vec<&git2::Commit> = parents.iter().collect();
-            crate::gix_oid(
-                self.repo
-                    .commit(None, &sig, &sig, msg, &tree, &parent_refs)
-                    .unwrap(),
+            let signature = gix_actor::Signature {
+                name: "Test".into(),
+                email: "test@example.com".into(),
+                time: gix_actor::date::Time {
+                    seconds: 1000,
+                    offset: 0,
+                },
+            };
+            crate::write_commit(
+                &self.repo.objects,
+                self.tree,
+                parents,
+                &signature,
+                &signature,
+                msg,
             )
+            .unwrap()
         }
 
         /// Write raw commit bytes so parents don't have to exist in the odb
-        /// (and may repeat -- git2's commit builder can produce neither).
+        /// (and may repeat).
         fn raw_commit(&self, msg: &str, parents: &[gix_hash::ObjectId]) -> gix_hash::ObjectId {
-            let tree_id = self.repo.treebuilder(None).unwrap().write().unwrap();
-            let mut buf = format!("tree {}\n", tree_id);
+            let mut buf = format!("tree {}\n", self.tree);
             for p in parents {
                 buf.push_str(&format!("parent {}\n", p));
             }
@@ -508,34 +520,32 @@ mod tests {
                 "author Test <test@example.com> 1000 +0000\n\
                  committer Test <test@example.com> 1000 +0000\n\n{msg}\n"
             ));
-            crate::gix_oid(
-                self.repo
-                    .odb()
-                    .unwrap()
-                    .write(git2::ObjectType::Commit, buf.as_bytes())
-                    .unwrap(),
+            gix_object::Write::write_buf(
+                &self.repo.objects,
+                gix_object::Kind::Commit,
+                buf.as_bytes(),
             )
+            .unwrap()
         }
     }
 
-    /// An exact sequence number over git2 objects: `1 + max(parent seqs)`,
+    fn parents(repo: &gix::Repository, oid: gix_hash::ObjectId) -> Vec<gix_hash::ObjectId> {
+        read_parent_oids(&repo.objects, oid, &mut Vec::new()).unwrap()
+    }
+
+    /// An exact sequence number over git objects: `1 + max(parent seqs)`,
     /// memoized -- the property josh's cached sequence numbers guarantee.
     /// Errors on missing ancestors, like the real lookup.
     fn exact_seq(
-        repo: &git2::Repository,
+        repo: &gix::Repository,
         memo: &std::cell::RefCell<HashMap<gix_hash::ObjectId, u64>>,
         oid: gix_hash::ObjectId,
     ) -> anyhow::Result<u64> {
         if let Some(&s) = memo.borrow().get(&oid) {
             return Ok(s);
         }
-        let parents: Vec<gix_hash::ObjectId> = repo
-            .find_commit(crate::git2_oid(&oid))?
-            .parent_ids()
-            .map(crate::gix_oid)
-            .collect();
         let mut max = 0;
-        for p in parents {
+        for p in read_parent_oids(&repo.objects, oid, &mut Vec::new())? {
             max = max.max(exact_seq(repo, memo, p)?);
         }
         memo.borrow_mut().insert(oid, max + 1);
@@ -545,27 +555,20 @@ mod tests {
     /// Independent reference model of both walkers' yield sets: the excluded
     /// closure is full ancestor reachability from `base`; the yield set is
     /// what a naive traversal from the tips reaches without stepping on
-    /// excluded or pruned commits. Uses git2's object API throughout, sharing
-    /// no code with the walkers.
+    /// excluded or pruned commits. It parses raw commit parents directly,
+    /// sharing no traversal code with the walkers.
     fn reference_set(
-        repo: &git2::Repository,
+        repo: &gix::Repository,
         tips: &[gix_hash::ObjectId],
         base: Option<gix_hash::ObjectId>,
         pruned: &HashSet<gix_hash::ObjectId>,
         first_parent: bool,
     ) -> HashSet<gix_hash::ObjectId> {
-        let parents_of = |oid: gix_hash::ObjectId| -> Vec<gix_hash::ObjectId> {
-            repo.find_commit(crate::git2_oid(&oid))
-                .unwrap()
-                .parent_ids()
-                .map(crate::gix_oid)
-                .collect()
-        };
         let mut hidden: HashSet<gix_hash::ObjectId> = HashSet::new();
         let mut stack: Vec<gix_hash::ObjectId> = base.into_iter().collect();
         while let Some(h) = stack.pop() {
             if hidden.insert(h) {
-                stack.extend(parents_of(h));
+                stack.extend(parents(repo, h));
             }
         }
         let mut out = HashSet::new();
@@ -575,24 +578,22 @@ mod tests {
                 continue;
             }
             out.insert(c);
-            let mut parents = parents_of(c);
+            let mut commit_parents = parents(repo, c);
             if first_parent {
-                parents.truncate(1);
+                commit_parents.truncate(1);
             }
-            stack.extend(parents);
+            stack.extend(commit_parents);
         }
         out
     }
 
     fn rev_walk(
-        repo: &git2::Repository,
+        repo: &gix::Repository,
         tips: &[gix_hash::ObjectId],
         pruned: &HashSet<gix_hash::ObjectId>,
         first_parent: bool,
     ) -> anyhow::Result<Vec<gix_hash::ObjectId>> {
-        let odb = repo.odb().unwrap();
-        let odb = crate::Git2Odb(&odb);
-        let mut walk = RevWalk::new(&odb);
+        let mut walk = RevWalk::new(&repo.objects);
         if first_parent {
             walk.simplify_first_parent();
         }
@@ -603,21 +604,19 @@ mod tests {
     }
 
     fn range_walk(
-        repo: &git2::Repository,
+        repo: &gix::Repository,
         tip: gix_hash::ObjectId,
         base: gix_hash::ObjectId,
     ) -> anyhow::Result<Vec<gix_hash::ObjectId>> {
         let memo = std::cell::RefCell::new(HashMap::new());
-        let odb = repo.odb().unwrap();
-        let odb = crate::Git2Odb(&odb);
-        let walk = RangeWalk::new(&odb, |oid| exact_seq(repo, &memo, oid));
+        let walk = RangeWalk::new(&repo.objects, |oid| exact_seq(repo, &memo, oid));
         walk.into_topo_vec(tip, base)
     }
 
     /// Check a yielded order for topological validity over the followed
     /// edges: every yielded commit precedes its yielded parents.
     fn assert_topo(
-        repo: &git2::Repository,
+        repo: &gix::Repository,
         got: &[gix_hash::ObjectId],
         first_parent: bool,
         mode: &str,
@@ -626,13 +625,11 @@ mod tests {
             got.iter().enumerate().map(|(i, &o)| (o, i)).collect();
         assert_eq!(pos.len(), got.len(), "duplicate yields: {mode}");
         for &c in got {
-            let commit = repo.find_commit(crate::git2_oid(&c)).unwrap();
-            let mut parents: Vec<gix_hash::ObjectId> =
-                commit.parent_ids().map(crate::gix_oid).collect();
+            let mut commit_parents = parents(repo, c);
             if first_parent {
-                parents.truncate(1);
+                commit_parents.truncate(1);
             }
-            for p in parents {
+            for p in commit_parents {
                 if let Some(&pp) = pos.get(&p) {
                     assert!(pos[&c] < pp, "topology violation {c} -> {p}: {mode}");
                 }
@@ -641,10 +638,9 @@ mod tests {
     }
 
     /// Assert [`RevWalk`] against the reference model: exact yield set, valid
-    /// topological order, run-to-run determinism, and (with no pruning) set
-    /// equality with `git2::Revwalk`.
+    /// topological order, and run-to-run determinism.
     fn assert_rev_walk(
-        repo: &git2::Repository,
+        repo: &gix::Repository,
         tips: &[gix_hash::ObjectId],
         pruned: &HashSet<gix_hash::ObjectId>,
         label: &str,
@@ -658,27 +654,13 @@ mod tests {
             assert_topo(repo, &got, first_parent, &mode);
             let again = rev_walk(repo, tips, pruned, first_parent).unwrap();
             assert_eq!(got, again, "non-deterministic order: {mode}");
-
-            if pruned.is_empty() {
-                let mut g2 = repo.revwalk().unwrap();
-                g2.set_sorting(git2::Sort::TOPOLOGICAL).unwrap();
-                if first_parent {
-                    g2.simplify_first_parent().unwrap();
-                }
-                for t in tips {
-                    g2.push(crate::git2_oid(t)).unwrap();
-                }
-                let theirs: HashSet<gix_hash::ObjectId> =
-                    g2.map(|r| crate::gix_oid(r.unwrap())).collect();
-                assert_eq!(got_set, theirs, "git2 set mismatch: {mode}");
-            }
         }
     }
 
     /// Assert [`RangeWalk`] against the reference model: exact yield set,
     /// valid topological order, run-to-run determinism.
     fn assert_range_walk(
-        repo: &git2::Repository,
+        repo: &gix::Repository,
         tip: gix_hash::ObjectId,
         base: gix_hash::ObjectId,
         label: &str,
@@ -843,9 +825,7 @@ mod tests {
 
         let memo = std::cell::RefCell::new(HashMap::new());
         let calls = std::cell::Cell::new(0usize);
-        let odb = t.repo.odb().unwrap();
-        let odb = crate::Git2Odb(&odb);
-        let walk = RangeWalk::new(&odb, |oid| {
+        let walk = RangeWalk::new(&t.repo.objects, |oid| {
             calls.set(calls.get() + 1);
             exact_seq(&t.repo, &memo, oid)
         });
@@ -876,9 +856,7 @@ mod tests {
 
         for blind in [tip, base, b] {
             let memo = std::cell::RefCell::new(HashMap::new());
-            let odb = t.repo.odb().unwrap();
-            let odb = crate::Git2Odb(&odb);
-            let walk = RangeWalk::new(&odb, |oid| {
+            let walk = RangeWalk::new(&t.repo.objects, |oid| {
                 if oid == blind {
                     anyhow::bail!("no sequence number for {}", oid);
                 }
@@ -916,9 +894,7 @@ mod tests {
         // The callback fires once per commit, even with duplicate edges.
         let dup = t.raw_commit("dup", &[b, b, a]);
         let mut calls = Vec::new();
-        let odb = t.repo.odb().unwrap();
-        let odb = crate::Git2Odb(&odb);
-        let mut w = RevWalk::new(&odb);
+        let mut w = RevWalk::new(&t.repo.objects);
         w.push(dup).unwrap();
         w.into_topo_vec(|oid| {
             calls.push(oid);
@@ -966,28 +942,27 @@ mod tests {
         let a = t.commit("a", &[]);
         let missing =
             gix_hash::ObjectId::from_str("deadbeefdeadbeefdeadbeefdeadbeefdeadbeef").unwrap();
-        let blob = crate::gix_oid(
-            t.repo
-                .odb()
-                .unwrap()
-                .write(git2::ObjectType::Blob, b"x")
-                .unwrap(),
+        let blob =
+            gix_object::Write::write_buf(&t.repo.objects, gix_object::Kind::Blob, b"x").unwrap();
+        let tree = t.tree;
+        let tag_bytes = format!(
+            "object {a}\ntype commit\ntag v1\ntagger Test <test@example.com> 1000 +0000\n\nannotated"
         );
-        let tree = crate::gix_oid(t.repo.treebuilder(None).unwrap().write().unwrap());
-        let sig =
-            git2::Signature::new("Test", "test@example.com", &git2::Time::new(1000, 0)).unwrap();
-        let obj = t.repo.find_object(crate::git2_oid(&a), None).unwrap();
-        let tag = crate::gix_oid(t.repo.tag("v1", &obj, &sig, "annotated", false).unwrap());
+        let tag = gix_object::Write::write_buf(
+            &t.repo.objects,
+            gix_object::Kind::Tag,
+            tag_bytes.as_bytes(),
+        )
+        .unwrap();
 
-        let odb = t.repo.odb().unwrap();
-        let odb = crate::Git2Odb(&odb);
+        let objects = &t.repo.objects;
         // Missing oids and non-commits (including annotated tags, which are
         // NOT peeled) error immediately.
         for bad in [missing, blob, tree, tag] {
-            assert!(RevWalk::new(&odb).push(bad).is_err());
-            let w = RangeWalk::new(&odb, |_| anyhow::bail!("unused"));
+            assert!(RevWalk::new(objects).push(bad).is_err());
+            let w = RangeWalk::new(objects, |_| anyhow::bail!("unused"));
             assert!(w.into_topo_vec(bad, a).is_err());
-            let w = RangeWalk::new(&odb, |_| anyhow::bail!("unused"));
+            let w = RangeWalk::new(objects, |_| anyhow::bail!("unused"));
             assert!(w.into_topo_vec(a, bad).is_err());
         }
     }
@@ -1000,9 +975,8 @@ mod tests {
         let dangling = t.raw_commit("dangling", &[missing]);
 
         // A pushed commit with a missing parent errors during the walk.
-        let odb = t.repo.odb().unwrap();
-        let odb = crate::Git2Odb(&odb);
-        let mut w = RevWalk::new(&odb);
+        let objects = &t.repo.objects;
+        let mut w = RevWalk::new(objects);
         w.push(dangling).unwrap();
         assert!(w.into_topo_vec(|_| false).is_err());
 
@@ -1010,14 +984,14 @@ mod tests {
         // must rank it (the real lookup walks the ancestry)...
         let tip = t.commit("tip", &[]);
         let memo = std::cell::RefCell::new(HashMap::new());
-        let w = RangeWalk::new(&odb, |oid| exact_seq(&t.repo, &memo, oid));
+        let w = RangeWalk::new(objects, |oid| exact_seq(&t.repo, &memo, oid));
         assert!(w.into_topo_vec(tip, dangling).is_err());
 
         // ...but not when the fast-forward path answers without touching the
         // base's ancestry: the walk stays lazy.
         let base = t.commit("base", &[dangling]);
         let top = t.commit("top", &[base]);
-        let w = RangeWalk::new(&odb, |_| anyhow::bail!("must not be consulted"));
+        let w = RangeWalk::new(objects, |_| anyhow::bail!("must not be consulted"));
         assert_eq!(w.into_topo_vec(top, base).unwrap(), vec![top]);
     }
 
@@ -1027,18 +1001,14 @@ mod tests {
         // commits walk fine (fsck-invalid objects; the old git2-backed walk
         // was partially lenient here too, in different places).
         let t = TestRepo::new();
-        let tree_id = t.repo.treebuilder(None).unwrap().write().unwrap();
-        let odb = t.repo.odb().unwrap();
-        let trunc = crate::gix_oid(
-            odb.write(
-                git2::ObjectType::Commit,
-                format!("tree {}\n", tree_id).as_bytes(),
-            )
-            .unwrap(),
-        );
-        let odb = crate::Git2Odb(&odb);
+        let trunc = gix_object::Write::write_buf(
+            &t.repo.objects,
+            gix_object::Kind::Commit,
+            format!("tree {}\n", t.tree).as_bytes(),
+        )
+        .unwrap();
         let tip = t.raw_commit("tip", &[trunc]);
-        let mut w = RevWalk::new(&odb);
+        let mut w = RevWalk::new(&t.repo.objects);
         w.push(tip).unwrap();
         assert_eq!(w.into_topo_vec(|_| false).unwrap(), vec![tip, trunc]);
     }
@@ -1050,12 +1020,11 @@ mod tests {
         let b = t.commit("b", &[a]);
         let c = t.commit("c", &[a]);
         let m = t.commit("m", &[b, c]);
-        let odb = t.repo.odb().unwrap();
-        let odb = crate::Git2Odb(&odb);
+        let objects = &t.repo.objects;
 
         // Pre-order: each commit before its parents, first parent's subgraph
         // before the second's.
-        let mut w = RevWalk::new(&odb);
+        let mut w = RevWalk::new(objects);
         w.push(m).unwrap();
         let mut visited = Vec::new();
         w.discover(|oid| {
@@ -1066,7 +1035,7 @@ mod tests {
         assert_eq!(visited, vec![m, b, a, c]);
 
         // Break aborts the walk.
-        let mut w = RevWalk::new(&odb);
+        let mut w = RevWalk::new(objects);
         w.push(m).unwrap();
         let mut visited = Vec::new();
         w.discover(|oid| {
@@ -1081,7 +1050,7 @@ mod tests {
         assert_eq!(visited, vec![m, b, a]);
 
         // first_parent confines discovery to the first-parent chain.
-        let mut w = RevWalk::new(&odb);
+        let mut w = RevWalk::new(objects);
         w.push(m).unwrap();
         w.simplify_first_parent();
         let mut visited = Vec::new();
@@ -1093,12 +1062,12 @@ mod tests {
         assert_eq!(visited, vec![m, b, a]);
 
         // Errors from the visit callback propagate.
-        let mut w = RevWalk::new(&odb);
+        let mut w = RevWalk::new(objects);
         w.push(m).unwrap();
         assert!(w.discover(|_| anyhow::bail!("boom")).is_err());
 
         // No pushes: no visits, clean return.
-        let w = RevWalk::new(&odb);
+        let w = RevWalk::new(objects);
         w.discover(|_| panic!("must not be visited")).unwrap();
     }
 
