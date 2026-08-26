@@ -30,8 +30,8 @@
 //! intersects the mirror subtrees; the resulting candidate files are exact (files containing all
 //! query trigrams), leaving only string-level verification to [`search_matches`].
 //!
-//! This crate is independent of the josh filter machinery: it operates on plain [`git2`] objects
-//! and memoizes tree-to-index mappings through the [`IndexCache`] trait the caller provides.
+//! This crate is independent of the josh filter machinery: it operates on plain Git objects and
+//! memoizes tree-to-index mappings through the [`IndexCache`] trait the caller provides.
 
 use gix_object::WriteTo;
 use gix_object::bstr::BString;
@@ -867,12 +867,10 @@ fn path_entry(
 #[cfg(test)]
 mod tests {
     use super::*;
-    fn gix(oid: git2::Oid) -> gix_hash::ObjectId {
-        gix_hash::ObjectId::from_bytes_or_panic(oid.as_bytes())
-    }
-
-    fn git2(oid: gix_hash::ObjectId) -> git2::Oid {
-        git2::Oid::from_bytes(oid.as_bytes()).expect("SHA-1 object id")
+    fn test_repo() -> (tempfile::TempDir, gix::Repository) {
+        let tmp = tempfile::tempdir().unwrap();
+        let repo = gix::init_bare(tmp.path()).unwrap();
+        (tmp, repo)
     }
 
     #[test]
@@ -915,28 +913,26 @@ mod tests {
         }
     }
 
-    fn test_repo() -> (tempfile::TempDir, git2::Repository) {
-        let tmp = tempfile::tempdir().unwrap();
-        let repo = git2::Repository::init_bare(tmp.path()).unwrap();
-        (tmp, repo)
+    fn objects(repo: &gix::Repository) -> &impl Objects {
+        &repo.objects
     }
 
-    /// Object access over a test repository's odb.
-    fn objects(repo: &git2::Repository) -> josh_gix_ext::Git2Odb<'_> {
-        josh_gix_ext::Git2Odb(Box::leak(Box::new(repo.odb().unwrap())))
-    }
-
-    fn commit_tree<'a>(repo: &'a git2::Repository, files: &[(&str, &str)]) -> git2::Tree<'a> {
-        let mut builder = git2::build::TreeUpdateBuilder::new();
+    fn commit_tree(repo: &gix::Repository, files: &[(&str, &str)]) -> gix_hash::ObjectId {
+        let empty = gix_object::Write::write(
+            &repo.objects,
+            &gix_object::Tree {
+                entries: Vec::new(),
+            },
+        )
+        .unwrap();
+        let mut builder = repo.edit_tree(empty).unwrap();
         for (path, content) in files {
-            let oid = repo.blob(content.as_bytes()).unwrap();
-            builder.upsert(std::path::Path::new(path), oid, git2::FileMode::Blob);
+            let oid = josh_gix_ext::write_blob(&repo.objects, content.as_bytes()).unwrap();
+            builder
+                .upsert(*path, gix::objs::tree::EntryKind::Blob, oid)
+                .unwrap();
         }
-        let baseline = repo
-            .find_tree(repo.treebuilder(None).unwrap().write().unwrap())
-            .unwrap();
-        let oid = builder.create_updated(repo, &baseline).unwrap();
-        repo.find_tree(oid).unwrap()
+        builder.write().unwrap().detach()
     }
 
     #[test]
@@ -953,13 +949,7 @@ mod tests {
             ],
         );
 
-        let index = trigram_index(
-            &objects(&repo),
-            &cache,
-            &mut Indexer::default(),
-            gix(tree.id()),
-        )
-        .unwrap();
+        let index = trigram_index(objects(&repo), &cache, &mut Indexer::default(), tree).unwrap();
 
         // The index format is pinned: cached indexes of older josh versions stay valid only as
         // long as this oid does not change.
@@ -970,50 +960,40 @@ mod tests {
 
         // "Tes" folds to "tes", which lives at 74/65/73 in the hex spine. sub1 is a small
         // directory, so the mirror records it as one coarse blob leaf.
-        let leaf = path_entry(
-            &objects(&repo),
-            index,
-            std::path::Path::new("74/65/73/sub1"),
-        )
-        .unwrap()
-        .unwrap();
+        let leaf = path_entry(objects(&repo), index, std::path::Path::new("74/65/73/sub1"))
+            .unwrap()
+            .unwrap();
         assert_eq!(
-            repo.find_object(git2(leaf), None).unwrap().kind(),
-            Some(git2::ObjectType::Blob)
+            gix_object::FindHeader::try_header(&repo.objects, &leaf)
+                .unwrap()
+                .unwrap()
+                .kind,
+            gix_object::Kind::Blob
         );
 
         // Coarse hits expand to every file under the directory; verification is exact.
-        let candidates =
-            search_candidates(&objects(&repo), index, gix(tree.id()), "document").unwrap();
+        let candidates = search_candidates(objects(&repo), index, tree, "document").unwrap();
         assert_eq!(candidates, vec!["sub1/file1", "sub1/file2"]);
-        let matches =
-            search_matches(&objects(&repo), gix(tree.id()), "document", &candidates).unwrap();
+        let matches = search_matches(objects(&repo), tree, "document", &candidates).unwrap();
         assert_eq!(matches.len(), 2);
 
         // Trigrams are case-folded, so candidates are a case-insensitive superset ("Test" in
         // file1 makes sub1 a candidate for "test") while match verification stays byte-exact.
-        let candidates = search_candidates(&objects(&repo), index, gix(tree.id()), "test").unwrap();
+        let candidates = search_candidates(objects(&repo), index, tree, "test").unwrap();
         assert_eq!(candidates, vec!["sub1/file1", "sub1/file2"]);
-        let matches = search_matches(&objects(&repo), gix(tree.id()), "test", &candidates).unwrap();
+        let matches = search_matches(objects(&repo), tree, "test", &candidates).unwrap();
         assert!(matches.is_empty());
 
-        let candidates =
-            search_candidates(&objects(&repo), index, gix(tree.id()), "missingword").unwrap();
+        let candidates = search_candidates(objects(&repo), index, tree, "missingword").unwrap();
         assert!(candidates.is_empty());
 
         // Short query: every file is a candidate.
-        let candidates = search_candidates(&objects(&repo), index, gix(tree.id()), "e").unwrap();
+        let candidates = search_candidates(objects(&repo), index, tree, "e").unwrap();
         assert_eq!(candidates.len(), 3);
 
         // Indexing is deterministic and memoization-independent.
         let cold = MapCache::default();
-        let index2 = trigram_index(
-            &objects(&repo),
-            &cold,
-            &mut Indexer::default(),
-            gix(tree.id()),
-        )
-        .unwrap();
+        let index2 = trigram_index(objects(&repo), &cold, &mut Indexer::default(), tree).unwrap();
         assert_eq!(index, index2);
     }
 
@@ -1037,69 +1017,55 @@ mod tests {
         let files: Vec<(&str, &str)> = files.iter().map(|(p, c)| (&p[..], &c[..])).collect();
         let tree = commit_tree(&repo, &files);
 
-        let index = trigram_index(
-            &objects(&repo),
-            &cache,
-            &mut Indexer::default(),
-            gix(tree.id()),
-        )
-        .unwrap();
+        let index = trigram_index(objects(&repo), &cache, &mut Indexer::default(), tree).unwrap();
 
         // Fine: "d07" (from uniqueword07) mirrors big's structure down to the file.
         let leaf = path_entry(
-            &objects(&repo),
+            objects(&repo),
             index,
             std::path::Path::new("64/30/37/big/file_07"),
         )
         .unwrap()
         .unwrap();
         assert_eq!(
-            repo.find_object(git2(leaf), None).unwrap().kind(),
-            Some(git2::ObjectType::Blob)
+            gix_object::FindHeader::try_header(&repo.objects, &leaf)
+                .unwrap()
+                .unwrap()
+                .kind,
+            gix_object::Kind::Blob
         );
 
         // Coarse: "nee" (from needleinsmall) records small as a blob leaf, not a subtree.
         let leaf = path_entry(
-            &objects(&repo),
+            objects(&repo),
             index,
             std::path::Path::new("6e/65/65/small"),
         )
         .unwrap()
         .unwrap();
         assert_eq!(
-            repo.find_object(git2(leaf), None).unwrap().kind(),
-            Some(git2::ObjectType::Blob)
+            gix_object::FindHeader::try_header(&repo.objects, &leaf)
+                .unwrap()
+                .unwrap()
+                .kind,
+            gix_object::Kind::Blob
         );
 
         // Fine candidates stay per-file and exact.
-        let candidates =
-            search_candidates(&objects(&repo), index, gix(tree.id()), "uniqueword07").unwrap();
+        let candidates = search_candidates(objects(&repo), index, tree, "uniqueword07").unwrap();
         assert_eq!(candidates, vec!["big/file_07"]);
 
         // A coarse hit makes every file under the directory a candidate; verification is
         // exact.
-        let candidates =
-            search_candidates(&objects(&repo), index, gix(tree.id()), "needleinsmall").unwrap();
+        let candidates = search_candidates(objects(&repo), index, tree, "needleinsmall").unwrap();
         assert_eq!(candidates, vec!["small/a", "small/b"]);
-        let matches = search_matches(
-            &objects(&repo),
-            gix(tree.id()),
-            "needleinsmall",
-            &candidates,
-        )
-        .unwrap();
+        let matches = search_matches(objects(&repo), tree, "needleinsmall", &candidates).unwrap();
         assert_eq!(matches.len(), 1);
         assert_eq!(matches[0].0, "small/a");
 
         // Determinism across memoization states, coarse dirs included.
         let cold = MapCache::default();
-        let index2 = trigram_index(
-            &objects(&repo),
-            &cold,
-            &mut Indexer::default(),
-            gix(tree.id()),
-        )
-        .unwrap();
+        let index2 = trigram_index(objects(&repo), &cold, &mut Indexer::default(), tree).unwrap();
         assert_eq!(index, index2);
     }
 
@@ -1120,7 +1086,7 @@ mod tests {
                 ("sub2/mod", "alpha beta gamma"),
             ],
         );
-        trigram_index(&objects(&repo), &cache, &mut indexer, gix(tree_a.id())).unwrap();
+        trigram_index(objects(&repo), &cache, &mut indexer, tree_a).unwrap();
 
         // One file modified, one removed (its unique trigrams must vanish from the spine), one
         // added in a fresh directory.
@@ -1132,32 +1098,25 @@ mod tests {
                 ("sub3/new", "fresh addition here"),
             ],
         );
-        let index_b =
-            trigram_index(&objects(&repo), &cache, &mut indexer, gix(tree_b.id())).unwrap();
+        let index_b = trigram_index(objects(&repo), &cache, &mut indexer, tree_b).unwrap();
 
         // The roots are memoized in the persistent cache. (The sub dirs are below the coarse
         // threshold and live in the Indexer's coarse memo instead — only fine-grained indexes
         // go through the IndexCache.)
-        assert!(cache.get_index(gix(tree_b.id())).is_some());
+        assert!(cache.get_index(tree_b).is_some());
 
         // Warm (incremental) and cold-built indexes agree bit for bit.
         let cold = MapCache::default();
-        let index_b_cold = trigram_index(
-            &objects(&repo),
-            &cold,
-            &mut Indexer::default(),
-            gix(tree_b.id()),
-        )
-        .unwrap();
+        let index_b_cold =
+            trigram_index(objects(&repo), &cold, &mut Indexer::default(), tree_b).unwrap();
         assert_eq!(index_b, index_b_cold);
 
         // The incremental index searches correctly.
-        let hits = search_candidates(&objects(&repo), index_b, gix(tree_b.id()), "delta").unwrap();
+        let hits = search_candidates(objects(&repo), index_b, tree_b, "delta").unwrap();
         assert_eq!(hits, vec!["sub2/mod"]);
-        let hits = search_candidates(&objects(&repo), index_b, gix(tree_b.id()), "zebra").unwrap();
+        let hits = search_candidates(objects(&repo), index_b, tree_b, "zebra").unwrap();
         assert!(hits.is_empty());
-        let hits =
-            search_candidates(&objects(&repo), index_b, gix(tree_b.id()), "addition").unwrap();
+        let hits = search_candidates(objects(&repo), index_b, tree_b, "addition").unwrap();
         assert_eq!(hits, vec!["sub3/new"]);
     }
 }
