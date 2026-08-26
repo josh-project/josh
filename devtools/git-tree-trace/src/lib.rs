@@ -1,7 +1,6 @@
 use std::sync::OnceLock;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-use git2::Oid;
 use serde::Serialize;
 
 /// Base URL of the `git-tree-viewer` HTTP server.
@@ -85,14 +84,14 @@ fn client() -> &'static reqwest::blocking::Client {
     CLIENT.get_or_init(reqwest::blocking::Client::new)
 }
 
-pub fn trace_commit(repo: &git2::Repository, oid: Oid, name: &str) {
+pub fn trace_commit(repo: &gix::Repository, oid: gix::ObjectId, name: &str) {
     // No viewer listening → nothing to push or report.
     let TraceState::Started { session_name } = state() else {
         return;
     };
 
     let refspec = format!("{}:refs/heads/_{}", oid, oid);
-    let workdir = repo.workdir().unwrap_or_else(|| repo.path());
+    let workdir = repo.workdir().unwrap_or_else(|| repo.git_dir());
 
     let mut command = std::process::Command::new("git");
     command.arg("-C");
