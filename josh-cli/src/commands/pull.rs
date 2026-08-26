@@ -547,7 +547,7 @@ mod tests {
     #[test]
     fn upstream_change_ids_walks_every_parent_between_base_and_tip() {
         let dir = tempfile::tempdir().unwrap();
-        git2::Repository::init_bare(dir.path()).unwrap();
+        gix::init_bare(dir.path()).unwrap();
         let context = josh_core::cache::TransactionContext::new(
             dir.path(),
             std::sync::Arc::new(josh_core::cache::CacheStack::new()),

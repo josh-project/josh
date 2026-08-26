@@ -44,7 +44,6 @@ josh-templates.workspace = true
 
 [dev-dependencies]
 gix-actor.workspace = true
-git2.workspace = true
 tempfile.workspace = true
 
 [features]
