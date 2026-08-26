@@ -77,9 +77,9 @@ fn app() -> Element {
 
     // Views subscribe to this signal to invalidate ref-derived data.
     let mut changes_ref_oid: Signal<Option<gix_hash::ObjectId>> = use_signal(|| {
-        git2::Repository::discover(".")
+        common::open_transaction()
             .ok()
-            .and_then(|r| josh_changes::read_ref_oid(&r, &current_scope.read()))
+            .and_then(|transaction| josh_changes::read_ref_oid(&transaction, &current_scope.read()))
     });
     use_context_provider(|| changes_ref_oid);
 
@@ -99,9 +99,9 @@ fn app() -> Element {
     // Avoid waiting for the poll after switching scopes.
     use_effect(move || {
         let scope = current_scope.read().clone();
-        let new_oid = git2::Repository::discover(".")
+        let new_oid = common::open_transaction()
             .ok()
-            .and_then(|r| josh_changes::read_ref_oid(&r, &scope));
+            .and_then(|transaction| josh_changes::read_ref_oid(&transaction, &scope));
         if new_oid != *changes_ref_oid.peek() {
             changes_ref_oid.set(new_oid);
         }
@@ -112,9 +112,9 @@ fn app() -> Element {
         loop {
             tokio::time::sleep(std::time::Duration::from_secs(1)).await;
             let scope = current_scope.peek().clone();
-            let new_oid = git2::Repository::discover(".")
+            let new_oid = common::open_transaction()
                 .ok()
-                .and_then(|r| josh_changes::read_ref_oid(&r, &scope));
+                .and_then(|transaction| josh_changes::read_ref_oid(&transaction, &scope));
             if new_oid != *changes_ref_oid.peek() {
                 changes_ref_oid.set(new_oid);
             }
