@@ -43,6 +43,7 @@ josh-link.workspace = true
 josh-templates.workspace = true
 
 [dev-dependencies]
+gix-actor.workspace = true
 tempfile.workspace = true
 
 [features]

@@ -4205,6 +4205,7 @@ dependencies = [
  "anyhow",
  "chrono",
  "git2",
+ "gix-actor",
  "gix-hash",
  "josh-core",
  "josh-git-serde",

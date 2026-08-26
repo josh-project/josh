@@ -50,6 +50,7 @@ const JOSH_COMMIT_TIME_ENV: &str = "JOSH_COMMIT_TIME";
 const JOSH_COMMIT_NAME: &str = "JOSH";
 const JOSH_COMMIT_EMAIL: &str = "josh@josh-project.dev";
 
+/// The libgit2 spelling of Josh's fixed commit identity, for porcelain and fixture seams.
 pub fn josh_commit_signature<'a>() -> anyhow::Result<git2::Signature<'a>> {
     Ok(if let Ok(time) = std::env::var(JOSH_COMMIT_TIME_ENV) {
         git2::Signature::new(
@@ -62,58 +63,73 @@ pub fn josh_commit_signature<'a>() -> anyhow::Result<git2::Signature<'a>> {
     })
 }
 
+/// Josh's fixed commit identity for commits written through the object store.
+pub fn josh_actor_signature() -> anyhow::Result<gix_actor::Signature> {
+    let time = match std::env::var(JOSH_COMMIT_TIME_ENV) {
+        Ok(time) => gix_actor::date::Time {
+            seconds: time.parse()?,
+            offset: 0,
+        },
+        Err(_) => gix_actor::date::Time::now_local_or_utc(),
+    };
+    Ok(gix_actor::Signature {
+        name: JOSH_COMMIT_NAME.into(),
+        email: JOSH_COMMIT_EMAIL.into(),
+        time,
+    })
+}
+
 /// Parse a date string from `GIT_COMMITTER_DATE` / `GIT_AUTHOR_DATE`. Accepts the
 /// formats git typically uses: raw (`<unix> <offset>`), RFC 2822 (what `date -R`
 /// emits) and RFC 3339 / ISO 8601.
-fn parse_git_env_date(s: &str) -> Option<git2::Time> {
+fn parse_git_env_date(s: &str) -> Option<gix_actor::date::Time> {
     let s = s.trim();
     if let Some((secs, offset)) = s.split_once(' ') {
-        if let (Ok(secs), Ok(offset)) = (secs.parse::<i64>(), offset.parse::<i32>()) {
+        if let (Ok(seconds), Ok(offset)) = (secs.parse::<i64>(), offset.parse::<i32>()) {
             let offset_minutes = (offset / 100) * 60 + (offset % 100);
-            return Some(git2::Time::new(secs, offset_minutes));
+            return Some(gix_actor::date::Time {
+                seconds,
+                offset: offset_minutes * 60,
+            });
         }
     }
     if let Ok(dt) = chrono::DateTime::parse_from_rfc2822(s) {
-        return Some(git2::Time::new(
-            dt.timestamp(),
-            dt.offset().local_minus_utc() / 60,
-        ));
+        return Some(gix_actor::date::Time {
+            seconds: dt.timestamp(),
+            offset: dt.offset().local_minus_utc(),
+        });
     }
     if let Ok(dt) = chrono::DateTime::parse_from_rfc3339(s) {
-        return Some(git2::Time::new(
-            dt.timestamp(),
-            dt.offset().local_minus_utc() / 60,
-        ));
+        return Some(gix_actor::date::Time {
+            seconds: dt.timestamp(),
+            offset: dt.offset().local_minus_utc(),
+        });
     }
     None
 }
 
-/// Like `repo.signature()` but honors `GIT_COMMITTER_*` / `GIT_AUTHOR_*` env vars
-/// the way `git` itself does. git2's `Repository::signature` ignores the date
-/// env vars, which breaks reproducibility in tests.
+/// Like [`crate::cache::Transaction::signature`] but honors
+/// `GIT_COMMITTER_*` / `GIT_AUTHOR_*` environment variables, including the date.
 pub fn user_signature(
     transaction: &crate::cache::Transaction,
-) -> anyhow::Result<git2::Signature<'static>> {
+) -> anyhow::Result<gix_actor::Signature> {
     let default = transaction.signature()?;
     let name = std::env::var("GIT_COMMITTER_NAME")
         .or_else(|_| std::env::var("GIT_AUTHOR_NAME"))
-        .ok();
+        .map(Into::into)
+        .unwrap_or(default.name);
     let email = std::env::var("GIT_COMMITTER_EMAIL")
         .or_else(|_| std::env::var("GIT_AUTHOR_EMAIL"))
-        .ok();
-    let date = std::env::var("GIT_COMMITTER_DATE")
+        .map(Into::into)
+        .unwrap_or(default.email);
+    let time = std::env::var("GIT_COMMITTER_DATE")
         .ok()
-        .or_else(|| std::env::var("GIT_AUTHOR_DATE").ok());
-    let date = date.as_deref().and_then(parse_git_env_date);
+        .or_else(|| std::env::var("GIT_AUTHOR_DATE").ok())
+        .as_deref()
+        .and_then(parse_git_env_date)
+        .unwrap_or(default.time);
 
-    let name = name
-        .as_deref()
-        .unwrap_or_else(|| default.name().unwrap_or(""));
-    let email = email
-        .as_deref()
-        .unwrap_or_else(|| default.email().unwrap_or(""));
-    let time = date.unwrap_or_else(|| default.when());
-    Ok(git2::Signature::new(name, email, &time)?)
+    Ok(gix_actor::Signature { name, email, time })
 }
 
 /// Resolve a repository path to its working directory.

@@ -62,17 +62,12 @@ fn full_ref_name(refname: &str) -> anyhow::Result<gix::refs::FullName> {
 
 /// Who a reflog entry names. A missing configured identity must not prevent ref updates from
 /// writing their reflogs.
-fn reflog_committer(
-    signature: Option<&git2::Signature<'_>>,
-) -> anyhow::Result<gix_actor::Signature> {
-    match signature {
-        Some(signature) => crate::objects::gix_signature(signature),
-        None => Ok(gix_actor::Signature {
-            name: "unknown".into(),
-            email: "unknown".into(),
-            time: gix_actor::date::Time::now_local_or_utc(),
-        }),
-    }
+fn reflog_committer(signature: Option<&gix_actor::Signature>) -> gix_actor::Signature {
+    signature.cloned().unwrap_or_else(|| gix_actor::Signature {
+        name: "unknown".into(),
+        email: "unknown".into(),
+        time: gix_actor::date::Time::now_local_or_utc(),
+    })
 }
 
 /// The gix guard an [`Expected`] is.
@@ -763,20 +758,12 @@ impl Transaction {
 
     /// The identity to record as author and committer, from the repository's configuration
     /// with the usual environment overrides. Errors when no identity is configured.
-    pub fn signature(&self) -> anyhow::Result<git2::Signature<'static>> {
+    pub fn signature(&self) -> anyhow::Result<gix_actor::Signature> {
         let repo = self.repo();
         let signature = repo
             .committer()
             .ok_or_else(|| anyhow!("no committer identity is configured"))??;
-        let time = gix_actor::date::parse_header(signature.time)
-            .ok_or_else(|| anyhow!("committer date is invalid"))?;
-        let name = std::str::from_utf8(signature.name.as_ref())?;
-        let email = std::str::from_utf8(signature.email.as_ref())?;
-        Ok(git2::Signature::new(
-            name,
-            email,
-            &git2::Time::new(time.seconds, time.offset / 60),
-        )?)
+        Ok(signature.to_owned()?)
     }
 
     /// Create or update the direct ref `refname` to point at `target`, guarded by
@@ -839,7 +826,7 @@ impl Transaction {
         edits: Vec<gix::refs::transaction::RefEdit>,
     ) -> anyhow::Result<Vec<gix::refs::transaction::RefEdit>> {
         use gix::lock::acquire::Fail;
-        let committer = reflog_committer(self.signature().ok().as_ref())?;
+        let committer = reflog_committer(self.signature().ok().as_ref());
         let mut time_buf = gix_actor::date::parse::TimeBuf::default();
         Ok(self
             .refs()
@@ -1989,8 +1976,8 @@ mod tests {
         );
         assert_eq!(transaction.upstream_ref("refs/heads/other").unwrap(), None);
         let signature = transaction.signature().unwrap();
-        assert_eq!(signature.name().unwrap(), "Configured User");
-        assert_eq!(signature.email().unwrap(), "configured@example.com");
+        assert_eq!(signature.name.as_slice(), b"Configured User");
+        assert_eq!(signature.email.as_slice(), b"configured@example.com");
     }
 
     #[test]
@@ -2030,7 +2017,7 @@ mod tests {
 
     #[test]
     fn reflog_committer_falls_back_to_unknown() {
-        let committer = reflog_committer(None).unwrap();
+        let committer = reflog_committer(None);
         assert_eq!(committer.name, "unknown");
         assert_eq!(committer.email, "unknown");
     }

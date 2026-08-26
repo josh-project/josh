@@ -1500,18 +1500,14 @@ fn apply_impl(
             let (oid, mode, is_tree) = match content {
                 InsertContent::Inline(s) => (
                     odb.write(gix_object::Kind::Blob, s.as_bytes()),
-                    git2::FileMode::Blob.into(),
+                    0o100644,
                     false,
                 ),
                 // The kind comes from the header alone; a missing oid folds into the
                 // "neither" arm below.
                 InsertContent::Oid(oid) => match odb.try_kind(*oid) {
-                    Ok(Some(gix_object::Kind::Blob)) => {
-                        (oid.to_owned(), git2::FileMode::Blob.into(), false)
-                    }
-                    Ok(Some(gix_object::Kind::Tree)) => {
-                        (oid.to_owned(), git2::FileMode::Tree.into(), true)
-                    }
+                    Ok(Some(gix_object::Kind::Blob)) => (oid.to_owned(), 0o100644, false),
+                    Ok(Some(gix_object::Kind::Tree)) => (oid.to_owned(), 0o040000, true),
                     _ => {
                         return Err(anyhow::anyhow!(
                             "insert: {} is neither a blob nor a tree",
@@ -1545,10 +1541,7 @@ fn apply_impl(
             let (file, mode) =
                 match tree::get_path_entry(transaction, odb, x.tree_id(), source_path) {
                     Ok(Some(e)) => (e.oid, e.mode.value() as i32),
-                    _ => (
-                        gix_hash::ObjectId::null(gix_hash::Kind::Sha1),
-                        git2::FileMode::Blob.into(),
-                    ),
+                    _ => (gix_hash::ObjectId::null(gix_hash::Kind::Sha1), 0o100644),
                 };
             Ok(x.with_tree(tree::insert_oid(
                 odb,
@@ -1575,7 +1568,7 @@ fn apply_impl(
                 tree::empty_id(),
                 path,
                 tree,
-                git2::FileMode::Tree.into(),
+                0o040000,
             )?))
         }
 
@@ -1656,7 +1649,7 @@ fn apply_impl(
                     tree::empty_id(),
                     path,
                     blob_oid,
-                    git2::FileMode::Blob.into(),
+                    0o100644,
                 )?))
             } else {
                 Ok(x)
@@ -1683,8 +1676,8 @@ fn apply_impl(
                 // Kind by header, never by `contains`: `read_header`'s disk fallback
                 // virtualizes the empty tree, `exists` does not.
                 let (oid, mode) = match odb.try_kind(oid) {
-                    Ok(Some(gix_object::Kind::Tree)) => (oid, git2::FileMode::Tree.into()),
-                    Ok(Some(gix_object::Kind::Blob)) => (oid, git2::FileMode::Blob.into()),
+                    Ok(Some(gix_object::Kind::Tree)) => (oid, 0o040000),
+                    Ok(Some(gix_object::Kind::Blob)) => (oid, 0o100644),
                     _ => {
                         return Err(anyhow::anyhow!(":#: object not found in repo: {}", oid));
                     }
@@ -1698,7 +1691,7 @@ fn apply_impl(
                     tree::empty_id(),
                     path,
                     empty_blob,
-                    git2::FileMode::Blob.into(),
+                    0o100644,
                 )?))
             }
         }
@@ -2024,7 +2017,7 @@ fn pre_process_tree(
         tree,
         path,
         odb.write(gix_object::Kind::Blob, blob.as_bytes()),
-        git2::FileMode::Blob.into(), // Should this handle filemode?
+        0o100644, // Should this handle filemode?
     )?;
 
     Ok(tree)

@@ -191,7 +191,7 @@ fn prepare_push(
         let odb = transaction.odb();
         let merged_tree =
             josh_core::objects::merge_commits(odb, original_target, unfiltered_oid, None)?;
-        let signature = josh_core::git::josh_commit_signature()?;
+        let signature = josh_core::git::josh_actor_signature()?;
         josh_core::objects::write_commit(
             odb,
             merged_tree,

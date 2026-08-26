@@ -247,22 +247,21 @@ pub fn write_blob(out: &impl gix_object::Write, data: &[u8]) -> anyhow::Result<g
     Ok(id)
 }
 
-/// Serialize a new commit and write it to `out`. Signatures carry the seconds and UTC
-/// offset of the given git2 signatures; the message is written verbatim, so any cleanup is
-/// the caller's business.
+/// Serialize a new commit and write it to `out`. The message is written verbatim, so any
+/// cleanup is the caller's business.
 pub fn write_commit(
     out: &impl gix_object::Write,
     tree: gix_hash::ObjectId,
     parents: &[gix_hash::ObjectId],
-    author: &git2::Signature<'_>,
-    committer: &git2::Signature<'_>,
+    author: &gix_actor::Signature,
+    committer: &gix_actor::Signature,
     message: &str,
 ) -> anyhow::Result<gix_hash::ObjectId> {
     let commit = gix_object::Commit {
         tree,
         parents: parents.to_vec().into(),
-        author: gix_signature(author)?,
-        committer: gix_signature(committer)?,
+        author: author.clone(),
+        committer: committer.clone(),
         encoding: None,
         message: message.into(),
         extra_headers: vec![],
@@ -300,20 +299,6 @@ pub fn write_commit_with_signatures_of(
         .write_buf(gix_object::Kind::Commit, &buffer)
         .map_err(|e| anyhow::anyhow!("write_commit: {e}"))?;
     Ok(id)
-}
-
-/// The gix spelling of a git2 signature: name and email verbatim, and the timestamp as
-/// seconds plus a UTC offset in seconds.
-pub fn gix_signature(sig: &git2::Signature<'_>) -> anyhow::Result<gix_actor::Signature> {
-    let when = sig.when();
-    Ok(gix_actor::Signature {
-        name: sig.name_bytes().into(),
-        email: sig.email_bytes().into(),
-        time: gix_actor::date::Time {
-            seconds: when.seconds(),
-            offset: i32::from(when.offset_minutes()) * 60,
-        },
-    })
 }
 
 /// A commit's id + raw odb bytes, owned. Send + Sync plain data; never stored in a transaction.
@@ -659,6 +644,17 @@ mod tests {
         let sig = |name: &str, email: &str, secs: i64, offset: i32| {
             git2::Signature::new(name, email, &git2::Time::new(secs, offset)).unwrap()
         };
+        let actor = |sig: &git2::Signature<'_>| {
+            let when = sig.when();
+            gix_actor::Signature {
+                name: sig.name_bytes().into(),
+                email: sig.email_bytes().into(),
+                time: gix_actor::date::Time {
+                    seconds: when.seconds(),
+                    offset: i32::from(when.offset_minutes()) * 60,
+                },
+            }
+        };
 
         let cases: Vec<(git2::Signature, git2::Signature, &str, gix_hash::ObjectId)> = vec![
             (
@@ -712,12 +708,14 @@ mod tests {
                     )
                     .unwrap(),
                 );
+                let author_actor = actor(author);
+                let committer_actor = actor(committer);
                 let got = write_commit(
                     &Git2Odb(&odb),
                     *tree,
                     &parent_ids,
-                    author,
-                    committer,
+                    &author_actor,
+                    &committer_actor,
                     message,
                 )
                 .unwrap();

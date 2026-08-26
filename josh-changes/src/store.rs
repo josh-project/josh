@@ -32,14 +32,23 @@ pub fn scope_tree(
     }
 }
 
-pub(crate) fn parse_timestamp(s: Option<&str>) -> git2::Time {
+pub(crate) fn parse_timestamp(s: Option<&str>) -> gix_actor::date::Time {
     let Some(s) = s else {
-        return git2::Time::new(0, 0);
+        return gix_actor::date::Time {
+            seconds: 0,
+            offset: 0,
+        };
     };
     let Ok(dt) = chrono::DateTime::parse_from_rfc3339(s) else {
-        return git2::Time::new(0, 0);
+        return gix_actor::date::Time {
+            seconds: 0,
+            offset: 0,
+        };
     };
-    git2::Time::new(dt.timestamp(), dt.offset().local_minus_utc() / 60)
+    gix_actor::date::Time {
+        seconds: dt.timestamp(),
+        offset: dt.offset().local_minus_utc(),
+    }
 }
 
 /// Write `blob_oid` at `path` inside `scope`'s ref, committing the updated
@@ -70,14 +79,14 @@ pub fn write_changes_tree(
         }
     }
 
-    let tree = tree::insert_oid(odb, base_tree, path, blob_oid, git2::FileMode::Blob.into())?;
+    let tree = tree::insert_oid(odb, base_tree, path, blob_oid, 0o0100644)?;
 
     let sig = match author {
-        Some(name) => {
-            let email = format!("{}@github", name);
-            let time = parse_timestamp(timestamp);
-            git2::Signature::new(name, &email, &time)?
-        }
+        Some(name) => gix_actor::Signature {
+            name: name.into(),
+            email: format!("{}@github", name).into(),
+            time: parse_timestamp(timestamp),
+        },
         None => josh_core::git::user_signature(transaction)?,
     };
     let msg = format!("update {}\n", ref_name);
@@ -122,7 +131,7 @@ pub fn value_oid<T: serde::Serialize>(
     let root = josh_git_serde::to_tree_oid(odb, &value)?;
     let mode: i32 = match &value {
         GitValue::Tree(_) => 0o0040000,
-        GitValue::Blob(_) => git2::FileMode::Blob.into(),
+        GitValue::Blob(_) => 0o0100644,
     };
     Ok((root, mode))
 }
@@ -155,11 +164,11 @@ pub fn place_oid(
     let tree = tree::insert_oid(odb, base_tree, path, root, mode)?;
 
     let sig = match author {
-        Some(name) => {
-            let email = format!("{}@github", name);
-            let time = parse_timestamp(timestamp);
-            git2::Signature::new(name, &email, &time)?
-        }
+        Some(name) => gix_actor::Signature {
+            name: name.into(),
+            email: format!("{}@github", name).into(),
+            time: parse_timestamp(timestamp),
+        },
         None => josh_core::git::user_signature(transaction)?,
     };
     let msg = format!("update {}\n", ref_name);
@@ -244,7 +253,14 @@ pub fn store_diff_data(
 
     let sig = transaction.signature()?;
 
-    let anchor_sig = git2::Signature::new("JOSH", "josh@josh-project.dev", &git2::Time::new(0, 0))?;
+    let anchor_sig = gix_actor::Signature {
+        name: "JOSH".into(),
+        email: "josh@josh-project.dev".into(),
+        time: gix_actor::date::Time {
+            seconds: 0,
+            offset: 0,
+        },
+    };
     let anchor_oid = objects::write_commit(
         odb,
         tree::empty_id(),
