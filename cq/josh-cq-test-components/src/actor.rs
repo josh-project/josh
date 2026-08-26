@@ -2,7 +2,6 @@ use std::path::{Path, PathBuf};
 
 use axum::body::Body;
 use axum::response::Response;
-use git2::Signature;
 use tokio::sync::{mpsc, oneshot};
 
 use crate::repo::TreeMode;
@@ -16,16 +15,16 @@ pub(crate) enum ActorMsg {
         mode: TreeMode,
         message: String,
         branch_ref: String,
-        response: oneshot::Sender<anyhow::Result<git2::Oid>>,
+        response: oneshot::Sender<anyhow::Result<gix::ObjectId>>,
     },
     CreateBranch {
         name: String,
         from_ref: String,
-        response: oneshot::Sender<anyhow::Result<git2::Oid>>,
+        response: oneshot::Sender<anyhow::Result<gix::ObjectId>>,
     },
     GetHead {
         branch_ref: String,
-        response: oneshot::Sender<anyhow::Result<git2::Oid>>,
+        response: oneshot::Sender<anyhow::Result<gix::ObjectId>>,
     },
     ServeGitHttp {
         request: axum::extract::Request,
@@ -33,9 +32,15 @@ pub(crate) enum ActorMsg {
     },
 }
 
-fn signature() -> Signature<'static> {
-    Signature::new(GIT_AUTHOR_NAME, GIT_AUTHOR_EMAIL, &git2::Time::new(0, 0))
-        .expect("creating git signature")
+fn signature() -> gix::actor::Signature {
+    gix::actor::Signature {
+        name: GIT_AUTHOR_NAME.into(),
+        email: GIT_AUTHOR_EMAIL.into(),
+        time: gix::actor::date::Time {
+            seconds: 0,
+            offset: 0,
+        },
+    }
 }
 
 fn do_commit(
@@ -43,56 +48,61 @@ fn do_commit(
     mode: &TreeMode,
     message: &str,
     branch_ref: &str,
-) -> anyhow::Result<git2::Oid> {
-    let repo = git2::Repository::open(repo_path)?;
-    let sig = signature();
-
-    let parent_commit = repo.revparse_single(branch_ref).ok().and_then(|obj| {
-        if let Ok(commit) = obj.into_commit() {
-            Some(commit)
-        } else {
-            None
-        }
-    });
-
-    let (parent_tree, entries) = match mode {
-        TreeMode::Overlay(entries) => {
-            let tree = parent_commit.as_ref().and_then(|c| c.tree().ok());
-            (tree, entries)
-        }
-        TreeMode::Replace(entries) => (None, entries),
+) -> anyhow::Result<gix::ObjectId> {
+    let repo = gix::open(repo_path)?;
+    let parent_commit = repo.rev_parse_single(branch_ref).ok().map(|id| id.detach());
+    let parent_tree = match (mode, parent_commit) {
+        (TreeMode::Overlay(_), Some(parent)) => repo.find_commit(parent)?.tree_id()?.detach(),
+        _ => gix::ObjectId::empty_tree(repo.object_hash()),
+    };
+    let entries = match mode {
+        TreeMode::Overlay(entries) | TreeMode::Replace(entries) => entries,
     };
 
-    let mut treebuilder = repo.treebuilder(parent_tree.as_ref())?;
+    let mut editor = repo.edit_tree(parent_tree)?;
     for entry in entries {
-        let blob_oid = repo.blob(entry.content.as_bytes())?;
-        treebuilder.insert(
+        let blob_oid = repo.write_blob(entry.content.as_bytes())?;
+        editor.upsert(
             entry.path.as_str(),
+            gix::objs::tree::EntryKind::Blob,
             blob_oid,
-            i32::from(git2::FileMode::Blob),
         )?;
     }
-    let tree_oid = treebuilder.write()?;
-    let tree = repo.find_tree(tree_oid)?;
-
-    let parents: Vec<&git2::Commit> = parent_commit.iter().collect();
-    let commit_oid = repo.commit(Some(branch_ref), &sig, &sig, message, &tree, &parents)?;
+    let tree_oid = editor.write()?.detach();
+    let parents = parent_commit.into_iter();
+    let sig = signature();
+    let mut committer_time = gix::date::parse::TimeBuf::default();
+    let mut author_time = gix::date::parse::TimeBuf::default();
+    let commit_oid = repo
+        .commit_as(
+            sig.to_ref(&mut committer_time),
+            sig.to_ref(&mut author_time),
+            branch_ref,
+            message,
+            tree_oid,
+            parents,
+        )?
+        .detach();
 
     Ok(commit_oid)
 }
 
-fn do_create_branch(repo_path: &Path, name: &str, from_ref: &str) -> anyhow::Result<git2::Oid> {
-    let repo = git2::Repository::open(repo_path)?;
+fn do_create_branch(repo_path: &Path, name: &str, from_ref: &str) -> anyhow::Result<gix::ObjectId> {
+    let repo = gix::open(repo_path)?;
     let branch_ref = format!("{REFS_HEADS_PREFIX}{name}");
-    let from_oid = repo.revparse_single(from_ref)?.id();
-    repo.reference(&branch_ref, from_oid, true, "create branch")?;
+    let from_oid = repo.rev_parse_single(from_ref)?.detach();
+    repo.reference(
+        branch_ref.as_str(),
+        from_oid,
+        gix::refs::transaction::PreviousValue::Any,
+        "create branch",
+    )?;
     Ok(from_oid)
 }
 
-fn do_get_head(repo_path: &Path, branch_ref: &str) -> anyhow::Result<git2::Oid> {
-    let repo = git2::Repository::open(repo_path)?;
-    let obj = repo.revparse_single(branch_ref)?;
-    Ok(obj.id())
+fn do_get_head(repo_path: &Path, branch_ref: &str) -> anyhow::Result<gix::ObjectId> {
+    let repo = gix::open(repo_path)?;
+    Ok(repo.rev_parse_single(branch_ref)?.detach())
 }
 
 pub(crate) async fn run_actor(mut rx: mpsc::UnboundedReceiver<ActorMsg>, repo_path: PathBuf) {
@@ -103,8 +113,8 @@ pub(crate) async fn run_actor(mut rx: mpsc::UnboundedReceiver<ActorMsg>, repo_pa
     }
 
     fn send_join_result(
-        tx: oneshot::Sender<anyhow::Result<git2::Oid>>,
-        result: Result<anyhow::Result<git2::Oid>, tokio::task::JoinError>,
+        tx: oneshot::Sender<anyhow::Result<gix::ObjectId>>,
+        result: Result<anyhow::Result<gix::ObjectId>, tokio::task::JoinError>,
         label: &str,
     ) {
         let value = match result {

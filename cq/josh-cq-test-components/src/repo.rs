@@ -14,7 +14,6 @@ use url::Url;
 use crate::actor::{self, ActorMsg};
 
 const TEMP_DIR_PREFIX: &str = "josh-cq-test-components";
-const HTTP_RECEIVE_PACK: &str = "http.receivepack";
 
 pub struct TreeEntry {
     pub path: String,
@@ -83,11 +82,7 @@ impl TestRepo {
     async fn from_builder(auth_token: Option<String>) -> anyhow::Result<Self> {
         let dir = tempfile::Builder::new().prefix(TEMP_DIR_PREFIX).tempdir()?;
 
-        {
-            let repo = git2::Repository::init_bare(dir.path())?;
-            repo.set_head("refs/heads/main")?;
-            repo.config()?.set_str(HTTP_RECEIVE_PACK, "true")?;
-        }
+        gix::init_bare(dir.path())?;
 
         let path = dir.path().to_owned();
 
@@ -145,7 +140,7 @@ impl TestRepo {
         mode: TreeMode,
         message: &str,
         branch_ref: &str,
-    ) -> anyhow::Result<git2::Oid> {
+    ) -> anyhow::Result<gix::ObjectId> {
         let (resp_tx, resp_rx) = oneshot::channel();
         self.tx
             .send(ActorMsg::Commit {
@@ -158,7 +153,7 @@ impl TestRepo {
         resp_rx.await?
     }
 
-    pub async fn create_branch(&self, name: &str, from_ref: &str) -> anyhow::Result<git2::Oid> {
+    pub async fn create_branch(&self, name: &str, from_ref: &str) -> anyhow::Result<gix::ObjectId> {
         let (resp_tx, resp_rx) = oneshot::channel();
         self.tx
             .send(ActorMsg::CreateBranch {
@@ -170,7 +165,7 @@ impl TestRepo {
         resp_rx.await?
     }
 
-    pub async fn get_head(&self, branch_ref: &str) -> anyhow::Result<git2::Oid> {
+    pub async fn get_head(&self, branch_ref: &str) -> anyhow::Result<gix::ObjectId> {
         let (resp_tx, resp_rx) = oneshot::channel();
         self.tx
             .send(ActorMsg::GetHead {
