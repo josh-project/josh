@@ -5,7 +5,7 @@ use egui::Color32;
 pub fn tree_entry_label(
     icon: &str,
     name: &str,
-    oid: git2::Oid,
+    oid: gix::ObjectId,
     text_color: Color32,
     sha_color: Color32,
 ) -> egui::text::LayoutJob {
@@ -33,8 +33,8 @@ pub fn tree_entry_label(
 pub fn show_tree_item(
     ui: &mut egui::Ui,
     item: &TreeItem,
-    selected_oid: Option<git2::Oid>,
-    on_file_clicked: &mut dyn FnMut(String, git2::Oid),
+    selected_oid: Option<gix::ObjectId>,
+    on_file_clicked: &mut dyn FnMut(String, gix::ObjectId),
 ) {
     let text_color = ui.visuals().text_color();
     let sha_color = ui.visuals().strong_text_color();

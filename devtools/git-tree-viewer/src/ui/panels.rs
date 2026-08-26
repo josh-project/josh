@@ -75,7 +75,7 @@ fn show_sessions_section(ui: &mut egui::Ui, app: &mut GitDebugApp) {
         .max_height(100.0)
         .show(ui, |ui| {
             for trace in &filtered {
-                if let Ok(oid) = git2::Oid::from_str(&trace.commit) {
+                if let Ok(oid) = gix::ObjectId::from_hex(trace.commit.as_bytes()) {
                     let short_id = &trace.commit[..SHA_SHORT_LEN.min(trace.commit.len())];
                     let selected = app.ui_state.selected_commit == Some(oid);
                     if show_commit_bubble(ui, selected, short_id, &trace.label).clicked() {
@@ -120,9 +120,9 @@ fn show_central_panel(ui: &mut egui::Ui, app: &mut GitDebugApp) {
         .repo
         .find_commit(selected_commit)
         .expect("Failed to find commit")
-        .tree()
+        .tree_id()
         .expect("Failed to get tree")
-        .id();
+        .detach();
 
     let tree_items = git::build_tree(&app.repo, tree_id, "");
 

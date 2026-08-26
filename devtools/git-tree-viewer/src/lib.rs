@@ -25,12 +25,19 @@ pub enum RepoSource {
 
 impl RepoSource {
     pub fn new_temp() -> anyhow::Result<Self> {
+        use std::io::Write;
+
         let dir = tempfile::Builder::new()
             .prefix("git-tree-viewer")
             .tempdir()?;
 
-        let repo = git2::Repository::init_bare(dir.path())?;
-        repo.config()?.set_str("http.receivepack", "true")?;
+        let repo = gix::init_bare(dir.path())?;
+        writeln!(
+            std::fs::OpenOptions::new()
+                .append(true)
+                .open(repo.git_dir().join("config"))?,
+            "\n[http]\n\treceivepack = true"
+        )?;
 
         Ok(Self::TempDir(dir))
     }
@@ -53,9 +60,9 @@ pub struct Trace {
 }
 
 pub struct UiState {
-    history_start: Option<git2::Oid>,
-    selected_commit: Option<git2::Oid>,
-    selected_file: Option<(String, git2::Oid)>,
+    history_start: Option<gix::ObjectId>,
+    selected_commit: Option<gix::ObjectId>,
+    selected_file: Option<(String, gix::ObjectId)>,
     file_content: Option<String>,
     selected_session: Option<String>,
     error: Option<String>,
@@ -63,13 +70,13 @@ pub struct UiState {
 
 pub struct GitDebugApp {
     mode: AppMode,
-    repo: git2::Repository,
+    repo: gix::Repository,
     ui_state: UiState,
     _repo_source: RepoSource,
 }
 
 impl GitDebugApp {
-    pub fn new(mode: AppMode, repo_source: RepoSource) -> Result<Self, git2::Error> {
+    pub fn new(mode: AppMode, repo_source: RepoSource) -> anyhow::Result<Self> {
         let repo = git::open_repo(repo_source.as_ref())?;
 
         let resolved_commit = match &mode {
