@@ -2638,6 +2638,51 @@ fn downstack_commit_deps(
 mod tests {
     use super::*;
     use std::path::PathBuf;
+    fn empty_tree(repo: &gix::Repository) -> gix_hash::ObjectId {
+        gix_object::Write::write(
+            &repo.objects,
+            &gix_object::Tree {
+                entries: Vec::new(),
+            },
+        )
+        .unwrap()
+    }
+
+    fn build_tree(repo: &gix::Repository, files: &[(&str, &str)]) -> gix_hash::ObjectId {
+        let mut builder = repo.edit_tree(empty_tree(repo)).unwrap();
+        for (path, content) in files {
+            let oid = josh_gix_ext::write_blob(&repo.objects, content.as_bytes()).unwrap();
+            builder
+                .upsert(*path, gix::objs::tree::EntryKind::Blob, oid)
+                .unwrap();
+        }
+        builder.write().unwrap().detach()
+    }
+
+    fn write_commit(
+        repo: &gix::Repository,
+        tree: gix_hash::ObjectId,
+        parents: &[gix_hash::ObjectId],
+        message: &str,
+    ) -> gix_hash::ObjectId {
+        let signature = gix_actor::Signature {
+            name: "t".into(),
+            email: "t@e".into(),
+            time: gix_actor::date::Time {
+                seconds: 0,
+                offset: 0,
+            },
+        };
+        josh_gix_ext::write_commit(
+            &repo.objects,
+            tree,
+            parents,
+            &signature,
+            &signature,
+            message,
+        )
+        .unwrap()
+    }
 
     #[test]
     fn src_path_test() {
@@ -2756,19 +2801,10 @@ mod tests {
 
     #[test]
     fn meta_filter_tree_roundtrip_test() {
-        use git2::Repository;
         use josh_filter::persist::{as_tree, from_tree};
-        use std::fs;
 
-        // Create a temporary directory for the test repository
-        let test_dir = std::env::temp_dir()
-            .join("josh_test_flags")
-            .join(format!("test_{}", std::process::id()));
-        let _ = fs::remove_dir_all(&test_dir);
-        fs::create_dir_all(&test_dir).unwrap();
-
-        // Initialize a git repository
-        let repo = Repository::init(&test_dir).unwrap();
+        let test_dir = tempfile::tempdir().unwrap();
+        let repo = gix::init(test_dir.path()).unwrap();
 
         // Create a metadata filter
         let mut meta = std::collections::BTreeMap::new();
@@ -2778,12 +2814,10 @@ mod tests {
         let meta_filter = to_filter(Op::Meta(meta.clone(), inner_filter));
 
         // Serialize to tree
-        let odb = repo.odb().unwrap();
-        let objects = objects::Git2Odb(&odb);
-        let tree_oid = as_tree(&objects, meta_filter).unwrap();
+        let tree_oid = as_tree(&repo.objects, meta_filter).unwrap();
 
         // Deserialize from tree
-        let deserialized_filter = from_tree(&objects, tree_oid).unwrap();
+        let deserialized_filter = from_tree(&repo.objects, tree_oid).unwrap();
 
         // Verify the specs match
         let original_spec = spec(meta_filter);
@@ -2793,9 +2827,6 @@ mod tests {
             "Tree round-trip failed:\n  Original spec: {}\n  Deserialized spec: {}",
             original_spec, deserialized_spec
         );
-
-        // Clean up
-        let _ = fs::remove_dir_all(&test_dir);
     }
 
     // Apply-based correctness oracle for the optimizer's Subtract handling: applying the
@@ -2805,10 +2836,9 @@ mod tests {
     #[test]
     fn subtract_optimizer_apply_oracle() {
         let td = tempfile::tempdir().unwrap();
-        let repo = git2::Repository::init_bare(td.path()).unwrap();
+        let repo = gix::init_bare(td.path()).unwrap();
 
-        let mut b = git2::build::TreeUpdateBuilder::new();
-        for p in [
+        let mut files = [
             "d1/s1/f0",
             "d1/s1/f1",
             "d2/s2/f0",
@@ -2817,20 +2847,15 @@ mod tests {
             "sub1/file1",
             "sub1/file2",
             "sub2/subsub/file2",
-        ] {
-            let oid = repo.blob(p.as_bytes()).unwrap();
-            b.upsert(p, oid, git2::FileMode::Blob);
-        }
+        ]
+        .map(|path| (path, path))
+        .to_vec();
         let ws_content = ":/sub1::file1\n:/sub1::file2\n::sub2/subsub/\n";
-        for p in ["ws/workspace.josh", "ws2/workspace.josh"] {
-            let oid = repo.blob(ws_content.as_bytes()).unwrap();
-            b.upsert(p, oid, git2::FileMode::Blob);
-        }
-        let empty = repo.treebuilder(None).unwrap().write().unwrap();
-        let tree = josh_gix_ext::gix_oid(
-            b.create_updated(&repo, &repo.find_tree(empty).unwrap())
-                .unwrap(),
-        );
+        files.extend([
+            ("ws/workspace.josh", ws_content),
+            ("ws2/workspace.josh", ws_content),
+        ]);
+        let tree = build_tree(&repo, &files);
 
         let cachestack = std::sync::Arc::new(
             cache::CacheStack::new().with_backend(cache::SledCacheBackend::new(td.path())),
@@ -2945,36 +2970,11 @@ mod tests {
     #[test]
     fn downstack_keeps_merge_second_parent() {
         let td = tempfile::tempdir().unwrap();
-        let repo = git2::Repository::init_bare(td.path()).unwrap();
+        let repo = gix::init_bare(td.path()).unwrap();
 
-        let mk_tree = |files: &[(&str, &str)]| -> gix_hash::ObjectId {
-            let mut b = git2::build::TreeUpdateBuilder::new();
-            for (p, c) in files {
-                let oid = repo.blob(c.as_bytes()).unwrap();
-                b.upsert(*p, oid, git2::FileMode::Blob);
-            }
-            let empty = repo.treebuilder(None).unwrap().write().unwrap();
-            josh_gix_ext::gix_oid(
-                b.create_updated(&repo, &repo.find_tree(empty).unwrap())
-                    .unwrap(),
-            )
-        };
-
-        let sig = git2::Signature::new("t", "t@e", &git2::Time::new(0, 0)).unwrap();
-        let mk_commit = |tree: gix_hash::ObjectId,
-                         parents: &[gix_hash::ObjectId],
-                         msg: &str|
-         -> gix_hash::ObjectId {
-            let tree = repo.find_tree(josh_gix_ext::git2_oid(&tree)).unwrap();
-            let parent_commits: Vec<git2::Commit> = parents
-                .iter()
-                .map(|p| repo.find_commit(josh_gix_ext::git2_oid(p)).unwrap())
-                .collect();
-            let parent_refs: Vec<&git2::Commit> = parent_commits.iter().collect();
-            josh_gix_ext::gix_oid(
-                repo.commit(None, &sig, &sig, msg, &tree, &parent_refs)
-                    .unwrap(),
-            )
+        let mk_tree = |files: &[(&str, &str)]| build_tree(&repo, files);
+        let mk_commit = |tree: gix_hash::ObjectId, parents: &[gix_hash::ObjectId], msg: &str| {
+            write_commit(&repo, tree, parents, msg)
         };
 
         // base <- side, and a merge of the two is the change being published.
@@ -2992,28 +2992,17 @@ mod tests {
         let ctx = cache::TransactionContext::new(td.path(), cachestack);
         let t = ctx.open().unwrap();
 
-        let out = repo
-            .find_commit(josh_gix_ext::git2_oid(&downstack(&t, merge, base).unwrap()))
-            .unwrap();
-        assert_eq!(out.parent_count(), 2, "merge change lost its second parent");
-        assert_eq!(
-            out.parent_id(0).unwrap(),
-            objects::git2_oid(&base),
-            "first parent should be the minimal base"
-        );
-        assert_eq!(
-            out.parent_id(1).unwrap(),
-            objects::git2_oid(&side),
-            "second parent should be carried through"
-        );
+        let out =
+            objects::CommitData::read(&repo.objects, downstack(&t, merge, base).unwrap()).unwrap();
+        let parents = out.parent_ids().collect::<Vec<_>>();
+        assert_eq!(parents.len(), 2, "merge change lost its second parent");
+        assert_eq!(parents[0], base, "first parent should be the minimal base");
+        assert_eq!(parents[1], side, "second parent should be preserved");
 
         // A single-parent change is unaffected by the parent-preserving rewrite.
         let linear = mk_commit(mk_tree(&[("a", "1"), ("n", "n")]), &[base], "linear change");
-        let out_linear = repo
-            .find_commit(josh_gix_ext::git2_oid(
-                &downstack(&t, linear, base).unwrap(),
-            ))
-            .unwrap();
+        let out_linear =
+            objects::CommitData::read(&repo.objects, downstack(&t, linear, base).unwrap()).unwrap();
         assert_eq!(out_linear.parent_count(), 1);
     }
 }

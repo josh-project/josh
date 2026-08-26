@@ -395,15 +395,6 @@ impl Transaction {
     pub fn repo(&self) -> gix::Repository {
         self.gix_repo.to_thread_local()
     }
-    #[cfg(test)]
-    pub(crate) fn git2_repo(&self) -> git2::Repository {
-        git2::Repository::open_ext(
-            self.path(),
-            git2::RepositoryOpenFlags::NO_SEARCH,
-            &[] as &[&std::ffi::OsStr],
-        )
-        .expect("open test repository with libgit2")
-    }
 
     /// The transaction's object-database facade: memory store first, repository objects
     /// fallback (see [`josh_memodb::Odb`]).
@@ -1488,12 +1479,13 @@ impl josh_search::IndexCache for TrigramIndexCache<'_> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::io::Write;
 
     fn test_transaction() -> (tempfile::TempDir, Transaction) {
         // These tests exercise ref/commit machinery, not the on-disk cache, so an empty cache
         // stack (no sled backend) is enough.
         let dir = tempfile::tempdir().unwrap();
-        git2::Repository::init_bare(dir.path()).unwrap();
+        gix::init_bare(dir.path()).unwrap();
         let context = TransactionContext::new(
             dir.path(),
             std::sync::Arc::new(crate::cache::CacheStack::new()),
@@ -1502,13 +1494,48 @@ mod tests {
         (dir, transaction)
     }
 
+    fn commit_with_parents(
+        transaction: &Transaction,
+        msg: &str,
+        parents: &[gix_hash::ObjectId],
+    ) -> gix_hash::ObjectId {
+        let repo = transaction.repo();
+        let tree = gix_object::Write::write(
+            &repo.objects,
+            &gix_object::Tree {
+                entries: Vec::new(),
+            },
+        )
+        .unwrap();
+        let sig = gix_actor::Signature {
+            name: "t".into(),
+            email: "t@example.com".into(),
+            time: gix_actor::date::Time {
+                seconds: 0,
+                offset: 0,
+            },
+        };
+        josh_gix_ext::write_commit(&repo.objects, tree, parents, &sig, &sig, msg).unwrap()
+    }
+
     fn commit(transaction: &Transaction, msg: &str) -> gix_hash::ObjectId {
-        let repo = transaction.git2_repo();
-        let tree = repo
-            .find_tree(repo.treebuilder(None).unwrap().write().unwrap())
-            .unwrap();
-        let sig = git2::Signature::new("t", "t@example.com", &git2::Time::new(0, 0)).unwrap();
-        josh_gix_ext::gix_oid(repo.commit(None, &sig, &sig, msg, &tree, &[]).unwrap())
+        commit_with_parents(transaction, msg, &[])
+    }
+
+    fn disk_ref(path: &std::path::Path, name: &str) -> Option<gix_hash::ObjectId> {
+        gix::open(path)
+            .unwrap()
+            .try_find_reference(name)
+            .unwrap()
+            .and_then(|reference| reference.target().try_id().map(ToOwned::to_owned))
+    }
+
+    fn disk_blob(path: &std::path::Path, oid: gix_hash::ObjectId) -> Option<Vec<u8>> {
+        let repo = gix::open(path).unwrap();
+        repo.find_object(oid)
+            .ok()
+            .filter(|object| object.kind == gix_object::Kind::Blob)
+            .map(|object| object.data.clone())
     }
 
     #[test]
@@ -1525,8 +1552,7 @@ mod tests {
             .update_ref("refs/heads/main", Expected::Any, oid, "test")
             .unwrap();
         transaction
-            .git2_repo()
-            .reference_symbolic("refs/josh/sym", "refs/heads/main", true, "test")
+            .create_symref("refs/josh/sym", "refs/heads/main", "test")
             .unwrap();
 
         assert_eq!(
@@ -1540,8 +1566,7 @@ mod tests {
     fn resolve_ref_dangling_symref_is_none() {
         let (_dir, transaction) = test_transaction();
         transaction
-            .git2_repo()
-            .reference_symbolic("refs/josh/dangling", "refs/heads/missing", true, "test")
+            .create_symref("refs/josh/dangling", "refs/heads/missing", "test")
             .unwrap();
         assert_eq!(transaction.resolve_ref("refs/josh/dangling").unwrap(), None);
     }
@@ -1592,14 +1617,7 @@ mod tests {
         assert!(transaction.apply_pending_refs().is_err());
 
         assert_eq!(transaction.resolve_ref("refs/heads/main").unwrap(), Some(a));
-        assert_eq!(
-            git2::Repository::open(dir.path())
-                .unwrap()
-                .find_reference("refs/heads/main")
-                .unwrap()
-                .target(),
-            Some(crate::objects::git2_oid(&a))
-        );
+        assert_eq!(disk_ref(dir.path(), "refs/heads/main"), Some(a));
     }
 
     #[test]
@@ -1702,9 +1720,9 @@ mod tests {
             .unwrap();
         transaction.apply_pending_refs().unwrap();
         transaction
-            .git2_repo()
-            .reference_symbolic("refs/josh/aa", "refs/josh/a", true, "test")
+            .create_symref("refs/josh/aa", "refs/josh/a", "test")
             .unwrap();
+        transaction.apply_pending_refs().unwrap();
 
         // Pack `refs/josh/a` by hand (no pack-refs API is exposed), so the listing also has
         // to merge the packed side in.
@@ -1900,16 +1918,7 @@ mod tests {
     fn rev_parse_resolves_revision_syntax_and_rejects_user_input() {
         let (_dir, transaction) = test_transaction();
         let parent = commit(&transaction, "parent");
-        let repo = transaction.git2_repo();
-        let tree = repo
-            .find_tree(repo.treebuilder(None).unwrap().write().unwrap())
-            .unwrap();
-        let sig = git2::Signature::new("t", "t@example.com", &git2::Time::new(0, 0)).unwrap();
-        let parent_commit = repo.find_commit(josh_gix_ext::git2_oid(&parent)).unwrap();
-        let tip = josh_gix_ext::gix_oid(
-            repo.commit(None, &sig, &sig, "tip", &tree, &[&parent_commit])
-                .unwrap(),
-        );
+        let tip = commit_with_parents(&transaction, "tip", &[parent]);
         transaction
             .update_ref("refs/heads/main", Expected::Any, tip, "test")
             .unwrap();
@@ -1925,21 +1934,24 @@ mod tests {
     #[test]
     fn configuration_methods_use_repository_configuration() {
         let dir = tempfile::tempdir().unwrap();
-        let repo = git2::Repository::init_bare(dir.path()).unwrap();
-        let mut config = repo.config().unwrap();
-        config.set_str("user.name", "Configured User").unwrap();
-        config
-            .set_str("user.email", "configured@example.com")
+        gix::init_bare(dir.path()).unwrap();
+        std::fs::OpenOptions::new()
+            .append(true)
+            .open(dir.path().join("config"))
+            .unwrap()
+            .write_all(
+                br#"
+[user]
+    name = Configured User
+    email = configured@example.com
+[branch "main"]
+    remote = origin
+    merge = refs/heads/main
+[remote "origin"]
+    fetch = +refs/heads/*:refs/remotes/origin/*
+"#,
+            )
             .unwrap();
-        config.set_str("branch.main.remote", "origin").unwrap();
-        config
-            .set_str("branch.main.merge", "refs/heads/main")
-            .unwrap();
-        config
-            .set_str("remote.origin.fetch", "+refs/heads/*:refs/remotes/origin/*")
-            .unwrap();
-        drop(config);
-        drop(repo);
 
         let context = TransactionContext::new(
             dir.path(),
@@ -1969,7 +1981,7 @@ mod tests {
         // The one thing a bare test repository cannot show: gix appends to the reflog where
         // git does, and refuses to do it without a committer.
         let dir = tempfile::tempdir().unwrap();
-        git2::Repository::init(dir.path()).unwrap();
+        gix::init(dir.path()).unwrap();
         let context = TransactionContext::new(
             dir.path().join(".git"),
             std::sync::Arc::new(crate::cache::CacheStack::new()),
@@ -2180,12 +2192,7 @@ mod tests {
             .delete_ref("refs/josh/sym", Expected::Any)
             .unwrap();
         // The symref entry is gone; the branch it pointed at survives.
-        assert!(
-            transaction
-                .git2_repo()
-                .find_reference("refs/josh/sym")
-                .is_err()
-        );
+        assert!(disk_ref(transaction.path(), "refs/josh/sym").is_none());
         assert_eq!(
             transaction.resolve_ref("refs/heads/main").unwrap(),
             Some(oid)
@@ -2195,7 +2202,7 @@ mod tests {
     /// A context the store-lifetime tests below open several transactions from in turn.
     fn test_context() -> (tempfile::TempDir, TransactionContext) {
         let dir = tempfile::tempdir().unwrap();
-        git2::Repository::init_bare(dir.path()).unwrap();
+        gix::init_bare(dir.path()).unwrap();
         let context = TransactionContext::new(
             dir.path(),
             std::sync::Arc::new(crate::cache::CacheStack::new()),
@@ -2258,23 +2265,15 @@ mod tests {
                 transaction.resolve_ref("refs/josh/blob").unwrap(),
                 Some(oid)
             );
-            let on_disk = git2::Repository::open(dir.path()).unwrap();
-            assert!(on_disk.find_reference("refs/josh/blob").is_err());
-            assert!(on_disk.find_blob(crate::objects::git2_oid(&oid)).is_err());
+            assert!(disk_ref(dir.path(), "refs/josh/blob").is_none());
+            assert!(disk_blob(dir.path(), oid).is_none());
             oid
         };
 
-        let on_disk = git2::Repository::open(dir.path()).unwrap();
+        assert_eq!(disk_ref(dir.path(), "refs/josh/blob"), Some(oid));
         assert_eq!(
-            on_disk.find_reference("refs/josh/blob").unwrap().target(),
-            Some(crate::objects::git2_oid(&oid))
-        );
-        assert_eq!(
-            on_disk
-                .find_blob(crate::objects::git2_oid(&oid))
-                .unwrap()
-                .content(),
-            b"published"
+            disk_blob(dir.path(), oid).as_deref(),
+            Some(b"published".as_slice())
         );
     }
 
@@ -2290,17 +2289,10 @@ mod tests {
 
         transaction.flush_mem_odb().unwrap();
 
-        let on_disk = git2::Repository::open(dir.path()).unwrap();
+        assert_eq!(disk_ref(dir.path(), "refs/josh/blob"), Some(oid));
         assert_eq!(
-            on_disk.find_reference("refs/josh/blob").unwrap().target(),
-            Some(crate::objects::git2_oid(&oid))
-        );
-        assert_eq!(
-            on_disk
-                .find_blob(crate::objects::git2_oid(&oid))
-                .unwrap()
-                .content(),
-            b"boundary"
+            disk_blob(dir.path(), oid).as_deref(),
+            Some(b"boundary".as_slice())
         );
     }
 
@@ -2325,20 +2317,10 @@ mod tests {
                 Some(target)
             );
             transaction.flush_mem_odb().unwrap();
-            assert!(
-                git2::Repository::open(dir.path())
-                    .unwrap()
-                    .find_reference("refs/josh/ephemeral")
-                    .is_err()
-            );
+            assert!(disk_ref(dir.path(), "refs/josh/ephemeral").is_none());
         }
 
-        assert!(
-            git2::Repository::open(dir.path())
-                .unwrap()
-                .find_reference("refs/josh/ephemeral")
-                .is_err()
-        );
+        assert!(disk_ref(dir.path(), "refs/josh/ephemeral").is_none());
     }
 
     /// An ephemeral transaction discards what it writes, but still reads what the repository's
