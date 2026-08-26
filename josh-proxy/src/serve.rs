@@ -205,7 +205,7 @@ mod tests {
     #[test]
     fn test_git_cap_discovery() -> anyhow::Result<()> {
         let dir = tempfile::TempDir::new()?;
-        let _repo = git2::Repository::init_bare(&dir)?;
+        let _repo = gix::init_bare(&dir)?;
 
         let receive_pack_caps =
             git_list_capabilities(dir.as_ref(), CapabilitiesDirection::ReceivePack).unwrap();

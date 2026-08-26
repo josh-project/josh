@@ -3700,7 +3700,6 @@ dependencies = [
  "bon",
  "clap",
  "futures",
- "git2",
  "gix",
  "gix-hash",
  "gix-packetline",
