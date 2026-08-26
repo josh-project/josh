@@ -9,6 +9,9 @@ const GIT_HTTP_BACKEND: &str = "http-backend";
 const CGI_GIT_PROJECT_ROOT: &str = "GIT_PROJECT_ROOT";
 const CGI_PATH_INFO: &str = "PATH_INFO";
 const CGI_GIT_HTTP_EXPORT_ALL: &str = "GIT_HTTP_EXPORT_ALL";
+const CGI_GIT_CONFIG_COUNT: &str = "GIT_CONFIG_COUNT";
+const CGI_GIT_CONFIG_KEY: &str = "GIT_CONFIG_KEY_0";
+const CGI_GIT_CONFIG_VALUE: &str = "GIT_CONFIG_VALUE_0";
 
 fn prepare_command(repo_path: &Path, req_path: &str) -> tokio::process::Command {
     let repo_dir = repo_path
@@ -26,7 +29,10 @@ fn prepare_command(repo_path: &Path, req_path: &str) -> tokio::process::Command 
             repo_path.parent().expect("repo path has no parent"),
         )
         .env(CGI_PATH_INFO, path_info)
-        .env(CGI_GIT_HTTP_EXPORT_ALL, "1");
+        .env(CGI_GIT_HTTP_EXPORT_ALL, "1")
+        .env(CGI_GIT_CONFIG_COUNT, "1")
+        .env(CGI_GIT_CONFIG_KEY, "http.receivePack")
+        .env(CGI_GIT_CONFIG_VALUE, "true");
 
     cmd
 }

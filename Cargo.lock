@@ -3471,7 +3471,7 @@ dependencies = [
  "axum",
  "axum-cgi",
  "futures",
- "git2",
+ "gix",
  "headers",
  "tempfile",
  "tokio",
