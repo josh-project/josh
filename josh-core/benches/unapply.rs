@@ -1,7 +1,7 @@
 use criterion::{BatchSize, BenchmarkId, Criterion, Throughput, criterion_group, criterion_main};
 use josh_core::filter::Filter;
-use josh_core::git::josh_commit_signature;
 use josh_core::history::{OrphansMode, unapply_filter};
+use josh_test_support::bench::josh_commit_signature;
 use josh_test_support::bench::{EntryKind, git2_oid, gix_oid};
 use rand::prelude::*;
 use std::path::PathBuf;
@@ -101,7 +101,7 @@ impl UnapplyBench {
         let mut cases = vec![];
         {
             let transaction = context.open()?;
-            let repo = transaction.git2_repo();
+            let repo = josh_test_support::bench::open_git2_repo(transaction.path())?;
             for &n_commits in HISTORY_SIZES {
                 let head = gix_oid(repo.refname_to_id(&format!("refs/heads/case_{n_commits}"))?);
                 let filtered_head = josh_core::filter_commit(&transaction, filter, head)?;
@@ -280,7 +280,9 @@ fn unapply_extend(c: &mut Criterion) {
     {
         let case = bench.cases.first().expect("at least one case");
         let transaction = bench.context.open().expect("open transaction");
-        let tip = extend_filtered(transaction.git2_repo(), case.filtered_head, usize::MAX)
+        let reference_repo =
+            josh_test_support::bench::open_git2_repo(transaction.path()).expect("open repo");
+        let tip = extend_filtered(&reference_repo, case.filtered_head, usize::MAX)
             .expect("extend filtered");
         let unapplied = unapply_filter(
             &transaction,
@@ -310,8 +312,11 @@ fn unapply_extend(c: &mut Criterion) {
                 // for the history stay warm -- only the push delta is new, as in a real push.
                 || {
                     let transaction = bench.context.open().expect("open transaction");
+                    let reference_repo =
+                        josh_test_support::bench::open_git2_repo(transaction.path())
+                            .expect("open repo");
                     let tip = extend_filtered(
-                        transaction.git2_repo(),
+                        &reference_repo,
                         case.filtered_head,
                         salt.fetch_add(1, Ordering::Relaxed),
                     )

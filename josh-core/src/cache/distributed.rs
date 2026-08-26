@@ -13,7 +13,7 @@ const FLUSH_AFTER: usize = 1000;
 pub struct DistributedCacheBackend {
     new_entries:
         std::sync::Mutex<HashMap<(Filter, u64), HashMap<gix_hash::ObjectId, gix_hash::ObjectId>>>,
-    repo: std::sync::Mutex<git2::Repository>,
+    repo: std::sync::Arc<gix::ThreadSafeRepository>,
     // Whether this backend accepts writes. The default ([`Self::new`]) is read-only: regular
     // sessions consume the fetched cache but should not each grow the shard chains with a
     // commit, pack and ref update for the few entries they produce -- the local sled cache
@@ -24,8 +24,8 @@ pub struct DistributedCacheBackend {
     // packed instead of being written synchronously as loose objects.
     mem_odb: std::sync::Arc<josh_memodb::MemOdb>,
     // The facade over `mem_odb` and this repository's objects, held rather than built per call
-    // so its store's pack indices are loaded once. Behind a mutex like `repo`: the backend is
-    // shared between threads, a facade is not.
+    // so its store's pack indices are loaded once. Behind a mutex because the facade is not
+    // `Sync`.
     odb: std::sync::Mutex<josh_memodb::Odb>,
     // Shard commits built by non-forced flushes, keyed by ref name. Their objects may still be
     // in `mem_odb` only, so the refs are published exclusively by a forced flush, after a drain
@@ -60,12 +60,15 @@ impl DistributedCacheBackend {
     }
 
     fn open(repo_path: impl AsRef<std::path::Path>, writable: bool) -> anyhow::Result<Self> {
-        let repo = git2::Repository::open(repo_path.as_ref())?;
-        let objects_dir = repo.commondir().join("objects");
+        let repo = std::sync::Arc::new(gix::ThreadSafeRepository::open_opts(
+            repo_path.as_ref(),
+            gix::open::Options::isolated(),
+        )?);
+        let objects_dir = repo.objects.path().to_owned();
         let mem_odb = josh_memodb::MemOdb::new(None, objects_dir.clone());
         let odb = josh_memodb::Odb::at(mem_odb.clone(), &objects_dir)?;
         Ok(Self {
-            repo: std::sync::Mutex::new(repo),
+            repo,
             mem_odb,
             odb: std::sync::Mutex::new(odb),
             writable,
@@ -89,7 +92,7 @@ impl DistributedCacheBackend {
     }
 
     pub fn flush(&self, force: bool) -> anyhow::Result<()> {
-        let repo = self.repo.lock().unwrap();
+        let repo = self.repo.to_thread_local();
         let odb = self.odb.lock().unwrap();
         let odb = &*odb;
 
@@ -107,10 +110,9 @@ impl DistributedCacheBackend {
             // Include earlier unpublished batches.
             let base = if let Some(oid) = pending.get(&rp) {
                 Some(*oid)
-            } else if let Ok(r) = repo.revparse_single(&rp) {
-                Some(objects::gix_oid(r.peel_to_commit()?.id()))
             } else {
-                None
+                repo.try_find_reference(&rp)?
+                    .and_then(|reference| reference.target().try_id().map(ToOwned::to_owned))
             };
 
             let mut buf = Vec::new();
@@ -180,7 +182,19 @@ impl DistributedCacheBackend {
         self.mem_odb.flush()?;
 
         for (rp, commit) in pending.drain() {
-            repo.reference(&rp, objects::git2_oid(&commit), true, "cache")?;
+            repo.edit_reference(gix::refs::transaction::RefEdit {
+                change: gix::refs::transaction::Change::Update {
+                    log: gix::refs::transaction::LogChange {
+                        mode: gix::refs::transaction::RefLog::AndReference,
+                        force_create_reflog: false,
+                        message: "cache".into(),
+                    },
+                    expected: gix::refs::transaction::PreviousValue::Any,
+                    new: gix::refs::Target::Object(commit),
+                },
+                name: gix::refs::FullName::try_from(rp.as_str())?,
+                deref: false,
+            })?;
         }
 
         Ok(())
@@ -233,7 +247,7 @@ impl CacheBackend for DistributedCacheBackend {
         if !tree_keyed && !hint.is_sample_point() {
             return Ok(None);
         }
-        let repo = self.repo.lock().unwrap();
+        let repo = self.repo.to_thread_local();
 
         let guard = self.new_entries.lock().unwrap();
 
@@ -254,8 +268,10 @@ impl CacheBackend for DistributedCacheBackend {
         let pending = self.pending_refs.lock().unwrap();
         let tree = if let Some(oid) = pending.get(&rp) {
             objects::CommitData::read(odb, *oid)?.tree_id()?
-        } else if let Ok(r) = repo.revparse_single(&rp) {
-            objects::gix_oid(r.peel_to_tree()?.id())
+        } else if let Ok(Some(reference)) = repo.try_find_reference(&rp)
+            && let Some(commit) = reference.target().try_id()
+        {
+            objects::CommitData::read(odb, commit.to_owned())?.tree_id()?
         } else {
             return Ok(None);
         };

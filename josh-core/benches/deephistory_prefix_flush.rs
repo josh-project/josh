@@ -1,6 +1,6 @@
 use criterion::{BatchSize, BenchmarkId, Criterion, Throughput, criterion_group, criterion_main};
 use josh_core::filter::Filter;
-use josh_core::git::josh_commit_signature;
+use josh_test_support::bench::josh_commit_signature;
 use josh_test_support::bench::{EntryKind, build_index, git2_oid, gix_oid, random_string};
 use rand::prelude::*;
 use std::path::{Path, PathBuf};

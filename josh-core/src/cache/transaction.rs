@@ -173,9 +173,11 @@ fn shared_gix_repo(
 
 impl TransactionContext {
     pub fn from_env(cache: std::sync::Arc<CacheStack>) -> anyhow::Result<Self> {
-        let repo = git2::Repository::open_from_env()?;
+        let repo = gix::ThreadSafeRepository::discover_with_environment_overrides(
+            std::env::current_dir()?,
+        )
+        .map_err(crate::git::map_discovery_error)?;
         let path = repo.path().to_owned();
-
         Ok(Self {
             path,
             cache,
@@ -219,11 +221,6 @@ impl TransactionContext {
         let gix_repo = shared_gix_repo(&self.path)?;
 
         Ok(Transaction::new(
-            git2::Repository::open_ext(
-                &self.path,
-                git2::RepositoryOpenFlags::NO_SEARCH,
-                &[] as &[&std::ffi::OsStr],
-            )?,
             gix_repo,
             self.cache.clone(),
             self.ref_prefix.as_deref(),
@@ -264,7 +261,6 @@ pub struct Transaction {
     /// commits reuses the merge work of earlier commits. Its own cell because `trigram_index`
     /// borrows it for the entire call while also borrowing other caches through `t2`.
     trigram_indexer: std::cell::RefCell<josh_search::Indexer>,
-    repo: git2::Repository,
     /// The primary repository view for object and ref reads. Held in its thread-safe form:
     /// a transaction crosses threads (josh-graphql requires `Send`) while a `gix::Repository`
     /// holds `Rc` snapshots of packed-refs and shallow state and does not.
@@ -325,23 +321,12 @@ impl Drop for Transaction {
 
 impl Transaction {
     fn new(
-        repo: git2::Repository,
         gix_repo: std::sync::Arc<gix::ThreadSafeRepository>,
         cache: std::sync::Arc<CacheStack>,
         ref_prefix: Option<&str>,
         mem_odb_limit: Option<usize>,
         ephemeral: bool,
     ) -> Transaction {
-        // Configure the remaining porcelain handle once; these options are process-wide.
-        static GIT2_OPTIONS: std::sync::Once = std::sync::Once::new();
-        GIT2_OPTIONS.call_once(|| {
-            // Josh only writes objects whose references it has just produced or read.
-            git2::opts::strict_object_creation(false);
-            // Objects are produced locally or verified on transfer, so hashing every read adds
-            // work without strengthening this trust boundary.
-            git2::opts::strict_hash_verification(false);
-        });
-
         // An ephemeral transaction must not contribute to a store that outlives it, so it
         // buffers privately and reads through to the shared one.
         let objects_dir = gix_repo.objects.path().to_owned();
@@ -381,7 +366,6 @@ impl Transaction {
                 nesting_level: 0,
             }),
             trigram_indexer: Default::default(),
-            repo,
             gix_repo,
             mem_odb,
             odb,
@@ -411,12 +395,14 @@ impl Transaction {
     pub fn repo(&self) -> gix::Repository {
         self.gix_repo.to_thread_local()
     }
-
-    /// The porcelain repository handle, limited to worktree and index operations,
-    /// `FETCH_HEAD`'s multi-entry semantics and notes. It must not read or write objects Josh
-    /// produces; those can remain buffered in the transaction store (use [`Transaction::odb`]).
-    pub fn git2_repo(&self) -> &git2::Repository {
-        &self.repo
+    #[cfg(test)]
+    pub(crate) fn git2_repo(&self) -> git2::Repository {
+        git2::Repository::open_ext(
+            self.path(),
+            git2::RepositoryOpenFlags::NO_SEARCH,
+            &[] as &[&std::ffi::OsStr],
+        )
+        .expect("open test repository with libgit2")
     }
 
     /// The transaction's object-database facade: memory store first, repository objects
@@ -426,10 +412,8 @@ impl Transaction {
     }
 
     /// Add `path` (an objects directory) as a runtime alternate: the facade reads through it
-    /// and never buffers what it holds (see [`josh_memodb::Odb::write`]). The porcelain handle
-    /// is told separately, since it resolves objects of its own.
+    /// and never buffers what it holds (see [`josh_memodb::Odb::write`]).
     pub fn add_disk_alternate(&self, path: &str) -> anyhow::Result<()> {
-        self.repo.odb()?.add_disk_alternate(path)?;
         self.odb.add_alternate(std::path::Path::new(path))?;
         Ok(())
     }
@@ -1524,7 +1508,7 @@ mod tests {
             .find_tree(repo.treebuilder(None).unwrap().write().unwrap())
             .unwrap();
         let sig = git2::Signature::new("t", "t@example.com", &git2::Time::new(0, 0)).unwrap();
-        crate::objects::gix_oid(repo.commit(None, &sig, &sig, msg, &tree, &[]).unwrap())
+        josh_gix_ext::gix_oid(repo.commit(None, &sig, &sig, msg, &tree, &[]).unwrap())
     }
 
     #[test]
@@ -1921,8 +1905,8 @@ mod tests {
             .find_tree(repo.treebuilder(None).unwrap().write().unwrap())
             .unwrap();
         let sig = git2::Signature::new("t", "t@example.com", &git2::Time::new(0, 0)).unwrap();
-        let parent_commit = repo.find_commit(crate::objects::git2_oid(&parent)).unwrap();
-        let tip = crate::objects::gix_oid(
+        let parent_commit = repo.find_commit(josh_gix_ext::git2_oid(&parent)).unwrap();
+        let tip = josh_gix_ext::gix_oid(
             repo.commit(None, &sig, &sig, "tip", &tree, &[&parent_commit])
                 .unwrap(),
         );

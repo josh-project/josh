@@ -86,8 +86,6 @@ fn handle_link_add(
     args: &LinkAddArgs,
     transaction: &josh_core::cache::Transaction,
 ) -> anyhow::Result<()> {
-    let repo = transaction.git2_repo();
-
     // Validate the path (should not be empty and should be a valid path)
     if args.path.is_empty() {
         return Err(anyhow!("Path cannot be empty"));
@@ -134,14 +132,8 @@ fn handle_link_add(
             .spawn_git(&["fetch", &args.url, target], &[])
             .context("Failed to execute git fetch")?;
 
-        // Preserve libgit2's multi-entry FETCH_HEAD resolution.
-        let fetched_oid = josh_core::objects::gix_oid(
-            repo.find_reference("FETCH_HEAD")
-                .context("Failed to find FETCH_HEAD after fetch")?
-                .peel_to_commit()
-                .context("Failed to peel FETCH_HEAD to commit")?
-                .id(),
-        );
+        let fetched_oid = josh_core::git::resolve_fetch_head(transaction)
+            .context("Failed to resolve FETCH_HEAD after fetch")?;
 
         eprintln!("Using fetched commit {}", fetched_oid);
         fetched_oid
@@ -188,8 +180,6 @@ fn handle_link_fetch(
     args: &LinkFetchArgs,
     transaction: &josh_core::cache::Transaction,
 ) -> anyhow::Result<()> {
-    let repo = transaction.git2_repo();
-
     let head_commit = transaction.head().context("Failed to get HEAD")?.commit;
 
     let commit_oid = if let Some(filter_str) = &args.filter {
@@ -218,7 +208,7 @@ fn handle_link_fetch(
         link_refs.len()
     );
 
-    let odb = repo.odb().context("Failed to open object database")?;
+    let odb = transaction.odb();
 
     let mut fetched = 0;
     let mut skipped = 0;
@@ -227,7 +217,7 @@ fn handle_link_fetch(
         let oid = gix_hash::ObjectId::from_str(&link_ref.commit)
             .with_context(|| format!("Invalid commit SHA in link file: {}", link_ref.commit))?;
 
-        if odb.exists(josh_core::objects::git2_oid(&oid)) {
+        if odb.contains(oid) {
             skipped += 1;
             continue;
         }
@@ -265,8 +255,6 @@ fn handle_link_update(
     args: &LinkUpdateArgs,
     transaction: &josh_core::cache::Transaction,
 ) -> anyhow::Result<()> {
-    let repo = transaction.git2_repo();
-
     let head_commit = transaction.head().context("Failed to get HEAD")?.commit;
     let head_tree = josh_core::objects::CommitData::read(transaction.odb(), head_commit)?
         .tree_id()
@@ -321,14 +309,8 @@ fn handle_link_update(
             .spawn_git(&["fetch", &remote, &branch], &[])
             .with_context(|| format!("git fetch failed for '{}'", path.display()))?;
 
-        // Preserve libgit2's multi-entry FETCH_HEAD resolution.
-        let new_oid = josh_core::objects::gix_oid(
-            repo.find_reference("FETCH_HEAD")
-                .context("Failed to find FETCH_HEAD")?
-                .peel_to_commit()
-                .context("Failed to get FETCH_HEAD commit")?
-                .id(),
-        );
+        let new_oid = josh_core::git::resolve_fetch_head(transaction)
+            .context("Failed to resolve FETCH_HEAD")?;
 
         links_to_update.push((path.clone(), new_oid));
     }

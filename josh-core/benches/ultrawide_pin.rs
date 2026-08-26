@@ -1,5 +1,5 @@
 use criterion::{BatchSize, Criterion, criterion_group, criterion_main};
-use josh_core::git::josh_commit_signature;
+use josh_test_support::bench::josh_commit_signature;
 use josh_test_support::bench::{EntryKind, git2_oid, gix_oid};
 use rand::prelude::*;
 use std::cell::RefCell;

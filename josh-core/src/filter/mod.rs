@@ -2827,7 +2827,7 @@ mod tests {
             b.upsert(p, oid, git2::FileMode::Blob);
         }
         let empty = repo.treebuilder(None).unwrap().write().unwrap();
-        let tree = objects::gix_oid(
+        let tree = josh_gix_ext::gix_oid(
             b.create_updated(&repo, &repo.find_tree(empty).unwrap())
                 .unwrap(),
         );
@@ -2954,7 +2954,7 @@ mod tests {
                 b.upsert(*p, oid, git2::FileMode::Blob);
             }
             let empty = repo.treebuilder(None).unwrap().write().unwrap();
-            objects::gix_oid(
+            josh_gix_ext::gix_oid(
                 b.create_updated(&repo, &repo.find_tree(empty).unwrap())
                     .unwrap(),
             )
@@ -2965,13 +2965,13 @@ mod tests {
                          parents: &[gix_hash::ObjectId],
                          msg: &str|
          -> gix_hash::ObjectId {
-            let tree = repo.find_tree(objects::git2_oid(&tree)).unwrap();
+            let tree = repo.find_tree(josh_gix_ext::git2_oid(&tree)).unwrap();
             let parent_commits: Vec<git2::Commit> = parents
                 .iter()
-                .map(|p| repo.find_commit(objects::git2_oid(p)).unwrap())
+                .map(|p| repo.find_commit(josh_gix_ext::git2_oid(p)).unwrap())
                 .collect();
             let parent_refs: Vec<&git2::Commit> = parent_commits.iter().collect();
-            objects::gix_oid(
+            josh_gix_ext::gix_oid(
                 repo.commit(None, &sig, &sig, msg, &tree, &parent_refs)
                     .unwrap(),
             )
@@ -2993,7 +2993,7 @@ mod tests {
         let t = ctx.open().unwrap();
 
         let out = repo
-            .find_commit(objects::git2_oid(&downstack(&t, merge, base).unwrap()))
+            .find_commit(josh_gix_ext::git2_oid(&downstack(&t, merge, base).unwrap()))
             .unwrap();
         assert_eq!(out.parent_count(), 2, "merge change lost its second parent");
         assert_eq!(
@@ -3010,7 +3010,9 @@ mod tests {
         // A single-parent change is unaffected by the parent-preserving rewrite.
         let linear = mk_commit(mk_tree(&[("a", "1"), ("n", "n")]), &[base], "linear change");
         let out_linear = repo
-            .find_commit(objects::git2_oid(&downstack(&t, linear, base).unwrap()))
+            .find_commit(josh_gix_ext::git2_oid(
+                &downstack(&t, linear, base).unwrap(),
+            ))
             .unwrap();
         assert_eq!(out_linear.parent_count(), 1);
     }

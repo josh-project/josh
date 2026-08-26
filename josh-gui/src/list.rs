@@ -325,16 +325,9 @@ pub fn load_rows(scope: &josh_changes::ChangesRef) -> anyhow::Result<ListData> {
     let mut dependencies: HashMap<String, Vec<String>> = HashMap::new();
 
     for change in &changes {
-        let commit = transaction
-            .git2_repo()
-            .find_commit(josh_core::objects::git2_oid(&change.commit()))?;
-        let subject = commit
-            .message()
-            .unwrap_or("")
-            .lines()
-            .next()
-            .unwrap_or("")
-            .to_string();
+        let subject = josh_core::objects::CommitData::read(transaction.odb(), change.commit())?
+            .summary()
+            .unwrap_or_default();
 
         let change_id = change.id().unwrap_or("").to_string();
 

@@ -15,34 +15,36 @@ pub fn resolve_snapshot_input(
     transaction: &crate::cache::Transaction,
     input_ref: &str,
 ) -> anyhow::Result<gix_hash::ObjectId> {
-    let repo = transaction.git2_repo();
     if input_ref == "+" || input_ref == "." {
-        let mut index = repo.index()?;
-        let tree_oid = if input_ref == "+" {
-            index.write_tree_to(repo)?
+        let tree = if input_ref == "+" {
+            parse_oid(&git_stdout(transaction, &["write-tree"], &[])?)?
         } else {
-            let head_tree = repo.head()?.peel_to_tree()?;
-            index.read_tree(&head_tree)?;
-            index.add_all(["*"].iter(), git2::IndexAddOption::DEFAULT, None)?;
-            index.update_all(["*"].iter(), None)?;
-            index.write_tree_to(repo)?
+            let temp = tempfile::tempdir()?;
+            let index = temp.path().join("index");
+            let index = index
+                .to_str()
+                .context("temporary index path is not valid UTF-8")?;
+            let env = [("GIT_INDEX_FILE", index)];
+            git_stdout(transaction, &["read-tree", "HEAD"], &env)?;
+            git_stdout(transaction, &["add", "--all"], &env)?;
+            parse_oid(&git_stdout(transaction, &["write-tree"], &env)?)?
         };
-        let tree = repo.find_tree(tree_oid)?;
-        let sig = crate::git::josh_commit_signature()?;
-        let head_commit = repo.head()?.peel_to_commit()?;
-        let commit_oid = repo.commit(None, &sig, &sig, "WIP", &tree, &[&head_commit])?;
-        Ok(crate::objects::gix_oid(commit_oid))
-    } else if let Ok(oid) = gix_hash::ObjectId::from_str(input_ref) {
-        Ok(crate::objects::gix_oid(
-            repo.find_object(crate::objects::git2_oid(&oid), None)?
-                .peel_to_commit()?
-                .id(),
-        ))
+        let head = transaction.head().context("could not resolve HEAD")?.commit;
+        let signature = josh_actor_signature()?;
+        crate::objects::write_commit(
+            transaction.odb(),
+            tree,
+            &[head],
+            &signature,
+            &signature,
+            "WIP",
+        )
     } else {
-        let obj = repo
-            .revparse_single(input_ref)
-            .with_context(|| format!("could not resolve input: {:?}", input_ref))?;
-        Ok(crate::objects::gix_oid(obj.peel_to_commit()?.id()))
+        let oid = transaction
+            .rev_parse(input_ref)?
+            .with_context(|| format!("could not resolve input: {input_ref:?}"))?;
+        crate::objects::peel_to_commit(transaction.odb(), oid)
+            .with_context(|| format!("could not peel input to a commit: {input_ref:?}"))
     }
 }
 
@@ -50,17 +52,13 @@ const JOSH_COMMIT_TIME_ENV: &str = "JOSH_COMMIT_TIME";
 const JOSH_COMMIT_NAME: &str = "JOSH";
 const JOSH_COMMIT_EMAIL: &str = "josh@josh-project.dev";
 
-/// The libgit2 spelling of Josh's fixed commit identity, for porcelain and fixture seams.
-pub fn josh_commit_signature<'a>() -> anyhow::Result<git2::Signature<'a>> {
-    Ok(if let Ok(time) = std::env::var(JOSH_COMMIT_TIME_ENV) {
-        git2::Signature::new(
-            JOSH_COMMIT_NAME,
-            JOSH_COMMIT_EMAIL,
-            &git2::Time::new(time.parse()?, 0),
-        )?
-    } else {
-        git2::Signature::now(JOSH_COMMIT_NAME, JOSH_COMMIT_EMAIL)?
-    })
+fn parse_oid(bytes: &[u8]) -> anyhow::Result<gix_hash::ObjectId> {
+    gix_hash::ObjectId::from_str(
+        std::str::from_utf8(bytes)
+            .context("git returned a non-UTF-8 object ID")?
+            .trim(),
+    )
+    .context("git returned an invalid object ID")
 }
 
 /// Josh's fixed commit identity for commits written through the object store.
@@ -144,9 +142,12 @@ pub fn user_signature(
 /// Falls back to stripping a trailing `.git` component when the path cannot be
 /// opened as a repository or the repository is bare (no working tree).
 pub fn normalize_repo_path(repo_path: &std::path::Path) -> PathBuf {
-    if let Ok(repo) = git2::Repository::open(repo_path)
+    if let Ok(repo) = gix::open(repo_path)
         && let Some(workdir) = repo.workdir()
     {
+        let workdir = std::fs::canonicalize(workdir).unwrap_or_else(|_| workdir.into());
+        let mut workdir = workdir.into_os_string();
+        workdir.push(std::path::MAIN_SEPARATOR_STR);
         return workdir.into();
     }
 
@@ -161,6 +162,19 @@ pub fn normalize_repo_path(repo_path: &std::path::Path) -> PathBuf {
     }
 }
 
+pub(crate) fn map_discovery_error(error: gix::discover::Error) -> anyhow::Error {
+    // Preserve the long-standing CLI error for "not in a repository"; gix's discovery error
+    // embeds the absolute current directory, which makes the message unstable.
+    if error
+        .to_string()
+        .starts_with("Could not find a git repository")
+    {
+        anyhow!("could not find repository at '.'; class=Repository (6); code=NotFound (-3)")
+    } else {
+        anyhow::Error::new(error)
+    }
+}
+
 /// Repository paths discovered with Git's environment overrides.
 pub struct RepositoryPaths {
     pub workdir_or_gitdir: PathBuf,
@@ -169,11 +183,12 @@ pub struct RepositoryPaths {
 }
 
 pub fn discover_repository_paths() -> anyhow::Result<RepositoryPaths> {
-    let repo = git2::Repository::open_from_env()?;
+    let repo = gix::discover_with_environment_overrides(std::env::current_dir()?)
+        .map_err(map_discovery_error)?;
     Ok(RepositoryPaths {
         workdir_or_gitdir: repo.workdir().unwrap_or_else(|| repo.path()).to_owned(),
         git_dir: repo.path().to_owned(),
-        common_dir: repo.commondir().to_owned(),
+        common_dir: repo.common_dir().to_owned(),
     })
 }
 
@@ -189,24 +204,32 @@ pub fn file_stats(
     transaction: &crate::cache::Transaction,
     commit_oid: gix_hash::ObjectId,
 ) -> anyhow::Result<Vec<FileStat>> {
-    let repo = transaction.git2_repo();
-    let commit = repo.find_commit(crate::objects::git2_oid(&commit_oid))?;
-    let parent_tree = commit.parent(0).ok().and_then(|parent| parent.tree().ok());
-    let diff = repo.diff_tree_to_tree(parent_tree.as_ref(), Some(&commit.tree()?), None)?;
-    let mut files = Vec::with_capacity(diff.deltas().len());
-    for (index, delta) in diff.deltas().enumerate() {
-        let path = delta
-            .new_file()
-            .path()
-            .or_else(|| delta.old_file().path())
-            .and_then(|path| path.to_str())
-            .unwrap_or("")
-            .to_string();
-        let patch = git2::Patch::from_diff(&diff, index)?;
-        let (_, adds, dels) = patch
-            .as_ref()
-            .map(|patch| patch.line_stats().unwrap_or((0, 0, 0)))
-            .unwrap_or((0, 0, 0));
+    let oid = commit_oid.to_string();
+    let output = git_stdout(
+        transaction,
+        &[
+            "diff-tree",
+            "--root",
+            "--no-commit-id",
+            "--numstat",
+            "-r",
+            "--no-renames",
+            "-z",
+            &oid,
+        ],
+        &[],
+    )?;
+    let mut files = Vec::new();
+    for record in output
+        .split(|byte| *byte == 0)
+        .filter(|record| !record.is_empty())
+    {
+        let mut fields = record.splitn(3, |byte| *byte == b'\t');
+        let adds = parse_numstat(fields.next())?;
+        let dels = parse_numstat(fields.next())?;
+        let path =
+            String::from_utf8_lossy(fields.next().context("git numstat record has no path")?)
+                .into_owned();
         files.push(FileStat { path, adds, dels });
     }
     Ok(files)
@@ -225,43 +248,37 @@ pub fn file_patch(
     path: &str,
     context_lines: u32,
 ) -> anyhow::Result<Vec<PatchLine>> {
-    let repo = transaction.git2_repo();
-    let commit = repo.find_commit(crate::objects::git2_oid(&commit_oid))?;
-    let parent_tree = commit.parent(0).ok().and_then(|parent| parent.tree().ok());
-    let mut options = git2::DiffOptions::new();
-    options.context_lines(context_lines);
-    let diff = repo.diff_tree_to_tree(
-        parent_tree.as_ref(),
-        Some(&commit.tree()?),
-        Some(&mut options),
+    let oid = commit_oid.to_string();
+    let unified = format!("--unified={context_lines}");
+    let output = git_stdout(
+        transaction,
+        &[
+            "diff-tree",
+            "--root",
+            "--no-commit-id",
+            "-p",
+            "--no-ext-diff",
+            "--no-renames",
+            &unified,
+            &oid,
+            "--",
+            path,
+        ],
+        &[],
     )?;
-
-    let Some(index) = diff.deltas().position(|delta| {
-        delta
-            .new_file()
-            .path()
-            .or_else(|| delta.old_file().path())
-            .and_then(std::path::Path::to_str)
-            == Some(path)
-    }) else {
-        return Ok(Vec::new());
-    };
-    let Some(patch) = git2::Patch::from_diff(&diff, index)? else {
-        return Ok(Vec::new());
-    };
-
+    let mut in_hunk = false;
     let mut lines = Vec::new();
-    for hunk_index in 0..patch.num_hunks() {
-        let (hunk, hunk_lines) = patch.hunk(hunk_index)?;
-        lines.push(PatchLine {
-            origin: '@',
-            content: String::from_utf8_lossy(hunk.header()).into_owned(),
-        });
-        for line_index in 0..hunk_lines {
-            let line = patch.line_in_hunk(hunk_index, line_index)?;
+    for line in output.split_inclusive(|byte| *byte == b'\n') {
+        if line.starts_with(b"@@") {
+            in_hunk = true;
             lines.push(PatchLine {
-                origin: line.origin(),
-                content: String::from_utf8_lossy(line.content()).into_owned(),
+                origin: '@',
+                content: String::from_utf8_lossy(line).into_owned(),
+            });
+        } else if in_hunk && let Some((&origin, content)) = line.split_first() {
+            lines.push(PatchLine {
+                origin: origin as char,
+                content: String::from_utf8_lossy(content).into_owned(),
             });
         }
     }
@@ -273,38 +290,31 @@ pub fn checkout_commit(
     transaction: &crate::cache::Transaction,
     commit_oid: gix_hash::ObjectId,
 ) -> anyhow::Result<()> {
-    let repo = transaction.git2_repo();
-    let commit = repo.find_commit(crate::objects::git2_oid(&commit_oid))?;
-    repo.checkout_tree(
-        commit.as_object(),
-        Some(git2::build::CheckoutBuilder::new().safe()),
-    )?;
+    let oid = commit_oid.to_string();
+    transaction.spawn_git(&["read-tree", "-m", "-u", "HEAD", &oid], &[])?;
     Ok(())
 }
 
 /// Whether tracked files differ from the index or worktree.
 pub fn has_tracked_changes(transaction: &crate::cache::Transaction) -> anyhow::Result<bool> {
-    let mut options = git2::StatusOptions::new();
-    options.include_untracked(false);
-    Ok(!transaction
-        .git2_repo()
-        .statuses(Some(&mut options))?
-        .is_empty())
+    Ok(!git_stdout(
+        transaction,
+        &["status", "--porcelain", "--untracked-files=no"],
+        &[],
+    )?
+    .is_empty())
 }
 
-/// A reusable reader for Git notes at the remaining libgit2 porcelain boundary.
+/// A reusable reader for Git notes.
 pub struct NoteReader {
-    repo: std::sync::Mutex<git2::Repository>,
+    repo_path: PathBuf,
 }
 
 impl NoteReader {
     pub fn open(repo_path: impl AsRef<std::path::Path>) -> anyhow::Result<Self> {
+        let repo = gix::open(repo_path.as_ref())?;
         Ok(Self {
-            repo: std::sync::Mutex::new(git2::Repository::open_ext(
-                repo_path,
-                git2::RepositoryOpenFlags::NO_SEARCH,
-                &[] as &[&std::ffi::OsStr],
-            )?),
+            repo_path: repo.path().to_owned(),
         })
     }
 
@@ -313,11 +323,15 @@ impl NoteReader {
         notes_ref: &str,
         commit_oid: gix_hash::ObjectId,
     ) -> anyhow::Result<String> {
-        let repo = self.repo.lock().unwrap();
-        let note = repo
-            .find_note(Some(notes_ref), crate::objects::git2_oid(&commit_oid))
-            .context("missing git note for commit")?;
-        Ok(note.message().context("empty git note")?.to_owned())
+        let output = GitCommand::new(
+            &self.repo_path,
+            ["notes", "--ref", notes_ref, "show", &commit_oid.to_string()],
+            [] as [(&str, &str); 0],
+        )
+        .with_stdout(std::process::Stdio::piped())
+        .spawn()
+        .context("missing git note for commit")?;
+        String::from_utf8(output.stdout).context("git note is not valid UTF-8")
     }
 }
 
@@ -423,18 +437,47 @@ impl GitCommand {
         }
     }
 }
+fn git_stdout(
+    transaction: &crate::cache::Transaction,
+    args: &[&str],
+    env: &[(&str, &str)],
+) -> anyhow::Result<Vec<u8>> {
+    Ok(transaction
+        .git_command(args, env)?
+        .with_stdout(std::process::Stdio::piped())
+        .spawn()?
+        .stdout)
+}
+
+fn parse_numstat(field: Option<&[u8]>) -> anyhow::Result<usize> {
+    let field = field.context("git numstat record is incomplete")?;
+    if field == b"-" {
+        return Ok(0);
+    }
+    std::str::from_utf8(field)?
+        .parse()
+        .context("git numstat returned an invalid line count")
+}
+
+/// Resolve the commit selected by Git's `FETCH_HEAD` pseudo-ref.
+pub fn resolve_fetch_head(
+    transaction: &crate::cache::Transaction,
+) -> anyhow::Result<gix_hash::ObjectId> {
+    parse_oid(&git_stdout(
+        transaction,
+        &["rev-parse", "--verify", "FETCH_HEAD^{commit}"],
+        &[],
+    )?)
+}
 
 /// Read a commit's parent OIDs directly from the raw object bytes, parsing only the parent
-/// lines via `gix_object::CommitRefIter`. This avoids libgit2's commit parse cache (a
-/// lock-guarded global that also decodes author/committer/message) whenever a caller only
-/// needs the parent ids; memory-store hits are zero-copy.
+/// lines via `gix_object::CommitRefIter`; memory-store hits are zero-copy.
 pub fn read_parent_ids(
     odb: &josh_memodb::Odb,
     oid: gix_hash::ObjectId,
 ) -> anyhow::Result<Vec<gix_hash::ObjectId>> {
     let (kind, bytes) = odb.read(oid)?;
-    // A hard error, not an assert: this is reachable from inside git2 callback frames,
-    // where unwinding across the FFI boundary would abort.
+    // A hard error rather than an assert because repository corruption is user input.
     if kind != gix_object::Kind::Commit {
         return Err(anyhow::anyhow!(
             "object {} is not a commit but a {:?}",
@@ -477,7 +520,7 @@ mod tests {
         let tree_id = repo.treebuilder(None).unwrap().write().unwrap();
         let tree = repo.find_tree(tree_id).unwrap();
         let commit_id =
-            crate::objects::gix_oid(repo.commit(None, &sig, &sig, "test", &tree, &[]).unwrap());
+            josh_gix_ext::gix_oid(repo.commit(None, &sig, &sig, "test", &tree, &[]).unwrap());
 
         let objects_dir = repo.commondir().join("objects");
         let store = josh_memodb::MemOdb::new(None, objects_dir.clone());
@@ -513,7 +556,7 @@ mod tests {
         let mut new_builder = repo.treebuilder(None).unwrap();
         new_builder.insert("file", new_blob, 0o100644).unwrap();
         let new_tree = repo.find_tree(new_builder.write().unwrap()).unwrap();
-        let commit = crate::objects::gix_oid(
+        let commit = josh_gix_ext::gix_oid(
             repo.commit(None, &sig, &sig, "commit", &new_tree, &[&parent])
                 .unwrap(),
         );
@@ -531,10 +574,86 @@ mod tests {
                 .collect::<Vec<_>>(),
             vec![('@', "@@ -1 +1 @@\n"), ('-', "old\n"), ('+', "new\n")]
         );
+        assert_eq!(
+            super::file_stats(&transaction, commit)
+                .unwrap()
+                .into_iter()
+                .map(|stat| (stat.path, stat.adds, stat.dels))
+                .collect::<Vec<_>>(),
+            vec![("file".to_owned(), 1, 1)]
+        );
         assert!(
             super::file_patch(&transaction, commit, "missing", 3)
                 .unwrap()
                 .is_empty()
         );
+    }
+
+    #[test]
+    fn worktree_porcelain_preserves_local_changes() {
+        let dir = tempfile::tempdir().unwrap();
+        let repo = git2::Repository::init(dir.path()).unwrap();
+        let sig = git2::Signature::new("t", "t@example.com", &git2::Time::new(0, 0)).unwrap();
+        let path = dir.path().join("file");
+
+        std::fs::write(&path, b"old\n").unwrap();
+        let mut index = repo.index().unwrap();
+        index.add_path(std::path::Path::new("file")).unwrap();
+        index.write().unwrap();
+        let tree = repo.find_tree(index.write_tree().unwrap()).unwrap();
+        let old = repo
+            .commit(Some("HEAD"), &sig, &sig, "old", &tree, &[])
+            .unwrap();
+
+        std::fs::write(&path, b"new\n").unwrap();
+        index.add_path(std::path::Path::new("file")).unwrap();
+        index.write().unwrap();
+        let tree = repo.find_tree(index.write_tree().unwrap()).unwrap();
+        let parent = repo.find_commit(old).unwrap();
+        let new = repo
+            .commit(Some("HEAD"), &sig, &sig, "new", &tree, &[&parent])
+            .unwrap();
+
+        let cache = std::sync::Arc::new(crate::cache::CacheStack::new());
+        let transaction = crate::cache::TransactionContext::new(repo.path(), cache)
+            .open()
+            .unwrap();
+        assert!(!super::has_tracked_changes(&transaction).unwrap());
+
+        let old = josh_gix_ext::gix_oid(old);
+        super::checkout_commit(&transaction, old).unwrap();
+        let head = transaction.head().unwrap();
+        transaction
+            .update_ref(
+                &head.reference,
+                crate::cache::Expected::At(josh_gix_ext::gix_oid(new)),
+                old,
+                "test checkout",
+            )
+            .unwrap();
+        assert!(!super::has_tracked_changes(&transaction).unwrap());
+        assert_eq!(std::fs::read(&path).unwrap(), b"old\n");
+
+        std::fs::write(&path, b"local\n").unwrap();
+        assert!(super::has_tracked_changes(&transaction).unwrap());
+        let snapshot = super::resolve_snapshot_input(&transaction, ".").unwrap();
+        let tree = crate::objects::CommitData::read(transaction.odb(), snapshot)
+            .unwrap()
+            .tree_id()
+            .unwrap();
+        let entry =
+            crate::objects::path_entry(transaction.odb(), tree, std::path::Path::new("file"))
+                .unwrap()
+                .unwrap();
+        assert_eq!(
+            crate::objects::blob_text(transaction.odb(), entry.oid),
+            "local\n"
+        );
+
+        assert!(
+            super::checkout_commit(&transaction, josh_gix_ext::gix_oid(new)).is_err(),
+            "checkout must not overwrite a conflicting local edit"
+        );
+        assert_eq!(std::fs::read(&path).unwrap(), b"local\n");
     }
 }

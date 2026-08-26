@@ -1,6 +1,6 @@
 use criterion::{BatchSize, BenchmarkId, Criterion, Throughput, criterion_group, criterion_main};
 use josh_core::filter::Filter;
-use josh_core::git::josh_commit_signature;
+use josh_test_support::bench::josh_commit_signature;
 use josh_test_support::bench::{
     EntryKind, build_index, expected_tree, git2_oid, gix_oid, random_string,
 };
@@ -146,7 +146,7 @@ impl GlobBench {
         // runs.
         {
             let transaction = context.open()?;
-            let repo = transaction.git2_repo();
+            let repo = josh_test_support::bench::open_git2_repo(transaction.path())?;
             for case in &cases {
                 // Recursive pattern: keeps exactly the `.rs` blobs everywhere (string predicate is
                 // exact -- see the no-dot-component invariant above).
@@ -158,7 +158,7 @@ impl GlobBench {
                 // sees what is on disk.
                 transaction.flush_mem_odb()?;
                 let got = repo.find_commit(git2_oid(filtered))?.tree_id();
-                let (want, kept) = expected_tree(repo, case.head, &|p| p.ends_with(".rs"))?;
+                let (want, kept) = expected_tree(&repo, case.head, &|p| p.ends_with(".rs"))?;
                 anyhow::ensure!(kept > 0, "recursive gate kept no blobs -- would be a no-op");
                 anyhow::ensure!(
                     gix_oid(got) == want,
@@ -193,7 +193,7 @@ impl GlobBench {
                 let filtered = josh_core::filter_commit(&transaction, filter, case.head)?;
                 transaction.flush_mem_odb()?;
                 let got = repo.find_commit(git2_oid(filtered))?.tree_id();
-                let (want, kept) = expected_tree(repo, case.head, &|p| p.ends_with(".toml"))?;
+                let (want, kept) = expected_tree(&repo, case.head, &|p| p.ends_with(".toml"))?;
                 anyhow::ensure!(
                     kept == N_SPARSE,
                     "sparse gate kept {kept} blobs, expected exactly {N_SPARSE}"

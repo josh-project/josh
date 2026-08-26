@@ -25,16 +25,6 @@ pub mod trailers;
 
 pub mod objects {
     pub use josh_gix_ext::*;
-
-    /// Convert a libgit2 SHA-1 object ID at the remaining porcelain boundary.
-    pub fn gix_oid(oid: git2::Oid) -> gix_hash::ObjectId {
-        gix_hash::ObjectId::from_bytes_or_panic(oid.as_bytes())
-    }
-
-    /// Convert a gitoxide SHA-1 object ID at the remaining porcelain boundary.
-    pub fn git2_oid(oid: &gix_hash::oid) -> git2::Oid {
-        git2::Oid::from_bytes(oid.as_bytes()).expect("oid sizes match")
-    }
 }
 pub use josh_memodb as memodb;
 
