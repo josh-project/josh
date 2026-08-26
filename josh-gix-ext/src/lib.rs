@@ -12,7 +12,7 @@ pub use graph::{is_descendant_of, merge_base, merge_base_octopus};
 pub use merge::{merge_commits, merge_trees};
 pub use revwalk::{RangeWalk, RevWalk};
 
-#[cfg(any(test, feature = "git2"))]
+#[cfg(feature = "git2")]
 /// Convert a gitoxide object kind to libgit2.
 pub fn git2_kind(kind: gix_object::Kind) -> git2::ObjectType {
     match kind {
@@ -23,7 +23,7 @@ pub fn git2_kind(kind: gix_object::Kind) -> git2::ObjectType {
     }
 }
 
-#[cfg(any(test, feature = "git2"))]
+#[cfg(feature = "git2")]
 /// Convert a libgit2 object kind when it represents an object.
 pub fn gix_kind(kind: git2::ObjectType) -> Option<gix_object::Kind> {
     match kind {
@@ -35,13 +35,13 @@ pub fn gix_kind(kind: git2::ObjectType) -> Option<gix_object::Kind> {
     }
 }
 
-#[cfg(any(test, feature = "git2"))]
+#[cfg(feature = "git2")]
 /// Convert a SHA-1 object ID to gitoxide.
 pub fn gix_oid(oid: git2::Oid) -> gix_hash::ObjectId {
     gix_hash::ObjectId::from_bytes_or_panic(oid.as_bytes())
 }
 
-#[cfg(any(test, feature = "git2"))]
+#[cfg(feature = "git2")]
 /// Convert a SHA-1 object ID to libgit2.
 pub fn git2_oid(oid: &gix_hash::oid) -> git2::Oid {
     git2::Oid::from_bytes(oid.as_bytes()).expect("oid sizes match")
@@ -547,12 +547,12 @@ impl gix_object::Exists for StagingOdb {
     }
 }
 
-#[cfg(any(test, feature = "git2"))]
+#[cfg(feature = "git2")]
 /// [`gix_object`] object access over a bare `git2::Odb` for compatibility tests. Reads and
 /// existence checks resolve through the odb's configured backends; writes use `git_odb_write`.
 pub struct Git2Odb<'a>(pub &'a git2::Odb<'a>);
 
-#[cfg(any(test, feature = "git2"))]
+#[cfg(feature = "git2")]
 impl gix_object::Find for Git2Odb<'_> {
     fn try_find<'b>(
         &self,
@@ -577,7 +577,7 @@ impl gix_object::Find for Git2Odb<'_> {
     }
 }
 
-#[cfg(any(test, feature = "git2"))]
+#[cfg(feature = "git2")]
 impl gix_object::FindHeader for Git2Odb<'_> {
     fn try_header(
         &self,
@@ -598,14 +598,14 @@ impl gix_object::FindHeader for Git2Odb<'_> {
     }
 }
 
-#[cfg(any(test, feature = "git2"))]
+#[cfg(feature = "git2")]
 impl gix_object::Exists for Git2Odb<'_> {
     fn exists(&self, id: &gix_hash::oid) -> bool {
         self.0.exists(git2_oid(id))
     }
 }
 
-#[cfg(any(test, feature = "git2"))]
+#[cfg(feature = "git2")]
 impl gix_object::Write for Git2Odb<'_> {
     fn write_buf(
         &self,
@@ -651,150 +651,176 @@ impl gix_object::Write for Git2Odb<'_> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::str::FromStr;
+
+    fn test_repo() -> (tempfile::TempDir, gix::Repository) {
+        let dir = tempfile::tempdir().unwrap();
+        let repo = gix::init_bare(dir.path()).unwrap();
+        (dir, repo)
+    }
+
+    fn write_raw(
+        repo: &gix::Repository,
+        kind: gix_object::Kind,
+        data: &[u8],
+    ) -> gix_hash::ObjectId {
+        gix_object::Write::write_buf(&repo.objects, kind, data).unwrap()
+    }
+
+    fn write_raw_tree(
+        repo: &gix::Repository,
+        entries: &[(&str, &[u8], gix_hash::ObjectId)],
+    ) -> gix_hash::ObjectId {
+        let mut data = Vec::new();
+        for (mode, name, oid) in entries {
+            data.extend_from_slice(mode.as_bytes());
+            data.push(b' ');
+            data.extend_from_slice(name);
+            data.push(0);
+            data.extend_from_slice(oid.as_bytes());
+        }
+        write_raw(repo, gix_object::Kind::Tree, &data)
+    }
 
     /// Write raw commit bytes, including non-UTF-8 messages.
-    fn commit_with_message(repo: &git2::Repository, message: &[u8]) -> gix_hash::ObjectId {
-        let tree = repo.treebuilder(None).unwrap().write().unwrap();
+    fn commit_with_message(repo: &gix::Repository, message: &[u8]) -> gix_hash::ObjectId {
+        let tree = write_raw_tree(repo, &[]);
         let mut data = Vec::new();
         data.extend_from_slice(format!("tree {}\n", tree).as_bytes());
         data.extend_from_slice(b"author t <t@e> 0 +0000\n");
         data.extend_from_slice(b"committer t <t@e> 0 +0000\n\n");
         data.extend_from_slice(message);
-        gix_oid(
-            repo.odb()
-                .unwrap()
-                .write(git2::ObjectType::Commit, &data)
-                .unwrap(),
-        )
+        write_raw(repo, gix_object::Kind::Commit, &data)
     }
 
-    /// Commits written here must be byte-identical to the ones libgit2 writes for the same
-    /// inputs -- every ref josh publishes is content-addressed, so a formatting difference
-    /// would renumber history.
+    /// Commit bytes must remain identical to libgit2's. These object IDs were captured from
+    /// libgit2 before its test dependency was removed; every ref josh publishes is
+    /// content-addressed, so a formatting difference would renumber history.
     #[test]
-    fn write_commit_matches_git2() {
-        let dir = tempfile::tempdir().unwrap();
-        let repo = git2::Repository::init_bare(dir.path()).unwrap();
-        let odb = repo.odb().unwrap();
+    fn write_commit_preserves_libgit2_bytes() {
+        let (_dir, repo) = test_repo();
+        let empty_tree = write_raw_tree(&repo, &[]);
+        let blob = write_blob(&repo.objects, b"x").unwrap();
+        let tree_with_blob = write_raw_tree(&repo, &[("100644", b"f", blob)]);
 
-        let tree = gix_oid(repo.treebuilder(None).unwrap().write().unwrap());
-        let blob = repo.blob(b"x").unwrap();
-        let mut b = repo.treebuilder(None).unwrap();
-        b.insert("f", blob, 0o100644).unwrap();
-        let tree2 = gix_oid(b.write().unwrap());
+        assert_eq!(
+            empty_tree,
+            gix_hash::ObjectId::from_str("4b825dc642cb6eb9a060e54bf8d69288fbee4904").unwrap()
+        );
+        assert_eq!(
+            tree_with_blob,
+            gix_hash::ObjectId::from_str("2561a62d4223eb7660d3b6b02b707048382f4019").unwrap()
+        );
 
-        let sig = |name: &str, email: &str, secs: i64, offset: i32| {
-            git2::Signature::new(name, email, &git2::Time::new(secs, offset)).unwrap()
-        };
-        let actor = |sig: &git2::Signature<'_>| {
-            let when = sig.when();
-            gix_actor::Signature {
-                name: sig.name_bytes().into(),
-                email: sig.email_bytes().into(),
+        let signature =
+            |name: &str, email: &str, seconds: i64, offset_minutes: i32| gix_actor::Signature {
+                name: name.into(),
+                email: email.into(),
                 time: gix_actor::date::Time {
-                    seconds: when.seconds(),
-                    offset: i32::from(when.offset_minutes()) * 60,
+                    seconds,
+                    offset: offset_minutes * 60,
                 },
-            }
-        };
+            };
 
-        let cases: Vec<(git2::Signature, git2::Signature, &str, gix_hash::ObjectId)> = vec![
+        let cases = [
             (
-                sig("A", "a@e", 0, 0),
-                sig("A", "a@e", 0, 0),
+                signature("A", "a@e", 0, 0),
+                signature("A", "a@e", 0, 0),
                 "subject\n",
-                tree,
+                empty_tree,
+                [
+                    "57576bb048f350bfefc5462a145126ed569a0acb",
+                    "e605f51a16159b651aa82171f5a5efbfdd96692a",
+                    "b4067ee9a49f8e65bffe7fe097d2d1546348a0c2",
+                ],
             ),
             (
-                sig("A", "a@e", 1234567890, 120),
-                sig("B", "b@e", 1234567899, -330),
+                signature("A", "a@e", 1234567890, 120),
+                signature("B", "b@e", 1234567899, -330),
                 "subject\n\nbody with trailing newline\n",
-                tree2,
+                tree_with_blob,
+                [
+                    "3511106bdc497584ea13c5c21b7d620274bee8f9",
+                    "a56d8d48bbe9d48c87ae7028246090b76fa5581d",
+                    "0cdefeea57471caebdb468cfde5e1c054a4da1ec",
+                ],
             ),
             (
-                sig("Ünïcode Nàme", "u@e", 42, -60),
-                sig("Ünïcode Nàme", "u@e", 42, -60),
+                signature("Ünïcode Nàme", "u@e", 42, -60),
+                signature("Ünïcode Nàme", "u@e", 42, -60),
                 "no trailing newline",
-                tree2,
+                tree_with_blob,
+                [
+                    "a7af75bbbbf53f1cea9a1eab5eda7930ebdb9e57",
+                    "c54129e4d0368d79d15caf5d9424436b8d57a716",
+                    "20e7afd96224d8e1db8bb77d646255296bb2eaf3",
+                ],
             ),
-            (sig("A", "a@e", 99, 0), sig("A", "a@e", 99, 0), "", tree),
+            (
+                signature("A", "a@e", 99, 0),
+                signature("A", "a@e", 99, 0),
+                "",
+                empty_tree,
+                [
+                    "c3c5ea7d435de37f631f94befb80cd50eeb36954",
+                    "c5052ca1e27fe67bd35350052018049182bd5cb8",
+                    "c1a08f5fa90b18367f75988bf6c94bf065b0867a",
+                ],
+            ),
         ];
 
-        for (author, committer, message, tree) in &cases {
-            for parents in [vec![], vec![0usize], vec![0, 1]] {
-                // Build the parent commits with git2 so both writers see identical inputs.
-                let parent_ids: Vec<gix_hash::ObjectId> = parents
-                    .iter()
+        for (author, committer, message, tree, expected) in cases {
+            for parent_count in 0..=2 {
+                let parent_ids = (0..parent_count)
                     .map(|i| {
-                        let t = repo.find_tree(git2_oid(tree)).unwrap();
-                        gix_oid(
-                            repo.commit(None, author, committer, &format!("parent {i}"), &t, &[])
-                                .unwrap(),
+                        write_commit(
+                            &repo.objects,
+                            tree,
+                            &[],
+                            &author,
+                            &committer,
+                            &format!("parent {i}"),
                         )
+                        .unwrap()
                     })
-                    .collect();
-                let parent_commits: Vec<git2::Commit> = parent_ids
-                    .iter()
-                    .map(|id| repo.find_commit(git2_oid(id)).unwrap())
-                    .collect();
-                let parent_refs: Vec<&git2::Commit> = parent_commits.iter().collect();
-
-                let want = gix_oid(
-                    repo.commit(
-                        None,
-                        author,
-                        committer,
-                        message,
-                        &repo.find_tree(git2_oid(tree)).unwrap(),
-                        &parent_refs,
-                    )
-                    .unwrap(),
-                );
-                let author_actor = actor(author);
-                let committer_actor = actor(committer);
+                    .collect::<Vec<_>>();
                 let got = write_commit(
-                    &Git2Odb(&odb),
-                    *tree,
+                    &repo.objects,
+                    tree,
                     &parent_ids,
-                    &author_actor,
-                    &committer_actor,
+                    &author,
+                    &committer,
                     message,
                 )
                 .unwrap();
+                let want = gix_hash::ObjectId::from_str(expected[parent_count]).unwrap();
                 assert_eq!(
-                    want,
-                    got,
-                    "commit id diverged for {:?} with {} parents",
-                    message,
-                    parent_ids.len()
+                    want, got,
+                    "commit id diverged for {message:?} with {parent_count} parents"
                 );
 
-                // The signature-copying variant reproduces the same commit when the
-                // signatures it copies are the ones git2 was given.
-                let base = CommitData::read(&Git2Odb(&odb), want).unwrap();
+                let base = CommitData::read(&repo.objects, got).unwrap();
                 let copied = write_commit_with_signatures_of(
-                    &Git2Odb(&odb),
+                    &repo.objects,
                     &base,
-                    *tree,
+                    tree,
                     &parent_ids,
                     message,
                 )
                 .unwrap();
-                assert_eq!(want, copied, "signature-copying writer diverged");
+                assert_eq!(got, copied, "signature-copying writer diverged");
             }
         }
     }
 
     #[test]
     fn message_trims_leading_newlines() {
-        let dir = tempfile::tempdir().unwrap();
-        let repo = git2::Repository::init_bare(dir.path()).unwrap();
-        let odb = repo.odb().unwrap();
+        let (_dir, repo) = test_repo();
 
         // Load-bearing for the tree-level `:unapply`, which parses an oid out of the
         // message.
         let oid = commit_with_message(&repo, b"\n\n0123456789012345678901234567890123456789");
-        let data = CommitData::read(&Git2Odb(&odb), oid).unwrap();
+        let data = CommitData::read(&repo.objects, oid).unwrap();
         assert_eq!(
             data.message().unwrap(),
             "0123456789012345678901234567890123456789"
@@ -810,40 +836,27 @@ mod tests {
     /// directory's slash-separated path.
     #[test]
     fn walk_tree_preorder_yields_stored_order_paths() {
-        let dir = tempfile::tempdir().unwrap();
-        let repo = git2::Repository::init_bare(dir.path()).unwrap();
-        let odb = repo.odb().unwrap();
-        let blob = gix_oid(repo.blob(b"x").unwrap());
+        let (_dir, repo) = test_repo();
+        let blob = write_blob(&repo.objects, b"x").unwrap();
 
-        let write_tree = |entries: &[(&str, &str, gix_hash::ObjectId)]| -> gix_hash::ObjectId {
-            let mut data = Vec::new();
-            for (mode, name, oid) in entries {
-                data.extend_from_slice(mode.as_bytes());
-                data.push(b' ');
-                data.extend_from_slice(name.as_bytes());
-                data.push(0);
-                data.extend_from_slice(oid.as_bytes());
-            }
-            gix_oid(
-                repo.odb()
-                    .unwrap()
-                    .write(git2::ObjectType::Tree, &data)
-                    .unwrap(),
-            )
-        };
-
-        let deep = write_tree(&[("100644", "leaf.txt", blob)]);
-        let sub = write_tree(&[("40000", "deep", deep), ("100644", "f.txt", blob)]);
+        let deep = write_raw_tree(&repo, &[("100644", b"leaf.txt", blob)]);
+        let sub = write_raw_tree(
+            &repo,
+            &[("40000", b"deep", deep), ("100644", b"f.txt", blob)],
+        );
         // Stored order is deliberately non-canonical ("z.txt" before "a", and the tree "a"
         // before the blob "a.txt" that canonical order would sort first).
-        let root = write_tree(&[
-            ("100644", "z.txt", blob),
-            ("40000", "a", sub),
-            ("100644", "a.txt", blob),
-        ]);
+        let root = write_raw_tree(
+            &repo,
+            &[
+                ("100644", b"z.txt", blob),
+                ("40000", b"a", sub),
+                ("100644", b"a.txt", blob),
+            ],
+        );
 
         let mut seen = vec![];
-        walk_tree_preorder(&Git2Odb(&odb), root, &mut |parent, entry| {
+        walk_tree_preorder(&repo.objects, root, &mut |parent, entry| {
             seen.push(format!(
                 "{}|{}",
                 parent,
@@ -870,26 +883,11 @@ mod tests {
     /// descending into it errors the whole walk.
     #[test]
     fn walk_tree_preorder_errors_on_non_utf8_directory() {
-        let dir = tempfile::tempdir().unwrap();
-        let repo = git2::Repository::init_bare(dir.path()).unwrap();
-        let odb = repo.odb().unwrap();
-        let blob = gix_oid(repo.blob(b"x").unwrap());
+        let (_dir, repo) = test_repo();
+        let blob = write_blob(&repo.objects, b"x").unwrap();
+        let inner = write_raw_tree(&repo, &[("100644", b"f.txt", blob)]);
+        let root = write_raw_tree(&repo, &[("40000", b"bad\xff", inner)]);
 
-        let mut inner = repo.treebuilder(None).unwrap();
-        inner.insert("f.txt", git2_oid(&blob), 0o100644).unwrap();
-        let inner = inner.write().unwrap();
-
-        let mut data = Vec::new();
-        data.extend_from_slice(b"40000 bad\xff");
-        data.push(0);
-        data.extend_from_slice(inner.as_bytes());
-        let root = gix_oid(
-            repo.odb()
-                .unwrap()
-                .write(git2::ObjectType::Tree, &data)
-                .unwrap(),
-        );
-
-        assert!(walk_tree_preorder(&Git2Odb(&odb), root, &mut |_, _| Ok(())).is_err());
+        assert!(walk_tree_preorder(&repo.objects, root, &mut |_, _| Ok(())).is_err());
     }
 }

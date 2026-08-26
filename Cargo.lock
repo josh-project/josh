@@ -3625,6 +3625,7 @@ version = "26.7.28"
 dependencies = [
  "anyhow",
  "git2",
+ "gix",
  "gix-actor",
  "gix-command",
  "gix-diff",

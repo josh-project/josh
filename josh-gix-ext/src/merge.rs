@@ -187,23 +187,27 @@ mod tests {
 
     struct TestRepo {
         _dir: tempfile::TempDir,
-        repo: git2::Repository,
+        repo: gix::Repository,
     }
 
     impl TestRepo {
         fn new() -> Self {
             let dir = tempfile::tempdir().unwrap();
-            let repo = git2::Repository::init_bare(dir.path()).unwrap();
+            let repo = gix::init_bare(dir.path()).unwrap();
             TestRepo { _dir: dir, repo }
         }
 
         fn tree(&self, files: &[(&str, &str)]) -> gix_hash::ObjectId {
-            let mut builder = self.repo.treebuilder(None).unwrap();
-            for (name, content) in files {
-                let blob = self.repo.blob(content.as_bytes()).unwrap();
-                builder.insert(name, blob, 0o100644).unwrap();
-            }
-            crate::gix_oid(builder.write().unwrap())
+            let mut entries = files
+                .iter()
+                .map(|(name, content)| gix_object::tree::Entry {
+                    mode: gix_object::tree::EntryKind::Blob.into(),
+                    filename: (*name).into(),
+                    oid: crate::write_blob(&self.repo.objects, content.as_bytes()).unwrap(),
+                })
+                .collect::<Vec<_>>();
+            entries.sort();
+            crate::write_tree_now(&self.repo.objects, entries).unwrap()
         }
 
         fn commit(
@@ -211,30 +215,30 @@ mod tests {
             tree: gix_hash::ObjectId,
             parents: &[gix_hash::ObjectId],
         ) -> gix_hash::ObjectId {
-            let sig = git2::Signature::new("Test", "test@example.com", &git2::Time::new(1000, 0))
-                .unwrap();
-            let tree = self.repo.find_tree(crate::git2_oid(&tree)).unwrap();
-            let parents: Vec<_> = parents
-                .iter()
-                .map(|p| self.repo.find_commit(crate::git2_oid(p)).unwrap())
-                .collect();
-            let parent_refs: Vec<&git2::Commit> = parents.iter().collect();
-            crate::gix_oid(
-                self.repo
-                    .commit(None, &sig, &sig, "c", &tree, &parent_refs)
-                    .unwrap(),
+            let signature = gix_actor::Signature {
+                name: "Test".into(),
+                email: "test@example.com".into(),
+                time: gix_actor::date::Time {
+                    seconds: 1000,
+                    offset: 0,
+                },
+            };
+            crate::write_commit(
+                &self.repo.objects,
+                tree,
+                parents,
+                &signature,
+                &signature,
+                "c",
             )
+            .unwrap()
         }
 
         fn file(&self, tree: gix_hash::ObjectId, name: &str) -> String {
-            let entry = self
-                .repo
-                .find_tree(crate::git2_oid(&tree))
+            let entry = crate::path_entry(&self.repo.objects, tree, std::path::Path::new(name))
                 .unwrap()
-                .get_name(name)
-                .unwrap_or_else(|| panic!("{name} not in tree"))
-                .id();
-            String::from_utf8(self.repo.find_blob(entry).unwrap().content().to_vec()).unwrap()
+                .unwrap_or_else(|| panic!("{name} not in tree"));
+            crate::blob_text(&self.repo.objects, entry.oid)
         }
     }
 
@@ -244,10 +248,8 @@ mod tests {
         let base = t.tree(&[("a", "1\n")]);
         let ours = t.tree(&[("a", "ours\n")]);
         let theirs = t.tree(&[("a", "theirs\n")]);
-        let odb = t.repo.odb().unwrap();
-        let objects = crate::Git2Odb(&odb);
 
-        let err = merge_trees(&objects, base, ours, theirs)
+        let err = merge_trees(&t.repo.objects, base, ours, theirs)
             .unwrap_err()
             .to_string();
         assert!(err.contains("conflicts in a"), "{err}");
@@ -259,13 +261,11 @@ mod tests {
         let base = t.commit(t.tree(&[("a", "1\n")]), &[]);
         let ours = t.commit(t.tree(&[("a", "ours\n")]), &[base]);
         let theirs = t.commit(t.tree(&[("a", "theirs\n")]), &[base]);
-        let odb = t.repo.odb().unwrap();
-        let objects = crate::Git2Odb(&odb);
 
-        let merged = merge_commits(&objects, ours, theirs, Some(Favor::Ours)).unwrap();
+        let merged = merge_commits(&t.repo.objects, ours, theirs, Some(Favor::Ours)).unwrap();
         assert_eq!(t.file(merged, "a"), "ours\n");
 
-        let merged = merge_commits(&objects, ours, theirs, Some(Favor::Theirs)).unwrap();
+        let merged = merge_commits(&t.repo.objects, ours, theirs, Some(Favor::Theirs)).unwrap();
         assert_eq!(t.file(merged, "a"), "theirs\n");
     }
 
@@ -275,10 +275,8 @@ mod tests {
         let base = t.commit(t.tree(&[("a", "1\n"), ("b", "1\n")]), &[]);
         let ours = t.commit(t.tree(&[("b", "1\n")]), &[base]);
         let theirs = t.commit(t.tree(&[("a", "modified\n"), ("b", "1\n")]), &[base]);
-        let odb = t.repo.odb().unwrap();
-        let objects = crate::Git2Odb(&odb);
 
-        let err = merge_commits(&objects, ours, theirs, Some(Favor::Ours))
+        let err = merge_commits(&t.repo.objects, ours, theirs, Some(Favor::Ours))
             .unwrap_err()
             .to_string();
         assert!(err.contains("conflicts in a"), "{err}");
