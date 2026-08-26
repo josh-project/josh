@@ -20,7 +20,7 @@ fn find_paths(
     tree: gix_hash::ObjectId,
     at: Option<String>,
     depth: Option<i32>,
-    kind: git2::ObjectType,
+    kind: gix_object::Kind,
 ) -> anyhow::Result<Vec<std::path::PathBuf>> {
     let tree = match at.as_deref() {
         Some(at) if !at.is_empty() => {
@@ -50,7 +50,7 @@ fn collect_paths(
     prefix: &std::path::Path,
     level: i32,
     depth: Option<i32>,
-    kind: git2::ObjectType,
+    kind: gix_object::Kind,
     out: &mut Vec<std::path::PathBuf>,
 ) -> anyhow::Result<()> {
     let reader = tree::read_tree(transaction, odb, tree)?;
@@ -62,9 +62,9 @@ fn collect_paths(
         let is_tree = entry.mode.is_tree();
         // Gitlinks are neither blobs nor trees, so they are never listed.
         let matches = if is_tree {
-            kind == git2::ObjectType::Tree
+            kind == gix_object::Kind::Tree
         } else {
-            kind == git2::ObjectType::Blob && !entry.mode.is_commit()
+            kind == gix_object::Kind::Blob && !entry.mode.is_commit()
         };
         if matches && depth.is_none_or(|limit| level <= limit) {
             out.push(path.clone());
@@ -117,7 +117,7 @@ impl Revision {
         at: Option<String>,
         depth: Option<i32>,
         context: &Context,
-        kind: git2::ObjectType,
+        kind: gix_object::Kind,
     ) -> FieldResult<Option<Vec<Path>>> {
         let transaction = context.transaction.lock().unwrap();
         let odb = transaction.odb();
@@ -295,7 +295,7 @@ impl Revision {
         depth: Option<i32>,
         context: &Context,
     ) -> FieldResult<Option<Vec<Path>>> {
-        self.files_or_dirs(at, depth, context, git2::ObjectType::Blob)
+        self.files_or_dirs(at, depth, context, gix_object::Kind::Blob)
     }
 
     fn dirs(
@@ -304,7 +304,7 @@ impl Revision {
         depth: Option<i32>,
         context: &Context,
     ) -> FieldResult<Option<Vec<Path>>> {
-        self.files_or_dirs(at, depth, context, git2::ObjectType::Tree)
+        self.files_or_dirs(at, depth, context, gix_object::Kind::Tree)
     }
 
     fn changed_files(
