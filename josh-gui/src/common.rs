@@ -3,9 +3,9 @@ use std::sync::OnceLock;
 use dioxus::prelude::*;
 
 pub fn open_transaction() -> anyhow::Result<josh_core::cache::Transaction> {
-    let repo = git2::Repository::discover(".")?;
+    let paths = josh_core::git::discover_repository_paths()?;
     let cache = std::sync::Arc::new(josh_core::cache::CacheStack::new());
-    josh_core::cache::TransactionContext::new(repo.path(), cache).open()
+    josh_core::cache::TransactionContext::new(paths.git_dir, cache).open()
 }
 
 pub fn vote_state_label(state: &str) -> &'static str {

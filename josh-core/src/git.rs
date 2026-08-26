@@ -212,6 +212,62 @@ pub fn file_stats(
     Ok(files)
 }
 
+/// One line from a commit's patch, or a hunk header when `origin` is `@`.
+pub struct PatchLine {
+    pub origin: char,
+    pub content: String,
+}
+
+/// Compare `commit_oid` with its first parent and return the patch for `path`.
+pub fn file_patch(
+    transaction: &crate::cache::Transaction,
+    commit_oid: gix_hash::ObjectId,
+    path: &str,
+    context_lines: u32,
+) -> anyhow::Result<Vec<PatchLine>> {
+    let repo = transaction.git2_repo();
+    let commit = repo.find_commit(crate::objects::git2_oid(&commit_oid))?;
+    let parent_tree = commit.parent(0).ok().and_then(|parent| parent.tree().ok());
+    let mut options = git2::DiffOptions::new();
+    options.context_lines(context_lines);
+    let diff = repo.diff_tree_to_tree(
+        parent_tree.as_ref(),
+        Some(&commit.tree()?),
+        Some(&mut options),
+    )?;
+
+    let Some(index) = diff.deltas().position(|delta| {
+        delta
+            .new_file()
+            .path()
+            .or_else(|| delta.old_file().path())
+            .and_then(std::path::Path::to_str)
+            == Some(path)
+    }) else {
+        return Ok(Vec::new());
+    };
+    let Some(patch) = git2::Patch::from_diff(&diff, index)? else {
+        return Ok(Vec::new());
+    };
+
+    let mut lines = Vec::new();
+    for hunk_index in 0..patch.num_hunks() {
+        let (hunk, hunk_lines) = patch.hunk(hunk_index)?;
+        lines.push(PatchLine {
+            origin: '@',
+            content: String::from_utf8_lossy(hunk.header()).into_owned(),
+        });
+        for line_index in 0..hunk_lines {
+            let line = patch.line_in_hunk(hunk_index, line_index)?;
+            lines.push(PatchLine {
+                origin: line.origin(),
+                content: String::from_utf8_lossy(line.content()).into_owned(),
+            });
+        }
+    }
+    Ok(lines)
+}
+
 /// Safely update the worktree to `commit_oid` without overwriting conflicting changes.
 pub fn checkout_commit(
     transaction: &crate::cache::Transaction,
@@ -433,6 +489,52 @@ mod tests {
                     .unwrap()
                     .tree_id()
             )
+        );
+    }
+
+    #[test]
+    fn file_patch_returns_selected_file_hunks() {
+        let dir = tempfile::tempdir().unwrap();
+        let repo = git2::Repository::init(dir.path()).unwrap();
+        let sig = git2::Signature::new("t", "t@example.com", &git2::Time::new(0, 0)).unwrap();
+
+        let old_blob = repo.blob(b"old\n").unwrap();
+        let mut old_builder = repo.treebuilder(None).unwrap();
+        old_builder.insert("file", old_blob, 0o100644).unwrap();
+        let old_tree = repo.find_tree(old_builder.write().unwrap()).unwrap();
+        let parent = repo
+            .find_commit(
+                repo.commit(None, &sig, &sig, "parent", &old_tree, &[])
+                    .unwrap(),
+            )
+            .unwrap();
+
+        let new_blob = repo.blob(b"new\n").unwrap();
+        let mut new_builder = repo.treebuilder(None).unwrap();
+        new_builder.insert("file", new_blob, 0o100644).unwrap();
+        let new_tree = repo.find_tree(new_builder.write().unwrap()).unwrap();
+        let commit = crate::objects::gix_oid(
+            repo.commit(None, &sig, &sig, "commit", &new_tree, &[&parent])
+                .unwrap(),
+        );
+
+        let cache = std::sync::Arc::new(crate::cache::CacheStack::new());
+        let transaction = crate::cache::TransactionContext::new(repo.path(), cache)
+            .open()
+            .unwrap();
+        let patch = super::file_patch(&transaction, commit, "file", 3).unwrap();
+
+        assert_eq!(
+            patch
+                .iter()
+                .map(|line| (line.origin, line.content.as_str()))
+                .collect::<Vec<_>>(),
+            vec![('@', "@@ -1 +1 @@\n"), ('-', "old\n"), ('+', "new\n")]
+        );
+        assert!(
+            super::file_patch(&transaction, commit, "missing", 3)
+                .unwrap()
+                .is_empty()
         );
     }
 }
