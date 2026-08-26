@@ -121,24 +121,31 @@ async fn main() -> anyhow::Result<()> {
         })
     };
 
-    let source_repo = git2::Repository::open(&args.local_dir)?;
+    let source_repo = gix::open(&args.local_dir)?;
+    let current_commit = source_repo
+        .rev_parse_single(args.source_ref.as_str())?
+        .object()?
+        .peel_to_commit()?;
+    let current_commit_oid = current_commit.id().detach();
+    let tree_oid = current_commit.tree_id()?.detach();
 
-    let source_ref = source_repo.find_reference(&args.source_ref)?;
-    let current_commit = source_ref.peel_to_commit()?;
-    let tree = current_commit.tree()?;
-
-    let sig = git2::Signature::now("Benchmark", "benchmark@example.com")?;
-
-    let new_commit_oid = source_repo.commit(
-        None,
-        &sig,
-        &sig,
-        "Benchmark commit",
-        &tree,
-        &[&current_commit],
-    )?;
-
-    source_repo.reference("refs/heads/benchmark", new_commit_oid, true, "benchmark")?;
+    let sig = gix::actor::Signature {
+        name: "Benchmark".into(),
+        email: "benchmark@example.com".into(),
+        time: gix::date::Time::now_local_or_utc(),
+    };
+    let mut committer_time = gix::date::parse::TimeBuf::default();
+    let mut author_time = gix::date::parse::TimeBuf::default();
+    let new_commit_oid = source_repo
+        .commit_as(
+            sig.to_ref(&mut committer_time),
+            sig.to_ref(&mut author_time),
+            "refs/heads/benchmark",
+            "Benchmark commit",
+            tree_oid,
+            [current_commit_oid],
+        )?
+        .detach();
 
     println!("Created benchmark commit: {}", new_commit_oid);
     let branch = args
