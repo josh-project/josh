@@ -3643,8 +3643,8 @@ version = "26.7.28"
 dependencies = [
  "anyhow",
  "chrono",
- "git2",
  "gix-hash",
+ "gix-object",
  "glob",
  "josh-core",
  "josh-search",
