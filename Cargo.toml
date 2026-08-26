@@ -132,10 +132,6 @@ josh-test-webhook-service = { path = "deployment/josh-test-webhook-service", ver
 josh-test-webhook-client = { path = "deployment/josh-test-webhook-client", version = "26.7.28" }
 josh-command-middleware = { path = "deployment/josh-command-middleware", version = "26.7.28" }
 
-[workspace.dependencies.git2]
-default-features = false
-features = ["vendored-libgit2"]
-version = "0.21.0"
 
 [workspace.dependencies.juniper]
 version = "0.17.1"

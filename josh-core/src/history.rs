@@ -965,7 +965,7 @@ mod tests {
     #[test]
     fn is_empty_root_contract() {
         let td = tempfile::tempdir().unwrap();
-        let repo = git2::Repository::init_bare(td.path()).unwrap();
+        let repo = gix::init_bare(td.path()).unwrap();
         let cachestack = std::sync::Arc::new(
             cache::CacheStack::new().with_backend(cache::SledCacheBackend::new(td.path())),
         );
@@ -982,41 +982,32 @@ mod tests {
         data.extend_from_slice(b"40000 sub");
         data.push(0);
         data.extend_from_slice(empty.as_bytes());
-        let chain = josh_gix_ext::gix_oid(
-            repo.odb()
-                .unwrap()
-                .write(git2::ObjectType::Tree, &data)
-                .unwrap(),
-        );
+        let chain =
+            gix_object::Write::write_buf(&repo.objects, gix_object::Kind::Tree, &data).unwrap();
         let mut data = Vec::new();
         data.extend_from_slice(b"40000 nested");
         data.push(0);
         data.extend_from_slice(chain.as_bytes());
-        let chain2 = josh_gix_ext::gix_oid(
-            repo.odb()
-                .unwrap()
-                .write(git2::ObjectType::Tree, &data)
-                .unwrap(),
-        );
+        let chain2 =
+            gix_object::Write::write_buf(&repo.objects, gix_object::Kind::Tree, &data).unwrap();
         assert!(is_empty_root(&t, odb, chain2).unwrap());
 
         // A blob anywhere makes the root non-empty; so does a gitlink.
-        let blob = repo.blob(b"x").unwrap();
-        let mut b = git2::build::TreeUpdateBuilder::new();
-        b.upsert("a/b/file.txt", blob, git2::FileMode::Blob);
-        let base = repo.treebuilder(None).unwrap().write().unwrap();
-        let with_blob = josh_gix_ext::gix_oid(
-            b.create_updated(&repo, &repo.find_tree(base).unwrap())
-                .unwrap(),
-        );
+        let blob = josh_gix_ext::write_blob(&repo.objects, b"x").unwrap();
+        let mut builder = repo.edit_tree(empty).unwrap();
+        builder
+            .upsert("a/b/file.txt", gix::objs::tree::EntryKind::Blob, blob)
+            .unwrap();
+        let with_blob = builder.write().unwrap().detach();
         assert!(!is_empty_root(&t, odb, with_blob).unwrap());
 
         let gitlink =
             gix_hash::ObjectId::from_str("0123456789012345678901234567890123456789").unwrap();
-        let mut b = repo.treebuilder(None).unwrap();
-        b.insert("sub", josh_gix_ext::git2_oid(&gitlink), 0o160000)
+        let mut builder = repo.edit_tree(empty).unwrap();
+        builder
+            .upsert("sub", gix::objs::tree::EntryKind::Commit, gitlink)
             .unwrap();
-        let with_gitlink = josh_gix_ext::gix_oid(b.write().unwrap());
+        let with_gitlink = builder.write().unwrap().detach();
         assert!(!is_empty_root(&t, odb, with_gitlink).unwrap());
     }
 }

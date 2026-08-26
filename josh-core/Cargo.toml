@@ -90,8 +90,6 @@ josh-starlark.workspace = true
 [dev-dependencies]
 rand = "0.10.2"
 criterion = "0.5"
-git2.workspace = true
-josh-gix-ext = { workspace = true, features = ["git2"] }
 josh-test-support = { path = "../devtools/josh-test-support" }
 # Used by tests/cache_lock.rs to probe the sled file lock directly.
 sled = "0.34.7"

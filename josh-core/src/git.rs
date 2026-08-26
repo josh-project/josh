@@ -512,54 +512,75 @@ pub fn read_tree_id(
 
 #[cfg(test)]
 mod tests {
+    fn signature() -> gix_actor::Signature {
+        gix_actor::Signature {
+            name: "t".into(),
+            email: "t@example.com".into(),
+            time: gix_actor::date::Time {
+                seconds: 0,
+                offset: 0,
+            },
+        }
+    }
+
+    fn empty_tree(repo: &gix::Repository) -> gix_hash::ObjectId {
+        gix_object::Write::write(
+            &repo.objects,
+            &gix_object::Tree {
+                entries: Vec::new(),
+            },
+        )
+        .unwrap()
+    }
+
+    fn tree_with_file(repo: &gix::Repository, content: &[u8]) -> gix_hash::ObjectId {
+        let blob = josh_gix_ext::write_blob(&repo.objects, content).unwrap();
+        let mut builder = repo.edit_tree(empty_tree(repo)).unwrap();
+        builder
+            .upsert("file", gix::objs::tree::EntryKind::Blob, blob)
+            .unwrap();
+        builder.write().unwrap().detach()
+    }
+
+    fn commit(
+        repo: &gix::Repository,
+        tree: gix_hash::ObjectId,
+        parents: &[gix_hash::ObjectId],
+        message: &str,
+    ) -> gix_hash::ObjectId {
+        let signature = signature();
+        josh_gix_ext::write_commit(
+            &repo.objects,
+            tree,
+            parents,
+            &signature,
+            &signature,
+            message,
+        )
+        .unwrap()
+    }
+
     #[test]
     fn read_tree_id_matches_find_commit() {
         let dir = tempfile::tempdir().unwrap();
-        let repo = git2::Repository::init(dir.path()).unwrap();
-        let sig = git2::Signature::new("t", "t@example.com", &git2::Time::new(0, 0)).unwrap();
-        let tree_id = repo.treebuilder(None).unwrap().write().unwrap();
-        let tree = repo.find_tree(tree_id).unwrap();
-        let commit_id =
-            josh_gix_ext::gix_oid(repo.commit(None, &sig, &sig, "test", &tree, &[]).unwrap());
+        let repo = gix::init(dir.path()).unwrap();
+        let tree = empty_tree(&repo);
+        let commit_id = commit(&repo, tree, &[], "test");
 
-        let objects_dir = repo.commondir().join("objects");
+        let objects_dir = repo.path().join("objects");
         let store = josh_memodb::MemOdb::new(None, objects_dir.clone());
         let odb = josh_memodb::Odb::at(store, &objects_dir).unwrap();
-        assert_eq!(
-            super::read_tree_id(&odb, commit_id).unwrap(),
-            crate::objects::gix_oid(
-                repo.find_commit(crate::objects::git2_oid(&commit_id))
-                    .unwrap()
-                    .tree_id()
-            )
-        );
+        assert_eq!(super::read_tree_id(&odb, commit_id).unwrap(), tree);
     }
 
     #[test]
     fn file_patch_returns_selected_file_hunks() {
         let dir = tempfile::tempdir().unwrap();
-        let repo = git2::Repository::init(dir.path()).unwrap();
-        let sig = git2::Signature::new("t", "t@example.com", &git2::Time::new(0, 0)).unwrap();
-
-        let old_blob = repo.blob(b"old\n").unwrap();
-        let mut old_builder = repo.treebuilder(None).unwrap();
-        old_builder.insert("file", old_blob, 0o100644).unwrap();
-        let old_tree = repo.find_tree(old_builder.write().unwrap()).unwrap();
-        let parent = repo
-            .find_commit(
-                repo.commit(None, &sig, &sig, "parent", &old_tree, &[])
-                    .unwrap(),
-            )
-            .unwrap();
-
-        let new_blob = repo.blob(b"new\n").unwrap();
-        let mut new_builder = repo.treebuilder(None).unwrap();
-        new_builder.insert("file", new_blob, 0o100644).unwrap();
-        let new_tree = repo.find_tree(new_builder.write().unwrap()).unwrap();
-        let commit = josh_gix_ext::gix_oid(
-            repo.commit(None, &sig, &sig, "commit", &new_tree, &[&parent])
-                .unwrap(),
-        );
+        let repo = gix::init(dir.path()).unwrap();
+        let old_tree = tree_with_file(&repo, b"old\n");
+        let parent = commit(&repo, old_tree, &[], "parent");
+        let new_tree = tree_with_file(&repo, b"new\n");
+        let commit = commit(&repo, new_tree, &[parent], "commit");
 
         let cache = std::sync::Arc::new(crate::cache::CacheStack::new());
         let transaction = crate::cache::TransactionContext::new(repo.path(), cache)
@@ -592,41 +613,28 @@ mod tests {
     #[test]
     fn worktree_porcelain_preserves_local_changes() {
         let dir = tempfile::tempdir().unwrap();
-        let repo = git2::Repository::init(dir.path()).unwrap();
-        let sig = git2::Signature::new("t", "t@example.com", &git2::Time::new(0, 0)).unwrap();
+        let repo = gix::init(dir.path()).unwrap();
         let path = dir.path().join("file");
 
-        std::fs::write(&path, b"old\n").unwrap();
-        let mut index = repo.index().unwrap();
-        index.add_path(std::path::Path::new("file")).unwrap();
-        index.write().unwrap();
-        let tree = repo.find_tree(index.write_tree().unwrap()).unwrap();
-        let old = repo
-            .commit(Some("HEAD"), &sig, &sig, "old", &tree, &[])
-            .unwrap();
-
-        std::fs::write(&path, b"new\n").unwrap();
-        index.add_path(std::path::Path::new("file")).unwrap();
-        index.write().unwrap();
-        let tree = repo.find_tree(index.write_tree().unwrap()).unwrap();
-        let parent = repo.find_commit(old).unwrap();
-        let new = repo
-            .commit(Some("HEAD"), &sig, &sig, "new", &tree, &[&parent])
-            .unwrap();
+        let old_tree = tree_with_file(&repo, b"old\n");
+        let old = commit(&repo, old_tree, &[], "old");
+        let new_tree = tree_with_file(&repo, b"new\n");
+        let new = commit(&repo, new_tree, &[old], "new");
+        std::fs::write(repo.path().join("HEAD"), format!("{new}\n")).unwrap();
 
         let cache = std::sync::Arc::new(crate::cache::CacheStack::new());
         let transaction = crate::cache::TransactionContext::new(repo.path(), cache)
             .open()
             .unwrap();
+        super::checkout_commit(&transaction, new).unwrap();
         assert!(!super::has_tracked_changes(&transaction).unwrap());
 
-        let old = josh_gix_ext::gix_oid(old);
         super::checkout_commit(&transaction, old).unwrap();
         let head = transaction.head().unwrap();
         transaction
             .update_ref(
                 &head.reference,
-                crate::cache::Expected::At(josh_gix_ext::gix_oid(new)),
+                crate::cache::Expected::At(new),
                 old,
                 "test checkout",
             )
@@ -651,7 +659,7 @@ mod tests {
         );
 
         assert!(
-            super::checkout_commit(&transaction, josh_gix_ext::gix_oid(new)).is_err(),
+            super::checkout_commit(&transaction, new).is_err(),
             "checkout must not overwrite a conflicting local edit"
         );
         assert_eq!(std::fs::read(&path).unwrap(), b"local\n");
