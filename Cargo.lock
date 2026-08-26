@@ -3372,11 +3372,13 @@ version = "26.7.28"
 dependencies = [
  "anyhow",
  "defer",
+ "gix",
  "gix-hash",
  "josh-compose-backend",
  "josh-core",
  "josh-filter",
  "tar",
+ "tempfile",
 ]
 
 [[package]]
