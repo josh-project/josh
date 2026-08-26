@@ -1,6 +1,6 @@
 use criterion::{BatchSize, BenchmarkId, Criterion, Throughput, criterion_group, criterion_main};
-use josh_test_support::bench::josh_commit_signature;
-use josh_test_support::bench::{EntryKind, git2_oid, gix_oid};
+use josh_core::git::josh_actor_signature;
+use josh_test_support::bench::EntryKind;
 use rand::prelude::*;
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -62,7 +62,7 @@ const HOOK_ARG_ONE_TREE: &str = "one_tree";
 /// by running the bench once after a build change.
 const EXPECTED_HEAD: &str = "8deb73b572162ae4b4caf36ae52f3b2ef70e1485";
 
-/// Fixed commit timestamp fed to `josh_commit_signature()` via `JOSH_COMMIT_TIME` so the built
+/// Fixed commit timestamp fed to `josh_actor_signature()` via `JOSH_COMMIT_TIME` so the built
 /// history is reproducible. Without it the signature uses the wall clock, every run produces
 /// different head oids, and `EXPECTED_HEAD` can never be stable. The value itself is arbitrary.
 const JOSH_BENCH_COMMIT_TIME: &str = "1700000000";
@@ -158,7 +158,8 @@ impl PinBench {
         {
             let repo = &provisioned.repo;
             for &size in SIZES {
-                let head = gix_oid(repo.refname_to_id(&format!("refs/heads/case_{size}"))?);
+                let head =
+                    josh_test_support::bench::ref_target(repo, &format!("refs/heads/case_{size}"))?;
                 record_case(repo, head, &mut per_path, &mut one_tree)?;
                 cases.push(SizeCase { size, head });
             }
@@ -278,18 +279,18 @@ fn pin_filter(pinned: &[PathBuf]) -> josh_filter::Filter {
 /// for the empty pinned set. The pin argument is one op no matter how many paths are pinned, so
 /// filter-engine work stays near-constant as the pinned set grows.
 fn pin_filter_tree(
-    repo: &git2::Repository,
+    repo: &gix::Repository,
     pinned: &[PathBuf],
 ) -> anyhow::Result<josh_filter::Filter> {
-    let placeholder = repo.blob(b"x")?;
-    let gix_repo = gix::open(repo.path())?;
-    let baseline = repo.treebuilder(None)?.write()?;
-    let mut builder = gix_repo.edit_tree(gix_oid(baseline))?;
+    let placeholder = josh_gix_ext::write_blob(&repo.objects, b"x")?;
+
+    let baseline = josh_test_support::bench::empty_tree(repo)?;
+    let mut builder = repo.edit_tree(baseline)?;
     for path in pinned {
         builder.upsert(
             path.to_str().expect("benchmark paths are UTF-8"),
             EntryKind::Blob,
-            gix_oid(placeholder),
+            placeholder,
         )?;
     }
     let tree = builder.write()?.detach();
@@ -301,7 +302,7 @@ fn pin_filter_tree(
 /// per commit. The tip is tagged with `refs/heads/case_<size>` so the head is recoverable after the
 /// repo round-trips through the cache; the pinned set and per-commit pin filters are not recorded here
 /// -- they are reconstructed from tree diffs in `record_case`.
-fn build_case(repo: &git2::Repository, size: usize) -> anyhow::Result<gix_hash::ObjectId> {
+fn build_case(repo: &gix::Repository, size: usize) -> anyhow::Result<gix_hash::ObjectId> {
     use rand::RngExt;
 
     // Distribute files uniformly across nested subfolders.
@@ -309,9 +310,8 @@ fn build_case(repo: &git2::Repository, size: usize) -> anyhow::Result<gix_hash::
     let files_in_folder =
         rand::distr::Uniform::try_from(N_PER_SUBFOLDER_MIN..=N_PER_SUBFOLDER_MAX)?;
 
-    let gix_repo = gix::open(repo.path())?;
-    let baseline = repo.treebuilder(None)?.write()?;
-    let mut builder = gix_repo.edit_tree(gix_oid(baseline))?;
+    let baseline = josh_test_support::bench::empty_tree(repo)?;
+    let mut builder = repo.edit_tree(baseline)?;
     let mut all_paths = vec![];
 
     while all_paths.len() < size {
@@ -324,30 +324,31 @@ fn build_case(repo: &git2::Repository, size: usize) -> anyhow::Result<gix_hash::
         for i in 0..to_add {
             let file_name = format!("file_{}", i);
             let full_path = subpath.join(&file_name);
-            let oid = repo.blob(file_name.as_bytes())?;
+            let oid = josh_gix_ext::write_blob(&repo.objects, file_name.as_bytes())?;
             builder.upsert(
                 full_path.to_str().expect("benchmark paths are UTF-8"),
                 EntryKind::Blob,
-                gix_oid(oid),
+                oid,
             )?;
             all_paths.push(full_path);
         }
     }
 
-    let root_tree = repo.find_tree(git2_oid(builder.write()?.detach()))?;
+    let root_tree = builder.write()?.detach();
 
-    let sig = josh_commit_signature()?;
+    let sig = josh_actor_signature()?;
     // No ref update yet -- the tip ref is set once the history is complete.
-    let mut head = repo.commit(None, &sig, &sig, "content", &root_tree, &[])?;
+    let mut head =
+        josh_gix_ext::write_commit(&repo.objects, root_tree, &[], &sig, &sig, "content")?;
 
     // Deterministic history: each commit churns a fresh random ~CHURN_FRACTION of the files. Only the
     // content churn is written here; the churned set is what `record_case` recovers by diffing against
     // the parent, and the evolving pinned set is derived from it there.
     let mut rng = StdRng::seed_from_u64(1);
     for i in 0..N_COMMITS {
-        let parent = repo.find_commit(head)?;
-        let tree = parent.tree()?;
-        let mut builder = gix_repo.edit_tree(gix_oid(tree.id()))?;
+        let parent = josh_gix_ext::CommitData::read(&repo.objects, head)?;
+        let tree = parent.tree_id()?;
+        let mut builder = repo.edit_tree(tree)?;
 
         let churned = all_paths
             .iter()
@@ -357,60 +358,45 @@ fn build_case(repo: &git2::Repository, size: usize) -> anyhow::Result<gix_hash::
 
         for path in &churned {
             let content = random_string(&mut rng, CHURN_CONTENT_LEN);
-            let blob = repo.blob(content.as_bytes())?;
+            let blob = josh_gix_ext::write_blob(&repo.objects, content.as_bytes())?;
             builder.upsert(
                 path.to_str().expect("benchmark paths are UTF-8"),
                 EntryKind::Blob,
-                gix_oid(blob),
+                blob,
             )?;
         }
 
-        let new_tree = repo.find_tree(git2_oid(builder.write()?.detach()))?;
-        head = repo.commit(
-            None,
+        let new_tree = builder.write()?.detach();
+        head = josh_gix_ext::write_commit(
+            &repo.objects,
+            new_tree,
+            &[head],
             &sig,
             &sig,
             &format!("commit {i}"),
-            &new_tree,
-            &[&parent],
         )?;
     }
 
     // Tag the tip so `record_case` can find this case's head on the cache-hit path, where the
     // build callback never runs. Also keeps the whole history reachable through `git prune`.
     repo.reference(
-        &format!("refs/heads/case_{size}"),
+        format!("refs/heads/case_{size}"),
         head,
-        true,
+        gix::refs::transaction::PreviousValue::Any,
         "bench case tip",
     )?;
 
-    Ok(gix_oid(head))
+    Ok(head)
 }
 
 /// Aggregate every case tip under one index commit. Its oid changes whenever any case head changes,
 /// making it a faithful content-addressed cache stamp for the entire repo, and it keeps all cases
 /// reachable so provision_repo's `git prune` retains the full history. It is never filtered.
 fn build_index(
-    repo: &git2::Repository,
+    repo: &gix::Repository,
     heads: &[gix_hash::ObjectId],
 ) -> anyhow::Result<gix_hash::ObjectId> {
-    let sig = josh_commit_signature()?;
-    let empty_tree = repo.find_tree(repo.treebuilder(None)?.write()?)?;
-    let parents = heads
-        .iter()
-        .map(|oid| repo.find_commit(git2_oid(*oid)))
-        .collect::<Result<Vec<_>, _>>()?;
-    let parent_refs = parents.iter().collect::<Vec<_>>();
-    let index = repo.commit(
-        Some("refs/heads/bench-index"),
-        &sig,
-        &sig,
-        "bench index",
-        &empty_tree,
-        &parent_refs,
-    )?;
-    Ok(gix_oid(index))
+    josh_test_support::bench::build_index(repo, &josh_actor_signature()?, heads)
 }
 
 /// Walk a case's linear history root-to-tip, reconstructing each commit's pinned set and recording
@@ -422,7 +408,7 @@ fn build_index(
 /// model purely from repo-derived data, so it is identical whether the repo was freshly built or
 /// copied from cache.
 fn record_case(
-    repo: &git2::Repository,
+    repo: &gix::Repository,
     head: gix_hash::ObjectId,
     per_path: &mut HashMap<gix_hash::ObjectId, josh_filter::Filter>,
     one_tree: &mut HashMap<gix_hash::ObjectId, josh_filter::Filter>,
@@ -431,23 +417,21 @@ fn record_case(
     let mut chain = vec![];
     let mut oid = head;
     loop {
-        let commit = repo.find_commit(git2_oid(oid))?;
+        let commit = josh_gix_ext::CommitData::read(&repo.objects, oid)?;
         chain.push(oid);
-        if commit.parent_count() == 0 {
+        let Some(parent) = commit.parent_ids().next() else {
             break;
-        }
-        oid = gix_oid(commit.parent_id(0)?);
+        };
+        oid = parent;
     }
     chain.reverse();
 
     let mut pinned = std::collections::BTreeSet::<PathBuf>::new();
     for (commit_index, &oid) in chain.iter().enumerate() {
-        let commit = repo.find_commit(git2_oid(oid))?;
-
         // Re-roll the hold status of every churned path; unchurned paths keep the status they carried
         // over. The root commit has no parent, so its churned set is empty and the pinned set stays
         // empty there.
-        for path in changed_paths(repo, &commit)? {
+        for path in changed_paths(repo, oid)? {
             if holds_back(&path, commit_index) {
                 pinned.insert(path);
             } else {
@@ -482,26 +466,45 @@ fn holds_back(path: &std::path::Path, commit_index: usize) -> bool {
 }
 
 /// The paths that differ between `commit` and its first parent (empty for a parentless commit).
-fn changed_paths(repo: &git2::Repository, commit: &git2::Commit) -> anyhow::Result<Vec<PathBuf>> {
-    if commit.parent_count() == 0 {
+fn changed_paths(
+    repo: &gix::Repository,
+    commit_id: gix_hash::ObjectId,
+) -> anyhow::Result<Vec<PathBuf>> {
+    let commit = josh_gix_ext::CommitData::read(&repo.objects, commit_id)?;
+    let Some(parent_id) = commit.parent_ids().next() else {
         return Ok(vec![]);
-    }
-    let parent_tree = commit.parent(0)?.tree()?;
-    let tree = commit.tree()?;
-    let diff = repo.diff_tree_to_tree(Some(&parent_tree), Some(&tree), None)?;
-    let mut paths = vec![];
-    diff.foreach(
-        &mut |delta, _| {
-            if let Some(path) = delta.new_file().path() {
-                paths.push(path.to_path_buf());
+    };
+    let parent_tree = josh_gix_ext::CommitData::read(&repo.objects, parent_id)?.tree_id()?;
+    let tree = commit.tree_id()?;
+
+    let entries = |root| -> anyhow::Result<
+        std::collections::BTreeMap<PathBuf, (gix::objs::tree::EntryKind, gix_hash::ObjectId)>,
+    > {
+        let mut entries = std::collections::BTreeMap::new();
+        josh_gix_ext::walk_tree_preorder(&repo.objects, root, &mut |parent, entry| {
+            if !entry.mode.is_tree() {
+                let name = std::str::from_utf8(entry.filename)?;
+                let path = if parent.is_empty() {
+                    PathBuf::from(name)
+                } else {
+                    PathBuf::from(parent).join(name)
+                };
+                entries.insert(path, (entry.mode.kind(), entry.oid.to_owned()));
             }
-            true
-        },
-        None,
-        None,
-        None,
-    )?;
-    Ok(paths)
+            Ok(())
+        })?;
+        Ok(entries)
+    };
+    let parent_entries = entries(parent_tree)?;
+    let entries = entries(tree)?;
+    Ok(parent_entries
+        .keys()
+        .chain(entries.keys())
+        .collect::<std::collections::BTreeSet<_>>()
+        .into_iter()
+        .filter(|path| parent_entries.get(*path) != entries.get(*path))
+        .cloned()
+        .collect())
 }
 
 fn ultrawide_pin_hook(c: &mut Criterion) {

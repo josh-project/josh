@@ -1,9 +1,7 @@
 use criterion::{BatchSize, BenchmarkId, Criterion, Throughput, criterion_group, criterion_main};
 use josh_core::filter::Filter;
-use josh_test_support::bench::josh_commit_signature;
-use josh_test_support::bench::{
-    EntryKind, build_index, expected_tree, git2_oid, gix_oid, random_string,
-};
+use josh_core::git::josh_actor_signature;
+use josh_test_support::bench::{EntryKind, build_index, expected_tree, random_string};
 use rand::prelude::*;
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
@@ -83,7 +81,7 @@ const CACHE_NAME: &str = if cfg!(debug_assertions) {
     "deephistory_glob"
 };
 
-/// Fixed commit timestamp fed to `josh_commit_signature()` via `JOSH_COMMIT_TIME` so the built
+/// Fixed commit timestamp fed to `josh_actor_signature()` via `JOSH_COMMIT_TIME` so the built
 /// history is reproducible. Without it the signature uses the wall clock, every run produces
 /// different head oids, and `EXPECTED_HEAD` can never be stable. The value itself is arbitrary.
 const JOSH_BENCH_COMMIT_TIME: &str = "1700000000";
@@ -129,7 +127,7 @@ impl GlobBench {
                         .in_scope(|| build_case(repo, n_commits))?;
                     heads.push(head);
                 }
-                build_index(repo, &josh_commit_signature()?, &heads)
+                build_index(repo, &josh_actor_signature()?, &heads)
             },
         )?;
 
@@ -139,10 +137,13 @@ impl GlobBench {
         {
             let repo = &provisioned.repo;
             for &n_commits in HISTORY_SIZES {
-                let head = repo.refname_to_id(&format!("refs/heads/case_{n_commits}"))?;
+                let head = josh_test_support::bench::ref_target(
+                    repo,
+                    &format!("refs/heads/case_{n_commits}"),
+                )?;
                 cases.push(SizeCase {
                     n_commits,
-                    head: gix_oid(head),
+                    head: head,
                 });
             }
         }
@@ -155,7 +156,7 @@ impl GlobBench {
         let context = josh_core::cache::TransactionContext::new(provisioned.path(), cache);
 
         // Correctness gates (untimed): confirm every benchmarked pattern filter produces exactly
-        // the tree an independent git2 walk + reference glob match predicts, so we never silently
+        // the tree an independent reference walk + glob match predicts, so we never silently
         // measure a filter that drops everything, is a no-op, or diverges from glob semantics. A
         // pattern filter keeps matching blobs at their ORIGINAL paths (it does not lift subtrees
         // to the root like `:/subdir`). The reference predicate is
@@ -168,13 +169,13 @@ impl GlobBench {
         {
             let transaction = context.open()?;
             let case = cases.first().expect("at least one case");
-            let repo = josh_test_support::bench::open_git2_repo(transaction.path())?;
+            let repo = josh_test_support::bench::open_repo(transaction.path())?;
 
             // The tripwire only means something if the dotfiles actually exist in the raw tree.
-            let raw_tree = repo.find_commit(git2_oid(case.head))?.tree()?;
+            let raw_tree = josh_test_support::bench::commit_tree(&repo, case.head)?;
             for path in ["dir_01/.hidden.rs", "dir_01/.hiddendir/inner.rs"] {
                 anyhow::ensure!(
-                    raw_tree.get_path(Path::new(path)).is_ok(),
+                    josh_gix_ext::path_entry(&repo.objects, raw_tree, Path::new(path))?.is_some(),
                     "raw head tree lost `{path}` -- dotfile gate would be vacuous"
                 );
             }
@@ -182,17 +183,16 @@ impl GlobBench {
             for pattern in [PATTERN_RECURSIVE, PATTERN_PREFIX, PATTERN_LITERAL] {
                 let filter = Filter::new().pattern(pattern).expect("valid glob");
                 let filtered = josh_core::filter_commit(&transaction, filter, case.head)?;
-                // The gate compares against an independent git2 reference model, which only
-                // sees what is on disk.
+                // The reference walk sees only objects already persisted to disk.
                 transaction.flush_mem_odb()?;
-                let got = repo.find_commit(git2_oid(filtered))?.tree_id();
+                let got = josh_test_support::bench::commit_tree(&repo, filtered)?;
                 let (want, kept) = expected_tree(&repo, case.head, &glob_pred(pattern))?;
                 anyhow::ensure!(
                     kept > 0,
                     "`::{pattern}` gate kept no blobs -- benchmark would be a no-op"
                 );
                 anyhow::ensure!(
-                    gix_oid(got) == want,
+                    got == want,
                     "`::{pattern}` produced {got}, expected {want} -- wrong measurement"
                 );
             }
@@ -203,14 +203,22 @@ impl GlobBench {
             // an identity/subtree fast path must reproduce bit-identically.
             let filter = Filter::new().pattern(PATTERN_PREFIX).expect("valid glob");
             let filtered = josh_core::filter_commit(&transaction, filter, case.head)?;
-            let got_tree = repo.find_commit(git2_oid(filtered))?.tree()?;
+            let got_tree = josh_test_support::bench::commit_tree(&repo, filtered)?;
+            let got_entries = josh_gix_ext::read_tree_entries(&repo.objects, got_tree)?;
             anyhow::ensure!(
-                got_tree.len() == 1,
+                got_entries.len() == 1,
                 "`::{PATTERN_PREFIX}` result must have exactly one top-level entry"
             );
-            let raw_subtree = raw_tree.get_path(Path::new(PREFIX_DIR))?.id();
+            let raw_subtree =
+                josh_gix_ext::path_entry(&repo.objects, raw_tree, Path::new(PREFIX_DIR))?
+                    .ok_or_else(|| anyhow::anyhow!("raw fixture subtree is missing"))?
+                    .oid;
             anyhow::ensure!(
-                got_tree.get_name(PREFIX_DIR).map(|e| e.id()) == Some(raw_subtree),
+                got_entries
+                    .iter()
+                    .find(|entry| entry.filename == PREFIX_DIR.as_bytes())
+                    .map(|entry| entry.oid)
+                    == Some(raw_subtree),
                 "`::{PATTERN_PREFIX}` must keep `{PREFIX_DIR}` at its original path"
             );
         }
@@ -250,20 +258,19 @@ fn glob_pred(pattern: &str) -> impl Fn(&str) -> bool {
 /// directories, then generate an `n_commits` history that churns ~`CHURN_FRACTION` of the files
 /// per commit. The tip is tagged with `refs/heads/case_<n_commits>` so the head is recoverable
 /// after the repo round-trips through the cache.
-fn build_case(repo: &git2::Repository, n_commits: usize) -> anyhow::Result<gix_hash::ObjectId> {
+fn build_case(repo: &gix::Repository, n_commits: usize) -> anyhow::Result<gix_hash::ObjectId> {
     use rand::RngExt;
 
-    let gix_repo = gix::open(repo.path())?;
-    let baseline = repo.treebuilder(None)?.write()?;
-    let mut builder = gix_repo.edit_tree(gix_oid(baseline))?;
+    let baseline = josh_test_support::bench::empty_tree(repo)?;
+    let mut builder = repo.edit_tree(baseline)?;
     let mut all_paths = vec![];
     for i in 0..TREE_FILES {
         let path = file_path(i);
-        let oid = repo.blob(path.to_string_lossy().as_bytes())?;
+        let oid = josh_gix_ext::write_blob(&repo.objects, path.to_string_lossy().as_bytes())?;
         builder.upsert(
             path.to_str().expect("benchmark paths are UTF-8"),
             EntryKind::Blob,
-            gix_oid(oid),
+            oid,
         )?;
         all_paths.push(path);
     }
@@ -272,11 +279,11 @@ fn build_case(repo: &git2::Repository, n_commits: usize) -> anyhow::Result<gix_h
     // stay dot-free -- see the tree-shape invariant at the top of this file).
     for j in 0..N_SUB_FILES {
         let path = PathBuf::from("dir_00").join("sub").join(format!("c_{j}.c"));
-        let oid = repo.blob(path.to_string_lossy().as_bytes())?;
+        let oid = josh_gix_ext::write_blob(&repo.objects, path.to_string_lossy().as_bytes())?;
         builder.upsert(
             path.to_str().expect("benchmark paths are UTF-8"),
             EntryKind::Blob,
-            gix_oid(oid),
+            oid,
         )?;
         all_paths.push(path);
     }
@@ -284,22 +291,23 @@ fn build_case(repo: &git2::Repository, n_commits: usize) -> anyhow::Result<gix_h
     // The dotfile tripwire under dir_01 (see the tree-shape comment above); static, never
     // churned.
     for path in ["dir_01/.hidden.rs", "dir_01/.hiddendir/inner.rs"] {
-        let oid = repo.blob(path.as_bytes())?;
-        builder.upsert(path, EntryKind::Blob, gix_oid(oid))?;
+        let oid = josh_gix_ext::write_blob(&repo.objects, path.as_bytes())?;
+        builder.upsert(path, EntryKind::Blob, oid)?;
     }
 
-    let root_tree = repo.find_tree(git2_oid(builder.write()?.detach()))?;
+    let root_tree = builder.write()?.detach();
 
-    let sig = josh_commit_signature()?;
+    let sig = josh_actor_signature()?;
     // No ref update yet -- the tip ref is set once the history is complete.
-    let mut head = repo.commit(None, &sig, &sig, "content", &root_tree, &[])?;
+    let mut head =
+        josh_gix_ext::write_commit(&repo.objects, root_tree, &[], &sig, &sig, "content")?;
 
     // Deterministic history: each commit churns a fresh random ~CHURN_FRACTION of the files.
     let mut rng = StdRng::seed_from_u64(1);
     for i in 0..n_commits {
-        let parent = repo.find_commit(head)?;
-        let tree = parent.tree()?;
-        let mut builder = gix_repo.edit_tree(gix_oid(tree.id()))?;
+        let parent = josh_gix_ext::CommitData::read(&repo.objects, head)?;
+        let tree = parent.tree_id()?;
+        let mut builder = repo.edit_tree(tree)?;
 
         let churned = all_paths
             .iter()
@@ -309,22 +317,22 @@ fn build_case(repo: &git2::Repository, n_commits: usize) -> anyhow::Result<gix_h
 
         for path in &churned {
             let content = random_string(&mut rng, CHURN_CONTENT_LEN);
-            let blob = repo.blob(content.as_bytes())?;
+            let blob = josh_gix_ext::write_blob(&repo.objects, content.as_bytes())?;
             builder.upsert(
                 path.to_str().expect("benchmark paths are UTF-8"),
                 EntryKind::Blob,
-                gix_oid(blob),
+                blob,
             )?;
         }
 
-        let new_tree = repo.find_tree(git2_oid(builder.write()?.detach()))?;
-        head = repo.commit(
-            None,
+        let new_tree = builder.write()?.detach();
+        head = josh_gix_ext::write_commit(
+            &repo.objects,
+            new_tree,
+            &[head],
             &sig,
             &sig,
             &format!("commit {i}"),
-            &new_tree,
-            &[&parent],
         )?;
     }
 
@@ -332,13 +340,13 @@ fn build_case(repo: &git2::Repository, n_commits: usize) -> anyhow::Result<gix_h
     // callback never runs. Also keeps the whole history reachable, so provision_repo's `git prune`
     // retains it.
     repo.reference(
-        &format!("refs/heads/case_{n_commits}"),
+        format!("refs/heads/case_{n_commits}"),
         head,
-        true,
+        gix::refs::transaction::PreviousValue::Any,
         "bench case tip",
     )?;
 
-    Ok(gix_oid(head))
+    Ok(head)
 }
 
 // A small fixed edit set for the incremental group, chosen so every commit touches both patterns'
@@ -352,20 +360,20 @@ const EDIT_INDICES: &[usize] = &[0, 1, 10, 11];
 /// advancing parent chain guarantees every commit oid is unique, so no iteration is a pure cache
 /// hit. New objects land only in this run's tempdir copy, never in the provision cache.
 fn make_edit_commit(
-    repo: &git2::Repository,
+    repo: &gix::Repository,
     parent: gix_hash::ObjectId,
     n: u64,
 ) -> anyhow::Result<gix_hash::ObjectId> {
-    let parent = repo.find_commit(git2_oid(parent))?;
-    let tree = parent.tree()?;
-    let gix_repo = gix::open(repo.path())?;
-    let mut builder = gix_repo.edit_tree(gix_oid(tree.id()))?;
-    let blob = repo.blob(format!("local edit {n}").as_bytes())?;
+    let parent_id = parent;
+    let tree = josh_test_support::bench::commit_tree(repo, parent_id)?;
+
+    let mut builder = repo.edit_tree(tree)?;
+    let blob = josh_gix_ext::write_blob(&repo.objects, format!("local edit {n}").as_bytes())?;
     for &i in EDIT_INDICES {
         builder.upsert(
             file_path(i).to_str().expect("benchmark paths are UTF-8"),
             EntryKind::Blob,
-            gix_oid(blob),
+            blob,
         )?;
     }
     let rotating = ((n % TREE_FILES as u64) as usize * 7) % TREE_FILES;
@@ -376,19 +384,19 @@ fn make_edit_commit(
                 .to_str()
                 .expect("benchmark paths are UTF-8"),
             EntryKind::Blob,
-            gix_oid(blob),
+            blob,
         )?;
     }
-    let new_tree = repo.find_tree(git2_oid(builder.write()?.detach()))?;
-    let sig = josh_commit_signature()?;
-    Ok(gix_oid(repo.commit(
-        None,
+    let new_tree = builder.write()?.detach();
+    let sig = josh_actor_signature()?;
+    Ok(josh_gix_ext::write_commit(
+        &repo.objects,
+        new_tree,
+        &[parent_id],
         &sig,
         &sig,
         &format!("local edit {n}"),
-        &new_tree,
-        &[&parent],
-    )?))
+    )?)
 }
 
 fn deephistory_glob(c: &mut Criterion) {
@@ -509,7 +517,7 @@ fn deephistory_glob(c: &mut Criterion) {
                 .tree_id()
                 .unwrap();
             let reference_repo =
-                josh_test_support::bench::open_git2_repo(transaction.path()).expect("open repo");
+                josh_test_support::bench::open_repo(transaction.path()).expect("open repo");
             let (want, _) =
                 expected_tree(&reference_repo, probe, &glob_pred(pattern)).expect("expected");
             assert_eq!(

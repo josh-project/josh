@@ -1,7 +1,7 @@
 use criterion::{BatchSize, BenchmarkId, Criterion, Throughput, criterion_group, criterion_main};
 use josh_core::filter::Filter;
-use josh_test_support::bench::josh_commit_signature;
-use josh_test_support::bench::{EntryKind, build_index, git2_oid, gix_oid, random_string};
+use josh_core::git::josh_actor_signature;
+use josh_test_support::bench::{EntryKind, build_index, random_string};
 use rand::prelude::*;
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
@@ -53,7 +53,7 @@ const CACHE_NAME: &str = if cfg!(debug_assertions) {
     "refs_filter_update"
 };
 
-/// Fixed commit timestamp fed to `josh_commit_signature()` via `JOSH_COMMIT_TIME` so the built
+/// Fixed commit timestamp fed to `josh_actor_signature()` via `JOSH_COMMIT_TIME` so the built
 /// history is reproducible. Without it the signature uses the wall clock, every run produces
 /// different head oids, and `EXPECTED_HEAD` can never be stable. The value itself is arbitrary.
 const JOSH_BENCH_COMMIT_TIME: &str = "1700000000";
@@ -101,7 +101,7 @@ impl RefsBench {
                         .in_scope(|| build_case(repo, n_refs))?;
                     heads.push(head);
                 }
-                build_index(repo, &josh_commit_signature()?, &heads)
+                build_index(repo, &josh_actor_signature()?, &heads)
             },
         )?;
 
@@ -111,11 +111,11 @@ impl RefsBench {
         {
             let repo = &provisioned.repo;
             for &n_refs in REF_COUNTS {
-                let head = repo.refname_to_id(&format!("refs/heads/case_{n_refs}_tip"))?;
-                cases.push(SizeCase {
-                    n_refs,
-                    head: gix_oid(head),
-                });
+                let head = josh_test_support::bench::ref_target(
+                    repo,
+                    &format!("refs/heads/case_{n_refs}_tip"),
+                )?;
+                cases.push(SizeCase { n_refs, head: head });
             }
         }
 
@@ -138,13 +138,11 @@ impl RefsBench {
             // The gate reads the filtered result through the repository handle, which only
             // sees what is on disk.
             transaction.flush_mem_odb()?;
-            let repo = josh_test_support::bench::open_git2_repo(transaction.path())?;
-            let filtered_tree = repo.find_commit(git2_oid(filtered))?.tree()?.id();
-            let raw_subdir_tree = repo
-                .find_commit(git2_oid(case.head))?
-                .tree()?
-                .get_path(Path::new(SUBDIR))?
-                .id();
+            let repo = josh_test_support::bench::open_repo(transaction.path())?;
+            let filtered_tree = repo.find_commit(filtered)?.tree()?.id();
+            let raw_subdir_tree =
+                josh_test_support::bench::commit_path(&repo, case.head, Path::new(SUBDIR))?
+                    .ok_or_else(|| anyhow::anyhow!("fixture path is missing"))?;
             anyhow::ensure!(
                 filtered_tree == raw_subdir_tree,
                 "subdir filter did not select `{SUBDIR}` -- benchmark would measure the wrong thing"
@@ -174,36 +172,36 @@ impl RefsBench {
 /// directories, then generate `n_refs` churn commits, pointing `refs/heads/case_<n>/change_<i>` at
 /// each. The tip additionally gets `refs/heads/case_<n>_tip` so the head is recoverable after
 /// the repo round-trips through the cache.
-fn build_case(repo: &git2::Repository, n_refs: usize) -> anyhow::Result<gix_hash::ObjectId> {
+fn build_case(repo: &gix::Repository, n_refs: usize) -> anyhow::Result<gix_hash::ObjectId> {
     use rand::RngExt;
 
-    let gix_repo = gix::open(repo.path())?;
-    let baseline = repo.treebuilder(None)?.write()?;
-    let mut builder = gix_repo.edit_tree(gix_oid(baseline))?;
+    let baseline = josh_test_support::bench::empty_tree(repo)?;
+    let mut builder = repo.edit_tree(baseline)?;
     let mut all_paths = vec![];
     for i in 0..TREE_FILES {
         let path = PathBuf::from(format!("dir_{:02}", i % N_DIRS)).join(format!("file_{i:04}"));
-        let oid = repo.blob(path.to_string_lossy().as_bytes())?;
+        let oid = josh_gix_ext::write_blob(&repo.objects, path.to_string_lossy().as_bytes())?;
         builder.upsert(
             path.to_str().expect("benchmark paths are UTF-8"),
             EntryKind::Blob,
-            gix_oid(oid),
+            oid,
         )?;
         all_paths.push(path);
     }
 
-    let root_tree = repo.find_tree(git2_oid(builder.write()?.detach()))?;
+    let root_tree = builder.write()?.detach();
 
-    let sig = josh_commit_signature()?;
-    let mut head = repo.commit(None, &sig, &sig, "content", &root_tree, &[])?;
+    let sig = josh_actor_signature()?;
+    let mut head =
+        josh_gix_ext::write_commit(&repo.objects, root_tree, &[], &sig, &sig, "content")?;
 
     // Deterministic history: each commit churns a fresh random ~CHURN_FRACTION of the files and
     // gets its own change ref, so every ref resolves to a distinct commit.
     let mut rng = StdRng::seed_from_u64(1);
     for i in 0..n_refs {
-        let parent = repo.find_commit(head)?;
-        let tree = parent.tree()?;
-        let mut builder = gix_repo.edit_tree(gix_oid(tree.id()))?;
+        let parent = josh_gix_ext::CommitData::read(&repo.objects, head)?;
+        let tree = parent.tree_id()?;
+        let mut builder = repo.edit_tree(tree)?;
 
         let churned = all_paths
             .iter()
@@ -213,27 +211,27 @@ fn build_case(repo: &git2::Repository, n_refs: usize) -> anyhow::Result<gix_hash
 
         for path in &churned {
             let content = random_string(&mut rng, CHURN_CONTENT_LEN);
-            let blob = repo.blob(content.as_bytes())?;
+            let blob = josh_gix_ext::write_blob(&repo.objects, content.as_bytes())?;
             builder.upsert(
                 path.to_str().expect("benchmark paths are UTF-8"),
                 EntryKind::Blob,
-                gix_oid(blob),
+                blob,
             )?;
         }
 
-        let new_tree = repo.find_tree(git2_oid(builder.write()?.detach()))?;
-        head = repo.commit(
-            None,
+        let new_tree = builder.write()?.detach();
+        head = josh_gix_ext::write_commit(
+            &repo.objects,
+            new_tree,
+            &[head],
             &sig,
             &sig,
             &format!("commit {i}"),
-            &new_tree,
-            &[&parent],
         )?;
         repo.reference(
-            &format!("refs/heads/case_{n_refs}/change_{i:04}"),
+            format!("refs/heads/case_{n_refs}/change_{i:04}"),
             head,
-            true,
+            gix::refs::transaction::PreviousValue::Any,
             "bench change ref",
         )?;
     }
@@ -242,13 +240,13 @@ fn build_case(repo: &git2::Repository, n_refs: usize) -> anyhow::Result<gix_hash
     // never runs. Named `_tip` (not `case_<n>`) because `refs/heads/case_<n>/change_<i>` makes
     // `case_<n>` a ref *directory*, and a ref cannot shadow a directory.
     repo.reference(
-        &format!("refs/heads/case_{n_refs}_tip"),
+        format!("refs/heads/case_{n_refs}_tip"),
         head,
-        true,
+        gix::refs::transaction::PreviousValue::Any,
         "bench case tip",
     )?;
 
-    Ok(gix_oid(head))
+    Ok(head)
 }
 
 fn refs_filter_update(c: &mut Criterion) {

@@ -1,8 +1,8 @@
 use criterion::{BatchSize, BenchmarkId, Criterion, Throughput, criterion_group, criterion_main};
 use josh_core::filter::Filter;
+use josh_core::git::josh_actor_signature;
 use josh_core::history::{OrphansMode, unapply_filter};
-use josh_test_support::bench::josh_commit_signature;
-use josh_test_support::bench::{EntryKind, git2_oid, gix_oid};
+use josh_test_support::bench::EntryKind;
 use rand::prelude::*;
 use std::path::PathBuf;
 use std::str::FromStr;
@@ -101,9 +101,12 @@ impl UnapplyBench {
         let mut cases = vec![];
         {
             let transaction = context.open()?;
-            let repo = josh_test_support::bench::open_git2_repo(transaction.path())?;
+            let repo = josh_test_support::bench::open_repo(transaction.path())?;
             for &n_commits in HISTORY_SIZES {
-                let head = gix_oid(repo.refname_to_id(&format!("refs/heads/case_{n_commits}"))?);
+                let head = josh_test_support::bench::ref_target(
+                    &repo,
+                    &format!("refs/heads/case_{n_commits}"),
+                )?;
                 let filtered_head = josh_core::filter_commit(&transaction, filter, head)?;
                 // The first-parent chase below reads the filtered commits through the
                 // repository handle, which only sees what is on disk.
@@ -112,11 +115,11 @@ impl UnapplyBench {
                 // First-parent chase to the middle of the filtered history.
                 let mut filtered_mid = filtered_head;
                 for _ in 0..n_commits / 2 {
-                    let commit = repo.find_commit(git2_oid(filtered_mid))?;
-                    match commit.parent_id(0) {
-                        Ok(p) => filtered_mid = gix_oid(p),
-                        Err(_) => break,
-                    }
+                    let commit = josh_gix_ext::CommitData::read(&repo.objects, filtered_mid)?;
+                    let Some(parent) = commit.parent_ids().next() else {
+                        break;
+                    };
+                    filtered_mid = parent;
                 }
 
                 cases.push(SizeCase {
@@ -149,34 +152,34 @@ fn random_string(rng: &mut StdRng, len: usize) -> String {
 
 /// deephistory-style case builder: fixed tree, `n_commits` of ~10% churn, tip tagged as
 /// `refs/heads/case_<n_commits>`.
-fn build_case(repo: &git2::Repository, n_commits: usize) -> anyhow::Result<gix_hash::ObjectId> {
+fn build_case(repo: &gix::Repository, n_commits: usize) -> anyhow::Result<gix_hash::ObjectId> {
     use rand::RngExt;
 
-    let gix_repo = gix::open(repo.path())?;
-    let baseline = repo.treebuilder(None)?.write()?;
-    let mut builder = gix_repo.edit_tree(gix_oid(baseline))?;
+    let baseline = josh_test_support::bench::empty_tree(repo)?;
+    let mut builder = repo.edit_tree(baseline)?;
     let mut all_paths = vec![];
     for i in 0..TREE_FILES {
         let path = PathBuf::from(format!("dir_{:02}", i % N_DIRS)).join(format!("file_{i:04}"));
-        let oid = repo.blob(path.to_string_lossy().as_bytes())?;
+        let oid = josh_gix_ext::write_blob(&repo.objects, path.to_string_lossy().as_bytes())?;
         builder.upsert(
             path.to_str().expect("benchmark paths are UTF-8"),
             EntryKind::Blob,
-            gix_oid(oid),
+            oid,
         )?;
         all_paths.push(path);
     }
 
-    let root_tree = repo.find_tree(git2_oid(builder.write()?.detach()))?;
+    let root_tree = builder.write()?.detach();
 
-    let sig = josh_commit_signature()?;
-    let mut head = repo.commit(None, &sig, &sig, "content", &root_tree, &[])?;
+    let sig = josh_actor_signature()?;
+    let mut head =
+        josh_gix_ext::write_commit(&repo.objects, root_tree, &[], &sig, &sig, "content")?;
 
     let mut rng = StdRng::seed_from_u64(1);
     for i in 0..n_commits {
-        let parent = repo.find_commit(head)?;
-        let tree = parent.tree()?;
-        let mut builder = gix_repo.edit_tree(gix_oid(tree.id()))?;
+        let parent = josh_gix_ext::CommitData::read(&repo.objects, head)?;
+        let tree = parent.tree_id()?;
+        let mut builder = repo.edit_tree(tree)?;
 
         let churned = all_paths
             .iter()
@@ -186,83 +189,68 @@ fn build_case(repo: &git2::Repository, n_commits: usize) -> anyhow::Result<gix_h
 
         for path in &churned {
             let content = random_string(&mut rng, CHURN_CONTENT_LEN);
-            let blob = repo.blob(content.as_bytes())?;
+            let blob = josh_gix_ext::write_blob(&repo.objects, content.as_bytes())?;
             builder.upsert(
                 path.to_str().expect("benchmark paths are UTF-8"),
                 EntryKind::Blob,
-                gix_oid(blob),
+                blob,
             )?;
         }
 
-        let new_tree = repo.find_tree(git2_oid(builder.write()?.detach()))?;
-        head = repo.commit(
-            None,
+        let new_tree = builder.write()?.detach();
+        head = josh_gix_ext::write_commit(
+            &repo.objects,
+            new_tree,
+            &[head],
             &sig,
             &sig,
             &format!("commit {i}"),
-            &new_tree,
-            &[&parent],
         )?;
     }
 
     repo.reference(
-        &format!("refs/heads/case_{n_commits}"),
+        format!("refs/heads/case_{n_commits}"),
         head,
-        true,
+        gix::refs::transaction::PreviousValue::Any,
         "bench case tip",
     )?;
 
-    Ok(gix_oid(head))
+    Ok(head)
 }
 
 fn build_index(
-    repo: &git2::Repository,
+    repo: &gix::Repository,
     heads: &[gix_hash::ObjectId],
 ) -> anyhow::Result<gix_hash::ObjectId> {
-    let sig = josh_commit_signature()?;
-    let empty_tree = repo.find_tree(repo.treebuilder(None)?.write()?)?;
-    let parents = heads
-        .iter()
-        .map(|oid| repo.find_commit(git2_oid(*oid)))
-        .collect::<Result<Vec<_>, _>>()?;
-    let parent_refs = parents.iter().collect::<Vec<_>>();
-    let index = repo.commit(
-        Some("refs/heads/bench-index"),
-        &sig,
-        &sig,
-        "bench index",
-        &empty_tree,
-        &parent_refs,
-    )?;
-    Ok(gix_oid(index))
+    josh_test_support::bench::build_index(repo, &josh_actor_signature()?, heads)
 }
 
 /// Build `PUSH_LEN` commits on top of `base` in FILTERED space, each touching the filtered
 /// root's `file_0000` with content salted by `salt` so every bench iteration pushes a chain
 /// of commits the caches have never seen.
 fn extend_filtered(
-    repo: &git2::Repository,
+    repo: &gix::Repository,
     base: gix_hash::ObjectId,
     salt: usize,
 ) -> anyhow::Result<gix_hash::ObjectId> {
-    let sig = josh_commit_signature()?;
+    let sig = josh_actor_signature()?;
     let mut head = base;
-    let gix_repo = gix::open(repo.path())?;
+
     for i in 0..PUSH_LEN {
-        let parent = repo.find_commit(git2_oid(head))?;
-        let tree = parent.tree()?;
-        let mut builder = gix_repo.edit_tree(gix_oid(tree.id()))?;
-        let blob = repo.blob(format!("push {salt} {i}").as_bytes())?;
-        builder.upsert("file_0000", EntryKind::Blob, gix_oid(blob))?;
-        let new_tree = repo.find_tree(git2_oid(builder.write()?.detach()))?;
-        head = gix_oid(repo.commit(
-            None,
+        let parent = josh_gix_ext::CommitData::read(&repo.objects, head)?;
+        let tree = parent.tree_id()?;
+        let mut builder = repo.edit_tree(tree)?;
+        let blob = josh_gix_ext::write_blob(&repo.objects, format!("push {salt} {i}").as_bytes())?;
+        builder.upsert("file_0000", EntryKind::Blob, blob)?;
+        let new_tree = builder.write()?.detach();
+        head = josh_gix_ext::write_commit(
+            &repo.objects,
+            new_tree,
+            &[head],
             &sig,
             &sig,
             &format!("push {salt} {i}"),
-            &new_tree,
-            &[&parent],
-        )?);
+        )?;
     }
     Ok(head)
 }
@@ -281,7 +269,7 @@ fn unapply_extend(c: &mut Criterion) {
         let case = bench.cases.first().expect("at least one case");
         let transaction = bench.context.open().expect("open transaction");
         let reference_repo =
-            josh_test_support::bench::open_git2_repo(transaction.path()).expect("open repo");
+            josh_test_support::bench::open_repo(transaction.path()).expect("open repo");
         let tip = extend_filtered(&reference_repo, case.filtered_head, usize::MAX)
             .expect("extend filtered");
         let unapplied = unapply_filter(
@@ -313,8 +301,7 @@ fn unapply_extend(c: &mut Criterion) {
                 || {
                     let transaction = bench.context.open().expect("open transaction");
                     let reference_repo =
-                        josh_test_support::bench::open_git2_repo(transaction.path())
-                            .expect("open repo");
+                        josh_test_support::bench::open_repo(transaction.path()).expect("open repo");
                     let tip = extend_filtered(
                         &reference_repo,
                         case.filtered_head,

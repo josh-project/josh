@@ -1,6 +1,6 @@
 use criterion::{BatchSize, Criterion, criterion_group, criterion_main};
-use josh_test_support::bench::josh_commit_signature;
-use josh_test_support::bench::{EntryKind, git2_oid, gix_oid};
+use josh_core::git::josh_actor_signature;
+use josh_test_support::bench::EntryKind;
 use rand::prelude::*;
 use std::cell::RefCell;
 use std::ops::DerefMut;
@@ -21,7 +21,7 @@ const NESTING_LEVEL: usize = 3;
 /// paste here. Filled in by running the bench once after a build change.
 const EXPECTED_HEAD: &str = "dec8381c11bbbf281cfec78d8bf9b19283971f99";
 
-/// Fixed commit timestamp fed to `josh_commit_signature()` via `JOSH_COMMIT_TIME`
+/// Fixed commit timestamp fed to `josh_actor_signature()` via `JOSH_COMMIT_TIME`
 /// so the built history is reproducible. Without it the signature uses the wall
 /// clock, every run produces a different head oid, and `EXPECTED_HEAD` can never
 /// be stable. The value itself is arbitrary.
@@ -114,7 +114,7 @@ fn paths_to_compose(paths: &[std::path::PathBuf]) -> josh_filter::Filter {
 }
 
 fn build_initial_state(
-    repo: &git2::Repository,
+    repo: &gix::Repository,
 ) -> anyhow::Result<(gix_hash::ObjectId, Vec<std::path::PathBuf>)> {
     const PATH_COMPONENT_LENGTH: usize = 15;
 
@@ -124,9 +124,8 @@ fn build_initial_state(
     let files_in_folder =
         rand::distr::Uniform::try_from(N_PER_SUBFOLDER_MIN..=N_PER_SUBFOLDER_MAX)?;
 
-    let gix_repo = gix::open(repo.path())?;
-    let baseline = repo.treebuilder(None)?.write()?;
-    let mut builder = gix_repo.edit_tree(gix_oid(baseline))?;
+    let baseline = josh_test_support::bench::empty_tree(repo)?;
+    let mut builder = repo.edit_tree(baseline)?;
     let mut all_paths = vec![];
     let mut total_files = 0usize;
 
@@ -146,13 +145,13 @@ fn build_initial_state(
             //
             // In subsequent commits will be rewritten anyway to
             // simulate pinned updates
-            let oid = repo.blob(file_name.as_bytes())?;
+            let oid = josh_gix_ext::write_blob(&repo.objects, file_name.as_bytes())?;
 
             all_paths.push(full_path.clone());
             builder.upsert(
                 full_path.to_str().expect("benchmark paths are UTF-8"),
                 EntryKind::Blob,
-                gix_oid(oid),
+                oid,
             )?;
         }
 
@@ -164,27 +163,26 @@ fn build_initial_state(
     // resolve to empty for the root commit and its descendants would have an
     // empty filtered parent.
     let workspace = josh_filter::as_file(paths_to_compose(&all_paths), 2);
-    let blob = repo.blob(workspace.as_bytes())?;
-    builder.upsert("workspace/workspace.josh", EntryKind::Blob, gix_oid(blob))?;
+    let blob = josh_gix_ext::write_blob(&repo.objects, workspace.as_bytes())?;
+    builder.upsert("workspace/workspace.josh", EntryKind::Blob, blob)?;
 
-    let new_tree = git2_oid(builder.write()?.detach());
-    let new_tree = repo.find_tree(new_tree)?;
+    let new_tree = builder.write()?.detach();
 
-    let sig = josh_commit_signature()?;
-    let head = repo.commit(
-        Some("refs/heads/main"),
-        &sig,
-        &sig,
+    let sig = josh_actor_signature()?;
+    let head =
+        josh_gix_ext::write_commit(&repo.objects, new_tree, &[], &sig, &sig, "initial commit")?;
+    repo.reference(
+        "refs/heads/main",
+        head,
+        gix::refs::transaction::PreviousValue::Any,
         "initial commit",
-        &new_tree,
-        &[],
     )?;
 
-    Ok((gix_oid(head), all_paths))
+    Ok((head, all_paths))
 }
 
 fn build_history(
-    repo: &git2::Repository,
+    repo: &gix::Repository,
     paths: &[std::path::PathBuf],
     mut head: gix_hash::ObjectId,
 ) -> anyhow::Result<gix_hash::ObjectId> {
@@ -198,7 +196,6 @@ fn build_history(
 
     // Shouldn't matter for this benchmark, we don't look into blobs
     const BLOB_CONTENT_LEN: usize = 10;
-    let gix_repo = gix::open(repo.path())?;
 
     let rng = RefCell::new(StdRng::seed_from_u64(0));
     let include_path = || rng.borrow_mut().random_bool(PROB_FILE_UPDATED);
@@ -214,9 +211,9 @@ fn build_history(
     let mut pinned = std::collections::BTreeSet::<std::path::PathBuf>::new();
 
     for i_commit in 0..N_COMMITS {
-        let parent = repo.find_commit(git2_oid(head))?;
-        let tree = parent.tree()?;
-        let mut builder = gix_repo.edit_tree(gix_oid(tree.id()))?;
+        let parent = josh_gix_ext::CommitData::read(&repo.objects, head)?;
+        let tree = parent.tree_id()?;
+        let mut builder = repo.edit_tree(tree)?;
 
         let updated_paths = paths
             .iter()
@@ -237,12 +234,12 @@ fn build_history(
             }
 
             let updated_content = random_string(rng.borrow_mut().deref_mut(), BLOB_CONTENT_LEN);
-            let blob = repo.blob(updated_content.as_bytes())?;
+            let blob = josh_gix_ext::write_blob(&repo.objects, updated_content.as_bytes())?;
 
             builder.upsert(
                 updated_path.to_str().expect("benchmark paths are UTF-8"),
                 EntryKind::Blob,
-                gix_oid(blob),
+                blob,
             )?;
         }
 
@@ -258,23 +255,28 @@ fn build_history(
         // Render the filter into `workspace/workspace.josh` and add it to the
         // tree we're preparing for this commit.
         let workspace = josh_filter::as_file(filter, 2);
-        let blob = repo.blob(workspace.as_bytes())?;
+        let blob = josh_gix_ext::write_blob(&repo.objects, workspace.as_bytes())?;
 
-        builder.upsert("workspace/workspace.josh", EntryKind::Blob, gix_oid(blob))?;
+        builder.upsert("workspace/workspace.josh", EntryKind::Blob, blob)?;
 
         // Commit the updated tree on top of the current head.
-        let new_tree = git2_oid(builder.write()?.detach());
-        let new_tree = repo.find_tree(new_tree)?;
+        let new_tree = builder.write()?.detach();
 
-        let sig = josh_commit_signature()?;
-        head = gix_oid(repo.commit(
-            Some("refs/heads/main"),
+        let sig = josh_actor_signature()?;
+        head = josh_gix_ext::write_commit(
+            &repo.objects,
+            new_tree,
+            &[head],
             &sig,
             &sig,
             &format!("commit {i_commit}"),
-            &new_tree,
-            &[&parent],
-        )?);
+        )?;
+        repo.reference(
+            "refs/heads/main",
+            head,
+            gix::refs::transaction::PreviousValue::Any,
+            "bench commit",
+        )?;
     }
 
     Ok(head)

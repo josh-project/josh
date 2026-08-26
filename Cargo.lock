@@ -3817,8 +3817,8 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "dirs",
- "git2",
  "gix",
+ "josh-gix-ext",
  "rand 0.10.2",
  "tempfile",
  "tracing",
