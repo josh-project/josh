@@ -119,7 +119,7 @@ regex_parsed!(UpstreamRef, r"refs/josh/upstream/(?P<ns>.*[.]git)/.*", [ns]);
 
 regex_parsed!(
     FilteredRefRegex,
-    r"josh/filtered/(?P<upstream_repo>[^/]*[.]git)/(?P<filter_spec>[^/]*)/.*",
+    r"^refs/josh/filtered/(?P<upstream_repo>[^/]*[.]git)/(?P<filter_spec>[^/]*)/HEAD$",
     [upstream_repo, filter_spec]
 );
 
@@ -162,11 +162,11 @@ pub fn discover_filter_candidates(transaction: &cache::Transaction) -> anyhow::R
         Ok(())
     })?;
 
-    // This prefix is missing the leading "refs/" and so has never matched anything.
-    transaction.for_each_ref_prefixed("josh/filtered/", |name, _| {
+    transaction.for_each_ref_prefixed("refs/josh/filtered/", |name, _| {
+        let Some(filtered) = FilteredRefRegex::from_str(name) else {
+            return Ok(());
+        };
         tracing::trace!("known: {}", name);
-        let filtered = FilteredRefRegex::from_str(name).ok_or_else(|| anyhow!("not a ns"))?;
-
         known_filters
             .entry(from_ns(&filtered.upstream_repo))
             .or_insert_with(|| {
@@ -242,4 +242,47 @@ pub fn get_known_filters() -> anyhow::Result<std::collections::BTreeMap<String, 
         .iter()
         .map(|(repo, (_, filters))| (repo.clone(), filters.clone()))
         .collect())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::cache::{CacheStack, Expected, TransactionContext};
+    use std::sync::Arc;
+
+    #[test]
+    fn discovers_filters_from_filtered_refs() {
+        let dir = tempfile::tempdir().unwrap();
+        gix::init_bare(dir.path()).unwrap();
+        let transaction = TransactionContext::new(dir.path(), Arc::new(CacheStack::new()))
+            .open()
+            .unwrap();
+        let target = transaction.odb().write(gix_object::Kind::Blob, b"filtered");
+        let upstream_repo = "discovery.example/repository.git";
+        let filter_spec = ":prefix=src";
+        let refname = format!("refs/{}/HEAD", to_filtered_ref(upstream_repo, filter_spec));
+        transaction
+            .update_ref(&refname, Expected::Any, target, "test filter discovery")
+            .unwrap();
+
+        // The shared prefix also contains cache refs with a different schema.
+        // Discovery must ignore them rather than aborting the scan.
+        transaction
+            .update_ref(
+                "refs/josh/filtered/0123456789abcdef/heads/main",
+                Expected::Any,
+                target,
+                "test unrelated filtered ref",
+            )
+            .unwrap();
+
+        discover_filter_candidates(&transaction).unwrap();
+
+        let known = get_known_filters().unwrap();
+        assert!(
+            known
+                .get(upstream_repo)
+                .is_some_and(|filters| filters.contains(filter_spec))
+        );
+    }
 }
