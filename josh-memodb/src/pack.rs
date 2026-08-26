@@ -17,8 +17,8 @@ use gix_pack::data::output;
 use crate::mem_odb::Snapshot;
 
 #[cfg(test)]
-pub(crate) fn objects_dir(repo: &git2::Repository) -> std::path::PathBuf {
-    repo.commondir().join("objects")
+pub(crate) fn objects_dir(repo: &gix::Repository) -> std::path::PathBuf {
+    repo.common_dir().join("objects")
 }
 
 /// Compress and write the objects of `snapshot` that are not already present in `objects_dir`

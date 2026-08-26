@@ -22,5 +22,4 @@ parking_lot.workspace = true
 tempfile.workspace = true
 
 [dev-dependencies]
-git2.workspace = true
-josh-gix-ext = { workspace = true, features = ["git2"] }
+gix.workspace = true

@@ -3674,14 +3674,13 @@ name = "josh-memodb"
 version = "26.7.28"
 dependencies = [
  "anyhow",
- "git2",
+ "gix",
  "gix-features",
  "gix-hash",
  "gix-object",
  "gix-odb",
  "gix-pack",
  "gix-zlib",
- "josh-gix-ext",
  "log",
  "parking_lot 0.12.5",
  "tempfile",
