@@ -3790,7 +3790,7 @@ version = "26.7.28"
 dependencies = [
  "allocative",
  "anyhow",
- "git2",
+ "gix",
  "gix-hash",
  "gix-object",
  "josh-filter",

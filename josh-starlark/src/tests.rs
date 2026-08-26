@@ -6,14 +6,14 @@ use std::str::FromStr;
 fn test_simple_filter() -> anyhow::Result<()> {
     let temp_dir = std::env::temp_dir().join("josh_starlark_test");
     let _ = std::fs::remove_dir_all(&temp_dir);
-    let repo = git2::Repository::init(&temp_dir)?;
+    let repo = gix::init(&temp_dir)?;
     let empty_tree_oid = gix_hash::ObjectId::from_str("4b825dc642cb6eb9a060e54bf8d69288fbee4904")?;
 
     let script = r#"
 filter = filter.subdir("src")
 "#;
-    let odb = repo.odb()?;
-    let filter = evaluate(script, empty_tree_oid, &josh_gix_ext::Git2Odb(&odb))?;
+
+    let filter = evaluate(script, empty_tree_oid, &repo.objects)?;
     let filter_spec = spec(filter);
     assert_eq!(filter_spec, ":/src");
     Ok(())
@@ -23,14 +23,14 @@ filter = filter.subdir("src")
 fn test_chain_filter() -> anyhow::Result<()> {
     let temp_dir = std::env::temp_dir().join("josh_starlark_test2");
     let _ = std::fs::remove_dir_all(&temp_dir);
-    let repo = git2::Repository::init(&temp_dir)?;
+    let repo = gix::init(&temp_dir)?;
     let empty_tree_oid = gix_hash::ObjectId::from_str("4b825dc642cb6eb9a060e54bf8d69288fbee4904")?;
 
     let script = r#"
 filter = filter.subdir("src").prefix("lib")
 "#;
-    let odb = repo.odb()?;
-    let filter = evaluate(script, empty_tree_oid, &josh_gix_ext::Git2Odb(&odb))?;
+
+    let filter = evaluate(script, empty_tree_oid, &repo.objects)?;
     let filter_spec = spec(filter);
     assert_eq!(filter_spec, ":/src:prefix=lib");
     Ok(())
@@ -40,14 +40,14 @@ filter = filter.subdir("src").prefix("lib")
 fn test_file_filter() -> anyhow::Result<()> {
     let temp_dir = std::env::temp_dir().join("josh_starlark_test3");
     let _ = std::fs::remove_dir_all(&temp_dir);
-    let repo = git2::Repository::init(&temp_dir)?;
+    let repo = gix::init(&temp_dir)?;
     let empty_tree_oid = gix_hash::ObjectId::from_str("4b825dc642cb6eb9a060e54bf8d69288fbee4904")?;
 
     let script = r#"
 filter = filter.file("README.md")
 "#;
-    let odb = repo.odb()?;
-    let filter = evaluate(script, empty_tree_oid, &josh_gix_ext::Git2Odb(&odb))?;
+
+    let filter = evaluate(script, empty_tree_oid, &repo.objects)?;
     let filter_spec = spec(filter);
     // file() creates a rename from the same path to itself, which is represented as ::README.md
     assert_eq!(filter_spec, "::README.md");
@@ -58,7 +58,7 @@ filter = filter.file("README.md")
 fn test_compose() -> anyhow::Result<()> {
     let temp_dir = std::env::temp_dir().join("josh_starlark_test4");
     let _ = std::fs::remove_dir_all(&temp_dir);
-    let repo = git2::Repository::init(&temp_dir)?;
+    let repo = gix::init(&temp_dir)?;
     let empty_tree_oid = gix_hash::ObjectId::from_str("4b825dc642cb6eb9a060e54bf8d69288fbee4904")?;
 
     let script = r#"
@@ -66,16 +66,26 @@ f1 = filter.subdir("src")
 f2 = filter.subdir("lib")
 filter = compose([f1, f2])
 "#;
-    let odb = repo.odb()?;
-    let filter = evaluate(script, empty_tree_oid, &josh_gix_ext::Git2Odb(&odb))?;
+
+    let filter = evaluate(script, empty_tree_oid, &repo.objects)?;
     let filter_spec = spec(filter);
     // compose formats as :[filter1,filter2]
     assert_eq!(filter_spec, ":[:/src,:/lib]");
     Ok(())
 }
 
+fn write_tree(
+    objects: &impl gix_object::Write,
+    mut entries: Vec<gix_object::tree::Entry>,
+) -> anyhow::Result<gix_hash::ObjectId> {
+    entries.sort();
+    objects
+        .write(&gix_object::Tree { entries })
+        .map_err(|err| anyhow::anyhow!("write test tree: {err}"))
+}
+
 // Helper function to create a test repository with files and directories
-fn create_test_repo() -> anyhow::Result<(git2::Repository, gix_hash::ObjectId)> {
+fn create_test_repo() -> anyhow::Result<(gix::Repository, gix_hash::ObjectId)> {
     // Process id and a counter keep the directory unique across parallel tests; the
     // timestamp alone collides when two tests read the clock in the same tick.
     static DIR_COUNTER: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
@@ -88,39 +98,62 @@ fn create_test_repo() -> anyhow::Result<(git2::Repository, gix_hash::ObjectId)> 
             .as_nanos()
     ));
     let _ = std::fs::remove_dir_all(&temp_dir);
-    let repo = git2::Repository::init(&temp_dir)?;
-
-    // Create a tree with:
-    // - README.md (blob)
-    // - src/ (tree)
-    //   - main.rs (blob)
-    //   - lib/ (tree)
-    //     - utils.rs (blob)
+    let repo = gix::init(&temp_dir)?;
 
     let lib_tree_oid = {
-        let utils_rs_blob = repo.blob(b"pub fn helper() {\n    // helper\n}")?;
-        let mut lib_builder = repo.treebuilder(None)?;
-        lib_builder.insert("utils.rs", utils_rs_blob, 0o100644)?;
-        lib_builder.write()?
+        let utils_rs_blob =
+            josh_gix_ext::write_blob(&repo.objects, b"pub fn helper() {\n    // helper\n}")?;
+        write_tree(
+            &repo.objects,
+            vec![gix_object::tree::Entry {
+                mode: gix_object::tree::EntryKind::Blob.into(),
+                filename: "utils.rs".into(),
+                oid: utils_rs_blob,
+            }],
+        )?
     };
 
     let src_tree_oid = {
-        let main_rs_blob = repo.blob(b"fn main() {\n    println!(\"Hello\");\n}")?;
-        let mut src_builder = repo.treebuilder(None)?;
-        src_builder.insert("main.rs", main_rs_blob, 0o100644)?;
-        src_builder.insert("lib", lib_tree_oid, 0o040000)?;
-        src_builder.write()?
+        let main_rs_blob =
+            josh_gix_ext::write_blob(&repo.objects, b"fn main() {\n    println!(\"Hello\");\n}")?;
+        write_tree(
+            &repo.objects,
+            vec![
+                gix_object::tree::Entry {
+                    mode: gix_object::tree::EntryKind::Blob.into(),
+                    filename: "main.rs".into(),
+                    oid: main_rs_blob,
+                },
+                gix_object::tree::Entry {
+                    mode: gix_object::tree::EntryKind::Tree.into(),
+                    filename: "lib".into(),
+                    oid: lib_tree_oid,
+                },
+            ],
+        )?
     };
 
     let root_tree_oid = {
-        let readme_blob = repo.blob(b"# Project\nThis is a test project.")?;
-        let mut root_builder = repo.treebuilder(None)?;
-        root_builder.insert("README.md", readme_blob, 0o100644)?;
-        root_builder.insert("src", src_tree_oid, 0o040000)?;
-        root_builder.write()?
+        let readme_blob =
+            josh_gix_ext::write_blob(&repo.objects, b"# Project\nThis is a test project.")?;
+        write_tree(
+            &repo.objects,
+            vec![
+                gix_object::tree::Entry {
+                    mode: gix_object::tree::EntryKind::Blob.into(),
+                    filename: "README.md".into(),
+                    oid: readme_blob,
+                },
+                gix_object::tree::Entry {
+                    mode: gix_object::tree::EntryKind::Tree.into(),
+                    filename: "src".into(),
+                    oid: src_tree_oid,
+                },
+            ],
+        )?
     };
 
-    Ok((repo, josh_gix_ext::gix_oid(root_tree_oid)))
+    Ok((repo, root_tree_oid))
 }
 
 #[test]
@@ -131,8 +164,8 @@ fn test_tree_file() -> anyhow::Result<()> {
 content = tree.file("README.md")
 filter = filter.subdir("src")
 "#;
-    let odb = repo.odb()?;
-    let filter = evaluate(script, root_tree_oid, &josh_gix_ext::Git2Odb(&odb))?;
+
+    let filter = evaluate(script, root_tree_oid, &repo.objects)?;
     let filter_spec = spec(filter);
     assert_eq!(filter_spec, ":/src");
     Ok(())
@@ -147,8 +180,8 @@ content = tree.file("nonexistent.txt")
 # Should return empty string, not error
 filter = filter.subdir("src")
 "#;
-    let odb = repo.odb()?;
-    let filter = evaluate(script, root_tree_oid, &josh_gix_ext::Git2Odb(&odb))?;
+
+    let filter = evaluate(script, root_tree_oid, &repo.objects)?;
     let filter_spec = spec(filter);
     assert_eq!(filter_spec, ":/src");
     Ok(())
@@ -163,8 +196,8 @@ src_tree = tree.tree("src")
 main_content = src_tree.file("main.rs")
 filter = filter.subdir("src")
 "#;
-    let odb = repo.odb()?;
-    let filter = evaluate(script, root_tree_oid, &josh_gix_ext::Git2Odb(&odb))?;
+
+    let filter = evaluate(script, root_tree_oid, &repo.objects)?;
     let filter_spec = spec(filter);
     assert_eq!(filter_spec, ":/src");
     Ok(())
@@ -179,8 +212,8 @@ nonexistent_tree = tree.tree("nonexistent")
 # Should return empty tree, not error
 filter = filter.subdir("src")
 "#;
-    let odb = repo.odb()?;
-    let filter = evaluate(script, root_tree_oid, &josh_gix_ext::Git2Odb(&odb))?;
+
+    let filter = evaluate(script, root_tree_oid, &repo.objects)?;
     let filter_spec = spec(filter);
     assert_eq!(filter_spec, ":/src");
     Ok(())
@@ -195,8 +228,8 @@ dirs_list = tree.dirs("")
 # Should contain "src"
 filter = filter.subdir("src")
 "#;
-    let odb = repo.odb()?;
-    let filter = evaluate(script, root_tree_oid, &josh_gix_ext::Git2Odb(&odb))?;
+
+    let filter = evaluate(script, root_tree_oid, &repo.objects)?;
     let filter_spec = spec(filter);
     assert_eq!(filter_spec, ":/src");
     Ok(())
@@ -211,8 +244,8 @@ files_list = tree.files("")
 # Should contain "README.md"
 filter = filter.subdir("src")
 "#;
-    let odb = repo.odb()?;
-    let filter = evaluate(script, root_tree_oid, &josh_gix_ext::Git2Odb(&odb))?;
+
+    let filter = evaluate(script, root_tree_oid, &repo.objects)?;
     let filter_spec = spec(filter);
     assert_eq!(filter_spec, ":/src");
     Ok(())
@@ -227,8 +260,8 @@ src_tree = tree.tree("src")
 main_content = src_tree.file("main.rs")
 filter = filter.subdir("src")
 "#;
-    let odb = repo.odb()?;
-    let filter = evaluate(script, root_tree_oid, &josh_gix_ext::Git2Odb(&odb))?;
+
+    let filter = evaluate(script, root_tree_oid, &repo.objects)?;
     let filter_spec = spec(filter);
     assert_eq!(filter_spec, ":/src");
     Ok(())
@@ -254,8 +287,8 @@ def collect_all_files(dir_path=""):
 all_file_filters = collect_all_files("")
 filter = compose(all_file_filters)
 "#;
-    let odb = repo.odb()?;
-    let filter = evaluate(script, root_tree_oid, &josh_gix_ext::Git2Odb(&odb))?;
+
+    let filter = evaluate(script, root_tree_oid, &repo.objects)?;
     let filter_spec = spec(filter);
 
     // The filter should contain all files: README.md, src/main.rs, src/lib/utils.rs.
