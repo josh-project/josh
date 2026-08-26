@@ -281,7 +281,7 @@ mod tests {
     #[test]
     fn flush_writes_objects_to_disk() {
         let dir = tempfile::tempdir().unwrap();
-        let repo = git2::Repository::init(dir.path()).unwrap();
+        let repo = gix::init(dir.path()).unwrap();
 
         let store = MemOdb::new(None, crate::pack::objects_dir(&repo));
 
@@ -292,7 +292,7 @@ mod tests {
         for id in &ids {
             assert!(store.contains(id));
             assert!(
-                !repo.odb().unwrap().exists(josh_gix_ext::git2_oid(id)),
+                disk_blob(dir.path(), *id).is_none(),
                 "buffered object must not be on disk before the flush"
             );
         }
@@ -300,10 +300,11 @@ mod tests {
         store.flush().unwrap();
 
         // A fresh repo can only see objects that made it to disk.
-        let on_disk = git2::Repository::open(dir.path()).unwrap();
         for (i, id) in ids.iter().enumerate() {
-            let blob = on_disk.find_blob(josh_gix_ext::git2_oid(id)).unwrap();
-            assert_eq!(blob.content(), format!("in-memory blob {i}").as_bytes());
+            assert_eq!(
+                disk_blob(dir.path(), *id).unwrap(),
+                format!("in-memory blob {i}").as_bytes()
+            );
         }
 
         // The store is drained: a second flush is a no-op.
@@ -317,32 +318,40 @@ mod tests {
     fn flush_writes_to_common_dir_for_worktree() {
         let tmp = tempfile::tempdir().unwrap();
         let main_path = tmp.path().join("main");
-        let repo = git2::Repository::init(&main_path).unwrap();
+        let repo = gix::init(&main_path).unwrap();
 
-        // A worktree can only be added once HEAD points at a commit.
-        let sig = git2::Signature::now("t", "t@t").unwrap();
-        let tree_id = repo.index().unwrap().write_tree().unwrap();
-        let tree = repo.find_tree(tree_id).unwrap();
-        repo.commit(Some("HEAD"), &sig, &sig, "init", &tree, &[])
-            .unwrap();
-        drop(tree);
-
+        // Set up the on-disk linked-worktree metadata. Gitoxide reads the same `gitdir` and
+        // `commondir` files that `git worktree add` creates; no checkout is needed for this test.
         let wt_path = tmp.path().join("wt");
-        repo.worktree("wt", &wt_path, None).unwrap();
-        let wt_repo = git2::Repository::open(&wt_path).unwrap();
+        let wt_admin = repo.git_dir().join("worktrees").join("wt");
+        std::fs::create_dir_all(&wt_path).unwrap();
+        std::fs::create_dir_all(&wt_admin).unwrap();
+        std::fs::write(
+            wt_path.join(".git"),
+            format!("gitdir: {}\n", wt_admin.display()),
+        )
+        .unwrap();
+        std::fs::write(wt_admin.join("commondir"), "../..\n").unwrap();
+        std::fs::write(
+            wt_admin.join("gitdir"),
+            format!("{}\n", wt_path.join(".git").display()),
+        )
+        .unwrap();
+        std::fs::write(wt_admin.join("HEAD"), "ref: refs/heads/master\n").unwrap();
+
+        let wt_repo = gix::open(&wt_path).unwrap();
 
         // The worktree's gitdir differs from its common dir (the main gitdir).
-        assert_ne!(wt_repo.path(), wt_repo.commondir());
+        assert_ne!(wt_repo.git_dir(), wt_repo.common_dir());
 
         let store = MemOdb::new(None, crate::pack::objects_dir(&wt_repo));
-        let id = josh_gix_ext::git2_oid(&store.write(Kind::Blob, b"worktree blob"));
+        let id = store.write(Kind::Blob, b"worktree blob");
 
         // Must not fail on the (nonexistent) per-worktree objects/pack directory.
         store.flush().unwrap();
 
         // The pack landed in the common object dir, so the main repo can read the blob from disk.
-        let main = git2::Repository::open(&main_path).unwrap();
-        assert_eq!(main.find_blob(id).unwrap().content(), b"worktree blob");
+        assert_eq!(disk_blob(&main_path, id).unwrap(), b"worktree blob");
     }
 
     /// When `limit` is set, writing enough data to exceed it enqueues a background pack from inside
@@ -351,21 +360,21 @@ mod tests {
     #[test]
     fn flushes_on_overflow_during_writes() {
         let dir = tempfile::tempdir().unwrap();
-        let repo = git2::Repository::init(dir.path()).unwrap();
+        let repo = gix::init(dir.path()).unwrap();
 
         // A 16-byte limit: each 100-byte blob overflows it, so every write enqueues a pack.
         let store = MemOdb::new(Some(16), crate::pack::objects_dir(&repo));
 
         // The write overflowed and enqueued a background pack; it lands on the flusher thread, so
         // poll a fresh on-disk view until the object appears.
-        let id1 = josh_gix_ext::git2_oid(&store.write(Kind::Blob, &b"x".repeat(100)));
+        let id1 = store.write(Kind::Blob, &b"x".repeat(100));
         assert!(
             wait_on_disk(dir.path(), id1),
             "overflow pack never reached disk"
         );
 
         // A second object overflows again, enqueueing another pack.
-        let id2 = josh_gix_ext::git2_oid(&store.write(Kind::Blob, &b"y".repeat(100)));
+        let id2 = store.write(Kind::Blob, &b"y".repeat(100));
         assert!(
             wait_on_disk(dir.path(), id2),
             "second overflow pack never reached disk"
@@ -378,7 +387,7 @@ mod tests {
     #[test]
     fn flush_leaves_only_pack_and_idx() {
         let dir = tempfile::tempdir().unwrap();
-        let repo = git2::Repository::init(dir.path()).unwrap();
+        let repo = gix::init(dir.path()).unwrap();
         let store = MemOdb::new(None, crate::pack::objects_dir(&repo));
 
         store.write(Kind::Blob, b"some blob");
@@ -402,7 +411,7 @@ mod tests {
     #[test]
     fn chained_store_reads_through_and_packs_separately() {
         let dir = tempfile::tempdir().unwrap();
-        let repo = git2::Repository::init(dir.path()).unwrap();
+        let repo = gix::init(dir.path()).unwrap();
 
         let shared = MemOdb::new(None, crate::pack::objects_dir(&repo));
         let behind = shared.write(Kind::Blob, b"shared blob");
@@ -417,16 +426,14 @@ mod tests {
 
         // Packing the private store writes only its own objects.
         private.pack_to_disk().unwrap();
-        let on_disk = git2::Repository::open(dir.path()).unwrap();
-        assert!(on_disk.find_blob(josh_gix_ext::git2_oid(&own)).is_ok());
-        assert!(on_disk.find_blob(josh_gix_ext::git2_oid(&behind)).is_err());
+        assert!(disk_blob(dir.path(), own).is_some());
+        assert!(disk_blob(dir.path(), behind).is_none());
         assert!(shared.contains(&behind));
 
         // A flush is a barrier for everything the store can see, chain included.
         private.flush().unwrap();
         assert!(!shared.contains(&behind));
-        let on_disk = git2::Repository::open(dir.path()).unwrap();
-        assert!(on_disk.find_blob(josh_gix_ext::git2_oid(&behind)).is_ok());
+        assert!(disk_blob(dir.path(), behind).is_some());
     }
 
     /// The limit only ever tightens, whatever order attachers ask in, so a shared store honours
@@ -434,7 +441,7 @@ mod tests {
     #[test]
     fn limit_only_tightens() {
         let dir = tempfile::tempdir().unwrap();
-        let repo = git2::Repository::init(dir.path()).unwrap();
+        let repo = gix::init(dir.path()).unwrap();
         let store = MemOdb::new(None, crate::pack::objects_dir(&repo));
 
         assert_eq!(store.limit.load(Ordering::Acquire), UNBOUNDED);
@@ -450,15 +457,22 @@ mod tests {
 
     /// Poll a freshly-opened view of the repository until `id` is readable from disk,
     /// up to ~2s. Used to observe asynchronous background packs without racing the flusher thread.
-    fn wait_on_disk(repo_path: &std::path::Path, id: git2::Oid) -> bool {
+    fn wait_on_disk(repo_path: &std::path::Path, id: ObjectId) -> bool {
         for _ in 0..200 {
-            if let Ok(repo) = git2::Repository::open(repo_path) {
-                if repo.find_blob(id).is_ok() {
-                    return true;
-                }
+            if disk_blob(repo_path, id).is_some() {
+                return true;
             }
             std::thread::sleep(std::time::Duration::from_millis(10));
         }
         false
+    }
+
+    fn disk_blob(repo_path: &std::path::Path, id: ObjectId) -> Option<Vec<u8>> {
+        let repo = gix::open(repo_path).ok()?;
+        let mut buf = Vec::new();
+        let data = gix_object::Find::try_find(&repo.objects, &id, &mut buf)
+            .ok()??
+            .data;
+        Some(data.to_vec())
     }
 }

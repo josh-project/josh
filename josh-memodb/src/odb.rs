@@ -334,7 +334,7 @@ impl gix_object::Write for Odb {
 mod tests {
     use super::*;
 
-    fn facade(store: &Arc<MemOdb>, repo: &git2::Repository) -> Odb {
+    fn facade(store: &Arc<MemOdb>, repo: &gix::Repository) -> Odb {
         Odb::at(store.clone(), &crate::pack::objects_dir(repo)).unwrap()
     }
 
@@ -343,7 +343,7 @@ mod tests {
     #[test]
     fn facade_write_visible_before_flush_durable_after() {
         let dir = tempfile::tempdir().unwrap();
-        let repo = git2::Repository::init(dir.path()).unwrap();
+        let repo = gix::init(dir.path()).unwrap();
         let store = MemOdb::new(None, crate::pack::objects_dir(&repo));
 
         let odb = facade(&store, &repo);
@@ -356,18 +356,10 @@ mod tests {
         assert!(odb.contains(oid));
 
         // Not yet on disk.
-        let fresh = git2::Repository::open(dir.path()).unwrap();
-        assert!(fresh.find_blob(josh_gix_ext::git2_oid(&oid)).is_err());
+        assert!(disk_blob(dir.path(), oid).is_none());
 
         store.flush().unwrap();
-        let fresh = git2::Repository::open(dir.path()).unwrap();
-        assert_eq!(
-            fresh
-                .find_blob(josh_gix_ext::git2_oid(&oid))
-                .unwrap()
-                .content(),
-            b"facade blob"
-        );
+        assert_eq!(disk_blob(dir.path(), oid).unwrap(), b"facade blob");
     }
 
     /// The write gate: an object already in a registered runtime alternate is not buffered
@@ -377,13 +369,13 @@ mod tests {
     fn facade_write_gate_matches_freshen() {
         let tmp = tempfile::tempdir().unwrap();
         // "Mirror" repo holding the alternate-resident object.
-        let mirror = git2::Repository::init(tmp.path().join("mirror")).unwrap();
-        let in_alternate = mirror.blob(b"mirror blob").unwrap();
+        let mirror = gix::init(tmp.path().join("mirror")).unwrap();
+        let in_alternate = write_disk_blob(&mirror, b"mirror blob");
 
         let dir = tmp.path().join("overlay");
-        let repo = git2::Repository::init(&dir).unwrap();
+        let repo = gix::init(&dir).unwrap();
         // A loose blob, so it is main-disk-only.
-        let on_disk = repo.blob(b"already on disk").unwrap();
+        let on_disk = write_disk_blob(&repo, b"already on disk");
         let store = MemOdb::new(None, crate::pack::objects_dir(&repo));
 
         let odb = facade(&store, &repo);
@@ -392,13 +384,13 @@ mod tests {
 
         // Alternate hit: skipped, still readable through the alternate.
         let oid = odb.write(Kind::Blob, b"mirror blob");
-        assert_eq!(oid, josh_gix_ext::gix_oid(in_alternate));
+        assert_eq!(oid, in_alternate);
         assert!(!store.contains(&oid));
         assert!(matches!(odb.read(oid).unwrap().1, Bytes::Disk(_)));
 
         // Main-disk object: buffered — the gate does not probe the repository's own objects.
         let oid = odb.write(Kind::Blob, b"already on disk");
-        assert_eq!(oid, josh_gix_ext::gix_oid(on_disk));
+        assert_eq!(oid, on_disk);
         assert!(store.contains(&oid));
         assert!(matches!(odb.read(oid).unwrap().1, Bytes::Mem(_)));
     }
@@ -408,14 +400,14 @@ mod tests {
     #[test]
     fn facade_write_gate_sees_packed_alternates() {
         let tmp = tempfile::tempdir().unwrap();
-        let mirror = git2::Repository::init(tmp.path().join("mirror")).unwrap();
+        let mirror = gix::init(tmp.path().join("mirror")).unwrap();
         let mirror_dir = crate::pack::objects_dir(&mirror);
         // Packed before the alternate is registered.
         let mirror_store = MemOdb::new(None, mirror_dir.clone());
         let packed = mirror_store.write(Kind::Blob, b"packed in mirror");
         mirror_store.flush().unwrap();
 
-        let repo = git2::Repository::init(tmp.path().join("overlay")).unwrap();
+        let repo = gix::init(tmp.path().join("overlay")).unwrap();
         let store = MemOdb::new(None, crate::pack::objects_dir(&repo));
         let odb = facade(&store, &repo);
         odb.add_alternate(&mirror_dir).unwrap();
@@ -440,13 +432,11 @@ mod tests {
     #[test]
     fn try_kind_virtualizes_empty_tree() {
         let dir = tempfile::tempdir().unwrap();
-        let repo = git2::Repository::init(dir.path()).unwrap();
+        let repo = gix::init(dir.path()).unwrap();
         let store = MemOdb::new(None, crate::pack::objects_dir(&repo));
         let odb = facade(&store, &repo);
 
-        let empty_tree = josh_gix_ext::gix_oid(
-            git2::Oid::from_str("4b825dc642cb6eb9a060e54bf8d69288fbee4904").unwrap(),
-        );
+        let empty_tree = ObjectId::from_hex(b"4b825dc642cb6eb9a060e54bf8d69288fbee4904").unwrap();
         assert!(!store.contains(&empty_tree));
         assert_eq!(odb.try_kind(empty_tree).unwrap(), Some(Kind::Tree));
         assert_eq!(odb.read(empty_tree).unwrap().0, Kind::Tree);
@@ -454,9 +444,7 @@ mod tests {
         assert!(!odb.contains(empty_tree));
 
         // A genuinely absent object is None; a buffered object reports its memory kind.
-        let absent = josh_gix_ext::gix_oid(
-            git2::Oid::from_str("0123456789012345678901234567890123456789").unwrap(),
-        );
+        let absent = ObjectId::from_hex(b"0123456789012345678901234567890123456789").unwrap();
         assert_eq!(odb.try_kind(absent).unwrap(), None);
         assert!(odb.read(absent).is_err());
         let blob = odb.write(Kind::Blob, b"probe");
@@ -468,7 +456,7 @@ mod tests {
     #[test]
     fn buffered_objects_resolve_through_the_gix_traits() {
         let dir = tempfile::tempdir().unwrap();
-        let repo = git2::Repository::init(dir.path()).unwrap();
+        let repo = gix::init(dir.path()).unwrap();
         let store = MemOdb::new(None, crate::pack::objects_dir(&repo));
         let odb = facade(&store, &repo);
 
@@ -486,7 +474,7 @@ mod tests {
     #[test]
     fn objects_packed_after_the_facade_was_built_are_found() {
         let dir = tempfile::tempdir().unwrap();
-        let repo = git2::Repository::init(dir.path()).unwrap();
+        let repo = gix::init(dir.path()).unwrap();
         let store = MemOdb::new(None, crate::pack::objects_dir(&repo));
         let odb = facade(&store, &repo);
 
@@ -502,5 +490,18 @@ mod tests {
 
         assert!(odb.contains(oid));
         assert_eq!(&*odb.read(oid).unwrap().1, b"packed later");
+    }
+
+    fn write_disk_blob(repo: &gix::Repository, data: &[u8]) -> ObjectId {
+        gix_object::Write::write_buf(&repo.objects, Kind::Blob, data).unwrap()
+    }
+
+    fn disk_blob(repo_path: &std::path::Path, id: ObjectId) -> Option<Vec<u8>> {
+        let repo = gix::open(repo_path).ok()?;
+        let mut buf = Vec::new();
+        let data = gix_object::Find::try_find(&repo.objects, &id, &mut buf)
+            .ok()??
+            .data;
+        Some(data.to_vec())
     }
 }
