@@ -2,7 +2,8 @@ use crate::constants::{
     BUBBLE_CORNER_RADIUS, BUBBLE_HORIZONTAL_PADDING, COMMIT_BUBBLE_HEIGHT, FONT_SIZE,
     REVWALK_LIMIT, SHA_SHORT_LEN,
 };
-use git2::{Oid, Repository};
+use gix::prelude::ObjectIdExt;
+use gix::{ObjectId, Repository};
 
 pub fn show_commit_bubble(
     ui: &mut egui::Ui,
@@ -57,9 +58,9 @@ pub fn show_commit_bubble(
 pub fn show_commits(
     ui: &mut egui::Ui,
     repo: &Repository,
-    history_start: Option<Oid>,
-    selected_commit: &mut Option<Oid>,
-    selected_file: &mut Option<(String, Oid)>,
+    history_start: Option<ObjectId>,
+    selected_commit: &mut Option<ObjectId>,
+    selected_file: &mut Option<(String, ObjectId)>,
     file_content: &mut Option<String>,
 ) {
     let history_start = match history_start {
@@ -67,28 +68,27 @@ pub fn show_commits(
         Some(oid) => oid,
     };
 
-    let mut revwalk = repo.revwalk().expect("Failed to get revwalk");
-    revwalk
-        .push(history_start)
-        .expect("Failed to push history start");
-    revwalk
-        .set_sorting(git2::Sort::NONE)
-        .expect("Failed to set sorting");
-
-    let commits: Vec<_> = revwalk
+    let commits: Vec<_> = history_start
+        .attach(repo)
+        .ancestors()
+        .all()
+        .expect("Failed to get revision walk")
         .take(REVWALK_LIMIT)
-        .filter_map(|oid| oid.ok())
-        .filter_map(|oid| repo.find_commit(oid).ok())
+        .filter_map(Result::ok)
+        .filter_map(|info| repo.find_commit(info.id).ok())
         .map(|commit| {
             let message = commit
-                .message()
+                .message_raw()
+                .ok()
+                .and_then(|message| std::str::from_utf8(message).ok())
                 .unwrap_or("<no message>")
                 .lines()
                 .next()
                 .unwrap_or("")
                 .to_string();
-            let short_id = commit.id().to_string()[..SHA_SHORT_LEN].to_string();
-            let commit_id = commit.id();
+            let commit_id = commit.id().detach();
+            let full_id = commit_id.to_string();
+            let short_id = full_id[..SHA_SHORT_LEN.min(full_id.len())].to_string();
             (commit_id, short_id, message)
         })
         .collect();

@@ -1,6 +1,6 @@
 pub fn show_file_preview(
     ui: &mut egui::Ui,
-    selected_file: &Option<(String, git2::Oid)>,
+    selected_file: &Option<(String, gix::ObjectId)>,
     file_content: &Option<String>,
 ) {
     ui.heading("File Preview");
