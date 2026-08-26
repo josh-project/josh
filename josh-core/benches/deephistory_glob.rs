@@ -1,6 +1,6 @@
 use criterion::{BatchSize, BenchmarkId, Criterion, Throughput, criterion_group, criterion_main};
 use josh_core::filter::Filter;
-use josh_core::git::josh_commit_signature;
+use josh_test_support::bench::josh_commit_signature;
 use josh_test_support::bench::{
     EntryKind, build_index, expected_tree, git2_oid, gix_oid, random_string,
 };
@@ -168,7 +168,7 @@ impl GlobBench {
         {
             let transaction = context.open()?;
             let case = cases.first().expect("at least one case");
-            let repo = transaction.git2_repo();
+            let repo = josh_test_support::bench::open_git2_repo(transaction.path())?;
 
             // The tripwire only means something if the dotfiles actually exist in the raw tree.
             let raw_tree = repo.find_commit(git2_oid(case.head))?.tree()?;
@@ -186,7 +186,7 @@ impl GlobBench {
                 // sees what is on disk.
                 transaction.flush_mem_odb()?;
                 let got = repo.find_commit(git2_oid(filtered))?.tree_id();
-                let (want, kept) = expected_tree(repo, case.head, &glob_pred(pattern))?;
+                let (want, kept) = expected_tree(&repo, case.head, &glob_pred(pattern))?;
                 anyhow::ensure!(
                     kept > 0,
                     "`::{pattern}` gate kept no blobs -- benchmark would be a no-op"
@@ -508,8 +508,10 @@ fn deephistory_glob(c: &mut Criterion) {
                 .unwrap()
                 .tree_id()
                 .unwrap();
-            let (want, _) = expected_tree(transaction.git2_repo(), probe, &glob_pred(pattern))
-                .expect("expected");
+            let reference_repo =
+                josh_test_support::bench::open_git2_repo(transaction.path()).expect("open repo");
+            let (want, _) =
+                expected_tree(&reference_repo, probe, &glob_pred(pattern)).expect("expected");
             assert_eq!(
                 got, want,
                 "incremental `::{pattern}` diverged from the independent expectation"

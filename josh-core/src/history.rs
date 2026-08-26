@@ -982,7 +982,7 @@ mod tests {
         data.extend_from_slice(b"40000 sub");
         data.push(0);
         data.extend_from_slice(empty.as_bytes());
-        let chain = objects::gix_oid(
+        let chain = josh_gix_ext::gix_oid(
             repo.odb()
                 .unwrap()
                 .write(git2::ObjectType::Tree, &data)
@@ -992,7 +992,7 @@ mod tests {
         data.extend_from_slice(b"40000 nested");
         data.push(0);
         data.extend_from_slice(chain.as_bytes());
-        let chain2 = objects::gix_oid(
+        let chain2 = josh_gix_ext::gix_oid(
             repo.odb()
                 .unwrap()
                 .write(git2::ObjectType::Tree, &data)
@@ -1005,7 +1005,7 @@ mod tests {
         let mut b = git2::build::TreeUpdateBuilder::new();
         b.upsert("a/b/file.txt", blob, git2::FileMode::Blob);
         let base = repo.treebuilder(None).unwrap().write().unwrap();
-        let with_blob = objects::gix_oid(
+        let with_blob = josh_gix_ext::gix_oid(
             b.create_updated(&repo, &repo.find_tree(base).unwrap())
                 .unwrap(),
         );
@@ -1014,9 +1014,9 @@ mod tests {
         let gitlink =
             gix_hash::ObjectId::from_str("0123456789012345678901234567890123456789").unwrap();
         let mut b = repo.treebuilder(None).unwrap();
-        b.insert("sub", objects::git2_oid(&gitlink), 0o160000)
+        b.insert("sub", josh_gix_ext::git2_oid(&gitlink), 0o160000)
             .unwrap();
-        let with_gitlink = objects::gix_oid(b.write().unwrap());
+        let with_gitlink = josh_gix_ext::gix_oid(b.write().unwrap());
         assert!(!is_empty_root(&t, odb, with_gitlink).unwrap());
     }
 }

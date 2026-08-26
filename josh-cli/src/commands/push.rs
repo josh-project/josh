@@ -499,8 +499,7 @@ fn orchestrate_push(
     push_mode: PushMode,
     transaction: &josh_core::cache::Transaction,
 ) -> anyhow::Result<()> {
-    let repo = transaction.git2_repo();
-    let repo_path = normalize_repo_path(repo.path());
+    let repo_path = normalize_repo_path(transaction.path());
 
     let remote_name = remote.unwrap_or("origin");
 

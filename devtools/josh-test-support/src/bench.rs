@@ -14,6 +14,25 @@ pub fn gix_oid(oid: git2::Oid) -> gix::ObjectId {
 pub fn git2_oid(oid: impl AsRef<gix::hash::oid>) -> git2::Oid {
     git2::Oid::from_bytes(oid.as_ref().as_bytes()).expect("gitoxide repository uses SHA-1")
 }
+/// Open a benchmark's libgit2 reference-model view without repository discovery.
+pub fn open_git2_repo(path: impl AsRef<std::path::Path>) -> Result<git2::Repository> {
+    Ok(git2::Repository::open_ext(
+        path,
+        git2::RepositoryOpenFlags::NO_SEARCH,
+        &[] as &[&std::ffi::OsStr],
+    )?)
+}
+
+/// Josh's fixed libgit2 identity for deterministic benchmark fixtures.
+pub fn josh_commit_signature<'a>() -> Result<git2::Signature<'a>> {
+    const NAME: &str = "JOSH";
+    const EMAIL: &str = "josh@josh-project.dev";
+
+    Ok(match std::env::var("JOSH_COMMIT_TIME") {
+        Ok(time) => git2::Signature::new(NAME, EMAIL, &git2::Time::new(time.parse()?, 0))?,
+        Err(_) => git2::Signature::now(NAME, EMAIL)?,
+    })
+}
 
 /// Deterministic lowercase alphabetic string, used as churned blob content.
 pub fn random_string(rng: &mut StdRng, len: usize) -> String {

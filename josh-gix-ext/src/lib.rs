@@ -82,6 +82,41 @@ pub fn peel_to_commit(
         }
     }
 }
+/// Follow `oid` to the tree it names, unwrapping annotated tags and commits on the way.
+/// Errors when the object is missing or resolves to something that is not tree-ish.
+pub fn peel_to_tree(
+    src: &(impl gix_object::Find + ?Sized),
+    oid: gix_hash::ObjectId,
+) -> anyhow::Result<gix_hash::ObjectId> {
+    let mut current = oid;
+    let mut buffer = Vec::new();
+    loop {
+        let data = src
+            .try_find(&current, &mut buffer)
+            .map_err(|e| anyhow::anyhow!("peel {}: {}", current, e))?
+            .ok_or_else(|| anyhow::anyhow!("object {} not found", current))?;
+        match data.kind {
+            gix_object::Kind::Tree => return Ok(current),
+            gix_object::Kind::Commit => {
+                return Ok(
+                    gix_object::CommitRefIter::from_bytes(&buffer, gix_hash::Kind::Sha1)
+                        .tree_id()?,
+                );
+            }
+            gix_object::Kind::Tag => {
+                current = gix_object::TagRefIter::from_bytes(&buffer, gix_hash::Kind::Sha1)
+                    .target_id()?;
+            }
+            kind => {
+                return Err(anyhow::anyhow!(
+                    "object {} is not tree-ish but a {:?}",
+                    current,
+                    kind
+                ));
+            }
+        }
+    }
+}
 
 /// The entries of the tree `oid`, owned so several trees can be walked side by side.
 /// Errors when the object is missing or is not a tree.

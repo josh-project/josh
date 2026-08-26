@@ -128,7 +128,6 @@ regex_parsed!(
  * expensive to build from scratch using heuristics.
  */
 pub fn discover_filter_candidates(transaction: &cache::Transaction) -> anyhow::Result<()> {
-    let repo = transaction.git2_repo();
     let mut known_filters = KNOWN_FILTERS.lock().unwrap();
     let trace_s = span!(Level::TRACE, "discover_filter_candidates");
     let _e = trace_s.enter();
@@ -153,11 +152,8 @@ pub fn discover_filter_candidates(transaction: &cache::Transaction) -> anyhow::R
         });
 
         if known_f.0 != target {
-            // Fetched targets may be annotated tags.
-            let tree = repo
-                .find_object(objects::git2_oid(&target), None)?
-                .peel(git2::ObjectType::Tree)?;
-            let hs = find_all_workspaces_and_subdirectories(odb, objects::gix_oid(tree.id()))?;
+            let tree = objects::peel_to_tree(odb, target)?;
+            let hs = find_all_workspaces_and_subdirectories(odb, tree)?;
             known_f.0 = target;
             for i in hs {
                 known_f.1.insert(i);

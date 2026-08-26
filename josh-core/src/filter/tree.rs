@@ -1273,11 +1273,11 @@ mod tests {
     fn make_tree(repo: &git2::Repository, paths: &[&str]) -> gix_hash::ObjectId {
         let mut b = git2::build::TreeUpdateBuilder::new();
         for p in paths {
-            let oid = objects::gix_oid(repo.blob(p.as_bytes()).unwrap());
-            b.upsert(*p, objects::git2_oid(&oid), git2::FileMode::Blob);
+            let oid = josh_gix_ext::gix_oid(repo.blob(p.as_bytes()).unwrap());
+            b.upsert(*p, josh_gix_ext::git2_oid(&oid), git2::FileMode::Blob);
         }
         let base = repo.treebuilder(None).unwrap().write().unwrap();
-        objects::gix_oid(
+        josh_gix_ext::gix_oid(
             b.create_updated(repo, &repo.find_tree(base).unwrap())
                 .unwrap(),
         )
@@ -1298,19 +1298,20 @@ mod tests {
         let td = tempfile::tempdir().unwrap();
         let repo = git2::Repository::init_bare(td.path()).unwrap();
 
-        let blob = objects::gix_oid(repo.blob(b"content").unwrap());
-        let link = objects::gix_oid(repo.blob(b"target").unwrap());
+        let blob = josh_gix_ext::gix_oid(repo.blob(b"content").unwrap());
+        let link = josh_gix_ext::gix_oid(repo.blob(b"target").unwrap());
         // Gitlinks reference commits in other repositories; git does not require the oid
         // to exist locally.
         let sub = gix_hash::ObjectId::from_str("0123456789012345678901234567890123456789").unwrap();
 
         let mut b = repo.treebuilder(None).unwrap();
-        b.insert("keep.rs", objects::git2_oid(&blob), 0o100644)
+        b.insert("keep.rs", josh_gix_ext::git2_oid(&blob), 0o100644)
             .unwrap();
-        b.insert("link.rs", objects::git2_oid(&link), 0o120000)
+        b.insert("link.rs", josh_gix_ext::git2_oid(&link), 0o120000)
             .unwrap();
-        b.insert("sub", objects::git2_oid(&sub), 0o160000).unwrap();
-        let input = objects::gix_oid(b.write().unwrap());
+        b.insert("sub", josh_gix_ext::git2_oid(&sub), 0o160000)
+            .unwrap();
+        let input = josh_gix_ext::gix_oid(b.write().unwrap());
 
         let t = open_transaction(&td);
         let key = gix_hash::ObjectId::from_str("1111111111111111111111111111111111111111").unwrap();
@@ -1409,7 +1410,7 @@ mod tests {
             data.push(0);
             data.extend_from_slice(oid.as_bytes());
         }
-        objects::gix_oid(
+        josh_gix_ext::gix_oid(
             repo.odb()
                 .unwrap()
                 .write(git2::ObjectType::Tree, &data)
@@ -1424,8 +1425,8 @@ mod tests {
     fn remove_pred_preserves_fsck_invalid_trees() {
         let td = tempfile::tempdir().unwrap();
         let repo = git2::Repository::init_bare(td.path()).unwrap();
-        let blob = objects::gix_oid(repo.blob(b"content").unwrap());
-        let blob2 = objects::gix_oid(repo.blob(b"other").unwrap());
+        let blob = josh_gix_ext::gix_oid(repo.blob(b"content").unwrap());
+        let blob2 = josh_gix_ext::gix_oid(repo.blob(b"other").unwrap());
         let t = open_transaction(&td);
 
         let sub = write_raw_tree(&repo, &[("100644", "inner.rs", blob)]);
@@ -1450,8 +1451,8 @@ mod tests {
     fn remove_pred_rebuild_preserves_survivors() {
         let td = tempfile::tempdir().unwrap();
         let repo = git2::Repository::init_bare(td.path()).unwrap();
-        let blob = objects::gix_oid(repo.blob(b"content").unwrap());
-        let blob2 = objects::gix_oid(repo.blob(b"other").unwrap());
+        let blob = josh_gix_ext::gix_oid(repo.blob(b"content").unwrap());
+        let blob2 = josh_gix_ext::gix_oid(repo.blob(b"other").unwrap());
         let t = open_transaction(&td);
 
         let input = write_raw_tree(
@@ -1495,7 +1496,7 @@ mod tests {
     fn protected_names_are_not_special() {
         let td = tempfile::tempdir().unwrap();
         let repo = git2::Repository::init_bare(td.path()).unwrap();
-        let blob = objects::gix_oid(repo.blob(b"content").unwrap());
+        let blob = josh_gix_ext::gix_oid(repo.blob(b"content").unwrap());
         let t = open_transaction(&td);
 
         let input = write_raw_tree(
@@ -1524,17 +1525,17 @@ mod tests {
     fn subtract_overlay_tolerate_non_canonical_order() {
         let td = tempfile::tempdir().unwrap();
         let repo = git2::Repository::init_bare(td.path()).unwrap();
-        let blob = objects::gix_oid(repo.blob(b"content").unwrap());
-        let blob2 = objects::gix_oid(repo.blob(b"other").unwrap());
+        let blob = josh_gix_ext::gix_oid(repo.blob(b"content").unwrap());
+        let blob2 = josh_gix_ext::gix_oid(repo.blob(b"other").unwrap());
         let t = open_transaction(&td);
 
         // "z.rs" first: canonically misplaced, so a bisect for it fails.
         let unsorted = write_raw_tree(&repo, &[("100644", "z.rs", blob), ("100644", "a.rs", blob)]);
 
         let mut b = repo.treebuilder(None).unwrap();
-        b.insert("z.rs", objects::git2_oid(&blob), 0o100644)
+        b.insert("z.rs", josh_gix_ext::git2_oid(&blob), 0o100644)
             .unwrap();
-        let selector = objects::gix_oid(b.write().unwrap());
+        let selector = josh_gix_ext::gix_oid(b.write().unwrap());
 
         let out = subtract(&t, unsorted, selector).unwrap();
         let out_tree = out_entries(&t, out);
@@ -1548,9 +1549,9 @@ mod tests {
         // the new entry lands after the last entry that canonically precedes it (here: at
         // the end, after a.rs).
         let mut b = repo.treebuilder(None).unwrap();
-        b.insert("m.rs", objects::git2_oid(&blob2), 0o100644)
+        b.insert("m.rs", josh_gix_ext::git2_oid(&blob2), 0o100644)
             .unwrap();
-        let addition = objects::gix_oid(b.write().unwrap());
+        let addition = josh_gix_ext::gix_oid(b.write().unwrap());
         let out = overlay(&t, unsorted, addition).unwrap();
         let expected = write_raw_tree(
             &repo,
@@ -1573,11 +1574,15 @@ mod tests {
         let mut b = git2::build::TreeUpdateBuilder::new();
         for p in paths {
             let name = p.rsplit('/').next().unwrap();
-            let oid = objects::gix_oid(repo.blob(name.as_bytes()).unwrap());
-            b.upsert(p.as_str(), objects::git2_oid(&oid), git2::FileMode::Blob);
+            let oid = josh_gix_ext::gix_oid(repo.blob(name.as_bytes()).unwrap());
+            b.upsert(
+                p.as_str(),
+                josh_gix_ext::git2_oid(&oid),
+                git2::FileMode::Blob,
+            );
         }
         let base = repo.treebuilder(None).unwrap().write().unwrap();
-        objects::gix_oid(
+        josh_gix_ext::gix_oid(
             b.create_updated(repo, &repo.find_tree(base).unwrap())
                 .unwrap(),
         )
@@ -1594,7 +1599,7 @@ mod tests {
         pattern: &str,
     ) -> gix_hash::ObjectId {
         let glob = glob::Pattern::new(pattern).unwrap();
-        let tree = repo.find_tree(objects::git2_oid(&input)).unwrap();
+        let tree = repo.find_tree(josh_gix_ext::git2_oid(&input)).unwrap();
         let mut kept = vec![];
         tree.walk(git2::TreeWalkMode::PreOrder, |root, entry| {
             if entry.kind() == Some(git2::ObjectType::Blob) {
@@ -1611,7 +1616,7 @@ mod tests {
             b.upsert(path.as_str(), *oid, git2::FileMode::Blob);
         }
         let base = repo.treebuilder(None).unwrap().write().unwrap();
-        objects::gix_oid(
+        josh_gix_ext::gix_oid(
             b.create_updated(repo, &repo.find_tree(base).unwrap())
                 .unwrap(),
         )
@@ -1685,7 +1690,7 @@ mod tests {
 
         let input = make_named_tree(&repo, &paths);
 
-        let tree = repo.find_tree(objects::git2_oid(&input)).unwrap();
+        let tree = repo.find_tree(josh_gix_ext::git2_oid(&input)).unwrap();
         assert_eq!(
             tree.get_path(Path::new("a/x")).unwrap().id(),
             tree.get_path(Path::new("c/x")).unwrap().id(),
@@ -1722,7 +1727,7 @@ mod tests {
             assert!(!cp.fallback, "`{pattern}` must not need the fallback");
             let got =
                 remove_pattern(&t, input, &cp, key, CompiledPattern::initial_state()).unwrap();
-            let want = ground_truth_tree(t.git2_repo(), input, pattern);
+            let want = ground_truth_tree(&t.git2_repo(), input, pattern);
             assert_eq!(
                 got, want,
                 "`{pattern}` diverged from full-path glob matching"
@@ -1782,7 +1787,7 @@ mod tests {
         let repo = git2::Repository::init_bare(td.path()).unwrap();
         let paths: Vec<String> = ["a/f.txt", "b/f.txt"].map(String::from).to_vec();
         let input = make_named_tree(&repo, &paths);
-        let tree = repo.find_tree(objects::git2_oid(&input)).unwrap();
+        let tree = repo.find_tree(josh_gix_ext::git2_oid(&input)).unwrap();
         assert_eq!(
             tree.get_path(Path::new("a")).unwrap().id(),
             tree.get_path(Path::new("b")).unwrap().id()
@@ -1799,7 +1804,7 @@ mod tests {
             key,
         )
         .unwrap();
-        let want = ground_truth_tree(t.git2_repo(), input, "a/*.txt");
+        let want = ground_truth_tree(&t.git2_repo(), input, "a/*.txt");
         assert_eq!(out, want, "b/f.txt must not be kept via the a/ cache entry");
     }
 
@@ -1811,7 +1816,7 @@ mod tests {
     fn get_path_entry_contract() {
         let td = tempfile::tempdir().unwrap();
         let repo = git2::Repository::init_bare(td.path()).unwrap();
-        let blob = objects::gix_oid(repo.blob(b"content").unwrap());
+        let blob = josh_gix_ext::gix_oid(repo.blob(b"content").unwrap());
         let t = open_transaction(&td);
         let odb = t.odb();
 
@@ -1820,13 +1825,21 @@ mod tests {
         let mut b = git2::build::TreeUpdateBuilder::new();
         b.upsert(
             "a/b/deep.txt",
-            objects::git2_oid(&blob),
+            josh_gix_ext::git2_oid(&blob),
             git2::FileMode::Blob,
         );
-        b.upsert("top.txt", objects::git2_oid(&blob), git2::FileMode::Blob);
-        b.upsert("a/sub", objects::git2_oid(&gitlink), git2::FileMode::Commit);
+        b.upsert(
+            "top.txt",
+            josh_gix_ext::git2_oid(&blob),
+            git2::FileMode::Blob,
+        );
+        b.upsert(
+            "a/sub",
+            josh_gix_ext::git2_oid(&gitlink),
+            git2::FileMode::Commit,
+        );
         let base = repo.treebuilder(None).unwrap().write().unwrap();
-        let root = objects::gix_oid(
+        let root = josh_gix_ext::gix_oid(
             b.create_updated(&repo, &repo.find_tree(base).unwrap())
                 .unwrap(),
         );
@@ -1911,10 +1924,10 @@ mod tests {
         let td = tempfile::tempdir().unwrap();
         let repo = git2::Repository::init_bare(td.path()).unwrap();
 
-        let blob = objects::gix_oid(repo.blob(b"legacy").unwrap());
+        let blob = josh_gix_ext::gix_oid(repo.blob(b"legacy").unwrap());
         let sub_tree = make_tree(&repo, &["dir/a.txt", "dir/b.txt"]);
-        let dir = objects::gix_oid(
-            repo.find_tree(objects::git2_oid(&sub_tree))
+        let dir = josh_gix_ext::gix_oid(
+            repo.find_tree(josh_gix_ext::git2_oid(&sub_tree))
                 .unwrap()
                 .get_name("dir")
                 .unwrap()
@@ -1953,15 +1966,15 @@ mod tests {
         let td = tempfile::tempdir().unwrap();
         let repo = git2::Repository::init_bare(td.path()).unwrap();
 
-        let ours = objects::gix_oid(repo.blob(b"ours").unwrap());
-        let theirs = objects::gix_oid(repo.blob(b"theirs").unwrap());
+        let ours = josh_gix_ext::gix_oid(repo.blob(b"ours").unwrap());
+        let theirs = josh_gix_ext::gix_oid(repo.blob(b"theirs").unwrap());
         let input1 = write_raw_tree(&repo, &[("100664", "shared.rs", ours)]);
         let mut b = repo.treebuilder(None).unwrap();
-        b.insert("new.rs", objects::git2_oid(&theirs), 0o100644)
+        b.insert("new.rs", josh_gix_ext::git2_oid(&theirs), 0o100644)
             .unwrap();
-        b.insert("shared.rs", objects::git2_oid(&theirs), 0o100644)
+        b.insert("shared.rs", josh_gix_ext::git2_oid(&theirs), 0o100644)
             .unwrap();
-        let input2 = objects::gix_oid(b.write().unwrap());
+        let input2 = josh_gix_ext::gix_oid(b.write().unwrap());
 
         let t = open_transaction(&td);
         let out = overlay(&t, input1, input2).unwrap();

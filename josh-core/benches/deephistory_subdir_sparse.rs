@@ -1,6 +1,6 @@
 use criterion::{BatchSize, BenchmarkId, Criterion, Throughput, criterion_group, criterion_main};
 use josh_core::filter::Filter;
-use josh_core::git::josh_commit_signature;
+use josh_test_support::bench::josh_commit_signature;
 use josh_test_support::bench::{EntryKind, git2_oid, gix_oid};
 use rand::prelude::*;
 use std::path::{Path, PathBuf};
@@ -129,7 +129,7 @@ impl SubdirBench {
             // The gate reads the filtered result through the repository handle, which only
             // sees what is on disk.
             transaction.flush_mem_odb()?;
-            let repo = transaction.git2_repo();
+            let repo = josh_test_support::bench::open_git2_repo(transaction.path())?;
             let filtered_tree = repo.find_commit(git2_oid(filtered))?.tree()?.id();
             let raw_subdir_tree = repo
                 .find_commit(git2_oid(case.head))?
@@ -141,7 +141,7 @@ impl SubdirBench {
                 "subdir filter did not select `{SUBDIR}` -- benchmark would measure the wrong thing"
             );
             let input = case.n_commits + 1;
-            let output = count_history(repo, filtered)?;
+            let output = count_history(&repo, filtered)?;
             anyhow::ensure!(
                 output * 10 < input,
                 "expected input >> output, got {input} input / {output} output commits"

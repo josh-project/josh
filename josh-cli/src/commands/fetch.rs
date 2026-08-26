@@ -25,8 +25,7 @@ pub fn handle_fetch(
     transaction: &josh_core::cache::Transaction,
     distributed_cache: bool,
 ) -> anyhow::Result<Vec<RefUpdate>> {
-    let repo = transaction.git2_repo();
-    let repo_path = normalize_repo_path(repo.path());
+    let repo_path = normalize_repo_path(transaction.path());
 
     let config = read_remote_config(&repo_path, &args.remote)
         .with_context(|| format!("Failed to read remote config for '{}'", args.remote))?;
@@ -55,7 +54,7 @@ pub fn handle_fetch(
     // ls-remote --symref output format: "ref: refs/heads/main\t<commit-hash>"
     let output = std::process::Command::new("git")
         .args(["ls-remote", "--symref", &url, "HEAD"])
-        .current_dir(normalize_repo_path(repo.path()))
+        .current_dir(&repo_path)
         .output()?;
 
     if !output.status.success() {
