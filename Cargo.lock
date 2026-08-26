@@ -3753,7 +3753,6 @@ version = "26.7.28"
 dependencies = [
  "anyhow",
  "criterion2",
- "git2",
  "gix",
  "gix-hash",
  "gix-object",
