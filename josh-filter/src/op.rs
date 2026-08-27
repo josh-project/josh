@@ -147,7 +147,9 @@ pub enum Op {
     ObjectDeref(std::path::PathBuf),
     ObjectRef(std::path::PathBuf),
 
-    Pattern(crate::pattern::CompiledPattern),
+    // Keep the compiled matcher behind a shared pointer: `Op` is cloned and interned throughout
+    // optimization, so storing the matcher inline makes every variant substantially larger.
+    Pattern(std::sync::Arc<crate::pattern::CompiledPattern>),
     Message(String, Regex),
 
     Unapply(LazyRef, Filter),
@@ -166,8 +168,8 @@ impl Op {
     /// Construct a `Pattern` op, compiling its glob. A bad glob therefore errors where the
     /// pattern enters the system (parse, deserialization) instead of on first apply.
     pub fn pattern(pattern: &str) -> anyhow::Result<Op> {
-        Ok(Op::Pattern(crate::pattern::CompiledPattern::compile(
-            pattern,
-        )?))
+        Ok(Op::Pattern(std::sync::Arc::new(
+            crate::pattern::CompiledPattern::compile(pattern)?,
+        )))
     }
 }
