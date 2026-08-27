@@ -4,9 +4,9 @@
 //! Implements the [`gix_object`] object-access traits and `ObjectId`-typed inherent helpers
 //! (memory-first, disk fallback); memory hits hand out zero-copy `Arc` buffers.
 //!
-//! A store resolves `objects/info/alternates` when it opens, so an alternate registered at
-//! runtime (the proxy overlay's mirror) is a store of its own, consulted after the
-//! repository's own. Write dedup probes only those alternates (see [`Odb::write`]).
+//! A store resolves `objects/info/alternates` when it opens. An alternate registered at runtime
+//! (the proxy overlay's mirror) is a store of its own. Non-refreshing handles probe every known
+//! store first; only a miss everywhere may rescan object directories for packs written later.
 //!
 //! The empty tree is resolved here whether or not it is stored, and before disk: josh reads it
 //! constantly as the base of a rebuild, and a lookup that misses makes gitoxide re-read the
@@ -52,14 +52,21 @@ pub struct Odb {
     /// The repository's own objects. Handles taken from one store share its loaded pack
     /// indices, so every transaction on a repository pays for them once between them.
     disk: gix_odb::Handle,
+    /// A non-refreshing reader for the same store. Proxy objects live either here or in an
+    /// alternate; probing both snapshots before either refreshing avoids a directory rescan
+    /// for every object held by the other store.
+    disk_fast: gix_odb::Handle,
     /// Object directories registered after the repository was opened; see the module docs.
     alternates: RefCell<Vec<Alternate>>,
 }
 
-/// A runtime alternate as two handles on one store, differing only in what a miss costs.
+/// A runtime alternate with snapshot and refreshing readers plus a write-dedup gate.
 struct Alternate {
-    /// Reads: refreshes on a miss, so an object that landed after registration is found.
+    /// Refreshes on a miss, so an object that landed after registration is found.
     read: gix_odb::Handle,
+    /// Reads the packs known when this handle last loaded its snapshot, without rescanning on a
+    /// miss. Carries an object cache, unlike `gate`.
+    fast: gix_odb::Handle,
     /// The write gate (see [`Odb::write`]), which misses for every object josh produces, so it
     /// must not pay the directory scan a refresh costs. It answers from what the store already
     /// knows; missing an object packed since costs a duplicate in a pack, never correctness.
@@ -96,9 +103,12 @@ impl Odb {
     /// store from a repository handle so its pack indices are shared between transactions;
     /// [`Odb::at`] opens one for a bare objects directory.
     pub fn new(mem: Arc<MemOdb>, store: OwnShared<gix_odb::Store>) -> Self {
+        let mut disk_fast = handle(store.clone());
+        disk_fast.refresh_never();
         Odb {
             mem,
             disk: handle(store),
+            disk_fast,
             alternates: Default::default(),
         }
     }
@@ -112,21 +122,32 @@ impl Odb {
     /// whose objects the write gate must not buffer.
     pub fn add_alternate(&self, path: &Path) -> std::io::Result<()> {
         let store = gix_odb::at(path)?.store();
+        let mut fast = handle(store.clone());
+        fast.refresh_never();
         let mut gate = gix_odb::Cache::from(store.to_handle());
         gate.refresh_never();
         self.alternates.borrow_mut().push(Alternate {
             read: handle(store),
+            fast,
             gate,
         });
         Ok(())
     }
 
-    /// Whether a registered alternate holds `oid`; no filesystem I/O when there are none.
+    /// Whether a registered alternate holds `id`, refreshing its store if necessary.
     fn in_alternate(&self, id: &gix_hash::oid) -> bool {
         self.alternates
             .borrow()
             .iter()
-            .any(|alt| alt.read.exists(id))
+            .any(|alternate| alternate.read.exists(id))
+    }
+
+    /// Whether a registered alternate's current snapshot holds `id`.
+    fn in_alternate_fast(&self, id: &gix_hash::oid) -> bool {
+        self.alternates
+            .borrow()
+            .iter()
+            .any(|alternate| alternate.fast.exists(id))
     }
 
     /// [`Odb::in_alternate`] through the gate handles (see [`Alternate::gate`]).
@@ -159,13 +180,24 @@ impl Odb {
         ))
     }
 
-    /// Read `id` into `buffer` from the repository's objects or an alternate, reporting the
-    /// kind it was stored with, or `None` when neither holds it.
+    /// Read `id` into `buffer` from the repository or an alternate, reporting the kind it was
+    /// stored with, or `None` when neither holds it. Probe non-refreshing snapshots first: in a
+    /// proxy overlay, each source-object lookup misses the primary and each generated-object
+    /// lookup misses the mirror. Refreshing either miss would rescan an object directory per
+    /// object.
     fn find_on_disk(
         &self,
         id: &gix_hash::oid,
         buffer: &mut Vec<u8>,
     ) -> Result<Option<Kind>, gix_object::find::Error> {
+        if let Some(data) = self.disk_fast.try_find(id, buffer)? {
+            return Ok(Some(data.kind));
+        }
+        for alternate in self.alternates.borrow().iter() {
+            if let Some(data) = alternate.fast.try_find(id, buffer)? {
+                return Ok(Some(data.kind));
+            }
+        }
         if let Some(data) = self.disk.try_find(id, buffer)? {
             return Ok(Some(data.kind));
         }
@@ -184,7 +216,11 @@ impl Odb {
     }
 
     pub fn contains(&self, id: ObjectId) -> bool {
-        self.mem.contains(&id) || self.disk.exists(&id) || self.in_alternate(&id)
+        self.mem.contains(&id)
+            || self.disk_fast.exists(&id)
+            || self.in_alternate_fast(&id)
+            || self.disk.exists(&id)
+            || self.in_alternate(&id)
     }
 
     /// Kind of `id`, or `None` if the object does not exist. Never decompresses. Resolves the
@@ -273,6 +309,14 @@ impl gix_object::FindHeader for Odb {
                 size: 0,
             }));
         }
+        if let Some(header) = self.disk_fast.try_header(id)? {
+            return Ok(Some(header));
+        }
+        for alternate in self.alternates.borrow().iter() {
+            if let Some(header) = alternate.fast.try_header(id)? {
+                return Ok(Some(header));
+            }
+        }
         if let Some(header) = self.disk.try_header(id)? {
             return Ok(Some(header));
         }
@@ -287,7 +331,11 @@ impl gix_object::FindHeader for Odb {
 
 impl gix_object::Exists for Odb {
     fn exists(&self, id: &gix_hash::oid) -> bool {
-        self.mem.contains(id) || self.disk.exists(id) || self.in_alternate(id)
+        self.mem.contains(id)
+            || self.disk_fast.exists(id)
+            || self.in_alternate_fast(id)
+            || self.disk.exists(id)
+            || self.in_alternate(id)
     }
 }
 
