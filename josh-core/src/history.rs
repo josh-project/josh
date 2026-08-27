@@ -98,63 +98,49 @@ fn find_unapply_base(
     if oid != gix_hash::ObjectId::null(gix_hash::Kind::Sha1) {
         filtered_to_original.insert(oid, contained_in);
     }
+    if filtered == oid {
+        return Ok(contained_in);
+    }
 
-    // Walk the original history starting from the contained_in "hint" in lazy
-    // discovery order (the tip first, then the parents of each visited commit as
-    // the frontier expands), stopping at the first match. Because discovery order
-    // is only loosely child-before-parent, commits are held as pending until at
-    // least one other commit references them as a parent ("unlocked"); the start
-    // commit has no children in this subgraph, so it's unlocked immediately.
-    // Processing a commit may unlock pending ones, which are then processed too.
+    // Search the original history newest-generation first. Advancing every live branch on a
+    // shared frontier reaches recent side branches without exhausting an older first-parent
+    // chain. Sequence numbers are persisted with the filtering cache, so the search stays lazy.
     let odb = transaction.odb();
-    let mut walk = objects::RevWalk::new(odb);
-    walk.push(contained_in)?;
+    let mut frontier = std::collections::BinaryHeap::new();
+    let mut seen = HashSet::new();
+    let mut insertion_order = 0u64;
+    frontier.push((
+        cache::compute_sequence_number(transaction, contained_in)?,
+        std::cmp::Reverse(insertion_order),
+        contained_in,
+    ));
 
-    let mut result: Option<(gix_hash::ObjectId, gix_hash::ObjectId)> = None;
-    let mut unlocked = HashSet::new();
-    let mut pending = HashSet::new();
-    unlocked.insert(contained_in);
-
-    walk.discover(|oid| {
-        pending.insert(oid);
-        if !unlocked.contains(&oid) {
-            return Ok(std::ops::ControlFlow::Continue(()));
+    while let Some((_, _, candidate)) = frontier.pop() {
+        if !seen.insert(candidate) {
+            continue;
+        }
+        let original_filtered = filter::apply_to_commit(filter, candidate, transaction)?;
+        if filtered == original_filtered {
+            filtered_to_original.insert(filtered, candidate);
+            tracing::info!("found original properly {}", candidate);
+            return Ok(candidate);
         }
 
-        // Check if any pending commits are now unlocked
-        // Processing one might unlock another
-        while let Some(&pending_oid) = pending
-            .iter()
-            .find(|&pending_oid| unlocked.contains(pending_oid))
-        {
-            pending.remove(&pending_oid);
-
-            let original_filtered = filter::apply_to_commit(filter, pending_oid, transaction)?;
-
-            if filtered == original_filtered {
-                result = Some((filtered, pending_oid));
-                return Ok(std::ops::ControlFlow::Break(()));
+        for parent_id in git::read_parent_ids(odb, candidate)? {
+            if seen.contains(&parent_id) {
+                continue;
             }
-
-            for parent_id in git::read_parent_ids(odb, pending_oid)? {
-                unlocked.insert(parent_id);
-            }
-        }
-
-        Ok(std::ops::ControlFlow::Continue(()))
-    })?;
-
-    match result {
-        Some((filtered, original)) => {
-            filtered_to_original.insert(filtered, original);
-            tracing::info!("found original properly {}", original);
-            Ok(original)
-        }
-        None => {
-            tracing::info!("Didn't find original",);
-            Ok(gix_hash::ObjectId::null(gix_hash::Kind::Sha1))
+            insertion_order += 1;
+            frontier.push((
+                cache::compute_sequence_number(transaction, parent_id)?,
+                std::cmp::Reverse(insertion_order),
+                parent_id,
+            ));
         }
     }
+
+    tracing::info!("Didn't find original",);
+    Ok(gix_hash::ObjectId::null(gix_hash::Kind::Sha1))
 }
 
 pub fn find_original(
