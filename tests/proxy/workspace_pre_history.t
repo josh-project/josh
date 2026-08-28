@@ -150,8 +150,8 @@ file was created
       |-- objects
       |   |-- info
       |   `-- pack
-      |       |-- pack-faaf01d2dc0909611cdf7c3d1bdbbfe3ce2a9449.idx
-      |       `-- pack-faaf01d2dc0909611cdf7c3d1bdbbfe3ce2a9449.pack
+      |       |-- pack-a561d3e5f644bb99f24c18ab816b999321a6c143.idx
+      |       `-- pack-a561d3e5f644bb99f24c18ab816b999321a6c143.pack
       `-- refs
           |-- heads
           |-- namespaces

@@ -113,8 +113,8 @@
       |-- objects
       |   |-- info
       |   `-- pack
-      |       |-- pack-5af10d5b0a5c3a1f5ec6910ec2d1c430496a79cd.idx
-      |       `-- pack-5af10d5b0a5c3a1f5ec6910ec2d1c430496a79cd.pack
+      |       |-- pack-92ad3c27042f318b86fa2e24abe101e17dfe6e35.idx
+      |       `-- pack-92ad3c27042f318b86fa2e24abe101e17dfe6e35.pack
       `-- refs
           |-- heads
           `-- tags

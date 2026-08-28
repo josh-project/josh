@@ -110,8 +110,8 @@
       |-- objects
       |   |-- info
       |   `-- pack
-      |       |-- pack-22a5f4914ed052ea4eea2873846d2591ddf38cfa.idx
-      |       `-- pack-22a5f4914ed052ea4eea2873846d2591ddf38cfa.pack
+      |       |-- pack-bbe192a6af4bf27018370feb936ef18eddba83cc.idx
+      |       `-- pack-bbe192a6af4bf27018370feb936ef18eddba83cc.pack
       `-- refs
           |-- heads
           |-- namespaces

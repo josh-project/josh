@@ -25,7 +25,7 @@ pub(crate) fn objects_dir(repo: &gix::Repository) -> std::path::PathBuf {
 /// (loose, packed, or via alternates) as a single packfile-plus-index pair in
 /// `objects_dir/pack`. A no-op if every object is already on disk.
 ///
-/// The pack is deterministic for a given snapshot: entries are compressed at a fixed level and
+/// The pack is deterministic for a given snapshot: entries use the fastest zlib level and are
 /// serialized single-threaded in snapshot order, and the file pair is named after the pack
 /// trailer checksum, so identical snapshots produce identical packs. Files are written via
 /// tempfile-and-rename, index last, so a concurrent reader never sees a torn pair.
@@ -62,9 +62,9 @@ pub(crate) fn write_snapshot(objects_dir: &Path, snapshot: &Snapshot) -> anyhow:
         to_pack.iter().map(|(oid, kind, data)| {
             output::Entry::from_data(
                 &output::Count::from_data(*oid, None),
-                // Fixed level 6, the zlib/libgit2/git `pack.compression` default.
+                // Favor request latency; maintenance repacks can optimize the durable ratio.
                 &gix_object::Data::new(data, *kind, gix_hash::Kind::Sha1),
-                gix_zlib::Compression::DEFAULT,
+                gix_zlib::Compression::BEST_SPEED,
             )
             .map(|entry| vec![entry])
         }),
@@ -94,7 +94,7 @@ pub(crate) fn write_snapshot(objects_dir: &Path, snapshot: &Snapshot) -> anyhow:
             object_hash: gix_hash::Kind::Sha1,
             alloc_limit_bytes: None,
             // Only used to complete thin packs, which this never writes.
-            compression: gix_zlib::Compression::DEFAULT,
+            compression: gix_zlib::Compression::BEST_SPEED,
         },
     )
     .context("mem-odb pack write failed")?;

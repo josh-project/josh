@@ -264,12 +264,12 @@ Flushed credential cache
       |   |   `-- 8eb888451be077531b50794384c2faec025765
       |   |-- info
       |   `-- pack
-      |       |-- pack-4aa0c3b06b81194f2e588db5ae323c7fb4550048.idx
-      |       |-- pack-4aa0c3b06b81194f2e588db5ae323c7fb4550048.pack
-      |       |-- pack-4c30edff00d7b5dff411c9bccd544e4068345179.idx
-      |       |-- pack-4c30edff00d7b5dff411c9bccd544e4068345179.pack
-      |       |-- pack-721a5e2fcf4ed965e49124b30f161a6faead2313.idx
-      |       `-- pack-721a5e2fcf4ed965e49124b30f161a6faead2313.pack
+      |       |-- pack-2302ca9b0ce6c35e391f3982aeb8b9f5523c31fc.idx
+      |       |-- pack-2302ca9b0ce6c35e391f3982aeb8b9f5523c31fc.pack
+      |       |-- pack-ce74dd83b99a7457a87150df6b5c3333afc2234f.idx
+      |       |-- pack-ce74dd83b99a7457a87150df6b5c3333afc2234f.pack
+      |       |-- pack-e231f17fe8a8638401e08a928fcf9c496574f964.idx
+      |       `-- pack-e231f17fe8a8638401e08a928fcf9c496574f964.pack
       `-- refs
           |-- heads
           |-- namespaces

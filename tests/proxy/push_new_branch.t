@@ -184,12 +184,12 @@ Check the branch again
       |   |   `-- 35f3fecaba02ae9cc9d462b1bd0d396fdf352f
       |   |-- info
       |   `-- pack
-      |       |-- pack-2893a00b7ba37075bd59cbf84d3e300ca17afecd.idx
-      |       |-- pack-2893a00b7ba37075bd59cbf84d3e300ca17afecd.pack
-      |       |-- pack-ca72748ef4386cec74f87862434f7c982edd66fa.idx
-      |       |-- pack-ca72748ef4386cec74f87862434f7c982edd66fa.pack
-      |       |-- pack-e54bf06bfc3b3596e93261dc699bccb21d0f5adb.idx
-      |       `-- pack-e54bf06bfc3b3596e93261dc699bccb21d0f5adb.pack
+      |       |-- pack-4720043092f3af5a4fcb245c8d93c5e1bd33e5c8.idx
+      |       |-- pack-4720043092f3af5a4fcb245c8d93c5e1bd33e5c8.pack
+      |       |-- pack-5a6c8f8c4731edda90ce7ee05a147b8b529ef15e.idx
+      |       |-- pack-5a6c8f8c4731edda90ce7ee05a147b8b529ef15e.pack
+      |       |-- pack-cfc95e43f9955d8a565f21df3d8b244815750d38.idx
+      |       `-- pack-cfc95e43f9955d8a565f21df3d8b244815750d38.pack
       `-- refs
           |-- heads
           |-- namespaces
