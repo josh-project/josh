@@ -5,8 +5,10 @@ on:
     branches: [ master ]
   pull_request:
     branches: [ '**' ]
-    types: [opened, synchronize, reopened, ready_for_review]
+    types: [opened, synchronize, reopened, ready_for_review, labeled]
   merge_group:
+  release:
+    types: [published]
 
 env:
   CARGO_TERM_COLOR: always
@@ -40,6 +42,10 @@ jobs:
     steps:
     - name: Checkout
       uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      with:
+        # Full history so the winget packaging steps can derive the package
+        # version from the last release tag.
+        fetch-depth: 0
     # Keep the toolchain version in sync with rust-toolchain.toml.
     - name: Install Rust toolchain
       uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772 # stable
@@ -125,3 +131,144 @@ jobs:
     # HttpListener, so the job needs nothing that Windows does not ship.
     - name: Functional tests
       run: pwsh tests/windows/run.ps1 target/debug -PathForms
+    # WinGet packaging: runs on release publications and on PRs gated on the
+    # build-release-winget label (mirroring build-release-container in
+    # release.yml). Release runs pass the actual release tag; the zips are then
+    # uploaded to the release by the winget-release job below.
+    - name: Build release josh.exe
+      if: >-
+        github.event_name == 'release' ||
+        (
+          github.event_name == 'pull_request' &&
+          github.event.action == 'labeled' &&
+          contains(github.event.pull_request.labels.*.name, 'build-release-winget')
+        )
+      run: cargo build --locked --release -p josh-cli --bin josh
+    - name: Package for WinGet
+      if: >-
+        github.event_name == 'release' ||
+        (
+          github.event_name == 'pull_request' &&
+          github.event.action == 'labeled' &&
+          contains(github.event.pull_request.labels.*.name, 'build-release-winget')
+        )
+      shell: pwsh
+      env:
+        RELEASE_TAG: ${{ github.event.release.tag_name }}
+      run: |
+        # Release runs pass the actual release tag; prototype runs fall back
+        # to the last release tag in the repo.
+        $tag = if ($env:RELEASE_TAG) { $env:RELEASE_TAG } else { git describe --tags --abbrev=0 }
+        packaging/winget/package.ps1 -Tag $tag
+    - name: Upload WinGet package
+      if: >-
+        github.event_name == 'release' ||
+        (
+          github.event_name == 'pull_request' &&
+          github.event.action == 'labeled' &&
+          contains(github.event.pull_request.labels.*.name, 'build-release-winget')
+        )
+      uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      with:
+        name: winget-package-${{ matrix.arch }}
+        path: winget-out/*
+        if-no-files-found: error
+
+  # Assembles the winget-pkgs manifest set (version / installer / defaultLocale)
+  # from the per-architecture zips produced by the windows job and validates it
+  # with the winget CLI, which runs offline and never fetches the installer
+  # URLs: label runs are fully independent of GitHub releases; release runs
+  # instead attach the zips to the release (winget-release below). Gated on
+  # the same build-release-winget label as the packaging steps above. The
+  # manifests are templated rather than generated with Komac: komac new cannot
+  # non-interactively for a portable-exe package, and Komac remains a manual
+  # option for the one-time first submission; subsequent versions can go
+  # through vedantmgoyal9/winget-releaser, which reuses the previous manifest.
+  winget-manifest:
+    runs-on: windows-latest
+    name: WinGet manifests
+    needs: windows
+    if: >-
+      github.event_name == 'pull_request' &&
+      github.event.action == 'labeled' &&
+      contains(github.event.pull_request.labels.*.name, 'build-release-winget')
+    steps:
+    # Shallow checkout: only packaging/winget/generate-manifests.ps1 is needed
+    # here; the package artifacts arrive via the download step below.
+    - name: Checkout
+      uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+    - name: Download package artifacts
+      uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+      with:
+        pattern: winget-package-*
+        merge-multiple: true
+        path: winget-package
+    - name: Generate manifests
+      shell: pwsh
+      run: packaging/winget/generate-manifests.ps1
+    # The image's inbox winget predates manifest schema 1.12: its embedded
+    # schema $id (1.11) does not match the schema header URL, so every
+    # `winget validate` run ends in warnings, and winget fails on warnings.
+    # Pin the CLI release whose embedded schemas match our manifests, plus
+    # the WindowsAppRuntime framework it requires and the image lacks (the
+    # inbox winget is too old to need it). The msixbundle has no published
+    # .sha256 sidecar; its digest below comes from the GitHub release API.
+    # The dependencies zip is verified against the release's own sidecar.
+    - name: Install pinned winget
+      shell: pwsh
+      run: |
+        $version = "1.29.290"
+        $release = "https://github.com/microsoft/winget-cli/releases/download/v$version"
+        $bundle = "$env:TEMP\Microsoft.DesktopAppInstaller_8wekyb3d8bbwe.msixbundle"
+
+        Invoke-WebRequest -OutFile "$env:TEMP\deps.zip" "$release/DesktopAppInstaller_Dependencies.zip"
+        Invoke-WebRequest -OutFile "$env:TEMP\deps.zip.sha256" "$release/DesktopAppInstaller_Dependencies.txt"
+        $expected = ((Get-Content "$env:TEMP\deps.zip.sha256" -Raw) -split '\s')[0]
+        if ((Get-FileHash "$env:TEMP\deps.zip" -Algorithm SHA256).Hash -cne $expected) { throw "dependencies zip checksum mismatch" }
+
+        Invoke-WebRequest -OutFile $bundle "$release/Microsoft.DesktopAppInstaller_8wekyb3d8bbwe.msixbundle"
+        $bundleHash = "6824b6e9484ab24687d99a0c829d2bcbcc7849a70a4d0f596fc43c89d20dff15"
+        if ((Get-FileHash $bundle -Algorithm SHA256).Hash.ToLower() -cne $bundleHash) { throw "winget msixbundle checksum mismatch" }
+
+        Expand-Archive "$env:TEMP\deps.zip" -DestinationPath "$env:TEMP\winget-deps"
+        $arch = if ($env:PROCESSOR_ARCHITECTURE -eq 'ARM64') { 'arm64' } else { 'x64' }
+        Get-ChildItem "$env:TEMP\winget-deps\$arch\Microsoft.WindowsAppRuntime.*.appx" | ForEach-Object { Add-AppxPackage $_.FullName }
+        Add-AppxPackage $bundle
+    - name: Validate manifests
+      shell: pwsh
+      run: |
+        winget --version
+        $version = (Get-Content winget-package/version.txt -Raw).Trim()
+        winget validate --manifest "manifests/j/JoshProject/Josh/$version"
+    - name: Upload manifests
+      uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      with:
+        name: winget-manifests
+        path: manifests/
+        if-no-files-found: error
+
+  # Uploads the packaged zips and SHA256 sidecars to the GitHub release that
+  # triggered the run, so the winget-pkgs submission can reference them as
+  # installer URLs. Kept separate from the windows job so contents:write stays
+  # scoped to release events.
+  winget-release:
+    runs-on: ubuntu-latest
+    name: WinGet release upload
+    needs: windows
+    if: github.event_name == 'release'
+    permissions:
+      contents: write
+    steps:
+    - name: Download package artifacts
+      uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+      with:
+        pattern: winget-package-*
+        merge-multiple: true
+        path: winget-package
+    - name: Upload zips to the release
+      env:
+        GH_TOKEN: ${{ github.token }}
+        RELEASE_TAG: ${{ github.event.release.tag_name }}
+      run: |
+        gh release upload "$RELEASE_TAG" winget-package/*.zip winget-package/*.sha256 --clobber --repo "$GITHUB_REPOSITORY"
+        gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --json assets --jq '.assets[].name'
