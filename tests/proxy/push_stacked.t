@@ -258,10 +258,10 @@ Make sure all temporary namespace got removed
       |   |   `-- b2a5b9c65fae1d20c1b1fb777d1ea025456faa
       |   |-- info
       |   `-- pack
-      |       |-- pack-73ff0b391af4bb8dff50f6070f8e6bd258d3d562.idx
-      |       |-- pack-73ff0b391af4bb8dff50f6070f8e6bd258d3d562.pack
-      |       |-- pack-d678c97bc806ec389cf8d05321e018083799eab5.idx
-      |       `-- pack-d678c97bc806ec389cf8d05321e018083799eab5.pack
+      |       |-- pack-881aaeaf00d87a487b7cb95a51b5e456bdda5cec.idx
+      |       |-- pack-881aaeaf00d87a487b7cb95a51b5e456bdda5cec.pack
+      |       |-- pack-c960cf25fa9e9c1ee238c628a9f2a6bd2e216e79.idx
+      |       `-- pack-c960cf25fa9e9c1ee238c628a9f2a6bd2e216e79.pack
       `-- refs
           |-- heads
           |-- namespaces

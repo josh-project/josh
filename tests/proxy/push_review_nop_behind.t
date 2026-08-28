@@ -104,8 +104,8 @@ This is a regression test for that problem.
       |   |   `-- 01f09caa6b247b64793a9d8cf1db76a9e92442
       |   |-- info
       |   `-- pack
-      |       |-- pack-e8ae6eb17251286fc38f6b55dea83f85265ac92b.idx
-      |       `-- pack-e8ae6eb17251286fc38f6b55dea83f85265ac92b.pack
+      |       |-- pack-651a3186fea7a27d814a721537434b38782f7780.idx
+      |       `-- pack-651a3186fea7a27d814a721537434b38782f7780.pack
       `-- refs
           |-- heads
           |-- namespaces

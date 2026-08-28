@@ -175,8 +175,8 @@
       |-- objects
       |   |-- info
       |   `-- pack
-      |       |-- pack-17827226c5c0c01f693d535b0ee03ce6b1279d8f.idx
-      |       `-- pack-17827226c5c0c01f693d535b0ee03ce6b1279d8f.pack
+      |       |-- pack-0182f3edcc62f45628446146ccea2858cd6d9002.idx
+      |       `-- pack-0182f3edcc62f45628446146ccea2858cd6d9002.pack
       `-- refs
           |-- heads
           |-- namespaces

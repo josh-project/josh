@@ -182,14 +182,14 @@ Put a double slash in the URL to see that it also works
       |   |   `-- 388f5880393d255b371f1ed9b801d35620017e
       |   |-- info
       |   `-- pack
-      |       |-- pack-0fbca5effb29d44fa34e315b8a34934a3d96e6a3.idx
-      |       |-- pack-0fbca5effb29d44fa34e315b8a34934a3d96e6a3.pack
-      |       |-- pack-3870f7c23e56f421fca42ddb98af629a74027df3.idx
-      |       |-- pack-3870f7c23e56f421fca42ddb98af629a74027df3.pack
-      |       |-- pack-62708cde9dd54e2a4d2ba90b263314de9b886870.idx
-      |       |-- pack-62708cde9dd54e2a4d2ba90b263314de9b886870.pack
-      |       |-- pack-cb303098d881b2cc9c72fe2d5958c4108e1dfc5f.idx
-      |       `-- pack-cb303098d881b2cc9c72fe2d5958c4108e1dfc5f.pack
+      |       |-- pack-abfdcb422e937a3ef1fd83d4935a604a7079abf0.idx
+      |       |-- pack-abfdcb422e937a3ef1fd83d4935a604a7079abf0.pack
+      |       |-- pack-c42629c132811d0a45f5e0b08c1e5d54612b7c1a.idx
+      |       |-- pack-c42629c132811d0a45f5e0b08c1e5d54612b7c1a.pack
+      |       |-- pack-f08aac36fc50d329a77be1edb7b803cc51d9edcc.idx
+      |       |-- pack-f08aac36fc50d329a77be1edb7b803cc51d9edcc.pack
+      |       |-- pack-f3546ce56eb9276c964f94e9868b52b351242100.idx
+      |       `-- pack-f3546ce56eb9276c964f94e9868b52b351242100.pack
       `-- refs
           |-- heads
           |-- namespaces

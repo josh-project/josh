@@ -200,12 +200,12 @@ Make sure all temporary namespace got removed
       |   |   `-- b06d7748772bdd407c5911c0ba02b0f5fb31a4
       |   |-- info
       |   `-- pack
-      |       |-- pack-62708cde9dd54e2a4d2ba90b263314de9b886870.idx
-      |       |-- pack-62708cde9dd54e2a4d2ba90b263314de9b886870.pack
-      |       |-- pack-ed1b2e1285c87d628ed4fedf2e84338a0fa698e1.idx
-      |       |-- pack-ed1b2e1285c87d628ed4fedf2e84338a0fa698e1.pack
-      |       |-- pack-f77bd2bf44561fe0f2030d424730624a36a8feea.idx
-      |       `-- pack-f77bd2bf44561fe0f2030d424730624a36a8feea.pack
+      |       |-- pack-b8333165d952a58210770b761c7bb4b121e90b09.idx
+      |       |-- pack-b8333165d952a58210770b761c7bb4b121e90b09.pack
+      |       |-- pack-c35137d50abf628e0cc7d7471c98afdd9f8939f3.idx
+      |       |-- pack-c35137d50abf628e0cc7d7471c98afdd9f8939f3.pack
+      |       |-- pack-f08aac36fc50d329a77be1edb7b803cc51d9edcc.idx
+      |       `-- pack-f08aac36fc50d329a77be1edb7b803cc51d9edcc.pack
       `-- refs
           |-- heads
           |-- namespaces
