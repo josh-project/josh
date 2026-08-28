@@ -1,6 +1,6 @@
 [package]
 name = "axum-cgi"
-version = "26.7.28"
+version = "26.8.28"
 edition = "2024"
 license-file = "LICENSE"
 description = "CGI handler support for the axum web framework"
