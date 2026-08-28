@@ -25,7 +25,7 @@ pub mod revwalk;
 
 pub use graph::{is_descendant_of, merge_base, merge_base_octopus};
 pub use merge::{merge_commits, merge_trees};
-pub use revwalk::{RangeWalk, RevWalk};
+pub use revwalk::{GenerationFrontier, RangeWalk, RevWalk};
 
 /// Hash a blob without writing it.
 pub fn hash_blob(data: &[u8]) -> gix_hash::ObjectId {
