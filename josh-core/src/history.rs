@@ -102,20 +102,15 @@ fn find_unapply_base(
         return Ok(contained_in);
     }
 
-    // Search the original history newest-generation first. Advancing every live branch on a
-    // shared frontier reaches recent side branches without exhausting an older first-parent
-    // chain. Sequence numbers are persisted with the filtering cache, so the search stays lazy.
+    // Search newest-generation first so recent side branches stay ahead of older first-parent
+    // chains. Sequence numbers are persisted with the filtering cache, so the search stays lazy.
     let odb = transaction.odb();
-    let mut frontier = std::collections::BinaryHeap::new();
+    let sequence_number = |oid| cache::compute_sequence_number(transaction, oid);
+    let mut frontier = objects::GenerationFrontier::new();
     let mut seen = HashSet::new();
-    let mut insertion_order = 0u64;
-    frontier.push((
-        cache::compute_sequence_number(transaction, contained_in)?,
-        std::cmp::Reverse(insertion_order),
-        contained_in,
-    ));
+    frontier.push(sequence_number(contained_in)?, contained_in);
 
-    while let Some((_, _, candidate)) = frontier.pop() {
+    while let Some(candidate) = frontier.pop() {
         if !seen.insert(candidate) {
             continue;
         }
@@ -130,12 +125,7 @@ fn find_unapply_base(
             if seen.contains(&parent_id) {
                 continue;
             }
-            insertion_order += 1;
-            frontier.push((
-                cache::compute_sequence_number(transaction, parent_id)?,
-                std::cmp::Reverse(insertion_order),
-                parent_id,
-            ));
+            frontier.push(sequence_number(parent_id)?, parent_id);
         }
     }
 

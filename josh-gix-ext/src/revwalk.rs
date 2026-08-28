@@ -21,7 +21,7 @@
 //! Differential tests pin the yield sets against an independent reference model, and pin
 //! topological validity and order determinism, over fixed shapes and seeded random DAGs.
 
-use std::collections::HashMap;
+use std::collections::{BinaryHeap, HashMap};
 use std::ops::ControlFlow;
 
 type Visit<'v> = &'v mut dyn FnMut(gix_hash::ObjectId) -> anyhow::Result<ControlFlow<()>>;
@@ -238,6 +238,23 @@ impl<'a, S: gix_object::Find + gix_object::FindHeader> RevWalk<'a, S> {
     }
 }
 
+/// A max-heap ordered by generation with stable tie-breaking.
+pub struct GenerationFrontier<T>(BinaryHeap<(u64, std::cmp::Reverse<u64>, T)>, u64);
+impl<T: Ord> GenerationFrontier<T> {
+    pub fn new() -> Self {
+        Self(BinaryHeap::new(), 0)
+    }
+    #[inline(always)]
+    pub fn push(&mut self, generation: u64, value: T) {
+        self.0.push((generation, std::cmp::Reverse(self.1), value));
+        self.1 += 1;
+    }
+    #[inline(always)]
+    pub fn pop(&mut self) -> Option<T> {
+        self.0.pop().map(|(_, _, value)| value)
+    }
+}
+
 /// Probe budget for the fast-forward path of a [`RangeWalk`], after which the
 /// walk switches to the ranked strategy.
 const FAST_FORWARD_PROBE_LIMIT: usize = 1000;
@@ -392,14 +409,9 @@ impl<'a, S: gix_object::Find + gix_object::FindHeader> RangeWalk<'a, S> {
         Ok(None)
     }
 
-    /// The ranked strategy (see the type docs): a max-heap frontier keyed by
-    /// sequence number, ties resolved by insertion order (equal numbers are
-    /// never ancestor-related, so any deterministic order is correct).
     fn ranked_walk(&mut self, tip: usize, base: usize) -> anyhow::Result<Vec<gix_hash::ObjectId>> {
         let seq_of = std::mem::replace(&mut self.sequence_numbers, Box::new(|_| unreachable!()));
-        let mut heap: std::collections::BinaryHeap<(u64, std::cmp::Reverse<u64>, usize)> =
-            std::collections::BinaryHeap::new();
-        let mut seq = 0u64;
+        let mut frontier = GenerationFrontier::new();
         let mut visible_pending = 0usize;
         let mut out = Vec::new();
 
@@ -409,12 +421,11 @@ impl<'a, S: gix_object::Find + gix_object::FindHeader> RangeWalk<'a, S> {
                 self.nodes[c].queued_visible = true;
                 visible_pending += 1;
             }
-            heap.push((seq_of(self.nodes[c].oid)?, std::cmp::Reverse(seq), c));
-            seq += 1;
+            frontier.push(seq_of(self.nodes[c].oid)?, c);
         }
 
         while visible_pending > 0 {
-            let Some((_, _, c)) = heap.pop() else {
+            let Some(c) = frontier.pop() else {
                 break;
             };
             if self.nodes[c].hidden {
@@ -432,8 +443,7 @@ impl<'a, S: gix_object::Find + gix_object::FindHeader> RangeWalk<'a, S> {
                     }
                     if !self.nodes[p].enqueued {
                         self.nodes[p].enqueued = true;
-                        heap.push((seq_of(self.nodes[p].oid)?, std::cmp::Reverse(seq), p));
-                        seq += 1;
+                        frontier.push(seq_of(self.nodes[p].oid)?, p);
                     }
                 }
             } else {
@@ -449,8 +459,7 @@ impl<'a, S: gix_object::Find + gix_object::FindHeader> RangeWalk<'a, S> {
                             self.nodes[p].queued_visible = true;
                             visible_pending += 1;
                         }
-                        heap.push((seq_of(self.nodes[p].oid)?, std::cmp::Reverse(seq), p));
-                        seq += 1;
+                        frontier.push(seq_of(self.nodes[p].oid)?, p);
                     }
                 }
             }
