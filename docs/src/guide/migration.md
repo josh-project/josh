@@ -2,6 +2,40 @@
 
 This page covers breaking changes introduced in recent releases and how to adapt to them.
 
+## `josh pull` moved to `josh changes pull`
+
+*Applies when upgrading from r26.07.28 to r26.08.28.*
+
+The top-level `josh pull` command has moved under `josh changes`. The new command requires Git
+2.41 or newer, always integrates with rebase-style restacking and autostash, and no longer accepts
+`--rebase` or `--autostash`.
+
+**How to migrate:** Upgrade Git to 2.41 or newer, replace `josh pull` with
+`josh changes pull`, and remove the `--rebase` and `--autostash` flags from scripts.
+
+## Pattern-filter construction is fallible
+
+*Applies when upgrading from r26.07.28 to r26.08.28.*
+
+Invalid globs now fail when a pattern filter is constructed rather than when it is first applied.
+The Rust `Filter::pattern` API therefore returns an error result.
+
+**How to migrate:** Update Rust callers to propagate or handle the result from
+`Filter::pattern(...)`, for example with `Filter::pattern(pattern)?`. Validate user-supplied
+patterns at construction time instead of expecting application to report the error.
+
+## Malformed Git trees are preserved instead of normalized
+
+*Applies when upgrading from r26.07.28 to r26.08.28.*
+
+Filtering no longer sorts, deduplicates, or canonicalizes unchanged entries in fsck-invalid Git
+trees. Rebuilt filtered commits can consequently have different object IDs than earlier Josh
+versions when their source history contains malformed trees.
+
+**How to migrate:** Run `git fsck` on source repositories that may contain malformed trees. If
+external systems pin filtered commit IDs from such histories, regenerate those references with
+the new Josh version or replace the malformed source trees with canonical commits.
+
 ## `josh publish` renamed to `josh changes publish`
 
 *Applies when upgrading from r26.05.08 to r26.06.11.*

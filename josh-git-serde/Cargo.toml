@@ -1,6 +1,6 @@
 [package]
 name = "josh-git-serde"
-version = "26.7.28"
+version = "26.8.28"
 repository = "https://github.com/josh-project/josh"
 license-file = "../LICENSE"
 description = "serde serialization of Rust values into git tree objects"

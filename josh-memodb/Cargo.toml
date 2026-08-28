@@ -1,6 +1,6 @@
 [package]
 name = "josh-memodb"
-version = "26.7.28"
+version = "26.8.28"
 repository = "https://ithub.com/josh-project/josh"
 authors = ["Josh Project authors <contact@josh-project.dev>"]
 license-file = "../LICENSE"

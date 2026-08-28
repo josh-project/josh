@@ -4188,7 +4188,7 @@ dependencies = [
 
 [[package]]
 name = "josh-changes"
-version = "26.7.28"
+version = "26.8.28"
 dependencies = [
  "anyhow",
  "chrono",
@@ -4201,7 +4201,7 @@ dependencies = [
 
 [[package]]
 name = "josh-command-middleware"
-version = "26.7.28"
+version = "26.8.28"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -4211,7 +4211,7 @@ dependencies = [
 
 [[package]]
 name = "josh-core"
-version = "26.7.28"
+version = "26.8.28"
 dependencies = [
  "anyhow",
  "backtrace",
@@ -4251,7 +4251,7 @@ dependencies = [
 
 [[package]]
 name = "josh-filter"
-version = "26.7.28"
+version = "26.8.28"
 dependencies = [
  "anyhow",
  "gix-hash",
@@ -4270,7 +4270,7 @@ dependencies = [
 
 [[package]]
 name = "josh-git-serde"
-version = "26.7.28"
+version = "26.8.28"
 dependencies = [
  "anyhow",
  "gix-hash",
@@ -4282,7 +4282,7 @@ dependencies = [
 
 [[package]]
 name = "josh-github-auth"
-version = "26.7.28"
+version = "26.8.28"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -4305,7 +4305,7 @@ dependencies = [
 
 [[package]]
 name = "josh-github-changes"
-version = "26.7.28"
+version = "26.8.28"
 dependencies = [
  "anyhow",
  "gix-hash",
@@ -4320,7 +4320,7 @@ dependencies = [
 
 [[package]]
 name = "josh-github-codegen-graphql"
-version = "26.7.28"
+version = "26.8.28"
 dependencies = [
  "anyhow",
  "chrono",
@@ -4336,7 +4336,7 @@ dependencies = [
 
 [[package]]
 name = "josh-github-graphql"
-version = "26.7.28"
+version = "26.8.28"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -4355,7 +4355,7 @@ dependencies = [
 
 [[package]]
 name = "josh-github-webhooks"
-version = "26.7.28"
+version = "26.8.28"
 dependencies = [
  "axum",
  "chrono",
@@ -4372,7 +4372,7 @@ dependencies = [
 
 [[package]]
 name = "josh-gix-ext"
-version = "26.7.28"
+version = "26.8.28"
 dependencies = [
  "anyhow",
  "gix-actor",
@@ -4407,7 +4407,7 @@ dependencies = [
 
 [[package]]
 name = "josh-memodb"
-version = "26.7.28"
+version = "26.8.28"
 dependencies = [
  "anyhow",
  "gix-features",
@@ -4423,7 +4423,7 @@ dependencies = [
 
 [[package]]
 name = "josh-search"
-version = "26.7.28"
+version = "26.8.28"
 dependencies = [
  "anyhow",
  "gix-hash",
@@ -4433,7 +4433,7 @@ dependencies = [
 
 [[package]]
 name = "josh-starlark"
-version = "26.7.28"
+version = "26.8.28"
 dependencies = [
  "allocative",
  "anyhow",
