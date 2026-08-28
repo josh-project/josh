@@ -299,8 +299,8 @@ impl Drop for Transaction {
         }
 
         // Objects first, refs second: a ref that reaches disk must never point at an object
-        // only memory holds. A flush error is logged and the refs written anyway -- the same
-        // end state as before, where refs were already on disk by the time the flush ran.
+        // only memory holds. Repository maintenance preserves unreachable objects during the
+        // publication gap; see `josh_memodb::pack::write_snapshot`.
         let publishes_object = self.pending_refs.borrow().iter().any(|edit| {
             matches!(
                 &edit.change,
@@ -310,11 +310,19 @@ impl Drop for Transaction {
                 }
             )
         });
-        if publishes_object && let Err(e) = self.mem_odb.flush() {
-            log::error!("failed to flush in-memory object store: {e}");
-        }
-        if let Err(e) = self.apply_pending_refs() {
-            log::error!("failed to write pending ref updates: {e}");
+        let objects_are_durable = if publishes_object {
+            match self.mem_odb.flush() {
+                Ok(()) => true,
+                Err(error) => {
+                    log::error!("failed to flush in-memory object store: {error}");
+                    false
+                }
+            }
+        } else {
+            true
+        };
+        if objects_are_durable && let Err(error) = self.apply_pending_refs() {
+            log::error!("failed to write pending ref updates: {error}");
         }
     }
 }
@@ -2280,6 +2288,25 @@ mod tests {
             disk_blob(dir.path(), oid).as_deref(),
             Some(b"published".as_slice())
         );
+    }
+
+    #[test]
+    fn failed_object_flush_does_not_publish_ref() {
+        let (dir, context) = test_context();
+        {
+            let transaction = context.open().unwrap();
+            let oid = transaction
+                .odb()
+                .write(gix_object::Kind::Blob, b"cannot publish");
+            transaction
+                .update_ref("refs/josh/blob", Expected::Absent, oid, "test")
+                .unwrap();
+            let pack_dir = dir.path().join("objects").join("pack");
+            std::fs::remove_dir(&pack_dir).unwrap();
+            std::fs::write(pack_dir, b"not a directory").unwrap();
+        }
+
+        assert!(!dir.path().join("refs/josh/blob").exists());
     }
 
     /// An explicit disk-reader boundary has the same ordering as drop: object first, ref second.

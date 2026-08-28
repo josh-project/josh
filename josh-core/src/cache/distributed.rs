@@ -40,8 +40,8 @@ pub struct DistributedCacheBackend {
 
 impl Drop for DistributedCacheBackend {
     fn drop(&mut self) {
-        if !self.flush(true).is_ok() {
-            log::warn!("DistributedCacheBackend: flush failed");
+        if let Err(error) = self.flush(true) {
+            log::warn!("DistributedCacheBackend: flush failed: {error}");
         }
     }
 }
