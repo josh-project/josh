@@ -30,6 +30,7 @@ members = [
     "forges/josh-github-webhooks",
     "forges/josh-github-auth",
     "forges/josh-github-keyring",
+    "forges/josh-gerrit-changes",
 
     "deployment/josh-test-webhook-client",
     "deployment/josh-test-webhook-service",
@@ -126,6 +127,7 @@ josh-github-codegen-graphql = { path = "forges/josh-github-codegen-graphql", ver
 josh-github-webhooks = { path = "forges/josh-github-webhooks", version = "26.8.28" }
 josh-github-auth = { path = "forges/josh-github-auth", version = "26.8.28" }
 josh-github-keyring = { path = "forges/josh-github-keyring", version = "26.8.28" }
+josh-gerrit-changes = { path = "forges/josh-gerrit-changes", version = "26.8.28" }
 
 josh-cq-test-components = { path = "cq/josh-cq-test-components", version = "26.8.28" }
 
@@ -219,6 +221,7 @@ josh-github-codegen-graphql = { path = "forges/josh-github-codegen-graphql" }
 josh-github-webhooks = { path = "forges/josh-github-webhooks" }
 josh-github-auth = { path = "forges/josh-github-auth" }
 josh-github-keyring = { path = "forges/josh-github-keyring" }
+josh-gerrit-changes = { path = "forges/josh-gerrit-changes" }
 josh-cq-test-components = { path = "cq/josh-cq-test-components" }
 josh-test-webhook-service = { path = "deployment/josh-test-webhook-service" }
 josh-test-webhook-client = { path = "deployment/josh-test-webhook-client" }

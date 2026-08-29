@@ -1,6 +1,5 @@
 //! Stacked-changes push machinery: deciding which refs a push must create or
-//! update. Handles `refs/for`/`refs/drafts`/`refs/publish/for` ref syntax and
-//! is used by both the GitHub-style stacked-refs flow and the Gerrit flow.
+//! update.
 
 use crate::change::{Change, get_changes, split_changes};
 use crate::refs::{StackedChangeRef, StackedRef};
@@ -18,35 +17,6 @@ pub struct PushRef {
     pub ref_name: String,
     pub oid: gix_hash::ObjectId,
     pub change_id: String,
-}
-
-pub fn baseref_and_options(
-    refname: &str,
-    author: &str,
-) -> anyhow::Result<(String, String, Vec<String>, PushMode)> {
-    let mut split = refname.splitn(2, '%');
-    let push_to = split.next().ok_or(anyhow!("no next"))?.to_owned();
-
-    let options = if let Some(options) = split.next() {
-        options.split(',').map(|x| x.to_string()).collect()
-    } else {
-        vec![]
-    };
-
-    let mut baseref = push_to.to_owned();
-    let mut push_mode = PushMode::Normal;
-
-    if baseref.starts_with("refs/for") {
-        baseref = baseref.replacen("refs/for", "refs/heads", 1)
-    }
-    if baseref.starts_with("refs/drafts") {
-        baseref = baseref.replacen("refs/drafts", "refs/heads", 1)
-    }
-    if baseref.starts_with("refs/publish/for") {
-        push_mode = PushMode::Publish(author.to_string());
-        baseref = baseref.replacen("refs/publish/for", "refs/heads", 1)
-    }
-    Ok((baseref, push_to, options, push_mode))
 }
 
 pub(crate) fn changes_to_refs(

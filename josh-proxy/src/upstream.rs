@@ -5,8 +5,9 @@ use anyhow::{Context, anyhow};
 use backon::BackoffBuilder;
 use std::str::FromStr;
 
-use josh_changes::{PushMode, baseref_and_options, build_to_push};
+use josh_changes::{PushMode, build_to_push};
 use josh_core::cache::{CacheStack, TransactionContext};
+use josh_gerrit_changes::baseref_and_options;
 
 use std::path::PathBuf;
 use std::sync::Arc;

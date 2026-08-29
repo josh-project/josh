@@ -3330,6 +3330,7 @@ dependencies = [
  "josh-compose",
  "josh-compose-podman",
  "josh-core",
+ "josh-gerrit-changes",
  "josh-github-auth",
  "josh-github-changes",
  "josh-github-graphql",
@@ -3490,6 +3491,16 @@ dependencies = [
  "regex",
  "serde_json",
  "smallvec",
+]
+
+[[package]]
+name = "josh-gerrit-changes"
+version = "26.8.28"
+dependencies = [
+ "anyhow",
+ "gix-hash",
+ "josh-changes",
+ "josh-core",
 ]
 
 [[package]]
@@ -3702,6 +3713,7 @@ dependencies = [
  "indoc",
  "josh-changes",
  "josh-core",
+ "josh-gerrit-changes",
  "josh-graphql",
  "josh-rpc",
  "josh-templates",

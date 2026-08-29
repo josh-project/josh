@@ -213,14 +213,14 @@ fn prepare_push(
     // relation chain.
     let to_push = match (forge, push_mode) {
         (Some(Forge::Gerrit), PushMode::Publish(_)) => match gerrit_mode {
-            GerritMode::Independent => josh_changes::build_gerrit_independent_push(
+            GerritMode::Independent => josh_gerrit_changes::build_gerrit_independent_push(
                 transaction,
                 remote_ref,
                 unfiltered_oid,
                 original_target,
             )
             .context("Failed to build Gerrit push")?,
-            GerritMode::Stack => josh_changes::build_gerrit_push(
+            GerritMode::Stack => josh_gerrit_changes::build_gerrit_push(
                 transaction,
                 remote_ref,
                 unfiltered_oid,

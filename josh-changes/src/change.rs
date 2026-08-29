@@ -116,7 +116,7 @@ pub fn create_synthetic_merge_commit(
     )
 }
 
-pub(crate) fn split_changes(
+pub fn split_changes(
     transaction: &josh_core::cache::Transaction,
     changes: std::collections::HashMap<gix_hash::ObjectId, Change>,
 ) -> anyhow::Result<Vec<Change>> {
@@ -138,7 +138,7 @@ pub(crate) fn split_changes(
         .collect()
 }
 
-pub(crate) fn get_changes(
+pub fn get_changes(
     transaction: &josh_core::cache::Transaction,
     tip: gix_hash::ObjectId,
     base: gix_hash::ObjectId,
