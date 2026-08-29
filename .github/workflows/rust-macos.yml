@@ -1,0 +1,52 @@
+name: rust-macos
+
+on:
+  pull_request:
+    branches: [ '**' ]
+    types: [ labeled ]
+  release:
+    types: [ published ]
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  macos:
+    runs-on: macos-15
+    name: macOS arm64
+    if: >-
+      github.event_name == 'release' ||
+      (
+        github.event_name == 'pull_request' &&
+        github.event.action == 'labeled' &&
+        github.event.pull_request.draft == false &&
+        contains(github.event.pull_request.labels.*.name, 'build-release-macos')
+      )
+    # Only the release-attach step writes; label runs never do.
+    permissions:
+      contents: write
+    steps:
+    - name: Checkout
+      uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+    # Keep the toolchain version in sync with rust-toolchain.toml.
+    - name: Install Rust toolchain
+      uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772 # stable
+      with:
+        toolchain: "1.95.0"
+    # No sccache: these runs are release- or label-gated, so every run is on a
+    # fresh ephemeral runner and a disk cache would never be reused.
+    - name: Build release josh
+      run: cargo build --locked --release -p josh-cli --bin josh
+    - name: Smoke test binary
+      run: ./target/release/josh --version
+    # Asset name matches Formula/josh.rb: the url interpolates the tag-stripped
+    # version and brew fetches the bare binary with using: :nounzip.
+    - name: Attach binary to the release
+      if: github.event_name == 'release'
+      env:
+        GH_TOKEN: ${{ github.token }}
+        RELEASE_TAG: ${{ github.event.release.tag_name }}
+      run: |
+        version="${RELEASE_TAG#r}"
+        cp target/release/josh "josh-$version-aarch64-apple-darwin"
+        gh release upload "$RELEASE_TAG" "josh-$version-aarch64-apple-darwin" --clobber --repo "$GITHUB_REPOSITORY"
