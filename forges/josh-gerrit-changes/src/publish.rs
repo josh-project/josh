@@ -1,10 +1,12 @@
-use crate::change::{Change, get_changes, split_changes};
-use crate::stacked::PushRef;
+use josh_changes::{Change, PushRef, get_changes, split_changes};
 
 /// A valid Gerrit Change-Id is the letter `I` followed by 40 hex digits.
 fn is_gerrit_change_id(id: &str) -> bool {
     let bytes = id.as_bytes();
-    bytes.len() == 41 && bytes[0] == b'I' && bytes[1..].iter().all(u8::is_ascii_hexdigit)
+    let Some((prefix, rest)) = bytes.split_first() else {
+        return false;
+    };
+    *prefix == b'I' && rest.len() == 40 && rest.iter().all(u8::is_ascii_hexdigit)
 }
 
 /// Map a josh change id to a Gerrit-format Change-Id (`I` + 40 hex).
@@ -172,18 +174,18 @@ pub fn build_gerrit_independent_push(
 
     // `get_changes` collects into a HashMap, so sort for a deterministic push order.
     let mut changes: Vec<Change> = changes.into_iter().collect();
-    changes.sort_by_key(|c| c.commit);
+    changes.sort_by_key(|c| c.commit());
 
     let ref_name = format!("refs/for/{}", branch);
     let mut refs = Vec::new();
     for change in changes {
-        let Some(josh_id) = change.id.clone() else {
+        let Some(josh_id) = change.id().map(|s| s.to_string()) else {
             continue;
         };
 
         // A change has no dependencies when its split commit sits directly on
         // the target base (nothing else was pulled in below it by `downstack`).
-        let parent = josh_core::objects::CommitData::read(odb, change.commit)?
+        let parent = josh_core::objects::CommitData::read(odb, change.commit())?
             .parent_ids()
             .next();
         let has_no_deps = if base == gix_hash::ObjectId::null(gix_hash::Kind::Sha1) {
@@ -196,7 +198,7 @@ pub fn build_gerrit_independent_push(
         }
 
         let gerrit_id = gerrit_change_id(&josh_id)?;
-        let new_tip = rewrite_chain_with_gerrit_ids(transaction, change.commit, base)?;
+        let new_tip = rewrite_chain_with_gerrit_ids(transaction, change.commit(), base)?;
         refs.push(PushRef {
             ref_name: ref_name.clone(),
             oid: new_tip,

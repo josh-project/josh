@@ -1,0 +1,16 @@
+[package]
+name = "josh-gerrit-changes"
+version = "26.8.28"
+edition = "2024"
+authors = ["Josh Project authors <contact@josh-project.dev>"]
+description = "Gerrit change tracking for Josh"
+license-file = "../../LICENSE"
+repository = "https://github.com/josh-project/josh"
+keywords = ["git", "gerrit", "monorepo", "workflow", "scm"]
+
+[dependencies]
+anyhow.workspace = true
+gix-hash.workspace = true
+
+josh-changes.workspace = true
+josh-core.workspace = true
