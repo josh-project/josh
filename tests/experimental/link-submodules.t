@@ -388,10 +388,10 @@ Test Adapt with submodule changes - add commits to submodule and update
   [2] :unapply(e1d45e29c75aca63c80d13d82216ccfad39af822:/libs)
   [3] :prefix=libs
   [4] ::.link.josh
+  [4] :export
   [4] :unapply(ded577ab7e4ed784dfd17e7c2d184fe667e24eae:/libs)
   [5] :"{@}"
   [5] :adapt=submodules
-  [5] :export
   [5] :link=embedded
   [6] :prune=trivial-merge
   [12] :/libs
@@ -414,10 +414,10 @@ Test Adapt with submodule changes - add commits to submodule and update
   [2] :unapply(e1d45e29c75aca63c80d13d82216ccfad39af822:/libs)
   [3] :prefix=libs
   [4] ::.link.josh
+  [4] :export
   [4] :unapply(ded577ab7e4ed784dfd17e7c2d184fe667e24eae:/libs)
   [5] :"{@}"
   [5] :adapt=submodules
-  [5] :export
   [5] :link=embedded
   [6] :prune=trivial-merge
   [12] :/libs
@@ -439,10 +439,10 @@ Test Adapt with submodule changes - add commits to submodule and update
   [3] :prefix=libs
   [4] :/another
   [4] ::.link.josh
+  [4] :export
   [4] :unapply(ded577ab7e4ed784dfd17e7c2d184fe667e24eae:/libs)
   [5] :"{@}"
   [5] :adapt=submodules
-  [5] :export
   [5] :link=embedded
   [6] :prune=trivial-merge
   [9] :/modules
@@ -464,10 +464,10 @@ Test Adapt with submodule changes - add commits to submodule and update
   [3] :prefix=libs
   [4] :/another
   [4] ::.link.josh
+  [4] :export
   [4] :unapply(ded577ab7e4ed784dfd17e7c2d184fe667e24eae:/libs)
   [5] :"{@}"
   [5] :adapt=submodules
-  [5] :export
   [5] :link=embedded
   [6] :prune=trivial-merge
   [9] :/modules
@@ -511,8 +511,8 @@ Test Adapt with submodule changes - add commits to submodule and update
   [4] :unapply(ded577ab7e4ed784dfd17e7c2d184fe667e24eae:/libs)
   [5] :"{@}"
   [5] :adapt=submodules
+  [5] :export
   [5] :link=embedded
-  [6] :export
   [7] :prune=trivial-merge
   [9] :/modules
   [13] :/libs
@@ -551,8 +551,8 @@ Test Adapt with submodule changes - add commits to submodule and update
   [4] :unapply(ded577ab7e4ed784dfd17e7c2d184fe667e24eae:/libs)
   [5] :"{@}"
   [5] :adapt=submodules
+  [5] :export
   [5] :link=embedded
-  [6] :export
   [7] :prefix=libs
   [7] :prune=trivial-merge
   [9] :/modules

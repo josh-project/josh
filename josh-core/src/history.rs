@@ -737,12 +737,52 @@ pub fn create_filtered_commit_with_meta(
     filter: filter::Filter,
     meta: std::collections::BTreeMap<String, String>,
 ) -> anyhow::Result<gix_hash::ObjectId> {
+    create_filtered_commit_with_meta2(
+        original_commit,
+        filtered_parent_ids,
+        rewrite_data,
+        transaction,
+        filter,
+        meta,
+        false,
+    )
+}
+
+pub(crate) fn create_filtered_commit_with_forced_parents(
+    original_commit: &objects::CommitData,
+    filtered_parent_ids: Vec<gix_hash::ObjectId>,
+    rewrite_data: filter::Rewrite,
+    transaction: &cache::Transaction,
+    filter: filter::Filter,
+    meta: std::collections::BTreeMap<String, String>,
+) -> anyhow::Result<gix_hash::ObjectId> {
+    create_filtered_commit_with_meta2(
+        original_commit,
+        filtered_parent_ids,
+        rewrite_data,
+        transaction,
+        filter,
+        meta,
+        true,
+    )
+}
+
+fn create_filtered_commit_with_meta2(
+    original_commit: &objects::CommitData,
+    filtered_parent_ids: Vec<gix_hash::ObjectId>,
+    rewrite_data: filter::Rewrite,
+    transaction: &cache::Transaction,
+    filter: filter::Filter,
+    meta: std::collections::BTreeMap<String, String>,
+    force_parents: bool,
+) -> anyhow::Result<gix_hash::ObjectId> {
     let (r, is_new) = create_filtered_commit2(
         transaction,
         original_commit,
         filtered_parent_ids,
         rewrite_data,
         meta,
+        force_parents,
     )?;
 
     let store = is_new || original_commit.parent_count() != 1;
@@ -775,6 +815,7 @@ fn create_filtered_commit2(
     filtered_parent_ids: Vec<gix_hash::ObjectId>,
     rewrite_data: filter::Rewrite,
     options: BTreeMap<String, String>,
+    force_parents: bool,
 ) -> anyhow::Result<(gix_hash::ObjectId, bool)> {
     let odb = transaction.odb();
     let mut filtered_parents: Vec<(gix_hash::ObjectId, gix_hash::ObjectId)> = filtered_parent_ids
@@ -815,10 +856,12 @@ fn create_filtered_commit2(
         filtered_parents.truncate(1);
     }
 
-    if !history_flag(
-        options.get("history").map(String::as_str),
-        "keep-trivial-merges",
-    ) {
+    if !force_parents
+        && !history_flag(
+            options.get("history").map(String::as_str),
+            "keep-trivial-merges",
+        )
+    {
         if filtered_parents.len() > 1 {
             let is_trivial_merge = filtered_parents[0].1 == rewrite_data.tree_id();
             // No first parent is not a trivial merge; a present first parent
@@ -835,12 +878,16 @@ fn create_filtered_commit2(
         }
     }
 
-    let selected_filtered_parent_ids: Vec<gix_hash::ObjectId> = select_parent_commits(
-        odb,
-        original_commit,
-        rewrite_data.tree_id(),
-        &filtered_parents,
-    )?;
+    let selected_filtered_parent_ids: Vec<gix_hash::ObjectId> = if force_parents {
+        filtered_parents.iter().map(|(oid, _)| *oid).collect()
+    } else {
+        select_parent_commits(
+            odb,
+            original_commit,
+            rewrite_data.tree_id(),
+            &filtered_parents,
+        )?
+    };
 
     if selected_filtered_parent_ids.is_empty()
         && !(original_commit.parent_count() == 0

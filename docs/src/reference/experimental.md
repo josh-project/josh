@@ -21,6 +21,9 @@ Reads the object ID stored directly in the gitlink at `path` and replaces the gi
 object it identifies. Blob and tree IDs restore the corresponding file or directory written by
 `:&path`. A commit ID is treated as a submodule reference: the commit's tree is restored at
 `path`, and pointer updates merge the referenced commit history into the filtered history.
+Changes made after a `:#path` submodule was inlined can be extracted with
+`:/path:export`. The exported history is a fast-forward of the referenced
+submodule commit and can be pushed upstream. Updating the superproject gitlink is a separate change.
 
 If `path` does not exist the filter is a no-op. If the entry is not a gitlink or the referenced
 object is not present in the repository, an error is returned.
