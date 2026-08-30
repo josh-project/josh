@@ -6,7 +6,6 @@ use josh_cli::commands::cache::CacheArgs;
 use josh_cli::commands::changes::{DepsArgs, ListArgs, ShowArgs};
 use josh_cli::commands::comment::CommentArgs;
 use josh_cli::commands::fetch::FetchArgs;
-use josh_cli::commands::link::LinkArgs;
 use josh_cli::commands::pull::PullArgs;
 use josh_cli::commands::push::{PublishArgs, PushArgs};
 use josh_cli::commands::run::ComposeArgs;
@@ -60,9 +59,6 @@ pub enum RepoCommand {
 
     /// Apply filtering to existing refs (like `josh fetch` but without fetching)
     Filter(FilterArgs),
-
-    /// Manage josh links (like `josh remote` but for links)
-    Link(LinkArgs),
 
     /// Manage the distributed filter cache
     Cache(CacheArgs),
@@ -317,7 +313,6 @@ fn run_repo(cmd: &RepoCommand, distributed_cache: bool) -> anyhow::Result<()> {
         },
         RepoCommand::Remote(args) => handle_remote(args, &transaction),
         RepoCommand::Filter(args) => handle_filter(args, &transaction),
-        RepoCommand::Link(args) => josh_cli::commands::link::handle_link(args, &transaction),
         RepoCommand::Compose(args) => josh_cli::commands::run::handle_compose(args, &transaction),
         RepoCommand::Cache(args) => josh_cli::commands::cache::handle_cache(args, &transaction),
     }

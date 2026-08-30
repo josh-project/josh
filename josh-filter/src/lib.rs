@@ -8,7 +8,6 @@ pub mod persist;
 pub use filter::{Filter, compose};
 pub use flang::parse;
 pub use flang::{as_file, pretty, spec};
-pub use op::LinkMode;
 pub use op::{InsertContent, LazyRef, Op, Regex, RevMatch};
 
 static EXPERIMENTAL_FEATURES: std::sync::LazyLock<bool> =

@@ -201,7 +201,7 @@ impl Filter {
         Ok(self.chain(to_filter(Op::Insert(path.into(), InsertContent::Oid(oid)))))
     }
 
-    /// Chain a filter that removes the `.link.josh` marker to produce a standalone history
+    /// Chain the history-only export filter used to extract spliced history.
     pub fn export(self) -> anyhow::Result<Filter> {
         check_experimental_features_enabled("export filter")?;
         Ok(self.chain(to_filter(Op::Export)))
