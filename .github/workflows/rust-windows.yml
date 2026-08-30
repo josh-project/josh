@@ -9,6 +9,16 @@ on:
   merge_group:
   release:
     types: [published]
+  # Catch-up path for releases published before the winget jobs existed: the
+  # same packaging as a release run, but nothing is uploaded to the release
+  # (the winget-release job below stays release-only); the artifacts are for
+  # manual release attachment instead.
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Release tag (rNN.NN.NN); defaults to the last tag in the repo'
+        required: false
+        default: ''
 
 env:
   CARGO_TERM_COLOR: always
@@ -128,12 +138,15 @@ jobs:
     - name: Functional tests
       run: pwsh tests/windows/run.ps1 target/debug -PathForms
     # WinGet packaging, mirroring build-release-container in release.yml:
-    # release publications and PRs gated on the build-release-winget label.
+    # release publications, PRs gated on the build-release-winget label, and
+    # workflow_dispatch catch-up runs for releases that predate the job.
     # Label runs are validation-only; release runs additionally get their zips
-    # uploaded to the release by the winget-release job below.
+    # uploaded to the release by the winget-release job below, while dispatch
+    # runs stop at the artifacts for manual release attachment.
     - name: Build release josh.exe
       if: >-
         github.event_name == 'release' ||
+        github.event_name == 'workflow_dispatch' ||
         (
           github.event_name == 'pull_request' &&
           github.event.action == 'labeled' &&
@@ -143,6 +156,7 @@ jobs:
     - name: Fetch full history
       if: >-
         github.event_name == 'release' ||
+        github.event_name == 'workflow_dispatch' ||
         (
           github.event_name == 'pull_request' &&
           github.event.action == 'labeled' &&
@@ -159,6 +173,7 @@ jobs:
     - name: Package for WinGet
       if: >-
         github.event_name == 'release' ||
+        github.event_name == 'workflow_dispatch' ||
         (
           github.event_name == 'pull_request' &&
           github.event.action == 'labeled' &&
@@ -166,14 +181,16 @@ jobs:
         )
       shell: pwsh
       env:
-        RELEASE_TAG: ${{ github.event.release.tag_name }}
+        RELEASE_TAG: ${{ github.event.release.tag_name || inputs.tag }}
       run: |
-        # Label runs have no release tag: fall back to the last one in the repo.
+        # Label and dispatch runs may have no release tag: fall back to the
+        # last one in the repo.
         $tag = if ($env:RELEASE_TAG) { $env:RELEASE_TAG } else { git describe --tags --abbrev=0 }
         packaging/winget/package.ps1 -Tag $tag
     - name: Upload WinGet package
       if: >-
         github.event_name == 'release' ||
+        github.event_name == 'workflow_dispatch' ||
         (
           github.event_name == 'pull_request' &&
           github.event.action == 'labeled' &&
@@ -192,9 +209,12 @@ jobs:
     name: WinGet manifests
     needs: windows
     if: >-
-      github.event_name == 'pull_request' &&
-      github.event.action == 'labeled' &&
-      contains(github.event.pull_request.labels.*.name, 'build-release-winget')
+      github.event_name == 'workflow_dispatch' ||
+      (
+        github.event_name == 'pull_request' &&
+        github.event.action == 'labeled' &&
+        contains(github.event.pull_request.labels.*.name, 'build-release-winget')
+      )
     steps:
     # Only the manifest generator is needed here; the package artifacts arrive
     # via the download step below.

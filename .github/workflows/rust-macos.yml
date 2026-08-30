@@ -6,6 +6,15 @@ on:
     types: [ labeled ]
   release:
     types: [ published ]
+  # Catch-up path for releases published before this workflow existed: the
+  # same build as a release run, but the binary lands as a runner artifact
+  # for manual release attachment instead of being uploaded directly.
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version in the asset name, tag-stripped (e.g. 26.08.28)'
+        required: false
+        default: ''
 
 env:
   CARGO_TERM_COLOR: always
@@ -16,29 +25,59 @@ jobs:
     name: macOS arm64
     if: >-
       github.event_name == 'release' ||
+      github.event_name == 'workflow_dispatch' ||
       (
         github.event_name == 'pull_request' &&
         github.event.action == 'labeled' &&
         github.event.pull_request.draft == false &&
         contains(github.event.pull_request.labels.*.name, 'build-release-macos')
       )
-    # Only the release-attach step writes; label runs never do.
+    # Only the release-attach step writes; label and dispatch runs never do.
     permissions:
       contents: write
     steps:
     - name: Checkout
       uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      with:
+        # Non-release runs derive the version from the last release tag
+        # below; release runs take the version from the event's tag itself.
+        fetch-depth: 0
     # Keep the toolchain version in sync with rust-toolchain.toml.
     - name: Install Rust toolchain
       uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772 # stable
       with:
         toolchain: "1.95.0"
-    # No sccache: these runs are release- or label-gated, so every run is on a
-    # fresh ephemeral runner and a disk cache would never be reused.
+    # No sccache: these runs are release-, label-, or dispatch-gated, so every
+    # run is on a fresh ephemeral runner and a disk cache would never be reused.
     - name: Build release josh
       run: cargo build --locked --release -p josh-cli --bin josh
     - name: Smoke test binary
       run: ./target/release/josh --version
+    # Non-release runs: version from the input, else the last release tag in
+    # the repo -- the same fallback the winget label runs use.
+    - name: Determine version
+      if: github.event_name != 'release'
+      env:
+        VERSION_INPUT: ${{ inputs.version }}
+      run: |
+        version="$VERSION_INPUT"
+        if [ -z "$version" ]; then
+          version="$(git describe --tags --abbrev=0)"
+          version="${version#r}"
+        fi
+        echo "JOSH_VERSION=$version" >> "$GITHUB_ENV"
+    # Release runs attach below; label and dispatch runs hand the same
+    # binary over as an artifact for manual attachment instead.
+    - name: Name binary for the release asset
+      if: github.event_name != 'release'
+      run: cp target/release/josh "josh-$JOSH_VERSION-aarch64-apple-darwin"
+    - name: Upload binary artifact
+      if: github.event_name != 'release'
+      uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      with:
+        name: macos-arm64-binary
+        path: josh-*-aarch64-apple-darwin
+        if-no-files-found: error
     # Asset name matches Formula/josh.rb: the url interpolates the tag-stripped
     # version and brew fetches the bare binary with using: :nounzip.
     - name: Attach binary to the release
