@@ -6,12 +6,11 @@ class Josh < Formula
 
   # Prebuilt darwin binary attached to the GitHub release by rust-macos.yml.
   # Formula updates are manual: bump the `version` line and the checksum; the
-  # url interpolates from `version`. Until the first macOS-enabled release,
-  # the checksum below is a placeholder and the formula is not installable.
+  # url interpolates from `version`.
   if OS.mac? && Hardware::CPU.arm?
     url "https://github.com/josh-project/josh/releases/download/r#{version}/josh-#{version}-aarch64-apple-darwin",
         using: :nounzip
-    sha256 "0000000000000000000000000000000000000000000000000000000000000000"
+    sha256 "e8d0904222e2c129e13e4ca45616bb0f9dae43f3f8d7d7a0e051607c0f33f0e6"
   end
 
   livecheck do
