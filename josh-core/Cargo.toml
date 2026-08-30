@@ -70,7 +70,6 @@ gix.workspace = true
 gix-actor.workspace = true
 gix-object.workspace = true
 gix-config.workspace = true
-gix-submodule.workspace = true
 gix-hash.workspace = true
 hex.workspace = true
 log.workspace = true

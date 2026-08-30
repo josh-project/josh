@@ -406,10 +406,6 @@ impl<'a> InMemoryBuilder<'a> {
                 ]);
                 push_tree_entries(&mut entries, [("file", params_tree)]);
             }
-            Op::Embed(path) => {
-                let params_tree = self.build_str_params(&[path.to_string_lossy().as_ref()]);
-                push_tree_entries(&mut entries, [("embed", params_tree)]);
-            }
             Op::Pattern(glob) => {
                 let params_tree = self.build_str_params(&[glob.as_str()]);
                 push_tree_entries(&mut entries, [("pattern", params_tree)]);
@@ -453,19 +449,6 @@ impl<'a> InMemoryBuilder<'a> {
             Op::Paths => {
                 let blob = self.write_blob(b"");
                 push_blob_entries(&mut entries, [("paths", blob)]);
-            }
-            Op::Link(mode) => {
-                let mode_str = mode.as_ref().map(|m| m.to_string()).unwrap_or_default();
-                let params_tree = self.build_str_params(&[&mode_str]);
-                push_tree_entries(&mut entries, [("link", params_tree)]);
-            }
-            Op::Adapt(mode) => {
-                let params_tree = self.build_str_params(&[mode.as_ref()]);
-                push_tree_entries(&mut entries, [("adapt", params_tree)]);
-            }
-            Op::Unlink => {
-                let blob = self.write_blob(b"");
-                push_blob_entries(&mut entries, [("unlink", blob)]);
             }
             Op::Invert => {
                 let blob = self.write_blob(b"");
@@ -739,32 +722,6 @@ fn from_tree2(src: &impl gix_object::Find, tree_oid: gix_hash::ObjectId) -> anyh
             let _ = Blob::read(src, entry.id())?;
             Ok(Op::Export)
         }
-        "link" => {
-            let inner = PersistedTree::read(src, entry.id())?;
-            let mode_blob =
-                Blob::read(src, inner.get_name("0").context("link: missing mode")?.id())?;
-            let mode_str = std::str::from_utf8(mode_blob.content())?;
-            let mode = if mode_str.is_empty() {
-                None
-            } else {
-                Some(crate::op::LinkMode::parse(mode_str)?)
-            };
-            Ok(Op::Link(mode))
-        }
-        "adapt" => {
-            let inner = PersistedTree::read(src, entry.id())?;
-            let mode_blob = Blob::read(
-                src,
-                inner.get_name("0").context("adapt: missing mode")?.id(),
-            )?;
-            Ok(Op::Adapt(
-                std::str::from_utf8(mode_blob.content())?.to_string(),
-            ))
-        }
-        "unlink" => {
-            let _ = Blob::read(src, entry.id())?;
-            Ok(Op::Unlink)
-        }
         "invert" => {
             let _ = Blob::read(src, entry.id())?;
             Ok(Op::Invert)
@@ -915,15 +872,6 @@ fn from_tree2(src: &impl gix_object::Find, tree_oid: gix_hash::ObjectId) -> anyh
                 std::path::PathBuf::from(dest_path_str),
                 std::path::PathBuf::from(source_path_str),
             ))
-        }
-        "embed" => {
-            let inner = PersistedTree::read(src, entry.id())?;
-            let path_blob = Blob::read(
-                src,
-                inner.get_name("0").context("embed: missing path")?.id(),
-            )?;
-            let path = std::str::from_utf8(path_blob.content())?;
-            Ok(Op::Embed(std::path::PathBuf::from(path)))
         }
         "pattern" => {
             let inner = PersistedTree::read(src, entry.id())?;

@@ -9,7 +9,6 @@ use std::str::FromStr;
 use std::sync::LazyLock;
 
 // Re-export from josh-filter
-pub use josh_filter::LinkMode;
 pub use josh_filter::filter::MESSAGE_MATCH_ALL_REGEX;
 pub use josh_filter::filter::index;
 pub use josh_filter::filter::reachable_roots;
@@ -495,37 +494,6 @@ fn get_filter(
     }
 }
 
-fn read_josh_link(
-    transaction: &cache::Transaction,
-    odb: &josh_memodb::Odb,
-    reader: &tree::TreeReader,
-    root: &std::path::Path,
-    filename: &str,
-) -> Option<Filter> {
-    use anyhow::Context;
-
-    let link_path = root.join(filename);
-    let link_entry = tree::get_path_entry_at(transaction, odb, reader, &link_path)
-        .ok()
-        .flatten()?;
-    let link_blob = tree::blob_bytes(odb, link_entry.oid)?;
-    let b = std::str::from_utf8(&link_blob)
-        .with_context(|| format!("invalid utf8 in {}", filename))
-        .ok()?;
-
-    // Parse the filter string
-    let filter = parse(b.trim())
-        .with_context(|| format!("invalid filter in {}", filename))
-        .ok()?;
-
-    // Validate that it has required metadata for a link file
-    if filter.get_meta("remote").is_none() || filter.get_meta("commit").is_none() {
-        return None;
-    }
-
-    Some(filter)
-}
-
 fn get_rev_filter(
     transaction: &cache::Transaction,
     commit_id: gix_hash::ObjectId,
@@ -714,146 +682,6 @@ pub fn apply_to_commit2(
                 filter,
             ))
             .transpose();
-        }
-        Op::Unlink => {
-            check_experimental_features_enabled("unlink filter")?;
-            use crate::link::find_link_files;
-
-            let filtered_parent_ids = {
-                commit
-                    .parent_ids()
-                    .map(|x| transaction.get(filter, x))
-                    .collect::<anyhow::Result<Option<_>>>()?
-            };
-
-            let mut filtered_parent_ids: Vec<gix_hash::ObjectId> =
-                some_or!(filtered_parent_ids, { return Ok(None) });
-
-            let mut link_parents = vec![];
-            for (link_path, link_file) in find_link_files(odb, commit.tree_id()?)?.into_iter() {
-                if let Some(commit_str) = link_file.get_meta("commit") {
-                    if let Ok(commit_oid) = gix_hash::ObjectId::from_str(&commit_str) {
-                        if let Some(cmt) =
-                            transaction.get(to_filter(Op::Prefix(link_path)), commit_oid)?
-                        {
-                            link_parents.push(cmt);
-                        } else {
-                            return Ok(None);
-                        }
-                    } else {
-                        return Ok(None);
-                    }
-                } else {
-                    return Ok(None);
-                }
-            }
-
-            let new_tree = apply(transaction, filter, Rewrite::from_commit_data(&commit)?)?;
-
-            filtered_parent_ids.retain(|c| !link_parents.contains(c));
-
-            return Some(history::create_filtered_commit(
-                &commit,
-                filtered_parent_ids,
-                new_tree,
-                transaction,
-                filter,
-            ))
-            .transpose();
-        }
-        Op::Link(mode) => {
-            check_experimental_features_enabled("link filter")?;
-            let tree = commit.tree_id()?;
-            // An unreadable commit tree is a hard error -- the retain probes and link
-            // reads below fold their failures -- and they all share this one parse.
-            let tree_reader = tree::read_tree(transaction, odb, tree)?;
-            let mut roots = get_link_roots(transaction, odb, tree)?;
-
-            // A root commit (no first parent) keeps every root; when a first
-            // parent is present its tree must be readable (the retain closure below cannot
-            // error).
-            if let Some(parent) = commit.first_parent_id() {
-                let parent_tree = git::read_tree_id(odb, parent)?;
-                let parent_reader = tree::read_tree(transaction, odb, parent_tree)?;
-                roots.retain(|root| {
-                    match (
-                        tree::get_path_entry_at(transaction, odb, &tree_reader, root),
-                        tree::get_path_entry_at(transaction, odb, &parent_reader, root),
-                    ) {
-                        (Ok(Some(a)), Ok(Some(b))) if a.oid == b.oid => false,
-                        _ => true,
-                    }
-                });
-            }
-
-            let all_links = links_from_roots(transaction, odb, &tree_reader, roots)?;
-
-            // Only embedded-mode links get extra parent commits spliced in
-            let embedded_links: Vec<_> = all_links
-                .into_iter()
-                .filter(|(_, link_file)| {
-                    let effective_mode = mode.clone().unwrap_or_else(|| {
-                        link_file
-                            .get_meta("mode")
-                            .and_then(|s| josh_filter::LinkMode::parse(&s).ok())
-                            .unwrap_or(josh_filter::LinkMode::Pointer)
-                    });
-                    effective_mode == josh_filter::LinkMode::Embedded
-                })
-                .collect();
-
-            if embedded_links.is_empty() {
-                apply(transaction, filter, Rewrite::from_commit_data(&commit)?)?
-            } else {
-                let normal_parents = commit
-                    .parent_ids()
-                    .map(|parent| transaction.get(filter, parent))
-                    .collect::<anyhow::Result<Option<Vec<gix_hash::ObjectId>>>>()?;
-
-                let normal_parents = some_or!(normal_parents, { return Ok(None) });
-
-                let extra_parents = {
-                    let mut extra_parents = vec![];
-                    for (root, _link_file) in embedded_links {
-                        let embeding = some_or!(
-                            apply_to_commit2(
-                                Filter::new().message("{@}").file(root.join(".link.josh")),
-                                commit_id,
-                                transaction
-                            )?,
-                            {
-                                return Ok(None);
-                            }
-                        );
-
-                        let f = to_filter(Op::Embed(root));
-
-                        let r = some_or!(apply_to_commit2(f, embeding, transaction)?, {
-                            return Ok(None);
-                        });
-
-                        extra_parents.push(r);
-                    }
-
-                    extra_parents
-                };
-
-                let filtered_tree =
-                    apply(transaction, filter, Rewrite::from_commit_data(&commit)?)?;
-                let filtered_parent_ids = normal_parents
-                    .into_iter()
-                    .chain(extra_parents)
-                    .collect::<Vec<_>>();
-
-                return Some(history::create_filtered_commit(
-                    &commit,
-                    filtered_parent_ids,
-                    filtered_tree,
-                    transaction,
-                    filter,
-                ))
-                .transpose();
-            }
         }
         Op::ObjectDeref(path) => {
             let referenced_commit = tree::get_path_entry(transaction, odb, commit.tree_id()?, path)
@@ -1054,74 +882,10 @@ pub fn apply_to_commit2(
 
             return per_rev_filter(transaction, &commit, filter, commit_filter, parent_filters);
         }
-        Op::Unapply(target, uf) => {
-            check_experimental_features_enabled("unapply filter")?;
-            if let LazyRef::Resolved(target) = target {
-                /* dbg!(target); */
-                let target = objects::CommitData::read(odb, target.to_owned())?;
-                // Only a root commit (no first parent) skips link detection; a
-                // first parent that is present must be readable.
-                if let Some(parent_id) = target.first_parent_id() {
-                    let parent = objects::CommitData::read(odb, parent_id)?;
-                    let ptree = apply(transaction, *uf, Rewrite::from_commit_data(&parent)?)?;
-                    // The link probe folds every failure into "no link", so an unreadable
-                    // filtered tree must error here.
-                    let ptree_id = ptree.tree_id();
-                    let ptree_reader = tree::read_tree(transaction, odb, ptree_id)?;
-                    if let Some(link) = read_josh_link(
-                        transaction,
-                        odb,
-                        &ptree_reader,
-                        &std::path::PathBuf::new(),
-                        ".link.josh",
-                    ) {
-                        if let Some(commit_str) = link.get_meta("commit") {
-                            if let Ok(link_commit) = gix_hash::ObjectId::from_str(&commit_str) {
-                                if commit.id() == link_commit {
-                                    let unapply =
-                                        to_filter(Op::Unapply(LazyRef::Resolved(parent.id()), *uf));
-                                    let r = some_or!(transaction.get(unapply, link_commit)?, {
-                                        return Ok(None);
-                                    });
-                                    transaction.insert(filter, commit.id(), r, true)?;
-                                    return Ok(Some(r));
-                                }
-                            }
-                        }
-                    }
-                }
-            } else {
-                return Err(anyhow!("unresolved lazy ref"));
-            }
-            /* dbg!("FALLTHROUGH"); */
-            apply(
-                transaction,
-                filter,
-                Rewrite::from_commit_data(&commit)?, /* Rewrite::from_commit_data(&commit)?.with_parents(filtered_parent_ids), */
-            )?
+        Op::Unapply(LazyRef::Lazy(_), _) => {
+            return Err(anyhow!("unresolved lazy ref"));
         }
-        Op::Embed(path) => {
-            check_experimental_features_enabled("embed filter")?;
-
-            let tree = commit.tree_id()?;
-            // The link probe below folds every failure into "no link", so an unreadable
-            // or unparseable commit tree must error here.
-            let tree_reader = tree::read_tree(transaction, odb, tree)?;
-            if let Some(link) = read_josh_link(transaction, odb, &tree_reader, path, ".link.josh") {
-                let subdir = filter::invert(link.peel())?;
-                let unapply = to_filter(Op::Unapply(LazyRef::Resolved(commit.id()), subdir));
-                if let Some(commit_str) = link.get_meta("commit") {
-                    if let Ok(commit_oid) = gix_hash::ObjectId::from_str(&commit_str) {
-                        let r = some_or!(transaction.get(unapply, commit_oid)?, {
-                            return Ok(None);
-                        });
-                        transaction.insert(filter, commit.id(), r, true)?;
-                        return Ok(Some(r));
-                    }
-                }
-            }
-            return Ok(Some(gix_hash::ObjectId::null(gix_hash::Kind::Sha1)));
-        }
+        Op::Unapply(..) => apply(transaction, filter, Rewrite::from_commit_data(&commit)?)?,
 
         _ => apply(transaction, filter, Rewrite::from_commit_data(&commit)?)?,
     };
@@ -1145,99 +909,6 @@ pub fn apply_to_commit2(
         filter,
     ))
     .transpose()
-}
-
-fn extract_submodule_commits(
-    transaction: &cache::Transaction,
-    odb: &josh_memodb::Odb,
-    tree: gix_hash::ObjectId,
-) -> anyhow::Result<
-    std::collections::BTreeMap<
-        std::path::PathBuf,
-        (gix_hash::ObjectId, crate::submodules::ParsedSubmoduleEntry),
-    >,
-> {
-    use crate::submodules::{ParsedSubmoduleEntry, parse_gitmodules};
-    // One hoisted parse for the .gitmodules probe and every per-submodule probe; an
-    // unreadable tree is a hard error (the probes below fold their failures).
-    let tree_reader = tree::read_tree(transaction, odb, tree)?;
-
-    let gitmodules_content = tree::get_blob_at(
-        transaction,
-        odb,
-        &tree_reader,
-        std::path::Path::new(".gitmodules"),
-    );
-
-    if gitmodules_content.is_empty() {
-        // No .gitmodules file, return empty map
-        return Ok(std::collections::BTreeMap::new());
-    }
-
-    // Parse submodule entries using parse_gitmodules
-    let submodule_entries = match parse_gitmodules(&gitmodules_content) {
-        Ok(entries) => entries,
-        Err(_) => {
-            // If parsing fails, return empty map
-            return Ok(std::collections::BTreeMap::new());
-        }
-    };
-
-    let mut submodule_commits: std::collections::BTreeMap<
-        std::path::PathBuf,
-        (gix_hash::ObjectId, ParsedSubmoduleEntry),
-    > = std::collections::BTreeMap::new();
-
-    for parsed in submodule_entries {
-        let submodule_path = parsed.path.clone();
-        if let Ok(Some(entry)) =
-            tree::get_path_entry_at(transaction, odb, &tree_reader, &submodule_path)
-        {
-            if entry.mode.is_commit() {
-                let commit_oid = entry.oid;
-                submodule_commits.insert(submodule_path, (commit_oid, parsed));
-            }
-        }
-    }
-
-    Ok(submodule_commits)
-}
-
-fn get_link_roots(
-    transaction: &cache::Transaction,
-    odb: &josh_memodb::Odb,
-    tree: gix_hash::ObjectId,
-) -> anyhow::Result<Vec<std::path::PathBuf>> {
-    let link_filter = to_filter(Op::pattern("**/.link.josh")?);
-    let link_tree = apply_impl(transaction, odb, link_filter, Rewrite::from_tree(tree))?;
-
-    // Stored-order preorder is load-bearing: the roots order feeds the extra-parents
-    // order of created merge commits.
-    let mut roots = vec![];
-    objects::walk_tree_preorder(odb, link_tree.tree_id(), &mut |root, entry| {
-        let root = std::path::PathBuf::from(root);
-        if &entry.filename[..] == b".link.josh" {
-            roots.push(root);
-        }
-        Ok(())
-    })?;
-
-    Ok(roots)
-}
-
-fn links_from_roots(
-    transaction: &cache::Transaction,
-    odb: &josh_memodb::Odb,
-    reader: &tree::TreeReader,
-    roots: Vec<std::path::PathBuf>,
-) -> anyhow::Result<Vec<(std::path::PathBuf, Filter)>> {
-    let mut v = vec![];
-    for root in roots {
-        if let Some(link_filter) = read_josh_link(transaction, odb, reader, &root, ".link.josh") {
-            v.push((root, link_filter));
-        }
-    }
-    Ok(v)
 }
 
 /// Filter a single tree. This does not involve walking history and is thus fast in most cases.
@@ -1341,133 +1012,7 @@ fn apply_impl(
                 .into(),
             ))
         }
-        Op::Prune => Ok(x),
-        Op::Adapt(adapter) => {
-            let mut result_tree = x.tree_id();
-            match adapter.as_ref() {
-                "submodules" => {
-                    // Extract submodule commits
-                    let submodule_commits =
-                        extract_submodule_commits(transaction, odb, result_tree)?;
-
-                    // Process each submodule commit
-                    for (submodule_path, (commit_oid, meta)) in submodule_commits {
-                        let prefix_filter = Filter::new().prefix(&submodule_path);
-
-                        // Create a filter with metadata
-                        let link_filter = prefix_filter
-                            .with_meta("remote", meta.url.clone())
-                            .with_meta("target", "HEAD")
-                            .with_meta("commit", commit_oid.to_string())
-                            .with_meta("mode", josh_filter::LinkMode::Pointer.to_string());
-                        let link_content = as_file(link_filter, 0);
-
-                        result_tree = tree::insert_oid(
-                            odb,
-                            result_tree,
-                            &submodule_path.join(".link.josh"),
-                            odb.write(gix_object::Kind::Blob, link_content.as_bytes()),
-                            0o0100644,
-                        )?;
-                    }
-
-                    // Remove .gitmodules file by setting it to zero OID
-                    result_tree = tree::insert_oid(
-                        odb,
-                        result_tree,
-                        std::path::Path::new(".gitmodules"),
-                        gix_hash::ObjectId::null(gix_hash::Kind::Sha1),
-                        0o0100644,
-                    )?;
-                }
-                _ => return Err(anyhow!("unknown adapter {:?}", adapter)),
-            }
-
-            Ok(x.with_tree(result_tree))
-        }
-        Op::Export => {
-            let tree = x.tree_id();
-            Ok(x.with_tree(tree::insert_oid(
-                odb,
-                tree,
-                std::path::Path::new(".link.josh"),
-                gix_hash::ObjectId::null(gix_hash::Kind::Sha1),
-                0o0100644,
-            )?))
-        }
-        Op::Unlink => {
-            check_experimental_features_enabled("unlink filter")?;
-            use crate::link::find_link_files;
-            let mut result_tree = x.tree;
-            for (link_path, link_file) in find_link_files(odb, result_tree)?.iter() {
-                result_tree = tree::insert_oid(
-                    odb,
-                    result_tree,
-                    link_path,
-                    gix_hash::ObjectId::null(gix_hash::Kind::Sha1),
-                    0o0100644,
-                )?;
-
-                // The link_file is already a filter with metadata, just serialize it
-                let link_content = as_file(*link_file, 0);
-
-                result_tree = tree::insert_oid(
-                    odb,
-                    result_tree,
-                    &link_path.join(".link.josh"),
-                    odb.write(gix_object::Kind::Blob, link_content.as_bytes()),
-                    0o0100644,
-                )?;
-            }
-            Ok(x.with_tree(result_tree))
-        }
-        Op::Link(mode) => {
-            let tree = x.tree_id();
-            // An unreadable input tree is a hard error; the hoisted parse serves the
-            // link reads below.
-            let tree_reader = tree::read_tree(transaction, odb, tree)?;
-            let roots = get_link_roots(transaction, odb, tree)?;
-            let v = links_from_roots(transaction, odb, &tree_reader, roots)?;
-            let mut result_tree = tree;
-
-            for (root, link_file) in v {
-                // Get commit from metadata
-                let commit_oid = link_file
-                    .get_meta("commit")
-                    .and_then(|s| gix_hash::ObjectId::from_str(&s).ok())
-                    .ok_or_else(|| anyhow!("Link file missing commit metadata"))?;
-
-                let submodule_tree = git::read_tree_id(odb, commit_oid)?;
-                let inner_filter = link_file.peel();
-                let submodule_tree = apply_impl(
-                    transaction,
-                    odb,
-                    inner_filter,
-                    Rewrite::from_tree(submodule_tree),
-                )
-                .unwrap();
-
-                result_tree = tree::overlay(transaction, result_tree, submodule_tree.tree_id())?;
-                let effective_mode = mode.clone().unwrap_or_else(|| {
-                    link_file
-                        .get_meta("mode")
-                        .and_then(|s| josh_filter::LinkMode::parse(&s).ok())
-                        .unwrap_or(josh_filter::LinkMode::Pointer)
-                });
-                let link_content =
-                    as_file(link_file.with_meta("mode", effective_mode.to_string()), 0);
-
-                result_tree = tree::insert_oid(
-                    odb,
-                    result_tree,
-                    &root.join(".link.josh"),
-                    odb.write(gix_object::Kind::Blob, link_content.as_bytes()),
-                    0o0100644,
-                )?;
-            }
-
-            Ok(x.with_tree(result_tree))
-        }
+        Op::Prune | Op::Export => Ok(x),
         Op::Rev(_) => Err(anyhow!("not applicable to tree: rev")),
         Op::RegexReplace(replacements) => {
             let mut t = x.tree_id();
@@ -1705,7 +1250,6 @@ fn apply_impl(
         }
         Op::Hook(_) => Err(anyhow!("not applicable to tree: hook")),
 
-        Op::Embed(..) => Err(anyhow!("not applicable to tree: embed")),
         Op::Unapply(target, uf) => {
             check_experimental_features_enabled("unapply filter")?;
             if let LazyRef::Resolved(target) = target {

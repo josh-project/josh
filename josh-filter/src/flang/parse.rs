@@ -1,4 +1,3 @@
-use crate::LinkMode;
 use crate::check_experimental_features_enabled;
 use crate::filter::Filter;
 use crate::opt;
@@ -65,26 +64,6 @@ fn make_filter(args: &[&str]) -> anyhow::Result<Filter> {
         ))),
         ["unsign"] => Ok(f.unsign()),
 
-        ["unlink"] => {
-            check_experimental_features_enabled("unlink filter")?;
-            Ok(to_filter(Op::Unlink))
-        }
-        ["adapt", adapter] => {
-            check_experimental_features_enabled("adapt filter")?;
-            Ok(to_filter(Op::Adapt(adapter.to_string())))
-        }
-        ["link"] => {
-            check_experimental_features_enabled("link filter")?;
-            Ok(to_filter(Op::Link(None)))
-        }
-        ["link", mode] => {
-            check_experimental_features_enabled("link filter")?;
-            Ok(to_filter(Op::Link(Some(LinkMode::parse(mode)?))))
-        }
-        ["embed", path] => {
-            check_experimental_features_enabled("embed filter")?;
-            Ok(to_filter(Op::Embed(Path::new(path).to_owned())))
-        }
         ["export"] => {
             check_experimental_features_enabled("export filter")?;
             Ok(to_filter(Op::Export))
