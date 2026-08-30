@@ -122,3 +122,54 @@ Moving the gitlink merges only the newly referenced submodule commits.
           │   ┆  foo content
           └── file3.txt
               ┆  new content
+
+Changes made after the submodule was inlined are exported as a new submodule
+history. Export leaves the superproject unchanged; updating its gitlink is a
+separate change.
+
+The original submodule tip is a trivial merge. Export must retain it while
+removing only the superproject pointer-update merges introduced by ObjectDeref.
+
+  $ cd ${TESTTMP}/submodule-repo
+  $ git checkout -b trivial-side 1> /dev/null 2> /dev/null
+  $ git commit --allow-empty -m "trivial side" 1> /dev/null
+  $ git checkout master 1> /dev/null 2> /dev/null
+  $ git commit --allow-empty -m "trivial main" 1> /dev/null
+  $ git merge --no-ff trivial-side -m "preserved trivial merge" 1> /dev/null
+  $ PRESERVED_MERGE=$(git rev-parse HEAD)
+  $ [ "$(git rev-list --parents -n 1 HEAD | wc -w | tr -d ' ')" = 3 ] && [ "$(git rev-parse HEAD^{tree})" = "$(git rev-parse HEAD^1^{tree})" ] && echo "trivial merge created"
+  trivial merge created
+
+  $ cd ${TESTTMP}/main-repo
+  $ git submodule update --remote libs 1> /dev/null 2> /dev/null
+  $ git add libs
+  $ git commit -m "update libs to trivial merge" 1> /dev/null
+  $ git fetch ../submodule-repo 1> /dev/null 2> /dev/null
+  $ josh-filter ':#libs' master --update refs/josh/filter/master 1> /dev/null
+
+  $ ORIGINAL_SUBMODULE_TIP=$(git rev-parse master:libs)
+  $ git worktree add -b inlined ../inlined refs/josh/filter/master 1> /dev/null 2> /dev/null
+  $ cd ../inlined
+  $ echo "edited after inline" >> libs/foo/file1.txt
+  $ git add libs/foo/file1.txt
+  $ git commit -m "edit inlined submodule" 1> /dev/null
+
+  $ josh-filter ':/libs:export' inlined --update refs/heads/exported 1> /dev/null
+  $ EXTRACTED_TIP=$(git rev-parse exported)
+  $ git merge-base --is-ancestor "${ORIGINAL_SUBMODULE_TIP}" "${EXTRACTED_TIP}" && echo "fast-forward"
+  fast-forward
+  $ [ "$(git rev-parse exported^)" = "${ORIGINAL_SUBMODULE_TIP}" ] && echo "direct child"
+  direct child
+
+  $ cd ../main-repo
+  $ [ "$(git rev-parse master:libs)" = "${ORIGINAL_SUBMODULE_TIP}" ] && echo "superproject unchanged"
+  superproject unchanged
+  $ git --git-dir=../submodule-repo/.git update-ref refs/heads/extracted "${ORIGINAL_SUBMODULE_TIP}"
+  $ git push ../submodule-repo "${EXTRACTED_TIP}:refs/heads/extracted" 1> /dev/null 2> /dev/null
+  $ git --git-dir=../submodule-repo/.git log --pretty=%s "${ORIGINAL_SUBMODULE_TIP}..extracted"
+  edit inlined submodule
+  $ git --git-dir=../submodule-repo/.git show -s --pretty=%s "${PRESERVED_MERGE}"
+  preserved trivial merge
+  $ git --git-dir=../submodule-repo/.git show extracted:foo/file1.txt
+  foo content
+  edited after inline

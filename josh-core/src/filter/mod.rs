@@ -673,51 +673,43 @@ pub fn apply_to_commit2(
                     .collect::<anyhow::Result<Option<_>>>()?
             };
 
-            let mut filtered_parent_ids: Vec<gix_hash::ObjectId> =
+            let filtered_parent_ids: Vec<gix_hash::ObjectId> =
                 some_or!(filtered_parent_ids, { return Ok(None) });
 
-            // TODO: remove all parents that don't have a .link.josh
-
-            //     let mut ok = true;
-            //     filtered_parent_ids.retain(|c| {
-            //         if let Ok(c) = repo.find_commit(*c) {
-            //             c.tree_id() != new_tree.id()
-            //         } else {
-            //             ok = false;
-            //             false
-            //         }
-            //     });
-
-            //     if !ok {
-            //         return Err(anyhow!("missing commit"));
-            //     }
-
-            let tree = commit.tree_id()?;
-            // The link probe below folds every failure into "no link", so an unreadable
-            // or unparseable commit tree must error here.
-            let tree_reader = tree::read_tree(transaction, odb, tree)?;
-            if let Some(link_file) = read_josh_link(
-                transaction,
-                odb,
-                &tree_reader,
-                &std::path::PathBuf::new(),
-                ".link.josh",
-            ) {
-                if let Some(commit_str) = link_file.get_meta("commit") {
-                    if let Ok(commit_oid) = gix_hash::ObjectId::from_str(&commit_str) {
-                        if filtered_parent_ids.contains(&commit_oid) {
-                            while filtered_parent_ids[0] != commit_oid {
-                                filtered_parent_ids.rotate_right(1);
-                            }
-                        }
+            let rewrite_data = apply(transaction, filter, Rewrite::from_commit_data(&commit)?)?;
+            // A pointer-update splice has a referenced-history parent with the
+            // exported tree that descends from the normal first parent. Drop
+            // that splice here instead of pruning every trivial merge.
+            let inferred_parent = if let Some(first_parent) = filtered_parent_ids.first() {
+                let mut inferred_parent = None;
+                for parent in filtered_parent_ids.iter().skip(1) {
+                    if history::filtered_parent_tree_id(transaction, *parent)?
+                        == rewrite_data.tree_id()
+                        && objects::is_descendant_of(transaction.odb(), *parent, *first_parent)?
+                    {
+                        inferred_parent = Some(*parent);
+                        break;
                     }
                 }
+                inferred_parent
+            } else {
+                None
+            };
+
+            if let Some(parent) = inferred_parent {
+                return Some(history::drop_commit(
+                    commit.id(),
+                    vec![parent],
+                    transaction,
+                    filter,
+                ))
+                .transpose();
             }
 
             return Some(history::create_filtered_commit(
                 &commit,
                 filtered_parent_ids,
-                apply(transaction, filter, Rewrite::from_commit_data(&commit)?)?,
+                rewrite_data,
                 transaction,
                 filter,
             ))
@@ -899,6 +891,7 @@ pub fn apply_to_commit2(
                     .first()
                     .copied()
                     .unwrap_or_else(|| gix_hash::ObjectId::null(gix_hash::Kind::Sha1));
+                let normal_parent_count = normal_parents.len();
                 let mut filtered_parents = normal_parents;
                 let path_filter = to_filter(Op::Subdir(path.clone()));
                 if original_target != gix_hash::ObjectId::null(gix_hash::Kind::Sha1)
@@ -924,14 +917,25 @@ pub fn apply_to_commit2(
 
                 let filtered_tree =
                     apply(transaction, filter, Rewrite::from_commit_data(&commit)?)?;
-                return Some(history::create_filtered_commit(
-                    &commit,
-                    filtered_parents,
-                    filtered_tree,
-                    transaction,
-                    filter,
-                ))
-                .transpose();
+                let filtered_commit = if filtered_parents.len() > normal_parent_count {
+                    history::create_filtered_commit_with_forced_parents(
+                        &commit,
+                        filtered_parents,
+                        filtered_tree,
+                        transaction,
+                        filter,
+                        filter.into_meta(),
+                    )
+                } else {
+                    history::create_filtered_commit(
+                        &commit,
+                        filtered_parents,
+                        filtered_tree,
+                        transaction,
+                        filter,
+                    )
+                };
+                return Some(filtered_commit).transpose();
             }
 
             apply(transaction, filter, Rewrite::from_commit_data(&commit)?)?
