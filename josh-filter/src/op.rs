@@ -1,13 +1,6 @@
 use crate::filter::Filter;
 use anyhow::anyhow;
 
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
-pub enum LinkMode {
-    Embedded,
-    Snapshot,
-    Pointer,
-}
-
 /// Newtype around `regex::Regex` adding structural `PartialEq`/`Eq`/`Hash` (by pattern
 /// string) so `Op` can derive them for use as an interning key. Derefs to the inner regex.
 #[derive(Clone, Debug)]
@@ -31,27 +24,6 @@ impl Eq for Regex {}
 impl std::hash::Hash for Regex {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
         self.0.as_str().hash(state);
-    }
-}
-
-impl std::fmt::Display for LinkMode {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            LinkMode::Embedded => write!(f, "embedded"),
-            LinkMode::Snapshot => write!(f, "snapshot"),
-            LinkMode::Pointer => write!(f, "pointer"),
-        }
-    }
-}
-
-impl LinkMode {
-    pub fn parse(s: &str) -> anyhow::Result<Self> {
-        match s {
-            "embedded" => Ok(LinkMode::Embedded),
-            "snapshot" => Ok(LinkMode::Snapshot),
-            "pointer" => Ok(LinkMode::Pointer),
-            _ => Err(anyhow!("Unknown link mode: {:?}", s)),
-        }
     }
 }
 
@@ -114,11 +86,7 @@ pub enum Op {
     Empty,
     Fold,
     Paths,
-    Adapt(String),
-    Link(Option<LinkMode>),
-    Unlink,
     Export,
-    Embed(std::path::PathBuf),
 
     Squash,
     Author(String, String),

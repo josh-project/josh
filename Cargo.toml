@@ -10,7 +10,6 @@ members = [
     "josh-gix-ext",
     "josh-git-serde",
     "josh-graphql",
-    "josh-link",
     "josh-proxy",
     "josh-rpc",
     "josh-search",
@@ -73,7 +72,6 @@ gix-worktree = { version = "0.55.0", default-features = false, features = ["attr
 gix-revision = { version = "0.48.0", default-features = false, features = ["merge_base"] }
 gix-zlib = "0.1"
 gix-config = "0.59.0"
-gix-submodule = "0.33.0"
 libc = "0.2.189"
 regex = "1.13.1"
 serde = { version = "1.0.229", features = ["std", "derive"] }
@@ -118,7 +116,6 @@ josh-compose-graph = { path = "josh-compose-graph", version = "26.8.28" }
 josh-compose-podman = { path = "josh-compose-podman", version = "26.8.28" }
 josh-compose-docker = { path = "josh-compose-docker", version = "26.8.28" }
 josh-graphql = { path = "josh-graphql", version = "26.8.28" }
-josh-link = { path = "josh-link", version = "26.8.28" }
 josh-rpc = { path = "josh-rpc", version = "26.8.28" }
 josh-search = { path = "josh-search", version = "26.8.28" }
 josh-starlark = { path = "josh-starlark", version = "26.8.28" }
@@ -217,7 +214,6 @@ josh-compose-graph = { path = "josh-compose-graph" }
 josh-compose-podman = { path = "josh-compose-podman" }
 josh-compose-docker = { path = "josh-compose-docker" }
 josh-graphql = { path = "josh-graphql" }
-josh-link = { path = "josh-link" }
 josh-rpc = { path = "josh-rpc" }
 josh-starlark = { path = "josh-starlark" }
 josh-templates = { path = "josh-templates" }

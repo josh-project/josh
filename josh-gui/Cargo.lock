@@ -3172,21 +3172,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "gix-submodule"
-version = "0.33.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5fd98077a56d08886112e6b08dc94076d03539f4bc0b9d7880e4be2b8a640d8c"
-dependencies = [
- "bstr",
- "gix-config",
- "gix-path",
- "gix-pathspec",
- "gix-refspec",
- "gix-url",
- "thiserror 2.0.20",
-]
-
-[[package]]
 name = "gix-tempfile"
 version = "24.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4237,7 +4222,6 @@ dependencies = [
  "gix-config",
  "gix-hash",
  "gix-object",
- "gix-submodule",
  "glob",
  "hex",
  "indoc",

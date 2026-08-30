@@ -19,7 +19,6 @@ pub fn invert(filter: Filter) -> anyhow::Result<Filter> {
             Op::Prune => Some(Op::Prune),
             Op::Export => Some(Op::Export),
             Op::Empty => Some(Op::Empty),
-            Op::Link(..) => Some(Op::Unlink),
             Op::Subdir(path) => Some(Op::Prefix(path.clone())),
             Op::File(dest_path, source_path) => {
                 Some(Op::File(source_path.clone(), dest_path.clone()))

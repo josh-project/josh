@@ -6,7 +6,6 @@
   Commands:
     init   Initialize metarepo
     serve  Start HTTP server
-    track  Track a remote repository
     fetch  Fetch remotes, collect and record state of conditions
     step   Single step through the queue, updating the state
     push   Push updated metarepo state to remotes

@@ -246,11 +246,7 @@ pub(crate) fn spec2(op: &Op) -> String {
         Op::Index => ":INDEX".to_string(),
         Op::Fold => ":FOLD".to_string(),
         Op::Squash => ":SQUASH".to_string(),
-        Op::Adapt(adapter) => format!(":adapt={}", adapter),
-        Op::Link(None) => ":link".to_string(),
-        Op::Link(Some(mode)) => format!(":link={}", mode),
         Op::Export => ":export".to_string(),
-        Op::Unlink => ":unlink".to_string(),
         Op::Subdir(path) => format!(":/{}", parse::quote_if(&path.to_string_lossy())),
         Op::Insert(path, content) => {
             let p = parse::quote_if(&path.to_string_lossy());
@@ -273,9 +269,6 @@ pub(crate) fn spec2(op: &Op) -> String {
         Op::Prune => ":prune=trivial-merge".to_string(),
         Op::Prefix(path) => format!(":prefix={}", parse::quote_if(&path.to_string_lossy())),
         Op::Pattern(glob) => format!("::{}", parse::quote_if(glob.as_str())),
-        Op::Embed(path) => {
-            format!(":embed={}", parse::quote_if(&path.to_string_lossy()),)
-        }
         Op::Author(author, email) => {
             format!(":author={};{}", parse::quote(author), parse::quote(email))
         }

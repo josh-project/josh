@@ -11,14 +11,10 @@ repository = "https://github.com/josh-project/josh"
 tokio.workspace = true
 clap.workspace = true
 anyhow.workspace = true
-serde.workspace = true
-serde_json.workspace = true
 gix.workspace = true
-gix-hash.workspace = true
 axum.workspace = true
 tracing.workspace = true
 
 josh-core.workspace = true
 josh-github-webhooks.workspace = true
-josh-link.workspace = true
 josh-test-webhook-client.workspace = true
