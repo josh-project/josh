@@ -67,6 +67,10 @@ NestedInstallerType: portable
 NestedInstallerFiles:
 - RelativeFilePath: josh.exe
 ReleaseDate: $(Get-Date -Format yyyy-MM-dd)
+# josh shells out to git (ls-remote, patch-id, ...) so it must be on PATH.
+Dependencies:
+  PackageDependencies:
+  - PackageIdentifier: Git.Git
 Installers:
 $installers
 ManifestType: installer
