@@ -1177,19 +1177,21 @@ impl Transaction {
     }
 
     pub fn insert_paths(&self, tree: (gix_hash::ObjectId, String), result: gix_hash::ObjectId) {
-        PATHS_MAP.write().unwrap().entry(tree).or_insert(result);
+        PATHS_MAP.write().unwrap().insert(tree, result);
     }
 
     pub fn get_paths(&self, tree: (gix_hash::ObjectId, String)) -> Option<gix_hash::ObjectId> {
-        PATHS_MAP.read().unwrap().get(&tree).cloned()
+        let cached = PATHS_MAP.read().unwrap().get(&tree).copied()?;
+        self.odb().contains(cached).then_some(cached)
     }
 
     pub fn insert_invert(&self, tree: (gix_hash::ObjectId, String), result: gix_hash::ObjectId) {
-        INVERT_MAP.write().unwrap().entry(tree).or_insert(result);
+        INVERT_MAP.write().unwrap().insert(tree, result);
     }
 
     pub fn get_invert(&self, tree: (gix_hash::ObjectId, String)) -> Option<gix_hash::ObjectId> {
-        INVERT_MAP.read().unwrap().get(&tree).cloned()
+        let cached = INVERT_MAP.read().unwrap().get(&tree).copied()?;
+        self.odb().contains(cached).then_some(cached)
     }
 
     /// Cache indexes under the commit's history shard. A null ID means no commit context.
@@ -1265,14 +1267,15 @@ impl Transaction {
         tree: (gix_hash::ObjectId, gix_hash::ObjectId, u64),
         result: gix_hash::ObjectId,
     ) {
-        GLOB_MAP.write().unwrap().entry(tree).or_insert(result);
+        GLOB_MAP.write().unwrap().insert(tree, result);
     }
 
     pub fn get_glob(
         &self,
         tree: (gix_hash::ObjectId, gix_hash::ObjectId, u64),
     ) -> Option<gix_hash::ObjectId> {
-        GLOB_MAP.read().unwrap().get(&tree).cloned()
+        let cached = GLOB_MAP.read().unwrap().get(&tree).copied()?;
+        self.odb().contains(cached).then_some(cached)
     }
 
     pub fn insert_ref(
@@ -1365,6 +1368,22 @@ impl Transaction {
             t2.cache.write_all(filter, from, to, hint, false)?;
         }
         Ok(())
+    }
+
+    /// Persist a requested commit in sparse and dense cache backends.
+    pub(crate) fn insert_forced(
+        &self,
+        filter: crate::filter::Filter,
+        from: gix_hash::ObjectId,
+        to: gix_hash::ObjectId,
+    ) -> anyhow::Result<()> {
+        let hint = compute_history_hint(self, from)?;
+        let mut t2 = self.t2.borrow_mut();
+        t2.commit_map
+            .entry(filter.id())
+            .or_default()
+            .insert(from, to);
+        t2.cache.write_forced_all(filter, from, to, hint, false)
     }
 
     pub fn get_missing(

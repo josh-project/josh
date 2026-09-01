@@ -478,7 +478,9 @@ impl Run<'_> {
         if let Some(id) = self.ix.tree_memo.get(&tree_oid) {
             return Ok(*id);
         }
-        if let Some(cached) = self.cache.get_index(tree_oid) {
+        if let Some(cached) = self.cache.get_index(tree_oid)
+            && (self.ix.pending.contains_key(&cached) || self.src.exists(&cached))
+        {
             let id = cached;
             self.ix.tree_memo.insert(tree_oid, id);
             return Ok(id);
@@ -933,6 +935,27 @@ mod tests {
                 .unwrap();
         }
         builder.write().unwrap().detach()
+    }
+
+    #[test]
+    fn trigram_index_rebuilds_missing_cached_tree() {
+        let (_tmp, repo) = test_repo();
+        let tree = commit_tree(&repo, &[("file.txt", "recover the index")]);
+        let cache = MapCache::default();
+        let missing =
+            gix_hash::ObjectId::from_hex(b"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa").unwrap();
+        cache.set_index(tree, missing);
+        let rebuilt = trigram_index(objects(&repo), &cache, &mut Indexer::default(), tree).unwrap();
+        let expected = trigram_index(
+            objects(&repo),
+            &MapCache::default(),
+            &mut Indexer::default(),
+            tree,
+        )
+        .unwrap();
+        assert_ne!(rebuilt, missing);
+        assert_eq!(rebuilt, expected);
+        assert_eq!(cache.get_index(tree), Some(rebuilt));
     }
 
     #[test]
