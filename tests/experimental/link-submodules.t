@@ -253,11 +253,11 @@ Test Adapt with submodule changes - add commits to submodule and update
   │   ┆  [submodule "modules/another"]
   │   ┆  	path = modules/another
   │   ┆  	url = ../another-submodule
-  ├── libs (submodule)
+  ├── libs ⇒ [commit 3061af9, tree ac420a6]
   ├── main.txt
   │   ┆  main content
   └── modules/
-      └── another (submodule)
+      └── another ⇒ [commit 8fbd01f, tree abaaf79]
 
 
   $ josh-filter -s :adapt=submodules:link=embedded master --update refs/josh/filter/master
