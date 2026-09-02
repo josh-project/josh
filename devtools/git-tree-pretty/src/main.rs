@@ -1,4 +1,5 @@
 use libc::signal;
+use std::collections::HashSet;
 use std::path::PathBuf;
 use std::process::ExitCode;
 
@@ -20,6 +21,9 @@ struct Args {
     /// Omit blob contents, only print the structure
     #[arg(long)]
     no_contents: bool,
+    /// Follow gitlinks whose target objects are available in this repository
+    #[arg(long)]
+    follow_gitlinks: bool,
 }
 
 fn main() -> ExitCode {
@@ -46,7 +50,15 @@ fn run(args: &Args) -> anyhow::Result<()> {
     };
 
     println!(".");
-    print_tree(&repo.objects, &tree_oid, "", args.no_contents)
+    let mut expanded_gitlinks = HashSet::new();
+    print_tree(
+        &repo.objects,
+        &tree_oid,
+        "",
+        args.no_contents,
+        args.follow_gitlinks,
+        &mut expanded_gitlinks,
+    )
 }
 
 fn resolve_tree(repo: &gix::Repository, rev: &str) -> anyhow::Result<gix::ObjectId> {
@@ -154,6 +166,8 @@ fn print_tree(
     oid: &gix::hash::oid,
     prefix: &str,
     no_contents: bool,
+    follow_gitlinks: bool,
+    expanded_gitlinks: &mut HashSet<gix::ObjectId>,
 ) -> anyhow::Result<()> {
     let mut buf = Vec::new();
     let tree = odb.find_tree(oid, &mut buf)?;
@@ -168,7 +182,14 @@ fn print_tree(
         match entry.mode.kind() {
             EntryKind::Tree => {
                 println!("{prefix}{connector}{name}/");
-                print_tree(odb, entry.oid, &child_prefix, no_contents)?;
+                print_tree(
+                    odb,
+                    entry.oid,
+                    &child_prefix,
+                    no_contents,
+                    follow_gitlinks,
+                    expanded_gitlinks,
+                )?;
             }
             EntryKind::Blob | EntryKind::BlobExecutable | EntryKind::Link => {
                 println!("{prefix}{connector}{name}");
@@ -178,10 +199,95 @@ fn print_tree(
                     print_contents(&data, &child_prefix);
                 }
             }
-            EntryKind::Commit => println!("{prefix}{connector}{name} (submodule)"),
+            EntryKind::Commit => {
+                let line_prefix = format!("{prefix}{connector}{name} ⇒ ");
+                print_object_target(
+                    odb,
+                    entry.oid,
+                    &line_prefix,
+                    &child_prefix,
+                    no_contents,
+                    follow_gitlinks,
+                    expanded_gitlinks,
+                )?;
+            }
         }
     }
     Ok(())
+}
+
+fn print_object_target(
+    odb: &impl Find,
+    oid: &gix::hash::oid,
+    line_prefix: &str,
+    child_prefix: &str,
+    no_contents: bool,
+    follow: bool,
+    expanded: &mut HashSet<gix::ObjectId>,
+) -> anyhow::Result<()> {
+    let mut buf = Vec::new();
+    let Some(object) = odb
+        .try_find(oid, &mut buf)
+        .map_err(|error| anyhow::anyhow!("failed to read gitlink target {oid}: {error}"))?
+    else {
+        println!("{line_prefix}[unavailable {}]", short_oid(oid));
+        return Ok(());
+    };
+
+    let shown_above = follow && !expanded.insert(oid.to_owned());
+    let repeated = if shown_above { ", shown above" } else { "" };
+
+    match object.kind {
+        gix::object::Kind::Tree => {
+            println!("{line_prefix}[tree {}{repeated}]", short_oid(oid));
+            if follow && !shown_above {
+                print_tree(odb, oid, child_prefix, no_contents, follow, expanded)?;
+            }
+        }
+        gix::object::Kind::Blob => {
+            println!("{line_prefix}[blob {}{repeated}]", short_oid(oid));
+            if follow && !shown_above && !no_contents {
+                print_contents(object.data, child_prefix);
+            }
+        }
+        gix::object::Kind::Commit => {
+            let commit = gix::objs::CommitRef::from_bytes(object.data, oid.kind())
+                .context("malformed gitlink commit")?;
+            let tree = commit.tree();
+            println!(
+                "{line_prefix}[commit {}, tree {}{repeated}]",
+                short_oid(oid),
+                short_oid(&tree)
+            );
+            if follow && !shown_above {
+                print_tree(odb, &tree, child_prefix, no_contents, follow, expanded)?;
+            }
+        }
+        gix::object::Kind::Tag => {
+            println!("{line_prefix}[tag {}{repeated}]", short_oid(oid));
+            if follow && !shown_above {
+                let tag = gix::objs::TagRef::from_bytes(object.data, oid.kind())
+                    .context("malformed gitlink tag")?;
+                let target = tag.target();
+                let target_line_prefix = format!("{child_prefix}└─▶ ");
+                let target_child_prefix = format!("{child_prefix}    ");
+                print_object_target(
+                    odb,
+                    &target,
+                    &target_line_prefix,
+                    &target_child_prefix,
+                    no_contents,
+                    follow,
+                    expanded,
+                )?;
+            }
+        }
+    }
+    Ok(())
+}
+
+fn short_oid(oid: &gix::hash::oid) -> String {
+    oid.to_string()[..7].to_owned()
 }
 
 fn print_contents(data: &[u8], prefix: &str) {
