@@ -21,6 +21,7 @@ pub use josh_filter::persist::{peel_filter, peel_op, to_filter, to_op, to_ops};
 pub use josh_filter::{Filter, InsertContent, LazyRef, Op, RevMatch};
 pub use josh_filter::{as_file, pretty, spec};
 
+mod object_deref;
 pub mod text;
 pub mod tree;
 
@@ -683,91 +684,6 @@ pub fn apply_to_commit2(
             ))
             .transpose();
         }
-        Op::ObjectDeref(path) => {
-            let referenced_commit = tree::get_path_entry(transaction, odb, commit.tree_id()?, path)
-                .ok()
-                .flatten()
-                .filter(|entry| entry.mode.is_commit())
-                .and_then(|entry| {
-                    matches!(odb.try_kind(entry.oid), Ok(Some(gix_object::Kind::Commit)))
-                        .then_some(entry.oid)
-                });
-
-            if let Some(new_oid) = referenced_commit {
-                let normal_parents = commit
-                    .parent_ids()
-                    .map(|parent| transaction.get(filter, parent))
-                    .collect::<anyhow::Result<Option<Vec<gix_hash::ObjectId>>>>()?;
-                let normal_parents = some_or!(normal_parents, { return Ok(None) });
-
-                let old_oid = if let Some(parent) = commit.first_parent_id() {
-                    let parent_tree = git::read_tree_id(odb, parent)?;
-                    tree::get_path_entry(transaction, odb, parent_tree, path)
-                        .ok()
-                        .flatten()
-                        .filter(|entry| entry.mode.is_commit())
-                        .and_then(|entry| {
-                            matches!(odb.try_kind(entry.oid), Ok(Some(gix_object::Kind::Commit)))
-                                .then_some(entry.oid)
-                        })
-                        .unwrap_or_else(|| gix_hash::ObjectId::null(gix_hash::Kind::Sha1))
-                } else {
-                    gix_hash::ObjectId::null(gix_hash::Kind::Sha1)
-                };
-
-                let original_target = normal_parents
-                    .first()
-                    .copied()
-                    .unwrap_or_else(|| gix_hash::ObjectId::null(gix_hash::Kind::Sha1));
-                let normal_parent_count = normal_parents.len();
-                let mut filtered_parents = normal_parents;
-                let path_filter = to_filter(Op::Subdir(path.clone()));
-                if original_target != gix_hash::ObjectId::null(gix_hash::Kind::Sha1)
-                    && transaction.get(path_filter, original_target)?.is_none()
-                {
-                    return Ok(None);
-                }
-
-                if old_oid != new_oid {
-                    let referenced_history = history::unapply_filter(
-                        transaction,
-                        path_filter,
-                        original_target,
-                        old_oid,
-                        new_oid,
-                        history::OrphansMode::Keep,
-                        None,
-                    )?;
-                    if referenced_history != gix_hash::ObjectId::null(gix_hash::Kind::Sha1) {
-                        filtered_parents.push(referenced_history);
-                    }
-                }
-
-                let filtered_tree =
-                    apply(transaction, filter, Rewrite::from_commit_data(&commit)?)?;
-                let filtered_commit = if filtered_parents.len() > normal_parent_count {
-                    history::create_filtered_commit_with_forced_parents(
-                        &commit,
-                        filtered_parents,
-                        filtered_tree,
-                        transaction,
-                        filter,
-                        filter.into_meta(),
-                    )
-                } else {
-                    history::create_filtered_commit(
-                        &commit,
-                        filtered_parents,
-                        filtered_tree,
-                        transaction,
-                        filter,
-                    )
-                };
-                return Some(filtered_commit).transpose();
-            }
-
-            apply(transaction, filter, Rewrite::from_commit_data(&commit)?)?
-        }
         Op::Workspace(ws_path) => {
             // The get_* helpers return a bare Filter and would fold an unreadable tree to
             // Op::Empty, so bad input must error here; every probe below shares the read.
@@ -896,19 +812,46 @@ pub fn apply_to_commit2(
         commit
             .parent_ids()
             .map(|x| transaction.get(filter, x))
-            .collect::<anyhow::Result<Option<_>>>()?
+            .collect::<anyhow::Result<Option<Vec<gix_hash::ObjectId>>>>()?
     };
 
-    let filtered_parent_ids = some_or!(filtered_parent_ids, { return Ok(None) });
-
-    Some(history::create_filtered_commit(
-        &commit,
-        filtered_parent_ids,
-        tree_data,
+    let mut filtered_parent_ids = some_or!(filtered_parent_ids, { return Ok(None) });
+    let normal_parent_count = filtered_parent_ids.len();
+    let original_target = filtered_parent_ids
+        .first()
+        .copied()
+        .unwrap_or_else(|| gix_hash::ObjectId::null(gix_hash::Kind::Sha1));
+    if !object_deref::append_parents(
         transaction,
+        &commit,
         filter,
-    ))
-    .transpose()
+        commit.first_parent_id().map(|_| filter),
+        tree_data.tree_id(),
+        original_target,
+        &mut filtered_parent_ids,
+    )? {
+        return Ok(None);
+    }
+
+    let filtered_commit = if filtered_parent_ids.len() > normal_parent_count {
+        history::create_filtered_commit_with_forced_parents(
+            &commit,
+            filtered_parent_ids,
+            tree_data,
+            transaction,
+            filter,
+            filter.into_meta(),
+        )
+    } else {
+        history::create_filtered_commit(
+            &commit,
+            filtered_parent_ids,
+            tree_data,
+            transaction,
+            filter,
+        )
+    };
+    Some(filtered_commit).transpose()
 }
 
 /// Filter a single tree. This does not involve walking history and is thus fast in most cases.
@@ -1837,6 +1780,9 @@ fn per_rev_filter(
         ));
     }
 
+    let parent_object_filter = parent_filters
+        .first()
+        .map(|(_, parent_filter)| propagate_meta(*parent_filter, &meta));
     let splice_parents = if no_splice {
         vec![]
     } else {
@@ -1877,7 +1823,12 @@ fn per_rev_filter(
         None
     };
 
-    let filtered_parent_ids: Vec<_> = normal_parents.into_iter().chain(splice_parents).collect();
+    let original_target = normal_parents
+        .first()
+        .copied()
+        .unwrap_or_else(|| gix_hash::ObjectId::null(gix_hash::Kind::Sha1));
+    let mut filtered_parent_ids: Vec<_> =
+        normal_parents.into_iter().chain(splice_parents).collect();
 
     if let Op::Squash = to_op(commit_filter.peel()) {
         // `:SQUASH` as a per-commit filter squashes the commit away, mapping it
@@ -1937,15 +1888,39 @@ fn per_rev_filter(
         tree_data = tree_data.with_tree(with_overlay);
     }
 
-    return Some(history::create_filtered_commit_with_meta(
-        commit,
-        filtered_parent_ids,
-        tree_data,
+    let parent_count_before_object_derefs = filtered_parent_ids.len();
+    if !object_deref::append_parents(
         transaction,
-        filter,
-        commit_filter.into_meta(),
-    ))
-    .transpose();
+        commit,
+        commit_filter,
+        parent_object_filter,
+        tree_data.tree_id(),
+        original_target,
+        &mut filtered_parent_ids,
+    )? {
+        return Ok(None);
+    }
+
+    let filtered_commit = if filtered_parent_ids.len() > parent_count_before_object_derefs {
+        history::create_filtered_commit_with_forced_parents(
+            commit,
+            filtered_parent_ids,
+            tree_data,
+            transaction,
+            filter,
+            commit_filter.into_meta(),
+        )
+    } else {
+        history::create_filtered_commit_with_meta(
+            commit,
+            filtered_parent_ids,
+            tree_data,
+            transaction,
+            filter,
+            commit_filter.into_meta(),
+        )
+    };
+    Some(filtered_commit).transpose()
 }
 
 /// Rebuild the stack from `base_oid` to `change_oid`, dropping intermediate commits

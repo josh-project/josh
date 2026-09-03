@@ -60,6 +60,11 @@ keeps the main repository content and replaces only the gitlink.
 
   $ josh-filter ':[:exclude[:#libs],:#libs]' master --update refs/josh/filter/combined 1> /dev/null
 
+The same history splice applies when the dereference is nested in a compose.
+
+  $ [ "$(git rev-list --parents -n 1 refs/josh/filter/combined | wc -w | tr -d ' ')" = 3 ] && echo "submodule history parent present"
+  submodule history parent present
+
   $ git-tree-pretty refs/josh/filter/combined
   .
   ├── .gitmodules
@@ -75,6 +80,101 @@ keeps the main repository content and replaces only the gitlink.
   │           ┆  foo content
   └── main.txt
       ┆  main content
+
+Multiple references each contribute a history parent, including duplicate
+target commits that land at different prefixed destinations deep in the AST.
+
+  $ cd ${TESTTMP}/submodule-repo
+  $ git checkout -b vendor HEAD~1 1> /dev/null 2> /dev/null
+  $ mkdir vendor
+  $ echo "vendor content" > vendor/file.txt
+  $ git add vendor/file.txt
+  $ git commit -m "add vendor content" 1> /dev/null
+  $ VENDOR_COMMIT=$(git rev-parse HEAD)
+  $ LIBS_COMMIT=$(git rev-parse master)
+  $ git checkout master 1> /dev/null 2> /dev/null
+
+  $ cd ${TESTTMP}/main-repo
+  $ git checkout -b multiple master~1 1> /dev/null 2> /dev/null
+  $ git fetch ../submodule-repo master vendor 1> /dev/null 2> /dev/null
+  $ git update-index --add --cacheinfo "160000,$LIBS_COMMIT,libs"
+  $ git update-index --add --cacheinfo "160000,$LIBS_COMMIT,libs-copy"
+  $ git update-index --add --cacheinfo "160000,$VENDOR_COMMIT,vendor"
+  $ git commit -m "add three submodule references" 1> /dev/null
+
+  $ josh-filter ':[:#libs:prefix=left,:[:#libs-copy:prefix=right,:#vendor]]' multiple --update refs/josh/filter/multiple 1> /dev/null
+  $ [ "$(git rev-list --parents -n 1 refs/josh/filter/multiple | wc -w | tr -d ' ')" = 5 ] && echo "three landing-path history parents present"
+  three landing-path history parents present
+
+  $ git ls-tree -r --name-only refs/josh/filter/multiple^2
+  left/libs/bar/file2.txt
+  left/libs/foo/file1.txt
+  $ git ls-tree -r --name-only refs/josh/filter/multiple^3
+  right/libs-copy/bar/file2.txt
+  right/libs-copy/foo/file1.txt
+  $ git ls-tree -r --name-only refs/josh/filter/multiple^4
+  vendor/foo/file1.txt
+  vendor/vendor/file.txt
+
+  $ git-tree-pretty refs/josh/filter/multiple
+  .
+  ├── left/
+  │   └── libs/
+  │       ├── bar/
+  │       │   └── file2.txt
+  │       │       ┆  bar content
+  │       └── foo/
+  │           └── file1.txt
+  │               ┆  foo content
+  ├── right/
+  │   └── libs-copy/
+  │       ├── bar/
+  │       │   └── file2.txt
+  │       │       ┆  bar content
+  │       └── foo/
+  │           └── file1.txt
+  │               ┆  foo content
+  └── vendor/
+      ├── foo/
+      │   └── file1.txt
+      │       ┆  foo content
+      └── vendor/
+          └── file.txt
+              ┆  vendor content
+
+Updating all three pointers in one superproject commit produces one merge
+parent per landing path. The two duplicate targets remain separate histories.
+
+  $ FILTERED_BASE=$(git rev-parse refs/josh/filter/multiple)
+  $ cd ${TESTTMP}/submodule-repo
+  $ git checkout -b multiple-libs "$LIBS_COMMIT" 1> /dev/null 2> /dev/null
+  $ echo "updated libs content" > bar/updated.txt
+  $ git add bar/updated.txt
+  $ git commit -m "update libs content" 1> /dev/null
+  $ UPDATED_LIBS_COMMIT=$(git rev-parse HEAD)
+  $ git checkout vendor 1> /dev/null 2> /dev/null
+  $ echo "updated vendor content" > vendor/updated.txt
+  $ git add vendor/updated.txt
+  $ git commit -m "update vendor content" 1> /dev/null
+  $ UPDATED_VENDOR_COMMIT=$(git rev-parse HEAD)
+  $ git checkout master 1> /dev/null 2> /dev/null
+
+  $ cd ${TESTTMP}/main-repo
+  $ git fetch ../submodule-repo multiple-libs vendor 1> /dev/null 2> /dev/null
+  $ git update-index --cacheinfo "160000,$UPDATED_LIBS_COMMIT,libs"
+  $ git update-index --cacheinfo "160000,$UPDATED_LIBS_COMMIT,libs-copy"
+  $ git update-index --cacheinfo "160000,$UPDATED_VENDOR_COMMIT,vendor"
+  $ git commit -m "update three submodule references" 1> /dev/null
+  $ josh-filter ':[:#libs:prefix=left,:[:#libs-copy:prefix=right,:#vendor]]' multiple --update refs/josh/filter/multiple 1> /dev/null
+
+  $ git log --graph --pretty=%s "${FILTERED_BASE}..refs/josh/filter/multiple" | sed 's/ *$//'
+  *-.   update three submodule references
+  |\ \
+  | | * update vendor content
+  | * update libs content
+  * update libs content
+
+  $ git checkout master 1> /dev/null 2> /dev/null
 
 Moving the gitlink merges only the newly referenced submodule commits.
 
