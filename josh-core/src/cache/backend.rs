@@ -27,6 +27,18 @@ pub trait CacheBackend: Send + Sync {
         tree_keyed: bool,
     ) -> anyhow::Result<()>;
 
+    /// Persist a requested commit even when sparse sampling would skip it.
+    fn write_forced(
+        &self,
+        filter: crate::filter::Filter,
+        from: gix_hash::ObjectId,
+        to: gix_hash::ObjectId,
+        hint: HistoryGraphHint,
+        tree_keyed: bool,
+    ) -> anyhow::Result<()> {
+        self.write(filter, from, to, hint, tree_keyed)
+    }
+
     /// Register the start of a transaction against this backend. The default is a no-op; backends
     /// whose underlying store holds a process-exclusive lock (the sled backend) use this to open
     /// lazily and reference-count active transactions.

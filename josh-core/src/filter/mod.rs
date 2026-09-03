@@ -375,11 +375,33 @@ pub fn apply_to_commit(
     commit: gix_hash::ObjectId,
     transaction: &cache::Transaction,
 ) -> anyhow::Result<gix_hash::ObjectId> {
+    apply_to_commit_with_options(filter, commit, transaction, ApplyToCommitOptions::default())
+}
+
+/// Options for filtering one commit.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct ApplyToCommitOptions {
+    /// Store the requested commit even when sparse cache sampling would skip it.
+    pub force_cache: bool,
+}
+
+/// Calculate the filtered commit with explicit cache options.
+pub fn apply_to_commit_with_options(
+    filter: Filter,
+    commit: gix_hash::ObjectId,
+    transaction: &cache::Transaction,
+    options: ApplyToCommitOptions,
+) -> anyhow::Result<gix_hash::ObjectId> {
     let filter = opt::optimize(filter);
+    let force_cache =
+        options.force_cache && filter != sequence_number() && filter != reachable_roots();
     loop {
         let filtered = apply_to_commit2(filter, commit, transaction)?;
 
         if let Some(id) = filtered {
+            if force_cache {
+                transaction.insert_forced(filter, commit, id)?;
+            }
             return Ok(id);
         }
 
@@ -2682,6 +2704,174 @@ mod tests {
             message,
         )
         .unwrap()
+    }
+
+    fn unsampled_endpoint(
+        force_cache: bool,
+    ) -> (
+        tempfile::TempDir,
+        Filter,
+        gix_hash::ObjectId,
+        gix_hash::ObjectId,
+    ) {
+        let directory = tempfile::tempdir().unwrap();
+        let repo = gix::init_bare(directory.path()).unwrap();
+        let root = write_commit(
+            &repo,
+            build_tree(&repo, &[("selected/file.txt", "root")]),
+            &[],
+            "root",
+        );
+        let tip = write_commit(
+            &repo,
+            build_tree(&repo, &[("selected/file.txt", "tip")]),
+            &[root],
+            "tip",
+        );
+        let filter = Filter::new().subdir("selected");
+        let filtered = {
+            let stack = cache::CacheStack::new()
+                .with_backend(cache::DistributedCacheBackend::writable(directory.path()).unwrap());
+            let context = cache::TransactionContext::new(directory.path(), stack.into());
+            let transaction = context.open().unwrap();
+            let filtered = if force_cache {
+                apply_to_commit_with_options(
+                    filter,
+                    tip,
+                    &transaction,
+                    ApplyToCommitOptions { force_cache: true },
+                )
+                .unwrap()
+            } else {
+                apply_to_commit(filter, tip, &transaction).unwrap()
+            };
+            transaction.flush_mem_odb().unwrap();
+            filtered
+        };
+        (directory, filter, tip, filtered)
+    }
+
+    fn endpoint_hint() -> cache::HistoryGraphHint {
+        cache::HistoryGraphHint {
+            sequence_number: 1,
+            parent_count: 1,
+            jump_delta: 1,
+            jump_is_second: false,
+        }
+    }
+
+    #[test]
+    fn apply_to_commit_preserves_sparse_cache_by_default() {
+        use crate::cache::CacheBackend;
+        let (directory, filter, tip, _) = unsampled_endpoint(false);
+        let reader = cache::DistributedCacheBackend::new(directory.path()).unwrap();
+        assert_eq!(
+            reader.read(filter, tip, endpoint_hint(), false).unwrap(),
+            None
+        );
+    }
+
+    #[test]
+    fn apply_to_commit_persists_unsampled_endpoint_when_requested() {
+        use crate::cache::CacheBackend;
+        let (directory, filter, tip, filtered) = unsampled_endpoint(true);
+        let reader = cache::DistributedCacheBackend::new(directory.path()).unwrap();
+        assert_eq!(
+            reader.read(filter, tip, endpoint_hint(), false).unwrap(),
+            Some(filtered)
+        );
+    }
+
+    #[test]
+    fn apply_to_commit_reuses_forced_unsampled_parent_from_cold_cache() {
+        use std::sync::Arc;
+        use std::sync::atomic::{AtomicUsize, Ordering};
+
+        struct TrackingCache {
+            backend: cache::DistributedCacheBackend,
+            expected_parent: gix_hash::ObjectId,
+            parent_hits: Arc<AtomicUsize>,
+        }
+        impl cache::CacheBackend for TrackingCache {
+            fn read(
+                &self,
+                filter: Filter,
+                from: gix_hash::ObjectId,
+                hint: cache::HistoryGraphHint,
+                tree_keyed: bool,
+            ) -> anyhow::Result<Option<gix_hash::ObjectId>> {
+                let result = self.backend.read(filter, from, hint, tree_keyed)?;
+                if from == self.expected_parent && result.is_some() {
+                    self.parent_hits.fetch_add(1, Ordering::Relaxed);
+                }
+                Ok(result)
+            }
+            fn write(
+                &self,
+                filter: Filter,
+                from: gix_hash::ObjectId,
+                to: gix_hash::ObjectId,
+                hint: cache::HistoryGraphHint,
+                tree_keyed: bool,
+            ) -> anyhow::Result<()> {
+                self.backend.write(filter, from, to, hint, tree_keyed)
+            }
+        }
+
+        let (directory, filter, parent, filtered_parent) = unsampled_endpoint(true);
+        let repo = gix::open(directory.path()).unwrap();
+        let child = write_commit(
+            &repo,
+            build_tree(&repo, &[("selected/file.txt", "child")]),
+            &[parent],
+            "child",
+        );
+        let parent_hits = Arc::new(AtomicUsize::new(0));
+        let stack = cache::CacheStack::new().with_backend(TrackingCache {
+            backend: cache::DistributedCacheBackend::new(directory.path()).unwrap(),
+            expected_parent: parent,
+            parent_hits: Arc::clone(&parent_hits),
+        });
+        let context = cache::TransactionContext::new(directory.path(), stack.into());
+        let transaction = context.open().unwrap();
+        let filtered_child = apply_to_commit(filter, child, &transaction).unwrap();
+        assert!(
+            parent_hits.load(Ordering::Relaxed) > 0,
+            "history traversal did not reuse the forced parent"
+        );
+        let output = objects::CommitData::read(transaction.odb(), filtered_child).unwrap();
+        assert_eq!(
+            output.parent_ids().collect::<Vec<_>>(),
+            vec![filtered_parent]
+        );
+    }
+
+    #[test]
+    fn apply_to_commit_promotes_an_existing_local_cache_hit() {
+        use crate::cache::CacheBackend;
+        let (directory, filter, tip, filtered) = unsampled_endpoint(false);
+        {
+            let stack = cache::CacheStack::new()
+                .with_backend(cache::DistributedCacheBackend::writable(directory.path()).unwrap());
+            let context = cache::TransactionContext::new(directory.path(), stack.into());
+            let transaction = context.open().unwrap();
+            transaction.insert(filter, tip, filtered, false).unwrap();
+            assert_eq!(
+                apply_to_commit_with_options(
+                    filter,
+                    tip,
+                    &transaction,
+                    ApplyToCommitOptions { force_cache: true }
+                )
+                .unwrap(),
+                filtered
+            );
+        }
+        let reader = cache::DistributedCacheBackend::new(directory.path()).unwrap();
+        assert_eq!(
+            reader.read(filter, tip, endpoint_hint(), false).unwrap(),
+            Some(filtered)
+        );
     }
 
     #[test]
