@@ -1,5 +1,7 @@
 ![Just One Single History](/splash.jpg)
 
+[![Discord](https://img.shields.io/badge/Discord-Join%20us-5865F2?logo=discord&logoColor=white)](https://discord.gg/eM4yK2tBdC)
+
 Josh – “Just One Single History” – is a collection of tools and services together composing
 a platform for scaling out distributed development and collaboration with Git.
 
