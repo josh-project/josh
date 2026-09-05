@@ -1,25 +1,30 @@
+//! Plan listings computed over the loaded build [`Graph`].
+//! The graph loader ([`josh_compose_graph::load_graph`]) resolves the full
+//! dependency closure; the functions here only filter it by cache state. A
+//! workspace is skipped when its run is already cached successful AND its output
+//! volume is still present — mirroring the executor's cache check in
+//! `executor::run_job`, so a stale marker without its volume self-heals by being
+//! planned (and later run) again.
+
 use std::collections::HashSet;
 
+use josh_compose_backend::ArtifactBackend;
+use josh_compose_graph::{Graph, Job, OutputMode, load_graph};
 use josh_core::cache;
 use josh_core::memodb;
 
-use josh_compose_backend::ArtifactBackend;
-
-use crate::OutputMode;
 use crate::job_cache;
-use crate::meta::{self, WorkspaceMeta};
 use crate::naming;
 
-/// Walk the workspace tree and collect every image build-tree OID a run would touch.
+/// Collect every image build-tree OID a run would touch: the images of all
+/// runnable jobs (including sidecar images) and their transitive bases,
+/// ordered bases-first and deduplicated. This is the order in which images
+/// would need to be pulled/built for a run to succeed.
 ///
-/// The returned vector is deduplicated and ordered bases-first (a base image's OID
-/// always appears before any image that uses it as a base). This is the order in which
-/// images would need to be pulled/built for a run to succeed.
-///
-/// When `ignore_cache` is false (the default), workspaces whose run is already cached
-/// successful AND whose output volume is still present are skipped — matching the
-/// early-return path in `container::run_container`. When `ignore_cache` is true, every
-/// image a fresh-cache run would build is reported.
+/// When `ignore_cache` is false (the default), workspaces whose run is already
+/// cached successful are pruned — along with their dependency subtrees — so
+/// only images a run would actually build are reported. When `ignore_cache` is
+/// true, every image a fresh-cache run would build is reported.
 pub fn collect_image_oids(
     transaction: &cache::Transaction,
     odb: &memodb::Odb,
@@ -27,30 +32,39 @@ pub fn collect_image_oids(
     ignore_cache: bool,
     runtime: &dyn ArtifactBackend,
 ) -> anyhow::Result<Vec<gix_hash::ObjectId>> {
-    let mut out: Vec<gix_hash::ObjectId> = vec![];
-    let mut image_seen: HashSet<gix_hash::ObjectId> = HashSet::new();
-    let mut ws_seen: HashSet<gix_hash::ObjectId> = HashSet::new();
-    walk_workspace(
-        transaction,
-        odb,
-        ws_tree,
-        ignore_cache,
-        runtime,
-        &mut out,
-        &mut image_seen,
-        &mut ws_seen,
-    )?;
-    Ok(out)
+    let graph = load_graph(transaction, odb, ws_tree)?;
+    let runnable = runnable_jobs(&graph, ignore_cache, runtime, true)?;
+
+    let mut wanted: HashSet<gix_hash::ObjectId> = HashSet::new();
+    for job in graph.jobs() {
+        if !runnable.contains(&job.ws_tree) {
+            continue;
+        }
+        if let Some(image_oid) = job.meta.image {
+            collect_with_bases(&graph, image_oid, &mut wanted);
+        }
+        for spec in &job.meta.sidecars {
+            collect_with_bases(&graph, spec.image, &mut wanted);
+        }
+    }
+
+    // The graph's image list is already bases-first and deduplicated; filtering
+    // it preserves both properties.
+    Ok(graph
+        .images()
+        .iter()
+        .filter(|image| wanted.contains(&image.oid))
+        .map(|image| image.oid)
+        .collect())
 }
 
-/// Walk the workspace tree and collect the job hash (ws_tree OID) of every workspace
-/// a run would touch, including orchestrator workspaces that don't build an image —
-/// those still write a `job_cache` entry, so they belong in the listing.
+/// Collect the job hash (ws_tree OID) of every workspace a run would touch, in
+/// dependency order (dependencies first) — including orchestrator workspaces
+/// that don't build an image, since those still write a `job_cache` entry.
 ///
-/// Cache semantics mirror `collect_image_oids`: when `ignore_cache` is false, a
-/// workspace whose run is already cached successful AND whose output volume is still
-/// present is pruned from the walk. When true, every job a fresh-cache run would
-/// touch is reported.
+/// Cache semantics mirror `collect_image_oids`: when `ignore_cache` is false,
+/// cached-successful workspaces are pruned with their dependency subtrees; when
+/// true, every job a fresh-cache run would touch is reported.
 pub fn collect_job_hashes(
     transaction: &cache::Transaction,
     odb: &memodb::Odb,
@@ -58,143 +72,76 @@ pub fn collect_job_hashes(
     ignore_cache: bool,
     runtime: &dyn ArtifactBackend,
 ) -> anyhow::Result<Vec<gix_hash::ObjectId>> {
-    let mut out: Vec<gix_hash::ObjectId> = vec![];
-    let mut ws_seen: HashSet<gix_hash::ObjectId> = HashSet::new();
-    walk_workspace_jobs(
-        transaction,
-        odb,
-        ws_tree,
-        ignore_cache,
-        runtime,
-        &mut out,
-        &mut ws_seen,
-    )?;
-    Ok(out)
+    let graph = load_graph(transaction, odb, ws_tree)?;
+    let runnable = runnable_jobs(&graph, ignore_cache, runtime, false)?;
+
+    Ok(graph
+        .jobs()
+        .iter()
+        .filter(|job| runnable.contains(&job.ws_tree))
+        .map(|job| job.ws_tree)
+        .collect())
 }
 
-fn walk_workspace(
-    transaction: &cache::Transaction,
-    odb: &memodb::Odb,
-    ws_tree: gix_hash::ObjectId,
+/// Compute the set of jobs a run would execute: everything reachable from the
+/// root without descending into cache-skippable workspaces (a skippable
+/// workspace's dependencies are not run either).
+fn runnable_jobs(
+    graph: &Graph,
     ignore_cache: bool,
     runtime: &dyn ArtifactBackend,
-    out: &mut Vec<gix_hash::ObjectId>,
-    image_seen: &mut HashSet<gix_hash::ObjectId>,
-    ws_seen: &mut HashSet<gix_hash::ObjectId>,
-) -> anyhow::Result<()> {
-    if !ws_seen.insert(ws_tree) {
-        return Ok(());
+    log_skips: bool,
+) -> anyhow::Result<HashSet<gix_hash::ObjectId>> {
+    let mut visited: HashSet<gix_hash::ObjectId> = HashSet::new();
+    let mut runnable: HashSet<gix_hash::ObjectId> = HashSet::new();
+    let mut stack = vec![graph.root().ws_tree];
+    while let Some(ws_tree) = stack.pop() {
+        if !visited.insert(ws_tree) {
+            continue;
+        }
+        let job = graph
+            .job(ws_tree)
+            .expect("job inputs reference jobs in the graph");
+        if !ignore_cache && workspace_is_skippable(job, runtime)? {
+            if log_skips {
+                eprintln!("[{}] Using cached output ({})", job.meta.label, ws_tree);
+            }
+            continue;
+        }
+        runnable.insert(ws_tree);
+        stack.extend(job.inputs.iter().map(|(_, dep_tree)| *dep_tree));
     }
-
-    let workspace_meta = meta::read_meta(transaction, odb, ws_tree)?;
-
-    if !ignore_cache && workspace_is_skippable(ws_tree, &workspace_meta, runtime)? {
-        eprintln!(
-            "[{}] Using cached output ({})",
-            workspace_meta.label, ws_tree
-        );
-        return Ok(());
-    }
-
-    for (_, dep_tree) in meta::read_gitlink_entries(transaction, odb, ws_tree, "inputs")? {
-        walk_workspace(
-            transaction,
-            odb,
-            dep_tree,
-            ignore_cache,
-            runtime,
-            out,
-            image_seen,
-            ws_seen,
-        )?;
-    }
-
-    if let Some(image_oid) = workspace_meta.image {
-        collect_image_with_bases(transaction, odb, image_oid, out, image_seen)?;
-    }
-    for spec in &workspace_meta.sidecars {
-        collect_image_with_bases(transaction, odb, spec.image, out, image_seen)?;
-    }
-
-    Ok(())
+    Ok(runnable)
 }
 
-fn walk_workspace_jobs(
-    transaction: &cache::Transaction,
-    odb: &memodb::Odb,
-    ws_tree: gix_hash::ObjectId,
-    ignore_cache: bool,
-    runtime: &dyn ArtifactBackend,
-    out: &mut Vec<gix_hash::ObjectId>,
-    ws_seen: &mut HashSet<gix_hash::ObjectId>,
-) -> anyhow::Result<()> {
-    if !ws_seen.insert(ws_tree) {
-        return Ok(());
-    }
-
-    let workspace_meta = meta::read_meta(transaction, odb, ws_tree)?;
-
-    if !ignore_cache && workspace_is_skippable(ws_tree, &workspace_meta, runtime)? {
-        return Ok(());
-    }
-
-    for (_, dep_tree) in meta::read_gitlink_entries(transaction, odb, ws_tree, "inputs")? {
-        walk_workspace_jobs(
-            transaction,
-            odb,
-            dep_tree,
-            ignore_cache,
-            runtime,
-            out,
-            ws_seen,
-        )?;
-    }
-
-    out.push(ws_tree);
-    Ok(())
-}
-
-/// Mirror `container::run_container`'s early-return condition, tightened to also
-/// require the output volume when the workspace produces one. A skippable workspace
-/// won't be executed by a run, so its image and sidecar images are not needed.
-fn workspace_is_skippable(
-    ws_tree: gix_hash::ObjectId,
-    meta: &WorkspaceMeta,
-    runtime: &dyn ArtifactBackend,
-) -> anyhow::Result<bool> {
-    let hash = ws_tree.to_string();
+/// Mirror the executor's cache check: a job is skippable when a previous
+/// successful run is recorded AND its output volume still exists (when one is
+/// expected).
+fn workspace_is_skippable(job: &Job, runtime: &dyn ArtifactBackend) -> anyhow::Result<bool> {
+    let hash = job.ws_tree.to_string();
     if !job_cache::is_cached_success(&hash) {
         return Ok(false);
     }
-    if meta.output == OutputMode::None {
+    if job.meta.output == OutputMode::None {
         return Ok(true);
     }
-    let out_vol = naming::output(ws_tree);
-    runtime.artifact_exists(&out_vol)
+    runtime.artifact_exists(&naming::output(job.ws_tree))
 }
 
-/// Collect an image and all its transitive base images, bases-first.
-///
-/// The recursive call for each base happens *before* the current image is inserted
-/// (post-order traversal). This ensures a base image's OID always appears before any
-/// image that uses it as a base — the ordering `collect_image_oids` guarantees.
-fn collect_image_with_bases(
-    transaction: &cache::Transaction,
-    odb: &memodb::Odb,
+/// Collect an image and all its transitive base images into `wanted`.
+fn collect_with_bases(
+    graph: &Graph,
     image_oid: gix_hash::ObjectId,
-    out: &mut Vec<gix_hash::ObjectId>,
-    image_seen: &mut HashSet<gix_hash::ObjectId>,
-) -> anyhow::Result<()> {
-    if image_seen.contains(&image_oid) {
-        return Ok(());
+    wanted: &mut HashSet<gix_hash::ObjectId>,
+) {
+    if wanted.contains(&image_oid) {
+        return;
     }
-
-    for (_, base_oid) in meta::read_gitlink_entries(transaction, odb, image_oid, "bases")? {
-        collect_image_with_bases(transaction, odb, base_oid, out, image_seen)?;
+    let node = graph
+        .image(image_oid)
+        .expect("job images reference images in the graph");
+    for (_, base_oid) in &node.bases {
+        collect_with_bases(graph, *base_oid, wanted);
     }
-
-    if image_seen.insert(image_oid) {
-        out.push(image_oid);
-    }
-    Ok(())
+    wanted.insert(image_oid);
 }

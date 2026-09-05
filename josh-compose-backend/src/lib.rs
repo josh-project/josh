@@ -1,23 +1,18 @@
 //! Execution backend contracts for `josh-compose`.
 //!
-//! The scheduler needs three capabilities from a backend: prepared environments, named
-//! tar-addressable artifacts, and execution of steps and their sidecar workers. These traits
-//! describe those capabilities without coupling orchestration to a specific backend.
+//! Two families of contracts live here:
+//!
+//! - Backend capabilities: prepared environments, named tar-addressable artifacts,
+//!   and execution of steps and their sidecar workers ([`EnvironmentBackend`],
+//!   [`ArtifactBackend`], [`ExecutionBackend`], aggregated as [`Runtime`]). These
+//!   describe capabilities without coupling orchestration to a specific backend.
+//! - The [`Executor`] strategy contract: how a loaded build graph
+//!   ([`josh_compose_graph::Graph`]) is scheduled against a [`Runtime`].
 //!
 //! Backend-specific details the scheduler does not care about, such as networks, published ports,
 //! container addresses, detached processes, and UID fix-ups, remain private to each implementation.
 
-/// Network reachability the step itself requests (independent of sidecars).
-///
-/// When a step has sidecar workers, the backend connects the step to them regardless of this
-/// policy.
-#[derive(Debug, Clone, PartialEq)]
-pub enum NetworkPolicy {
-    /// No network access.
-    None,
-    /// Full host network access.
-    Host,
-}
+use josh_compose_graph::{Graph, NetworkPolicy};
 
 /// Recipe for preparing an environment: a tar build context plus build arguments.
 #[derive(Debug, Clone)]
@@ -92,7 +87,10 @@ pub struct SidecarHandle {
 }
 
 /// Prepared environment management for `josh-compose`.
-pub trait EnvironmentBackend {
+///
+/// Backends must be `Send + Sync`: parallel executors drive a shared runtime
+/// from multiple threads.
+pub trait EnvironmentBackend: Send + Sync {
     /// Whether the environment for `key` is already prepared.
     fn env_exists(&self, key: &str) -> anyhow::Result<bool>;
     /// Prepare the environment for `key` from `recipe` (build it). Idempotent
@@ -105,7 +103,9 @@ pub trait EnvironmentBackend {
 }
 
 /// Named, tar-addressable artifact management for `josh-compose`.
-pub trait ArtifactBackend {
+///
+/// `Send + Sync` for the same reason as [`EnvironmentBackend`].
+pub trait ArtifactBackend: Send + Sync {
     fn artifact_exists(&self, name: &str) -> anyhow::Result<bool>;
     fn create_artifact(&self, name: &str) -> anyhow::Result<()>;
     /// Seed artifact `name` with the contents of `tar`.
@@ -153,7 +153,9 @@ pub trait ArtifactBackend {
 }
 
 /// Step and sidecar execution for `josh-compose`.
-pub trait ExecutionBackend {
+///
+/// `Send + Sync` for the same reason as [`EnvironmentBackend`].
+pub trait ExecutionBackend: Send + Sync {
     /// Run a step, streaming stdout/stderr to the terminal while capturing them.
     fn run(&self, args: RunArgs) -> anyhow::Result<RunOutput>;
     /// Start a sidecar worker and block until it is reachable; return its handle.
@@ -169,3 +171,26 @@ pub trait ExecutionBackend {
 pub trait Runtime: EnvironmentBackend + ArtifactBackend + ExecutionBackend {}
 
 impl<T> Runtime for T where T: EnvironmentBackend + ArtifactBackend + ExecutionBackend {}
+
+/// Options shared by executors.
+pub struct ExecOpts {
+    /// Extract `OutputMode::Workdir` artifacts into the host working directory.
+    pub extract_to_workdir: bool,
+}
+
+/// An execution strategy for a loaded build [`Graph`].
+///
+/// Graph loading ([`josh_compose_graph::load_graph`]) is separate from execution: an
+/// executor receives the fully-resolved graph and owns scheduling decisions — cache
+/// checks, sidecar lifecycle, artifact handling — for each job it runs.
+/// `transaction` provides git access for lazy materialization of byte payloads
+/// (build contexts, worktree tars).
+pub trait Executor {
+    fn execute(
+        &self,
+        transaction: &josh_core::cache::Transaction,
+        graph: &Graph,
+        runtime: &dyn Runtime,
+        opts: &ExecOpts,
+    ) -> anyhow::Result<()>;
+}

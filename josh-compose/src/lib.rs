@@ -1,25 +1,13 @@
-use josh_compose_backend::{ArtifactBackend, Runtime};
+use josh_compose_backend::{ArtifactBackend, ExecOpts, Executor, Runtime};
 
 pub mod archive;
 pub mod clean;
-pub mod container;
+pub mod executor;
 pub mod filter;
 pub mod image;
 pub mod job_cache;
-pub mod meta;
 pub mod naming;
 pub mod plan;
-
-#[derive(Debug, Clone, PartialEq)]
-pub enum OutputMode {
-    /// No output artifact is created; only success/failure is recorded.
-    None,
-    /// Output artifact is created and its contents are extracted to the host working directory.
-    Workdir,
-    /// Output artifact is created and kept (e.g. for use as a dependency input), but not
-    /// extracted.
-    Keep,
-}
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum CleanMode {
@@ -39,11 +27,24 @@ pub struct RunOptions {
     pub clean: CleanMode,
 }
 
-/// Main entry point for `josh run`.
+/// Main entry point for `josh run`, using the default sequential executor.
 pub fn run(
     transaction: &josh_core::cache::Transaction,
     opts: RunOptions,
     runtime: &dyn Runtime,
+) -> anyhow::Result<()> {
+    run_with_executor(transaction, opts, runtime, &executor::SequentialExecutor)
+}
+
+/// Load the build graph for the given options and hand it to `executor`.
+///
+/// Graph loading (resolving the workspace and image dependency closure from git
+/// trees) happens here, once, before the executor makes any scheduling decision.
+pub fn run_with_executor(
+    transaction: &josh_core::cache::Transaction,
+    opts: RunOptions,
+    runtime: &dyn Runtime,
+    executor: &dyn Executor,
 ) -> anyhow::Result<()> {
     josh_filter::check_experimental_features_enabled("josh run")?;
 
@@ -56,31 +57,24 @@ pub fn run(
 
     let (ws_tree, _safe_name) = filter::compute_ws_tree(transaction, &filter_spec, source_commit)?;
 
-    let mut attempted = std::collections::HashSet::new();
+    let graph = josh_compose_graph::load_graph(transaction, transaction.odb(), ws_tree)?;
+
     // Only extract output artifacts into the working tree when running against
     // uncommitted changes (input_ref == "."). For committed refs there is no
     // working tree to write back to.
-    let extract_to_workdir = opts.input_ref == ".";
-    let odb = transaction.odb();
-    container::run_container(
-        transaction,
-        odb,
-        ws_tree,
-        &mut attempted,
-        extract_to_workdir,
-        runtime,
-    )?;
-
-    Ok(())
+    let exec_opts = ExecOpts {
+        extract_to_workdir: opts.input_ref == ".",
+    };
+    executor.execute(transaction, &graph, runtime, &exec_opts)
 }
 
 /// Enumerate every image build-tree OID that a `run` with the same options would
 /// require, bases-first and deduplicated.
 ///
 /// When `ignore_cache` is false, workspaces whose run is already cached successful and
-/// whose output volume still exists are pruned from the walk (mirroring
-/// `container::run_container`'s early-return). When `ignore_cache` is true, the full
-/// set is reported regardless of cache state.
+/// whose output volume still exists are pruned from the graph (mirroring the
+/// executor's cache check). When `ignore_cache` is true, the full set is reported
+/// regardless of cache state.
 pub fn plan_images(
     transaction: &josh_core::cache::Transaction,
     opts: RunOptions,
@@ -102,9 +96,9 @@ pub fn plan_images(
 /// would touch, in dependency order (dependencies first).
 ///
 /// When `ignore_cache` is false, workspaces whose run is already cached successful and
-/// whose output volume still exists are pruned from the walk (mirroring
-/// `container::run_container`'s early-return). When `ignore_cache` is true, the full
-/// set is reported regardless of cache state.
+/// whose output volume still exists are pruned from the graph (mirroring the
+/// executor's cache check). When `ignore_cache` is true, the full set is reported
+/// regardless of cache state.
 pub fn plan_jobs(
     transaction: &josh_core::cache::Transaction,
     opts: RunOptions,

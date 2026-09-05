@@ -22,6 +22,7 @@ members = [
     "josh-changes",
     "josh-compose",
     "josh-compose-backend",
+    "josh-compose-graph",
     "josh-compose-podman",
 
     "forges/josh-github-changes",
@@ -112,6 +113,7 @@ josh-core = { path = "josh-core", version = "26.8.28" }
 josh-memodb = { path = "josh-memodb", version = "26.8.28" }
 josh-compose = { path = "josh-compose", version = "26.8.28" }
 josh-compose-backend = { path = "josh-compose-backend", version = "26.8.28" }
+josh-compose-graph = { path = "josh-compose-graph", version = "26.8.28" }
 josh-compose-podman = { path = "josh-compose-podman", version = "26.8.28" }
 josh-graphql = { path = "josh-graphql", version = "26.8.28" }
 josh-link = { path = "josh-link", version = "26.8.28" }
@@ -209,6 +211,7 @@ josh-core = { path = "josh-core" }
 josh-memodb = { path = "josh-memodb" }
 josh-compose = { path = "josh-compose" }
 josh-compose-backend = { path = "josh-compose-backend" }
+josh-compose-graph = { path = "josh-compose-graph" }
 josh-compose-podman = { path = "josh-compose-podman" }
 josh-graphql = { path = "josh-graphql" }
 josh-link = { path = "josh-link" }

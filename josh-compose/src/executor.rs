@@ -1,18 +1,53 @@
-use std::collections::HashSet;
+//! The sequential executor: runs a loaded build [`Graph`] against a runtime
+//! backend one job at a time, in dependency order. The [`Executor`] strategy
+//! contract itself lives in `josh-compose-backend`.
+
+use std::collections::HashMap;
 use std::path::Path;
 
+use josh_compose_backend::{
+    ExecOpts, Executor, Mount, RunArgs, Runtime, SidecarArgs, SidecarHandle,
+};
+use josh_compose_graph::{Graph, Job, OutputMode, SidecarSpec};
 use josh_core::cache;
 use josh_core::memodb;
 
-use josh_compose_backend::{Mount, RunArgs, Runtime, SidecarArgs, SidecarHandle};
-
-use crate::OutputMode;
 use crate::image;
 use crate::job_cache;
-use crate::meta::{self, SidecarSpec};
 use crate::naming;
 
 const SIDECAR_IP_PLACEHOLDER: &str = "{SIDECAR_IP}";
+
+/// Depth-first, one-job-at-a-time executor — the default strategy.
+///
+/// Jobs run in the graph's dependency order. A job whose dependencies failed is
+/// skipped, but independent branches still run; the run fails if the root job
+/// (or any job it transitively depends on) failed.
+pub struct SequentialExecutor;
+
+impl Executor for SequentialExecutor {
+    fn execute(
+        &self,
+        transaction: &cache::Transaction,
+        graph: &Graph,
+        runtime: &dyn Runtime,
+        opts: &ExecOpts,
+    ) -> anyhow::Result<()> {
+        let odb = transaction.odb();
+        let mut failed: HashMap<gix_hash::ObjectId, String> = HashMap::new();
+        for job in graph.jobs() {
+            if let Err(e) = run_job(transaction, odb, graph, job, &failed, runtime, opts) {
+                failed.insert(job.ws_tree, e.to_string());
+            }
+        }
+
+        let root = graph.root();
+        if let Some(e) = failed.get(&root.ws_tree) {
+            anyhow::bail!("{e}");
+        }
+        Ok(())
+    }
+}
 
 /// Resolve passthrough env names by looking each up in the outer process environment.
 /// Errors listing every missing variable when any are absent or empty, so that the
@@ -47,10 +82,11 @@ fn resolve_passthrough(
 fn start_sidecar(
     transaction: &cache::Transaction,
     odb: &memodb::Odb,
+    graph: &Graph,
     spec: &SidecarSpec,
     runtime: &dyn Runtime,
 ) -> anyhow::Result<SidecarHandle> {
-    let env_key = image::ensure_image(transaction, odb, spec.image, runtime)?;
+    let env_key = image::ensure_image(transaction, odb, graph, spec.image, runtime)?;
 
     let passthrough_env = resolve_passthrough(&spec.name, &spec.passthrough)?;
 
@@ -65,70 +101,56 @@ fn start_sidecar(
     })
 }
 
-/// Run a workspace identified by `ws_tree`, recursively running all dependencies
-/// depth-first. Failures in sibling dependencies are collected so all are attempted
-/// before bailing.
+/// Run a single job whose dependencies have already been attempted. Failures in
+/// sibling dependencies are collected so all are reported before the job bails.
 ///
-/// Sidecars declared in the workspace metadata are started before the main step and
-/// torn down when this function returns (including on error paths), via [`defer::defer`].
-/// A scratch artifact seeded from the worktree is created and cleaned up the same way.
-///
-/// `attempted` tracks ws_trees already visited in this invocation to avoid redundant
-/// re-runs; the output cache may also short-circuit re-runs across invocations.
-pub fn run_container(
+/// Sidecars declared in the job's metadata are started before the main step and
+/// torn down when this function returns (including on error paths), via
+/// [`defer::defer`]. A scratch artifact seeded from the worktree is created and
+/// cleaned up the same way.
+fn run_job(
     transaction: &cache::Transaction,
     odb: &memodb::Odb,
-    ws_tree: gix_hash::ObjectId,
-    attempted: &mut HashSet<gix_hash::ObjectId>,
-    extract_to_workdir: bool,
+    graph: &Graph,
+    job: &Job,
+    failed: &HashMap<gix_hash::ObjectId, String>,
     runtime: &dyn Runtime,
+    opts: &ExecOpts,
 ) -> anyhow::Result<()> {
-    let workspace_meta = meta::read_meta(transaction, odb, ws_tree)?;
+    let workspace_meta = &job.meta;
 
     // Cache check: skip only if a previous successful run is recorded AND its
-    // output volume is still present (when one is expected). Mirrors
-    // `plan::workspace_is_skippable` so a stale marker without its volume —
-    // reachable when an R2 volume pull fails after the marker pull succeeded —
-    // self-heals by re-running rather than failing downstream dep-mounts.
-    let hash = ws_tree.to_string();
-    let out_vol = naming::output(ws_tree);
+    // output volume is still present (when one is expected). A stale marker
+    // without its volume — reachable when an R2 volume pull fails after the
+    // marker pull succeeded — self-heals by re-running rather than failing
+    // downstream dep-mounts.
+    let hash = job.ws_tree.to_string();
+    let out_vol = naming::output(job.ws_tree);
     if job_cache::is_cached_success(&hash)
         && (workspace_meta.output == OutputMode::None || runtime.artifact_exists(&out_vol)?)
     {
         eprintln!(
             "[{}] Using cached output ({})",
-            workspace_meta.label, ws_tree
+            workspace_meta.label, job.ws_tree
         );
         return Ok(());
     }
 
-    if !attempted.insert(ws_tree) {
-        anyhow::bail!(
-            "[{}] Already attempted in this run ({})",
-            workspace_meta.label,
-            ws_tree
-        );
-    }
+    eprintln!("[{}] Running ({})", workspace_meta.label, job.ws_tree);
 
-    eprintln!("[{}] Running ({})", workspace_meta.label, ws_tree);
-
-    // Run all dependencies, collecting failures so sibling jobs still get a chance to run.
-    let input_entries = meta::read_gitlink_entries(transaction, odb, ws_tree, "inputs")?;
+    // Dependencies completed earlier in graph order. Collect the output volumes
+    // to mount; a failed dependency is fatal to this job but not to siblings.
     let mut dep_volumes: Vec<(String, String, bool)> = vec![];
     let mut dep_errors: Vec<String> = vec![];
-    for (dep_name, dep_tree) in &input_entries {
-        if let Err(e) = run_container(
-            transaction,
-            odb,
-            *dep_tree,
-            attempted,
-            extract_to_workdir,
-            runtime,
-        ) {
+    for (dep_name, dep_tree) in &job.inputs {
+        if let Some(e) = failed.get(dep_tree) {
             dep_errors.push(format!("dependency {dep_name} failed: {e}"));
             continue;
         }
-        let dep_meta = meta::read_meta(transaction, odb, *dep_tree)?;
+        let dep_meta = &graph
+            .job(*dep_tree)
+            .expect("job inputs reference jobs in the graph")
+            .meta;
         if dep_meta.output == OutputMode::None {
             continue;
         }
@@ -156,7 +178,7 @@ pub fn run_container(
     };
 
     // Resolve the environment (cache-or-build).
-    let image_name = image::ensure_image(transaction, odb, image_oid, runtime)?;
+    let image_name = image::ensure_image(transaction, odb, graph, image_oid, runtime)?;
 
     let mut cache_volume: Option<String> = None;
     if let Some(cache_name) = &workspace_meta.cache {
@@ -165,8 +187,7 @@ pub fn run_container(
         cache_volume = Some(vol_name);
     }
 
-    // Read env vars from env/ subtree
-    let mut env_vars = meta::read_blob_entries(transaction, odb, ws_tree, "env");
+    let mut env_vars = job.env.clone();
 
     // Start any declared sidecars and inject their addresses into the main container's env.
     // Any sidecar failure (missing creds, start error, readiness timeout) is fatal: tear
@@ -175,7 +196,7 @@ pub fn run_container(
     let mut started_sidecars: Vec<SidecarHandle> = vec![];
     if !workspace_meta.sidecars.is_empty() {
         for spec in &workspace_meta.sidecars {
-            match start_sidecar(transaction, odb, spec, runtime) {
+            match start_sidecar(transaction, odb, graph, spec, runtime) {
                 Ok(handle) => {
                     for (k, v) in &spec.inject {
                         env_vars.push((
@@ -265,7 +286,7 @@ pub fn run_container(
     let success = output.exit_code == 0;
     job_cache::write_result(&hash, success, &output.stdout, &output.stderr);
 
-    if workspace_meta.output == OutputMode::Workdir && extract_to_workdir {
+    if workspace_meta.output == OutputMode::Workdir && opts.extract_to_workdir {
         runtime.extract_artifact(&out_vol, Path::new("."))?;
     }
 

@@ -3,8 +3,7 @@
 
 use std::path::Path;
 
-use crate::OutputMode;
-use josh_compose_backend::NetworkPolicy;
+use crate::{NetworkPolicy, OutputMode};
 use josh_core::cache;
 use josh_core::filter::tree;
 use josh_core::memodb;
