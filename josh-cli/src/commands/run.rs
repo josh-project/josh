@@ -18,6 +18,29 @@ impl Backend {
     }
 }
 
+/// Backend used when `--backend`/`JOSH_COMPOSE_BACKEND` is not given: podman,
+/// except on macOS with OrbStack running, where docker is preferred.
+fn default_backend() -> Backend {
+    #[cfg(target_os = "macos")]
+    if orbstack_running() {
+        return Backend::Docker;
+    }
+    Backend::Podman
+}
+
+#[cfg(target_os = "macos")]
+fn orbstack_running() -> bool {
+    std::process::Command::new("orbctl")
+        .arg("status")
+        .stdin(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .output()
+        .map(|output| {
+            output.status.success() && String::from_utf8_lossy(&output.stdout).trim() == "Running"
+        })
+        .unwrap_or(false)
+}
+
 #[derive(Debug, clap::Parser)]
 pub struct ComposeArgs {
     #[command(subcommand)]
@@ -62,9 +85,9 @@ pub struct RunArgs {
     #[arg(long = "clean-all")]
     pub clean_all: bool,
 
-    /// Container backend to run the workspace in
-    #[arg(long, value_enum, default_value_t = Backend::Podman, env = "JOSH_COMPOSE_BACKEND")]
-    pub backend: Backend,
+    /// Container backend to run the workspace in [default: podman, or docker on macOS when OrbStack is running]
+    #[arg(long, value_enum, env = "JOSH_COMPOSE_BACKEND")]
+    pub backend: Option<Backend>,
 
     /// Git revision to use as input: "." (working tree), "+" (index), or any rev (e.g. "HEAD", "HEAD~1", "main")
     #[arg(default_value = ".")]
@@ -87,7 +110,7 @@ pub fn handle_run(
         CleanMode::None
     };
 
-    let runtime = args.backend.runtime();
+    let runtime = args.backend.unwrap_or_else(default_backend).runtime();
     josh_compose::run(
         transaction,
         RunOptions {
@@ -105,9 +128,9 @@ pub struct ListImagesArgs {
     #[arg(long = "all")]
     pub all: bool,
 
-    /// Container backend to check for prepared images
-    #[arg(long, value_enum, default_value_t = Backend::Podman, env = "JOSH_COMPOSE_BACKEND")]
-    pub backend: Backend,
+    /// Container backend to check for prepared images [default: podman, or docker on macOS when OrbStack is running]
+    #[arg(long, value_enum, env = "JOSH_COMPOSE_BACKEND")]
+    pub backend: Option<Backend>,
 
     /// Git revision to use as input: "." (working tree), "+" (index), or any rev (e.g. "HEAD", "HEAD~1", "main")
     #[arg(default_value = ".")]
@@ -122,7 +145,7 @@ pub fn handle_list_images(
     args: &ListImagesArgs,
     transaction: &josh_core::cache::Transaction,
 ) -> anyhow::Result<()> {
-    let runtime = args.backend.runtime();
+    let runtime = args.backend.unwrap_or_else(default_backend).runtime();
     let artifacts: &dyn josh_compose_backend::ArtifactBackend = runtime.as_ref();
     let oids = josh_compose::plan_images(
         transaction,
@@ -147,9 +170,9 @@ pub struct ListJobsArgs {
     #[arg(long = "all")]
     pub all: bool,
 
-    /// Container backend to check for existing outputs
-    #[arg(long, value_enum, default_value_t = Backend::Podman, env = "JOSH_COMPOSE_BACKEND")]
-    pub backend: Backend,
+    /// Container backend to check for existing outputs [default: podman, or docker on macOS when OrbStack is running]
+    #[arg(long, value_enum, env = "JOSH_COMPOSE_BACKEND")]
+    pub backend: Option<Backend>,
 
     /// Git revision to use as input: "." (working tree), "+" (index), or any rev (e.g. "HEAD", "HEAD~1", "main")
     #[arg(default_value = ".")]
@@ -164,7 +187,7 @@ pub fn handle_list_jobs(
     args: &ListJobsArgs,
     transaction: &josh_core::cache::Transaction,
 ) -> anyhow::Result<()> {
-    let runtime = args.backend.runtime();
+    let runtime = args.backend.unwrap_or_else(default_backend).runtime();
     let artifacts: &dyn josh_compose_backend::ArtifactBackend = runtime.as_ref();
     let oids = josh_compose::plan_jobs(
         transaction,
