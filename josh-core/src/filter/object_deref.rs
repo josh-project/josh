@@ -19,9 +19,7 @@ fn legalize_object_derefs(filter: Filter) -> Filter {
         Op::Rev(filters) => Op::Rev(
             filters
                 .into_iter()
-                .map(|(match_op, target, filter)| {
-                    (match_op, target, legalize_object_derefs(filter))
-                })
+                .map(|(match_op, filter)| (match_op, legalize_object_derefs(filter)))
                 .collect(),
         ),
         Op::Meta(meta, filter) => Op::Meta(meta, legalize_object_derefs(filter)),

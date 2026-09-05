@@ -176,14 +176,14 @@ pub(crate) fn spec2(op: &Op) -> String {
             // No sorting - preserve order for first-match semantics
             let v = filters
                 .iter()
-                .map(|(match_op, k, v)| {
+                .map(|(match_op, filter)| {
                     let match_str = match match_op {
-                        RevMatch::AncestorStrict => format!("<{}", k),
-                        RevMatch::AncestorInclusive => format!("<={}", k),
-                        RevMatch::Equal => format!("=={}", k),
+                        RevMatch::AncestorStrict(oid) => format!("<{}", oid),
+                        RevMatch::AncestorInclusive(oid) => format!("<={}", oid),
+                        RevMatch::Equal(oid) => format!("=={}", oid),
                         RevMatch::Default => "_".to_string(),
                     };
-                    format!("{}{}", match_str, spec(*v))
+                    format!("{}{}", match_str, spec(*filter))
                 })
                 .collect::<Vec<_>>();
             format!(":rev({})", v.join(","))
