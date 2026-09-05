@@ -30,7 +30,14 @@ fn squash_ids_filter(
 fn make_app() -> clap::Command {
     let app = clap::Command::new("josh-filter");
 
-    let app = { app.arg(clap::Arg::new("search").long("search")) };
+    let app = {
+        app.arg(
+            clap::Arg::new("search")
+                .long("search")
+                .value_name("REGEX")
+                .help("Search matching lines with a Rust regular expression"),
+        )
+    };
     let app = {
         app.arg(
             clap::Arg::new("search-history")
@@ -189,7 +196,7 @@ fn search_changes(
     transaction: &josh_core::cache::Transaction,
     filterobj: josh_core::filter::Filter,
     input_ref: &str,
-    searchstring: &str,
+    pattern: &str,
 ) -> anyhow::Result<()> {
     let commit = transaction
         .rev_parse(input_ref)?
@@ -198,7 +205,7 @@ fn search_changes(
     let ifilterobj = josh_core::filter::parse(":INDEX")?;
     let odb = transaction.odb();
 
-    let mut sweep = josh_search::ChangeSweep::new(searchstring);
+    let mut sweep = josh_search::ChangeSweep::new(pattern)?;
     let mut scache = transaction.search_cache();
 
     // Parents before children, so a commit can always reuse its parent's state.
@@ -391,12 +398,12 @@ fn run_filter(args: Vec<String>) -> anyhow::Result<i32> {
     }
     josh_core::update_refs(&transaction, updated_refs.clone());
 
-    if let Some(searchstring) = args.get_one::<String>("search") {
+    if let Some(pattern) = args.get_one::<String>("search") {
         if args.get_flag("search-changes") {
             if !josh_core::filter::experimental_features_enabled() {
                 anyhow::bail!("--search-changes requires JOSH_EXPERIMENTAL_FEATURES=1");
             }
-            search_changes(&transaction, filterobj, &input_ref, searchstring)?;
+            search_changes(&transaction, filterobj, &input_ref, pattern)?;
             return Ok(0);
         }
         if args.get_flag("search-history") {
@@ -429,12 +436,12 @@ fn run_filter(args: Vec<String>) -> anyhow::Result<i32> {
                     &mut transaction.search_cache(),
                     index_tree,
                     tree,
-                    searchstring,
+                    pattern,
                 )?;
                 let matches = josh_search::search_matches(
                     odb,
                     &mut transaction.search_cache(),
-                    searchstring,
+                    pattern,
                     &candidates,
                 )?;
                 for r in matches {
@@ -473,7 +480,7 @@ fn run_filter(args: Vec<String>) -> anyhow::Result<i32> {
                 &mut transaction.search_cache(),
                 index_tree,
                 tree,
-                searchstring,
+                pattern,
             )?
         } else {
             let mut scan = vec![];
@@ -495,7 +502,7 @@ fn run_filter(args: Vec<String>) -> anyhow::Result<i32> {
         let matches = josh_search::search_matches(
             odb,
             &mut transaction.search_cache(),
-            searchstring,
+            pattern,
             &candidates,
         )?;
 

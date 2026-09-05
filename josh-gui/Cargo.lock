@@ -4447,6 +4447,8 @@ dependencies = [
  "gix-hash",
  "gix-object",
  "josh-gix-ext",
+ "regex",
+ "regex-syntax",
 ]
 
 [[package]]
