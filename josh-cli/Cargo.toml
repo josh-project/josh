@@ -34,7 +34,9 @@ arboard = { version = "^3.6", default-features = false }
 josh-changes.workspace = true
 josh-core.workspace = true
 josh-compose.workspace = true
+josh-compose-backend.workspace = true
 josh-compose-podman.workspace = true
+josh-compose-docker.workspace = true
 josh-search.workspace = true
 josh-github-auth.workspace = true
 josh-github-keyring.workspace = true

@@ -1,0 +1,22 @@
+[package]
+authors = ["Josh Project authors <contact@josh-project.dev>"]
+description = "Docker execution backend for josh-compose"
+edition = "2024"
+keywords = ["git", "monorepo", "workflow", "scm"]
+license-file = "../LICENSE"
+name = "josh-compose-docker"
+readme = "../README.md"
+repository = "https://github.com/josh-project/josh"
+version = "26.8.28"
+
+[dependencies]
+anyhow.workspace = true
+backon.workspace = true
+hex.workspace = true
+josh-compose-backend.workspace = true
+josh-compose-graph.workspace = true
+libc.workspace = true
+log.workspace = true
+rand.workspace = true
+
+tar = "0.4"

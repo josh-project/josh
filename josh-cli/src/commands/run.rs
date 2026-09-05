@@ -1,5 +1,22 @@
 use josh_compose::{CleanMode, RunOptions};
+use josh_compose_backend::Runtime;
+use josh_compose_docker::DockerRuntime;
 use josh_compose_podman::PodmanRuntime;
+
+#[derive(Debug, Clone, Copy, clap::ValueEnum)]
+pub enum Backend {
+    Podman,
+    Docker,
+}
+
+impl Backend {
+    fn runtime(&self) -> Box<dyn Runtime> {
+        match self {
+            Backend::Podman => Box::new(PodmanRuntime::new()),
+            Backend::Docker => Box::new(DockerRuntime::new()),
+        }
+    }
+}
 
 #[derive(Debug, clap::Parser)]
 pub struct ComposeArgs {
@@ -45,6 +62,10 @@ pub struct RunArgs {
     #[arg(long = "clean-all")]
     pub clean_all: bool,
 
+    /// Container backend to run the workspace in
+    #[arg(long, value_enum, default_value_t = Backend::Podman, env = "JOSH_COMPOSE_BACKEND")]
+    pub backend: Backend,
+
     /// Git revision to use as input: "." (working tree), "+" (index), or any rev (e.g. "HEAD", "HEAD~1", "main")
     #[arg(default_value = ".")]
     pub reference: String,
@@ -66,7 +87,7 @@ pub fn handle_run(
         CleanMode::None
     };
 
-    let runtime = PodmanRuntime::new();
+    let runtime = args.backend.runtime();
     josh_compose::run(
         transaction,
         RunOptions {
@@ -74,7 +95,7 @@ pub fn handle_run(
             input_ref: args.reference.clone(),
             clean,
         },
-        &runtime,
+        runtime.as_ref(),
     )
 }
 
@@ -83,6 +104,10 @@ pub struct ListImagesArgs {
     /// Ignore the local job cache and list every image a fresh run would build
     #[arg(long = "all")]
     pub all: bool,
+
+    /// Container backend to check for prepared images
+    #[arg(long, value_enum, default_value_t = Backend::Podman, env = "JOSH_COMPOSE_BACKEND")]
+    pub backend: Backend,
 
     /// Git revision to use as input: "." (working tree), "+" (index), or any rev (e.g. "HEAD", "HEAD~1", "main")
     #[arg(default_value = ".")]
@@ -97,7 +122,8 @@ pub fn handle_list_images(
     args: &ListImagesArgs,
     transaction: &josh_core::cache::Transaction,
 ) -> anyhow::Result<()> {
-    let runtime = PodmanRuntime::new();
+    let runtime = args.backend.runtime();
+    let artifacts: &dyn josh_compose_backend::ArtifactBackend = runtime.as_ref();
     let oids = josh_compose::plan_images(
         transaction,
         RunOptions {
@@ -106,7 +132,7 @@ pub fn handle_list_images(
             clean: CleanMode::None,
         },
         args.all,
-        &runtime,
+        artifacts,
     )?;
 
     for oid in oids {
@@ -121,6 +147,10 @@ pub struct ListJobsArgs {
     #[arg(long = "all")]
     pub all: bool,
 
+    /// Container backend to check for existing outputs
+    #[arg(long, value_enum, default_value_t = Backend::Podman, env = "JOSH_COMPOSE_BACKEND")]
+    pub backend: Backend,
+
     /// Git revision to use as input: "." (working tree), "+" (index), or any rev (e.g. "HEAD", "HEAD~1", "main")
     #[arg(default_value = ".")]
     pub reference: String,
@@ -134,7 +164,8 @@ pub fn handle_list_jobs(
     args: &ListJobsArgs,
     transaction: &josh_core::cache::Transaction,
 ) -> anyhow::Result<()> {
-    let runtime = PodmanRuntime::new();
+    let runtime = args.backend.runtime();
+    let artifacts: &dyn josh_compose_backend::ArtifactBackend = runtime.as_ref();
     let oids = josh_compose::plan_jobs(
         transaction,
         RunOptions {
@@ -143,7 +174,7 @@ pub fn handle_list_jobs(
             clean: CleanMode::None,
         },
         args.all,
-        &runtime,
+        artifacts,
     )?;
 
     for oid in oids {
