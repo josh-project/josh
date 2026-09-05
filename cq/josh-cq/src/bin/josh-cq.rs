@@ -24,25 +24,12 @@ enum Commands {
 
 #[derive(clap::Subcommand)]
 enum ActionCommands {
-    /// Track a remote repository
-    Track(TrackArgs),
     /// Fetch remotes, collect and record state of conditions
     Fetch,
     /// Single step through the queue, updating the state
     Step,
     /// Push updated metarepo state to remotes
     Push,
-}
-
-#[derive(clap::Parser)]
-struct TrackArgs {
-    /// URL of the remote to track
-    url: String,
-    /// ID for this remote
-    id: String,
-    /// Link mode: embedded, snapshot, or pointer (defaults to snapshot)
-    #[arg(long = "mode", default_value = "snapshot")]
-    mode: String,
 }
 
 #[derive(clap::Parser)]
@@ -82,10 +69,8 @@ fn open_repo(
     Ok((repo_path, cache, transaction))
 }
 
-async fn run_serve(args: ServeArgs, data_dir: Option<&std::path::Path>) -> anyhow::Result<()> {
-    let (repo_path, cache, _transaction) = open_repo(data_dir)?;
-
-    let event_tx = josh_cq::cq::spawn_serve_task(repo_path, cache);
+async fn run_serve(args: ServeArgs) -> anyhow::Result<()> {
+    let event_tx = josh_cq::cq::spawn_serve_task();
     let app = josh_cq::cq::make_router(event_tx);
 
     let addr = std::net::SocketAddr::from(([0, 0, 0, 0], args.port));
@@ -126,16 +111,11 @@ async fn main() -> anyhow::Result<()> {
             // TODO
             return Ok(());
         }
-        Commands::Serve(args) => run_serve(args, cli.data_dir.as_deref()).await?,
+        Commands::Serve(args) => run_serve(args).await?,
         Commands::Action(action) => {
-            let (_repo_path, _cache, transaction) = open_repo(cli.data_dir.as_deref())?;
+            let (_repo_path, _cache, _transaction) = open_repo(cli.data_dir.as_deref())?;
 
             match action {
-                ActionCommands::Track(ref args) => {
-                    let msg =
-                        josh_cq::cq::handle_track(&args.url, &args.id, &args.mode, &transaction)?;
-                    println!("{}", msg);
-                }
                 ActionCommands::Fetch => {
                     todo!()
                 }

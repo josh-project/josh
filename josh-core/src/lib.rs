@@ -19,8 +19,6 @@ pub mod filter;
 pub mod git;
 pub mod history;
 pub mod housekeeping;
-pub mod link;
-pub mod submodules;
 pub mod trailers;
 
 pub mod objects {
