@@ -701,62 +701,72 @@ pub fn search_candidates(
         return Ok((**hit).clone());
     }
 
-    let trigrams = distinct_trigrams(searchstring);
-
-    let results = if trigrams.is_empty() {
-        (*all_paths(src, cache, source_tree)?).clone()
-    } else {
-        // Resolve each trigram's three spine levels through the parsed-mirror cache (spine
-        // names are the same fixed-width hex as bucket names): each distinct spine node is
-        // parsed once per process instead of once per lookup.
-        let mut roots = vec![];
-        let mut absent = false;
-        'trigram: for t in &trigrams {
-            let mut node = index_tree;
-            for b in t {
-                let entries = mirror_entries(src, cache, node)?;
-                match entries.binary_search_by_key(&hex_pair(*b), |e| e.name) {
-                    Ok(i) => node = entries[i].oid,
-                    // A trigram absent from the index cannot occur in any file.
-                    Err(_) => {
-                        absent = true;
-                        break 'trigram;
-                    }
-                }
-            }
-            roots.push(node);
-        }
-        if absent {
-            vec![]
-        } else {
-            roots.sort();
-            roots.dedup();
-
-            // Cap the intersection width: any subset of trigrams yields a superset of
-            // candidates, and search_matches verifies exactly anyway. Keep the mirrors with
-            // the fewest entries — they constrain the most.
-            const MAX_INTERSECT: usize = 16;
-            if roots.len() > MAX_INTERSECT {
-                let mut sized = roots
-                    .iter()
-                    .map(|&oid| anyhow::Ok((mirror_entries(src, cache, oid)?.len(), oid)))
-                    .collect::<Result<Vec<_>, _>>()?;
-                sized.sort();
-                roots = sized
-                    .into_iter()
-                    .take(MAX_INTERSECT)
-                    .map(|(_, oid)| oid)
-                    .collect();
-            }
-
-            (*walk(src, cache, roots, source_tree)?).clone()
-        }
+    let results = match query_roots(src, cache, index_tree, searchstring)? {
+        // No usable trigrams: every file is a candidate.
+        None => (*all_paths(src, cache, source_tree)?).clone(),
+        Some(roots) if roots.is_empty() => vec![],
+        Some(roots) => (*walk(src, cache, roots, source_tree)?).clone(),
     };
 
     cache
         .candidates
         .insert(key, std::sync::Arc::new(results.clone()));
     Ok(results)
+}
+
+/// The normalized mirror-root vector `searchstring` intersects in `index_tree`: sorted,
+/// deduplicated and capped, exactly the input [`search_candidates`] hands to the intersection.
+/// `None` means the query has no usable trigrams (every file is a candidate); an empty vector
+/// means some trigram is absent (no file can match). Equal vectors for two indexes imply
+/// equal candidate path sets — the basis for change detection across commits.
+pub fn query_roots(
+    src: &dyn Objects,
+    cache: &mut SearchCache,
+    index_tree: git2::Oid,
+    searchstring: &str,
+) -> anyhow::Result<Option<Vec<git2::Oid>>> {
+    let trigrams = distinct_trigrams(searchstring);
+    if trigrams.is_empty() {
+        return Ok(None);
+    }
+
+    // Resolve each trigram's three spine levels through the parsed-mirror cache (spine names
+    // are the same fixed-width hex as bucket names): each distinct spine node is parsed once
+    // per process instead of once per lookup.
+    let mut roots = vec![];
+    for t in &trigrams {
+        let mut node = index_tree;
+        for b in t {
+            let entries = mirror_entries(src, cache, node)?;
+            match entries.binary_search_by_key(&hex_pair(*b), |e| e.name) {
+                Ok(i) => node = entries[i].oid,
+                // A trigram absent from the index cannot occur in any file.
+                Err(_) => return Ok(Some(vec![])),
+            }
+        }
+        roots.push(node);
+    }
+    roots.sort();
+    roots.dedup();
+
+    // Cap the intersection width: any subset of trigrams yields a superset of candidates, and
+    // search_matches verifies exactly anyway. Keep the mirrors with the fewest entries — they
+    // constrain the most.
+    const MAX_INTERSECT: usize = 16;
+    if roots.len() > MAX_INTERSECT {
+        let mut sized = roots
+            .iter()
+            .map(|&oid| anyhow::Ok((mirror_entries(src, cache, oid)?.len(), oid)))
+            .collect::<Result<Vec<_>, _>>()?;
+        sized.sort();
+        roots = sized
+            .into_iter()
+            .take(MAX_INTERSECT)
+            .map(|(_, oid)| oid)
+            .collect();
+    }
+
+    Ok(Some(roots))
 }
 
 /// One mirror tree entry in compact parsed form: the fixed-width bucket name, the child oid,
@@ -1030,6 +1040,416 @@ fn path_entry(
         }
     }
     Ok(Some(current))
+}
+
+/// The number of lines of blob `oid` matching `query`, through the per-blob match memo.
+fn match_count(
+    src: &dyn Objects,
+    cache: &mut SearchCache,
+    query: &str,
+    blob: git2::Oid,
+) -> anyhow::Result<usize> {
+    let m = search_matches(src, cache, query, &[(String::new(), blob)])?;
+    Ok(m.first().map(|r| r.1.len()).unwrap_or(0))
+}
+
+/// One match-set change reported by [`ChangeSweep`]: the file's matching-line count went from
+/// `before` (in the commit's first parent) to `after`.
+pub struct ChangeEvent {
+    pub path: String,
+    pub before: usize,
+    pub after: usize,
+}
+
+/// Which parts of the candidate space changed between two indexes, as a trie over bucket
+/// bytes. `changed` marks a whole subtree as needing recomputation.
+#[derive(Default)]
+struct BucketTrie {
+    changed: bool,
+    children: HashMap<u8, BucketTrie>,
+}
+
+/// Union the differences between two mirrors into `node`: entries present on one side only or
+/// changing kind mark their bucket changed; tree pairs recurse.
+fn diff_mirrors(
+    src: &dyn Objects,
+    cache: &mut SearchCache,
+    a: git2::Oid,
+    b: git2::Oid,
+    node: &mut BucketTrie,
+) -> anyhow::Result<()> {
+    if a == b {
+        return Ok(());
+    }
+    let la = mirror_entries(src, cache, a)?;
+    let lb = mirror_entries(src, cache, b)?;
+    let (mut i, mut j) = (0, 0);
+    while i < la.len() || j < lb.len() {
+        let (name, pair) = if j >= lb.len() || (i < la.len() && la[i].name < lb[j].name) {
+            let e = &la[i];
+            i += 1;
+            (e.name, None)
+        } else if i >= la.len() || lb[j].name < la[i].name {
+            let e = &lb[j];
+            j += 1;
+            (e.name, None)
+        } else {
+            let (ea, eb) = (&la[i], &lb[j]);
+            i += 1;
+            j += 1;
+            if ea.oid == eb.oid && ea.tree == eb.tree {
+                continue;
+            }
+            (ea.name, (ea.tree && eb.tree).then_some((ea.oid, eb.oid)))
+        };
+        let Some(bucket) = parse_bucket(&name) else {
+            continue;
+        };
+        let child = node.children.entry(bucket).or_default();
+        match pair {
+            Some((ea, eb)) => diff_mirrors(src, cache, ea, eb, child)?,
+            None => child.changed = true,
+        }
+    }
+    Ok(())
+}
+
+/// Whether a candidate path lies in the changed part of the trie. Conservative: any trie
+/// presence at the path's final component counts as changed (regeneration is cheap and only
+/// covers trie scope anyway).
+fn path_changed(trie: &BucketTrie, path: &str) -> bool {
+    let mut node = trie;
+    for comp in path.split('/') {
+        if node.changed {
+            return true;
+        }
+        match node.children.get(&bucket_byte(comp.as_bytes())) {
+            None => return false,
+            Some(next) => node = next,
+        }
+    }
+    node.changed || !node.children.is_empty()
+}
+
+/// The candidates within the trie's changed scope: like [`walk`], but visiting only buckets
+/// the trie names, and delegating fully-changed subtrees to the memoized full walk.
+fn walk_restricted(
+    src: &dyn Objects,
+    cache: &mut SearchCache,
+    mut roots: Vec<git2::Oid>,
+    source: git2::Oid,
+    trie: &BucketTrie,
+    out: &mut Vec<(String, git2::Oid)>,
+) -> anyhow::Result<()> {
+    roots.sort();
+    roots.dedup();
+    if trie.changed {
+        out.extend(walk(src, cache, roots, source)?.iter().cloned());
+        return Ok(());
+    }
+
+    let entry_lists = roots
+        .iter()
+        .map(|oid| mirror_entries(src, cache, *oid))
+        .collect::<anyhow::Result<Vec<_>>>()?;
+
+    let source_entries = read_tree_entries(src, source)?;
+    let mut by_bucket: Vec<Vec<&gix_object::tree::Entry>> = (0..256).map(|_| Vec::new()).collect();
+    for entry in &source_entries {
+        if !entry.mode.is_commit() {
+            by_bucket[bucket_byte(&entry.filename) as usize].push(entry);
+        }
+    }
+
+    'bucket: for (&bucket, sub) in &trie.children {
+        let name = hex_pair(bucket);
+        let mut child_roots = Vec::with_capacity(entry_lists.len());
+        let mut is_tree = None;
+        for list in &entry_lists {
+            match list.binary_search_by_key(&name, |e| e.name) {
+                // Bucket absent from one mirror: nothing under it can match anymore.
+                Err(_) => continue 'bucket,
+                Ok(i) => {
+                    let e = &list[i];
+                    if *is_tree.get_or_insert(e.tree) != e.tree {
+                        continue 'bucket;
+                    }
+                    child_roots.push(e.oid);
+                }
+            }
+        }
+        let members = &by_bucket[bucket as usize];
+        if is_tree == Some(true) {
+            for member in members {
+                if !member.mode.is_tree() {
+                    continue;
+                }
+                let mname = std::str::from_utf8(&member.filename)?;
+                let mut sub_out = vec![];
+                walk_restricted(
+                    src,
+                    cache,
+                    child_roots.clone(),
+                    to_git2(member.oid),
+                    sub,
+                    &mut sub_out,
+                )?;
+                out.extend(sub_out.into_iter().map(|(p, b)| (join_path(mname, &p), b)));
+            }
+        } else {
+            for member in members {
+                let mname = std::str::from_utf8(&member.filename)?;
+                if member.mode.is_tree() {
+                    let sub_paths = all_paths(src, cache, to_git2(member.oid))?;
+                    out.extend(sub_paths.iter().map(|(p, b)| (join_path(mname, p), *b)));
+                } else if !member.mode.is_commit() {
+                    out.push((mname.to_owned(), to_git2(member.oid)));
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
+/// Re-resolve `cands`' blob oids in the child tree `c_oid`, descending only where a component
+/// subtree differs from the parent's `p_oid`. Candidates are sorted by path, so paths sharing
+/// a directory are contiguous: each changed directory is parsed once, identical subtrees are
+/// skipped by oid without parsing anything. `false` means a candidate path no longer resolves
+/// (e.g. a rename within one hash bucket); the caller falls back to a full walk.
+fn refresh_group(
+    src: &dyn Objects,
+    c_oid: git2::Oid,
+    p_oid: git2::Oid,
+    cands: &[(String, git2::Oid)],
+    depth: usize,
+    out: &mut Vec<(String, git2::Oid)>,
+) -> anyhow::Result<bool> {
+    if c_oid == p_oid {
+        out.extend_from_slice(cands);
+        return Ok(true);
+    }
+    let c_entries = read_tree_entries(src, c_oid)?;
+    let p_entries = read_tree_entries(src, p_oid)?;
+
+    fn component(path: &str, depth: usize) -> &str {
+        path.split('/').nth(depth).unwrap_or("")
+    }
+    let mut i = 0;
+    while i < cands.len() {
+        let comp = component(&cands[i].0, depth);
+        let mut j = i + 1;
+        while j < cands.len() && component(&cands[j].0, depth) == comp {
+            j += 1;
+        }
+
+        let find = |entries: &[gix_object::tree::Entry]| {
+            entries
+                .iter()
+                .find(|e| e.filename == comp.as_bytes())
+                .map(|e| to_git2(e.oid))
+        };
+        let ids = match (find(&c_entries), find(&p_entries)) {
+            (Some(ce), Some(pe)) => (ce, pe),
+            _ => return Ok(false),
+        };
+        let is_leaf = cands[i].0.split('/').count() == depth + 1;
+        if is_leaf {
+            out.push((cands[i].0.clone(), ids.0));
+        } else if !refresh_group(src, ids.0, ids.1, &cands[i..j], depth + 1, out)? {
+            return Ok(false);
+        }
+        i = j;
+    }
+    Ok(true)
+}
+
+/// Per-commit sweep state: the source tree, the query's per-trigram mirror roots (unsorted,
+/// aligned with the query's trigram list; `None` while any trigram is absent), and the
+/// candidate pairs.
+struct SweepState {
+    tree: git2::Oid,
+    roots: Option<Vec<git2::Oid>>,
+    cands: std::sync::Arc<Vec<(String, git2::Oid)>>,
+}
+
+/// Pickaxe-style change detection over a history: feed commits parents-first through
+/// [`process`](ChangeSweep::process) and collect, per non-merge commit, the files whose
+/// matching-line count changed against the first parent.
+///
+/// Content addressing keeps the per-commit cost proportional to what changed: equal
+/// per-trigram mirror roots prove the candidate path set unchanged (only blob oids are
+/// re-resolved, skipping identical subtrees); differing roots are diffed mirror-by-mirror
+/// into a bucket trie, and only trie scope is re-walked while the rest of the parent's
+/// candidates are spliced through. False candidates verify to zero matches on both sides, so
+/// events do not depend on how wide the candidate superset is.
+pub struct ChangeSweep {
+    query: String,
+    trigrams: BTreeSet<[u8; 3]>,
+    store: HashMap<git2::Oid, SweepState>,
+}
+
+impl ChangeSweep {
+    pub fn new(query: &str) -> Self {
+        Self {
+            query: query.to_owned(),
+            trigrams: distinct_trigrams(query),
+            store: HashMap::new(),
+        }
+    }
+
+    /// The query's mirror root per trigram, aligned with `self.trigrams`; `None` if any
+    /// trigram is absent (no file can match).
+    fn trigram_roots(
+        &self,
+        src: &dyn Objects,
+        cache: &mut SearchCache,
+        index_oid: git2::Oid,
+    ) -> anyhow::Result<Option<Vec<git2::Oid>>> {
+        let mut roots = Vec::with_capacity(self.trigrams.len());
+        for t in &self.trigrams {
+            let mut node = index_oid;
+            for b in t {
+                let entries = mirror_entries(src, cache, node)?;
+                match entries.binary_search_by_key(&hex_pair(*b), |e| e.name) {
+                    Ok(i) => node = entries[i].oid,
+                    Err(_) => return Ok(None),
+                }
+            }
+            roots.push(node);
+        }
+        Ok(Some(roots))
+    }
+
+    pub fn process(
+        &mut self,
+        src: &dyn Objects,
+        cache: &mut SearchCache,
+        commit_id: git2::Oid,
+        parent_ids: &[git2::Oid],
+        source_tree: git2::Oid,
+        index_tree: git2::Oid,
+    ) -> anyhow::Result<Vec<ChangeEvent>> {
+        let roots = if self.trigrams.is_empty() {
+            None
+        } else {
+            self.trigram_roots(src, cache, index_tree)?
+        };
+        let parent = parent_ids.first().and_then(|p| self.store.get(p));
+
+        let cands = 'cands: {
+            if let (Some(rc), Some(sp)) = (&roots, parent) {
+                if sp.tree == source_tree {
+                    break 'cands sp.cands.clone();
+                }
+                if let Some(rp) = &sp.roots {
+                    if rp == rc {
+                        // Identical roots: same candidate paths, only blobs may differ.
+                        let mut out = Vec::with_capacity(sp.cands.len());
+                        if refresh_group(src, source_tree, sp.tree, &sp.cands, 0, &mut out)? {
+                            break 'cands std::sync::Arc::new(out);
+                        }
+                    } else {
+                        // Diff the changed mirrors into a trie, splice: keep and re-resolve
+                        // the parent's candidates outside the trie, re-walk only inside it.
+                        let mut trie = BucketTrie::default();
+                        for (a, b) in rc.iter().zip(rp.iter()) {
+                            diff_mirrors(src, cache, *a, *b, &mut trie)?;
+                        }
+                        let kept: Vec<(String, git2::Oid)> = sp
+                            .cands
+                            .iter()
+                            .filter(|(p, _)| !path_changed(&trie, p))
+                            .cloned()
+                            .collect();
+                        let mut out = Vec::with_capacity(kept.len());
+                        if refresh_group(src, source_tree, sp.tree, &kept, 0, &mut out)? {
+                            walk_restricted(src, cache, rc.clone(), source_tree, &trie, &mut out)?;
+                            out.sort();
+                            out.dedup();
+                            break 'cands std::sync::Arc::new(out);
+                        }
+                    }
+                }
+            }
+            // Fallbacks: absent trigrams mean no candidates; otherwise a full walk.
+            if roots.is_none() && !self.trigrams.is_empty() {
+                break 'cands std::sync::Arc::new(vec![]);
+            }
+            std::sync::Arc::new(search_candidates(
+                src,
+                cache,
+                index_tree,
+                source_tree,
+                &self.query,
+            )?)
+        };
+
+        // Change events only for non-merge commits, like git log -S without diff-merges.
+        let mut events = vec![];
+        if parent_ids.len() <= 1 {
+            let empty = std::sync::Arc::new(vec![]);
+            let pcands = parent_ids
+                .first()
+                .and_then(|p| self.store.get(p))
+                .map(|s| s.cands.clone())
+                .unwrap_or(empty);
+            events = self.diff_events(src, cache, &pcands, &cands)?;
+        }
+
+        self.store.insert(
+            commit_id,
+            SweepState {
+                tree: source_tree,
+                roots,
+                cands,
+            },
+        );
+        Ok(events)
+    }
+
+    fn diff_events(
+        &self,
+        src: &dyn Objects,
+        cache: &mut SearchCache,
+        pcands: &[(String, git2::Oid)],
+        cands: &[(String, git2::Oid)],
+    ) -> anyhow::Result<Vec<ChangeEvent>> {
+        let mut events = vec![];
+        let (mut i, mut j) = (0, 0);
+        while i < cands.len() || j < pcands.len() {
+            let (path, before, after) =
+                if j >= pcands.len() || (i < cands.len() && cands[i].0 < pcands[j].0) {
+                    let (path, blob) = &cands[i];
+                    i += 1;
+                    (path, 0, match_count(src, cache, &self.query, *blob)?)
+                } else if i >= cands.len() || pcands[j].0 < cands[i].0 {
+                    let (path, blob) = &pcands[j];
+                    j += 1;
+                    (path, match_count(src, cache, &self.query, *blob)?, 0)
+                } else {
+                    let (path, blob) = &cands[i];
+                    let pblob = pcands[j].1;
+                    i += 1;
+                    j += 1;
+                    if *blob == pblob {
+                        continue;
+                    }
+                    (
+                        path,
+                        match_count(src, cache, &self.query, pblob)?,
+                        match_count(src, cache, &self.query, *blob)?,
+                    )
+                };
+            if before != after {
+                events.push(ChangeEvent {
+                    path: path.clone(),
+                    before,
+                    after,
+                });
+            }
+        }
+        Ok(events)
+    }
 }
 
 #[cfg(test)]
@@ -1307,6 +1727,89 @@ mod tests {
         let cold = MapCache::default();
         let index2 = trigram_index(objects(&repo), &cold, &mut Indexer::default(), tree).unwrap();
         assert_eq!(index, index2);
+    }
+
+    #[test]
+    fn change_sweep_matches_brute_force() {
+        let (_tmp, repo) = test_repo();
+        let cache = MapCache::default();
+        let mut indexer = Indexer::default();
+
+        // A history exercising every sweep path: count change in place, rename, removal,
+        // and a fine-grained (>16 files) directory changing alongside.
+        let filler: Vec<(String, String)> = (0..18)
+            .map(|i| (format!("big/f_{:02}", i), format!("filler {}", i)))
+            .collect();
+        let mut trees = vec![];
+        for step in 0..4 {
+            let mut files: Vec<(&str, &str)> =
+                filler.iter().map(|(p, c)| (&p[..], &c[..])).collect();
+            match step {
+                0 => files.push(("dir/a", "needle one")),
+                1 => files.push(("dir/a", "needle one\nneedle two")),
+                2 => files.push(("dir/c", "needle one\nneedle two")),
+                _ => files.push(("dir/c", "nothing here")),
+            }
+            if step >= 1 {
+                files.push(("big/f_00x", "needle in big"));
+            }
+            trees.push(commit_tree(&repo, &files));
+        }
+
+        // Brute force: full per-tree match counts with fresh state.
+        let counts = |tree: &git2::Tree| -> std::collections::BTreeMap<String, usize> {
+            let mut sc = SearchCache::default();
+            let index = trigram_index(
+                &objects(&repo),
+                &MapCache::default(),
+                &mut Indexer::default(),
+                tree.id(),
+            )
+            .unwrap();
+            let cands =
+                search_candidates(&objects(&repo), &mut sc, index, tree.id(), "needle").unwrap();
+            search_matches(&objects(&repo), &mut sc, "needle", &cands)
+                .unwrap()
+                .into_iter()
+                .map(|(p, m)| (p, m.len()))
+                .collect()
+        };
+
+        let mut sweep = ChangeSweep::new("needle");
+        let mut sc = SearchCache::default();
+        let mut prev: Option<&git2::Tree> = None;
+        for tree in &trees {
+            let index = trigram_index(&objects(&repo), &cache, &mut indexer, tree.id()).unwrap();
+            let parents: Vec<git2::Oid> = prev.iter().map(|t| t.id()).collect();
+            let mut events: Vec<(String, usize, usize)> = sweep
+                .process(
+                    &objects(&repo),
+                    &mut sc,
+                    tree.id(),
+                    &parents,
+                    tree.id(),
+                    index,
+                )
+                .unwrap()
+                .into_iter()
+                .map(|e| (e.path, e.before, e.after))
+                .collect();
+            events.sort();
+
+            let before = prev.map(&counts).unwrap_or_default();
+            let after = counts(tree);
+            let mut expected: Vec<(String, usize, usize)> = vec![];
+            for path in before.keys().chain(after.keys()) {
+                let b = before.get(path).copied().unwrap_or(0);
+                let a = after.get(path).copied().unwrap_or(0);
+                if b != a && !expected.iter().any(|(p, _, _)| p == path) {
+                    expected.push((path.clone(), b, a));
+                }
+            }
+            expected.sort();
+            assert_eq!(events, expected, "at step tree {}", tree.id());
+            prev = Some(tree);
+        }
     }
 
     #[test]
