@@ -6,7 +6,6 @@ pub use josh_filter::experimental_features_enabled;
 
 use std::path::Path;
 use std::str::FromStr;
-use std::sync::LazyLock;
 
 // Re-export from josh-filter
 pub use josh_filter::filter::MESSAGE_MATCH_ALL_REGEX;
@@ -37,24 +36,6 @@ pub fn from_tree(
     tree_oid: gix_hash::ObjectId,
 ) -> anyhow::Result<Filter> {
     josh_filter::persist::from_tree(transaction.odb(), tree_oid)
-}
-
-static WORKSPACES: LazyLock<
-    std::sync::Mutex<std::collections::HashMap<gix_hash::ObjectId, Filter>>,
-> = LazyLock::new(Default::default);
-static ANCESTORS: LazyLock<
-    std::sync::Mutex<
-        std::collections::HashMap<
-            gix_hash::ObjectId,
-            std::collections::HashSet<gix_hash::ObjectId>,
-        >,
-    >,
-> = LazyLock::new(Default::default);
-
-/// Clear the process-global workspace and ancestor caches.
-pub fn clear_caches() {
-    WORKSPACES.lock().unwrap().clear();
-    ANCESTORS.lock().unwrap().clear();
 }
 
 // MESSAGE_MATCH_ALL_REGEX is now in josh-filter
@@ -370,19 +351,18 @@ fn get_filter(
     path: &Path,
 ) -> Filter {
     let ws_path = normalize_path(path);
-    // One descent resolves both the WORKSPACES cache key (the workspace.josh entry oid)
-    // and the blob to parse.
+    // One descent resolves the transaction cache key: the workspace.josh entry oid.
     let ws_id = match tree::get_path_entry_at(transaction, odb, reader, &ws_path) {
         Ok(Some(entry)) => entry.oid,
         _ => {
             return to_filter(Op::Empty);
         }
     };
-    let ws_blob = tree::blob_text(odb, ws_id);
 
-    if let Some(f) = WORKSPACES.lock().unwrap().get(&ws_id) {
-        *f
+    if let Some(f) = transaction.get_workspace(ws_id) {
+        f
     } else {
+        let ws_blob = tree::blob_text(odb, ws_id);
         let f = parse(&ws_blob).unwrap_or_else(|_| to_filter(Op::Empty));
         let f = legalize_stored(transaction, odb, f, tree, reader)
             .unwrap_or_else(|_| to_filter(Op::Empty));
@@ -392,7 +372,7 @@ fn get_filter(
         } else {
             to_filter(Op::Empty)
         };
-        WORKSPACES.lock().unwrap().insert(ws_id, f);
+        transaction.insert_workspace(ws_id, f);
         f
     }
 }
@@ -1464,27 +1444,26 @@ pub fn is_ancestor_of(
         }
     }
 
-    let mut ancestor_cache = ANCESTORS.lock().unwrap();
-    let ancestors = match ancestor_cache.entry(tip) {
-        std::collections::hash_map::Entry::Occupied(entry) => entry.into_mut(),
-        std::collections::hash_map::Entry::Vacant(entry) => {
-            tracing::trace!("is_ancestor_of tip={tip}");
-            // Recursively compute all ancestors of `tip`.
-            // Invariant: Everything in `todo` is also in `ancestors`.
-            let mut todo = vec![tip];
-            let mut ancestors = std::collections::HashSet::from_iter(todo.iter().copied());
-            while let Some(commit) = todo.pop() {
-                for parent in crate::git::read_parent_ids(transaction.odb(), commit)? {
-                    if ancestors.insert(parent) {
-                        // Newly inserted! Also handle its parents.
-                        todo.push(parent);
-                    }
-                }
+    if let Some(is_ancestor) = transaction.get_ancestor(tip, commit) {
+        return Ok(is_ancestor);
+    }
+
+    tracing::trace!("is_ancestor_of tip={tip}");
+    // Recursively compute all ancestors of `tip`.
+    // Invariant: Everything in `todo` is also in `ancestors`.
+    let mut todo = vec![tip];
+    let mut ancestors = std::collections::HashSet::from_iter(todo.iter().copied());
+    while let Some(commit) = todo.pop() {
+        for parent in crate::git::read_parent_ids(transaction.odb(), commit)? {
+            if ancestors.insert(parent) {
+                // Newly inserted! Also handle its parents.
+                todo.push(parent);
             }
-            entry.insert(ancestors)
         }
-    };
-    Ok(ancestors.contains(&commit))
+    }
+    let is_ancestor = ancestors.contains(&commit);
+    transaction.insert_ancestors(tip, ancestors);
+    Ok(is_ancestor)
 }
 
 fn legalize_pin<F>(f: Filter, c: &F) -> Filter
