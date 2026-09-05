@@ -15,8 +15,8 @@
 //! named by a one-byte hash of the source name ([`bucket_name`]) so colliding siblings share
 //! a bucket, and small directories are recorded at directory granularity
 //! ([`COARSE_MAX_FILES`]). None of them can drop a file from a trigram's set, only add one,
-//! so candidates are a superset of the true matches and [`search_matches`] verifies byte for
-//! byte.
+//! so candidates are a superset of the true matches and [`search_matches`] performs exact
+//! regular-expression verification.
 //!
 //! Indexes are built compositionally: each file gets a small trigram tree of its own, child
 //! directory indexes are lifted into the parent's namespace, and a directory's children are
@@ -26,12 +26,14 @@
 //! [`gix_object`], and only the objects a finished index references are written to the
 //! object database.
 //!
-//! Searching extracts the query's trigrams, resolves each with a single spine lookup, and
-//! intersects the mirror subtrees; [`SearchCache`] memoizes that work by content, so
-//! searching a history reuses whatever its commits share.
+//! Searching converts a regular expression into a Cox-style Boolean query over required
+//! trigrams, evaluates that query against the spine, and verifies the resulting candidates.
+//! [`SearchCache`] memoizes each layer, so searching a history reuses shared work.
 //!
 //! This crate is independent of the josh filter machinery: it operates on plain Git objects and
 //! memoizes tree-to-index mappings through the [`IndexCache`] trait the caller provides.
+
+mod query;
 
 use gix_object::WriteTo;
 use gix_object::bstr::BString;
@@ -754,12 +756,14 @@ pub fn trigram_index(
 
 /// Search memoization, meant to be kept alive for many [`search_candidates`] /
 /// [`search_matches`] calls (josh keeps one per transaction). Everything is keyed by content
-/// — object ids and the query string — so entries are valid for any commit of the repository:
+/// — object ids and the regex pattern — so entries are valid for any commit of the repository:
 /// searching a history reuses the candidate walks of every shared subtree and verifies every
 /// distinct blob once, no matter how many commits it appears in.
 #[derive(Default)]
 pub struct SearchCache {
-    /// (query, index tree, source tree) -> sorted candidate (path, blob) pairs.
+    /// Pattern -> compiled matcher and conservative trigram query.
+    plans: HashMap<String, std::sync::Arc<query::Plan>>,
+    /// (pattern, index tree, source tree) -> sorted candidate (path, blob) pairs.
     candidates: HashMap<
         (String, gix_hash::ObjectId, gix_hash::ObjectId),
         std::sync::Arc<Vec<(String, gix_hash::ObjectId)>>,
@@ -775,77 +779,115 @@ pub struct SearchCache {
     mirrors: HashMap<gix_hash::ObjectId, std::sync::Arc<Vec<MirrorEntry>>>,
     /// source tree -> all (relative path, blob) pairs under it.
     all_paths: HashMap<gix_hash::ObjectId, std::sync::Arc<Vec<(String, gix_hash::ObjectId)>>>,
-    /// (query, blob) -> matching (line number, line) pairs.
+    /// (pattern, blob) -> matching (line number, line) pairs.
     blob_matches: HashMap<(String, gix_hash::ObjectId), std::sync::Arc<Vec<(usize, String)>>>,
 }
 
-/// The candidate files for `searchstring`: those containing every trigram of the query.
+fn regex_plan(
+    cache: &mut SearchCache,
+    pattern: &str,
+) -> anyhow::Result<std::sync::Arc<query::Plan>> {
+    if let Some(plan) = cache.plans.get(pattern) {
+        return Ok(plan.clone());
+    }
+    let plan = std::sync::Arc::new(query::Plan::new(pattern)?);
+    cache.plans.insert(pattern.to_owned(), plan.clone());
+    Ok(plan)
+}
+
+/// The candidate files for `pattern`: a conservative superset selected by the Cox-style
+/// Boolean trigram query extracted from the regular expression.
 ///
-/// Queries shorter than three characters have no trigrams; every file of `source_tree` is a
-/// candidate then, and [`search_matches`] does the filtering.
+/// Patterns without a required trigram admit every file of `source_tree`; [`search_matches`]
+/// performs exact regex verification.
 pub fn search_candidates(
     src: &dyn Objects,
     cache: &mut SearchCache,
     index_tree: gix_hash::ObjectId,
     source_tree: gix_hash::ObjectId,
-    searchstring: &str,
+    pattern: &str,
 ) -> anyhow::Result<Vec<(String, gix_hash::ObjectId)>> {
-    let key = (searchstring.to_owned(), index_tree, source_tree);
+    let plan = regex_plan(cache, pattern)?;
+    search_candidates_with_plan(src, cache, index_tree, source_tree, pattern, &plan)
+}
+
+fn search_candidates_with_plan(
+    src: &dyn Objects,
+    cache: &mut SearchCache,
+    index_tree: gix_hash::ObjectId,
+    source_tree: gix_hash::ObjectId,
+    pattern: &str,
+    plan: &query::Plan,
+) -> anyhow::Result<Vec<(String, gix_hash::ObjectId)>> {
+    let key = (pattern.to_owned(), index_tree, source_tree);
     if let Some(hit) = cache.candidates.get(&key) {
         return Ok((**hit).clone());
     }
 
-    let results = match query_roots(src, cache, index_tree, searchstring)? {
-        // No usable trigrams: every file is a candidate.
-        None => (*all_paths(src, cache, source_tree)?).clone(),
-        Some(roots) if roots.is_empty() => vec![],
-        Some(roots) => (*walk(src, cache, roots, source_tree)?).clone(),
-    };
-
+    let results = (*evaluate_query(src, cache, index_tree, source_tree, &plan.query)?).clone();
     cache
         .candidates
         .insert(key, std::sync::Arc::new(results.clone()));
     Ok(results)
 }
 
-/// The normalized mirror-root vector `searchstring` intersects in `index_tree`: sorted,
-/// deduplicated and capped, exactly the input [`search_candidates`] hands to the intersection.
-/// `None` means the query has no usable trigrams (every file is a candidate); an empty vector
-/// means some trigram is absent (no file can match). Equal vectors for two indexes imply
-/// equal candidate path sets — the basis for change detection across commits.
+/// The normalized mirror roots for trigrams required in every branch of `pattern`.
+///
+/// This compatibility view deliberately omits branch-local OR constraints. `None` means the
+/// regex has no globally required trigrams (every file is a possible match); an empty vector
+/// means the regex cannot match or a required trigram is absent. [`search_candidates`] evaluates
+/// the complete Boolean query, including alternation.
 pub fn query_roots(
     src: &dyn Objects,
     cache: &mut SearchCache,
     index_tree: gix_hash::ObjectId,
-    searchstring: &str,
+    pattern: &str,
 ) -> anyhow::Result<Option<Vec<gix_hash::ObjectId>>> {
-    let trigrams = distinct_trigrams(searchstring);
+    let plan = regex_plan(cache, pattern)?;
+    if plan.query == query::Query::None {
+        return Ok(Some(vec![]));
+    }
+    let trigrams = plan.query.required_trigrams();
     if trigrams.is_empty() {
         return Ok(None);
     }
 
-    // Resolve each trigram's spine levels through the parsed-mirror cache (spine names
-    // are the same fixed-width hex as bucket names): each distinct spine node is parsed once
-    // per process instead of once per lookup.
     let mut roots = vec![];
-    for t in &trigrams {
-        let mut node = index_tree;
-        for b in spine_path(*t) {
-            let entries = mirror_entries(src, cache, node)?;
-            match entries.binary_search_by_key(&hex_pair(b), |e| e.name) {
-                Ok(i) => node = entries[i].oid,
-                // A trigram absent from the index cannot occur in any file.
-                Err(_) => return Ok(Some(vec![])),
-            }
-        }
-        roots.push(node);
+    for trigram in trigrams {
+        let Some(root) = resolve_trigram_root(src, cache, index_tree, trigram)? else {
+            return Ok(Some(vec![]));
+        };
+        roots.push(root);
     }
+    normalize_roots(src, cache, &mut roots)?;
+    Ok(Some(roots))
+}
+
+fn resolve_trigram_root(
+    src: &dyn Objects,
+    cache: &mut SearchCache,
+    index_tree: gix_hash::ObjectId,
+    trigram: [u8; 3],
+) -> anyhow::Result<Option<gix_hash::ObjectId>> {
+    let mut node = index_tree;
+    for byte in spine_path(trigram) {
+        let entries = mirror_entries(src, cache, node)?;
+        let Ok(index) = entries.binary_search_by_key(&hex_pair(byte), |entry| entry.name) else {
+            return Ok(None);
+        };
+        node = entries[index].oid;
+    }
+    Ok(Some(node))
+}
+
+fn normalize_roots(
+    src: &dyn Objects,
+    cache: &mut SearchCache,
+    roots: &mut Vec<gix_hash::ObjectId>,
+) -> anyhow::Result<()> {
     roots.sort();
     roots.dedup();
 
-    // Cap the intersection width: any subset of trigrams yields a superset of candidates, and
-    // search_matches verifies exactly anyway. Keep the mirrors with the fewest entries — they
-    // constrain the most.
     const MAX_INTERSECT: usize = 16;
     if roots.len() > MAX_INTERSECT {
         let mut sized = roots
@@ -853,14 +895,120 @@ pub fn query_roots(
             .map(|&oid| anyhow::Ok((mirror_entries(src, cache, oid)?.len(), oid)))
             .collect::<Result<Vec<_>, _>>()?;
         sized.sort();
-        roots = sized
+        *roots = sized
             .into_iter()
             .take(MAX_INTERSECT)
             .map(|(_, oid)| oid)
             .collect();
     }
+    Ok(())
+}
 
-    Ok(Some(roots))
+fn candidates_for_trigrams(
+    src: &dyn Objects,
+    cache: &mut SearchCache,
+    index_tree: gix_hash::ObjectId,
+    source_tree: gix_hash::ObjectId,
+    trigrams: impl IntoIterator<Item = [u8; 3]>,
+) -> anyhow::Result<std::sync::Arc<Vec<(String, gix_hash::ObjectId)>>> {
+    let mut roots = vec![];
+    for trigram in trigrams {
+        let Some(root) = resolve_trigram_root(src, cache, index_tree, trigram)? else {
+            return Ok(std::sync::Arc::new(vec![]));
+        };
+        roots.push(root);
+    }
+    normalize_roots(src, cache, &mut roots)?;
+    if roots.is_empty() {
+        all_paths(src, cache, source_tree)
+    } else {
+        walk(src, cache, roots, source_tree)
+    }
+}
+
+fn evaluate_query(
+    src: &dyn Objects,
+    cache: &mut SearchCache,
+    index_tree: gix_hash::ObjectId,
+    source_tree: gix_hash::ObjectId,
+    query: &query::Query,
+) -> anyhow::Result<std::sync::Arc<Vec<(String, gix_hash::ObjectId)>>> {
+    match query {
+        query::Query::All => all_paths(src, cache, source_tree),
+        query::Query::None => Ok(std::sync::Arc::new(vec![])),
+        query::Query::Trigram(trigram) => {
+            candidates_for_trigrams(src, cache, index_tree, source_tree, [*trigram])
+        }
+        query::Query::And(children) => {
+            let direct: Vec<_> = children
+                .iter()
+                .filter_map(|child| match child {
+                    query::Query::Trigram(trigram) => Some(*trigram),
+                    _ => None,
+                })
+                .collect();
+            let mut result = if direct.is_empty() {
+                None
+            } else {
+                Some(candidates_for_trigrams(
+                    src,
+                    cache,
+                    index_tree,
+                    source_tree,
+                    direct,
+                )?)
+            };
+            for child in children {
+                if matches!(child, query::Query::Trigram(_)) {
+                    continue;
+                }
+                let candidates = evaluate_query(src, cache, index_tree, source_tree, child)?;
+                result = Some(match result {
+                    None => candidates,
+                    Some(current) => {
+                        std::sync::Arc::new(intersect_candidates(&current, &candidates))
+                    }
+                });
+                if result.as_ref().unwrap().is_empty() {
+                    break;
+                }
+            }
+            match result {
+                Some(result) => Ok(result),
+                None => all_paths(src, cache, source_tree),
+            }
+        }
+        query::Query::Or(children) => {
+            let mut result = vec![];
+            for child in children {
+                let candidates = evaluate_query(src, cache, index_tree, source_tree, child)?;
+                result.extend(candidates.iter().cloned());
+            }
+            result.sort();
+            result.dedup();
+            Ok(std::sync::Arc::new(result))
+        }
+    }
+}
+
+fn intersect_candidates(
+    left: &[(String, gix_hash::ObjectId)],
+    right: &[(String, gix_hash::ObjectId)],
+) -> Vec<(String, gix_hash::ObjectId)> {
+    let (mut left_index, mut right_index) = (0, 0);
+    let mut out = Vec::with_capacity(left.len().min(right.len()));
+    while left_index < left.len() && right_index < right.len() {
+        match left[left_index].cmp(&right[right_index]) {
+            std::cmp::Ordering::Less => left_index += 1,
+            std::cmp::Ordering::Greater => right_index += 1,
+            std::cmp::Ordering::Equal => {
+                out.push(left[left_index].clone());
+                left_index += 1;
+                right_index += 1;
+            }
+        }
+    }
+    out
 }
 
 /// One mirror tree entry in compact parsed form: the fixed-width bucket name, the child oid,
@@ -1064,37 +1212,48 @@ fn join_path(prefix: &str, name: &str) -> String {
 
 type SearchMatchesResult = Vec<(String, Vec<(usize, String)>)>;
 
-/// Verify `candidates` against the query, byte-exact. Per-blob results are memoized on
-/// (query, blob oid): a blob's matching lines do not depend on the commit or path it appears
-/// under, so verifying a history costs one scan per distinct blob. Candidates carry their
-/// blob oids from candidate selection, so no path resolution happens here.
+/// Verify `candidates` against the regular expression, line by line. Per-blob results are
+/// memoized on (pattern, blob oid): a blob's matching lines do not depend on the commit or path
+/// it appears under, so verifying a history costs one scan per distinct blob. Candidates carry
+/// their blob oids from candidate selection, so no path resolution happens here.
 pub fn search_matches(
     src: &dyn Objects,
     cache: &mut SearchCache,
-    searchstring: &str,
+    pattern: &str,
+    candidates: &[(String, gix_hash::ObjectId)],
+) -> anyhow::Result<SearchMatchesResult> {
+    let plan = regex_plan(cache, pattern)?;
+    search_matches_with_plan(src, cache, pattern, &plan, candidates)
+}
+
+fn search_matches_with_plan(
+    src: &dyn Objects,
+    cache: &mut SearchCache,
+    pattern: &str,
+    plan: &query::Plan,
     candidates: &[(String, gix_hash::ObjectId)],
 ) -> anyhow::Result<SearchMatchesResult> {
     let mut results = vec![];
 
-    for (c, blob) in candidates {
-        let key = (searchstring.to_owned(), *blob);
-        let bresults = if let Some(hit) = cache.blob_matches.get(&key) {
+    for (candidate, blob) in candidates {
+        let key = (pattern.to_owned(), *blob);
+        let blob_results = if let Some(hit) = cache.blob_matches.get(&key) {
             hit.clone()
         } else {
-            let b = read_blob_text(src, *blob);
-            let mut lines = vec![];
-            for (linenr, l) in b.lines().enumerate() {
-                if l.contains(searchstring) {
-                    lines.push((linenr + 1, l.to_owned()));
-                }
-            }
+            let content = read_blob_text(src, *blob);
+            let lines: Vec<(usize, String)> = content
+                .lines()
+                .enumerate()
+                .filter(|(_, line)| plan.regex.is_match(line))
+                .map(|(line_number, line)| (line_number + 1, line.to_owned()))
+                .collect();
             let lines = std::sync::Arc::new(lines);
             cache.blob_matches.insert(key, lines.clone());
             lines
         };
 
-        if !bresults.is_empty() {
-            results.push((c.to_owned(), (*bresults).clone()));
+        if !blob_results.is_empty() {
+            results.push((candidate.to_owned(), (*blob_results).clone()));
         }
     }
 
@@ -1136,15 +1295,16 @@ fn path_entry(
     Ok(Some(current))
 }
 
-/// The number of lines of blob `oid` matching `query`, through the per-blob match memo.
+/// The number of lines of blob `oid` matching `plan`, through the per-blob match memo.
 fn match_count(
     src: &dyn Objects,
     cache: &mut SearchCache,
-    query: &str,
+    pattern: &str,
+    plan: &query::Plan,
     blob: gix_hash::ObjectId,
 ) -> anyhow::Result<usize> {
-    let m = search_matches(src, cache, query, &[(String::new(), blob)])?;
-    Ok(m.first().map(|r| r.1.len()).unwrap_or(0))
+    let matches = search_matches_with_plan(src, cache, pattern, plan, &[(String::new(), blob)])?;
+    Ok(matches.first().map(|result| result.1.len()).unwrap_or(0))
 }
 
 /// One match-set change reported by [`ChangeSweep`]: the file's matching-line count went from
@@ -1357,12 +1517,11 @@ fn refresh_group(
     Ok(true)
 }
 
-/// Per-commit sweep state: the source tree, the query's mirror roots (unsorted, aligned
-/// with the query's spine path list; `None` while any path is absent), and the candidate
-/// pairs.
+/// Per-commit sweep state: the source tree, each query trigram's mirror root aligned with the
+/// query's spine paths (`None` when that path is absent), and the candidate pairs.
 struct SweepState {
     tree: gix_hash::ObjectId,
-    roots: Option<Vec<gix_hash::ObjectId>>,
+    roots: Vec<Option<gix_hash::ObjectId>>,
     cands: std::sync::Arc<Vec<(String, gix_hash::ObjectId)>>,
 }
 
@@ -1370,53 +1529,57 @@ struct SweepState {
 /// [`process`](ChangeSweep::process) and collect, per non-merge commit, the files whose
 /// matching-line count changed against the first parent.
 ///
-/// Content addressing keeps the per-commit cost proportional to what changed: equal
-/// per-trigram mirror roots prove the candidate path set unchanged (only blob oids are
-/// re-resolved, skipping identical subtrees); differing roots are diffed mirror-by-mirror
-/// into a bucket trie, and only trie scope is re-walked while the rest of the parent's
-/// candidates are spliced through. False candidates verify to zero matches on both sides, so
-/// events do not depend on how wide the candidate superset is.
+/// Content addressing keeps the per-commit cost proportional to what changed. Equal roots for
+/// every trigram prove the Boolean candidate query unchanged, so only blob ids are refreshed.
+/// Pure conjunctions also retain the restricted mirror diff; queries containing alternation
+/// fall back to evaluating the cached Boolean query when their roots change.
 pub struct ChangeSweep {
-    query: String,
-    /// The query's distinct trigram spine paths (colliding trigrams collapse to one path,
-    /// and so would resolve to the same root anyway).
+    pattern: String,
+    plan: std::sync::Arc<query::Plan>,
+    /// Every distinct trigram spine path used anywhere in the Boolean query. Colliding
+    /// trigrams collapse because they resolve to the same mirror root.
     spine_paths: BTreeSet<[u8; SPINE_LEVELS]>,
+    conjunctive: bool,
     store: HashMap<gix_hash::ObjectId, SweepState>,
 }
 
 impl ChangeSweep {
-    pub fn new(query: &str) -> Self {
-        Self {
-            query: query.to_owned(),
-            spine_paths: distinct_trigrams(query)
-                .iter()
-                .map(|t| spine_path(*t))
-                .collect(),
+    pub fn new(pattern: &str) -> anyhow::Result<Self> {
+        let plan = std::sync::Arc::new(query::Plan::new(pattern)?);
+        let mut trigrams = BTreeSet::new();
+        plan.query.trigrams(&mut trigrams);
+        Ok(Self {
+            pattern: pattern.to_owned(),
+            spine_paths: trigrams.into_iter().map(spine_path).collect(),
+            conjunctive: plan.query.conjunctive_trigrams().is_some(),
+            plan,
             store: HashMap::new(),
-        }
+        })
     }
 
-    /// The query's mirror root per spine path, aligned with `self.spine_paths`; `None` if
-    /// any path is absent (no file can match).
+    /// Each query trigram's mirror root, aligned with `self.spine_paths`.
     fn trigram_roots(
         &self,
         src: &dyn Objects,
         cache: &mut SearchCache,
         index_oid: gix_hash::ObjectId,
-    ) -> anyhow::Result<Option<Vec<gix_hash::ObjectId>>> {
+    ) -> anyhow::Result<Vec<Option<gix_hash::ObjectId>>> {
         let mut roots = Vec::with_capacity(self.spine_paths.len());
         for path in &self.spine_paths {
-            let mut node = index_oid;
-            for b in path {
-                let entries = mirror_entries(src, cache, node)?;
-                match entries.binary_search_by_key(&hex_pair(*b), |e| e.name) {
-                    Ok(i) => node = entries[i].oid,
-                    Err(_) => return Ok(None),
-                }
+            let mut node = Some(index_oid);
+            for byte in path {
+                let Some(oid) = node else {
+                    break;
+                };
+                let entries = mirror_entries(src, cache, oid)?;
+                node = entries
+                    .binary_search_by_key(&hex_pair(*byte), |entry| entry.name)
+                    .ok()
+                    .map(|index| entries[index].oid);
             }
             roots.push(node);
         }
-        Ok(Some(roots))
+        Ok(roots)
     }
 
     pub fn process(
@@ -1428,41 +1591,46 @@ impl ChangeSweep {
         source_tree: gix_hash::ObjectId,
         index_tree: gix_hash::ObjectId,
     ) -> anyhow::Result<Vec<ChangeEvent>> {
-        let roots = if self.spine_paths.is_empty() {
-            None
-        } else {
-            self.trigram_roots(src, cache, index_tree)?
-        };
-        let parent = parent_ids.first().and_then(|p| self.store.get(p));
+        let roots = self.trigram_roots(src, cache, index_tree)?;
+        let parent = parent_ids.first().and_then(|parent| self.store.get(parent));
 
         let cands = 'cands: {
-            if let (Some(rc), Some(sp)) = (&roots, parent) {
-                if sp.tree == source_tree {
-                    break 'cands sp.cands.clone();
+            if let Some(parent_state) = parent {
+                if parent_state.tree == source_tree {
+                    break 'cands parent_state.cands.clone();
                 }
-                if let Some(rp) = &sp.roots {
-                    if rp == rc {
-                        // Identical roots: same candidate paths, only blobs may differ.
-                        let mut out = Vec::with_capacity(sp.cands.len());
-                        if refresh_group(src, source_tree, sp.tree, &sp.cands, 0, &mut out)? {
-                            break 'cands std::sync::Arc::new(out);
-                        }
-                    } else {
+                if parent_state.roots == roots {
+                    // Identical roots: same candidate paths, only blobs may differ.
+                    let mut out = Vec::with_capacity(parent_state.cands.len());
+                    if refresh_group(
+                        src,
+                        source_tree,
+                        parent_state.tree,
+                        &parent_state.cands,
+                        0,
+                        &mut out,
+                    )? {
+                        break 'cands std::sync::Arc::new(out);
+                    }
+                } else if self.conjunctive {
+                    let current: Option<Vec<_>> = roots.iter().copied().collect();
+                    let previous: Option<Vec<_>> = parent_state.roots.iter().copied().collect();
+                    if let (Some(current), Some(previous)) = (current, previous) {
                         // Diff the changed mirrors into a trie, splice: keep and re-resolve
                         // the parent's candidates outside the trie, re-walk only inside it.
                         let mut trie = BucketTrie::default();
-                        for (a, b) in rc.iter().zip(rp.iter()) {
-                            diff_mirrors(src, cache, *a, *b, &mut trie)?;
+                        for (current, previous) in current.iter().zip(&previous) {
+                            diff_mirrors(src, cache, *current, *previous, &mut trie)?;
                         }
-                        let kept: Vec<(String, gix_hash::ObjectId)> = sp
+                        let kept: Vec<(String, gix_hash::ObjectId)> = parent_state
                             .cands
                             .iter()
-                            .filter(|(p, _)| !path_changed(&trie, p))
+                            .filter(|(path, _)| !path_changed(&trie, path))
                             .cloned()
                             .collect();
                         let mut out = Vec::with_capacity(kept.len());
-                        if refresh_group(src, source_tree, sp.tree, &kept, 0, &mut out)? {
-                            walk_restricted(src, cache, rc.clone(), source_tree, &trie, &mut out)?;
+                        if refresh_group(src, source_tree, parent_state.tree, &kept, 0, &mut out)? {
+                            walk_restricted(src, cache, current, source_tree, &trie, &mut out)?;
                             out.sort();
                             out.dedup();
                             break 'cands std::sync::Arc::new(out);
@@ -1470,16 +1638,13 @@ impl ChangeSweep {
                     }
                 }
             }
-            // Fallbacks: absent trigrams mean no candidates; otherwise a full walk.
-            if roots.is_none() && !self.spine_paths.is_empty() {
-                break 'cands std::sync::Arc::new(vec![]);
-            }
-            std::sync::Arc::new(search_candidates(
+            std::sync::Arc::new(search_candidates_with_plan(
                 src,
                 cache,
                 index_tree,
                 source_tree,
-                &self.query,
+                &self.pattern,
+                &self.plan,
             )?)
         };
 
@@ -1520,11 +1685,19 @@ impl ChangeSweep {
                 if j >= pcands.len() || (i < cands.len() && cands[i].0 < pcands[j].0) {
                     let (path, blob) = &cands[i];
                     i += 1;
-                    (path, 0, match_count(src, cache, &self.query, *blob)?)
+                    (
+                        path,
+                        0,
+                        match_count(src, cache, &self.pattern, &self.plan, *blob)?,
+                    )
                 } else if i >= cands.len() || pcands[j].0 < cands[i].0 {
                     let (path, blob) = &pcands[j];
                     j += 1;
-                    (path, match_count(src, cache, &self.query, *blob)?, 0)
+                    (
+                        path,
+                        match_count(src, cache, &self.pattern, &self.plan, *blob)?,
+                        0,
+                    )
                 } else {
                     let (path, blob) = &cands[i];
                     let pblob = pcands[j].1;
@@ -1535,8 +1708,8 @@ impl ChangeSweep {
                     }
                     (
                         path,
-                        match_count(src, cache, &self.query, pblob)?,
-                        match_count(src, cache, &self.query, *blob)?,
+                        match_count(src, cache, &self.pattern, &self.plan, pblob)?,
+                        match_count(src, cache, &self.pattern, &self.plan, *blob)?,
                     )
                 };
             if before != after {
@@ -1723,7 +1896,7 @@ mod tests {
         assert_eq!(matches.len(), 2);
 
         // Trigrams are case-folded, so candidates are a case-insensitive superset ("Test" in
-        // file1 makes sub1 a candidate for "test") while match verification stays byte-exact.
+        // file1 makes sub1 a candidate for "test") while regex verification remains exact.
         let candidates = search_candidates(objects(&repo), &mut sc, index, tree, "test").unwrap();
         let paths: Vec<&str> = candidates.iter().map(|(p, _)| p.as_str()).collect();
         assert_eq!(paths, vec!["sub1/file1", "sub1/file2"]);
@@ -1860,16 +2033,104 @@ mod tests {
 
         let mut sc = SearchCache::default();
         let candidates =
-            search_candidates(objects(&repo), &mut sc, index, tree, "->needle(").unwrap();
+            search_candidates(objects(&repo), &mut sc, index, tree, r"->needle\(").unwrap();
         let paths: Vec<&str> = candidates.iter().map(|(p, _)| p.as_str()).collect();
         assert_eq!(paths, vec!["hit.c"]);
-        let matches = search_matches(objects(&repo), &mut sc, "->needle(", &candidates).unwrap();
+        let matches = search_matches(objects(&repo), &mut sc, r"->needle\(", &candidates).unwrap();
         assert_eq!(matches.len(), 1);
         assert_eq!(matches[0].0, "hit.c");
 
         // The bare word still finds both.
         let candidates = search_candidates(objects(&repo), &mut sc, index, tree, "needle").unwrap();
         assert_eq!(candidates.len(), 2);
+    }
+
+    #[test]
+    fn regex_queries_filter_candidates_and_verify_matches() {
+        let (_tmp, repo) = test_repo();
+        let cache = MapCache::default();
+        let tree = commit_tree(
+            &repo,
+            &[
+                ("concat", "foo crosses the gap to bar"),
+                ("foo", "foo alone"),
+                ("bar", "bar alone"),
+                ("class-c", "abce"),
+                ("class-d", "abde"),
+                ("alpha", "alpha"),
+                ("omega", "omega"),
+                ("case", "skip\nNeEdLe42\nNEEDLE7"),
+                ("unrelated", "nothing relevant"),
+            ],
+        );
+        let index = trigram_index(objects(&repo), &cache, &mut Indexer::default(), tree).unwrap();
+        let mut search_cache = SearchCache::default();
+
+        let candidates =
+            search_candidates(objects(&repo), &mut search_cache, index, tree, "foo.*bar").unwrap();
+        assert_eq!(
+            candidates
+                .iter()
+                .map(|(path, _)| path.as_str())
+                .collect::<Vec<_>>(),
+            vec!["concat"]
+        );
+
+        let candidates =
+            search_candidates(objects(&repo), &mut search_cache, index, tree, "ab[cd]e").unwrap();
+        let matches =
+            search_matches(objects(&repo), &mut search_cache, "ab[cd]e", &candidates).unwrap();
+        assert_eq!(
+            matches
+                .iter()
+                .map(|(path, _)| path.as_str())
+                .collect::<Vec<_>>(),
+            vec!["class-c", "class-d"]
+        );
+
+        let candidates = search_candidates(
+            objects(&repo),
+            &mut search_cache,
+            index,
+            tree,
+            "alpha|omega",
+        )
+        .unwrap();
+        assert_eq!(
+            candidates
+                .iter()
+                .map(|(path, _)| path.as_str())
+                .collect::<Vec<_>>(),
+            vec!["alpha", "omega"]
+        );
+
+        let candidates = search_candidates(
+            objects(&repo),
+            &mut search_cache,
+            index,
+            tree,
+            r"(?i)^needle[0-9]{2}$",
+        )
+        .unwrap();
+        let matches = search_matches(
+            objects(&repo),
+            &mut search_cache,
+            r"(?i)^needle[0-9]{2}$",
+            &candidates,
+        )
+        .unwrap();
+        assert_eq!(
+            matches,
+            vec![("case".to_owned(), vec![(2, "NeEdLe42".to_owned())])]
+        );
+
+        // A short alternation branch has no trigram, so the conservative query admits all files.
+        let candidates =
+            search_candidates(objects(&repo), &mut search_cache, index, tree, "foo|x").unwrap();
+        assert_eq!(candidates.len(), 9);
+
+        assert!(search_candidates(objects(&repo), &mut search_cache, index, tree, "(").is_err());
+        assert!(ChangeSweep::new("(").is_err());
     }
 
     #[test]
@@ -1985,51 +2246,56 @@ mod tests {
             trees.push(commit_tree(&repo, &files));
         }
 
-        // Brute force: full per-tree match counts with fresh state.
-        let counts = |tree: &gix_hash::ObjectId| -> std::collections::BTreeMap<String, usize> {
+        for pattern in ["needle", r"needle (?:one|two)|nothing"] {
+            // Brute force: full per-tree match counts with fresh state.
+            let counts = |tree: &gix_hash::ObjectId| -> std::collections::BTreeMap<String, usize> {
+                let mut sc = SearchCache::default();
+                let index = trigram_index(
+                    objects(&repo),
+                    &MapCache::default(),
+                    &mut Indexer::default(),
+                    *tree,
+                )
+                .unwrap();
+                let cands =
+                    search_candidates(objects(&repo), &mut sc, index, *tree, pattern).unwrap();
+                search_matches(objects(&repo), &mut sc, pattern, &cands)
+                    .unwrap()
+                    .into_iter()
+                    .map(|(path, matches)| (path, matches.len()))
+                    .collect()
+            };
+
+            let mut sweep = ChangeSweep::new(pattern).unwrap();
             let mut sc = SearchCache::default();
-            let index = trigram_index(
-                objects(&repo),
-                &MapCache::default(),
-                &mut Indexer::default(),
-                *tree,
-            )
-            .unwrap();
-            let cands = search_candidates(objects(&repo), &mut sc, index, *tree, "needle").unwrap();
-            search_matches(objects(&repo), &mut sc, "needle", &cands)
-                .unwrap()
-                .into_iter()
-                .map(|(p, m)| (p, m.len()))
-                .collect()
-        };
+            let mut prev: Option<&gix_hash::ObjectId> = None;
+            for tree in &trees {
+                let index = trigram_index(objects(&repo), &cache, &mut indexer, *tree).unwrap();
+                let parents: Vec<gix_hash::ObjectId> = prev.iter().map(|tree| **tree).collect();
+                let mut events: Vec<(String, usize, usize)> = sweep
+                    .process(objects(&repo), &mut sc, *tree, &parents, *tree, index)
+                    .unwrap()
+                    .into_iter()
+                    .map(|event| (event.path, event.before, event.after))
+                    .collect();
+                events.sort();
 
-        let mut sweep = ChangeSweep::new("needle");
-        let mut sc = SearchCache::default();
-        let mut prev: Option<&gix_hash::ObjectId> = None;
-        for tree in &trees {
-            let index = trigram_index(objects(&repo), &cache, &mut indexer, *tree).unwrap();
-            let parents: Vec<gix_hash::ObjectId> = prev.iter().map(|t| **t).collect();
-            let mut events: Vec<(String, usize, usize)> = sweep
-                .process(objects(&repo), &mut sc, *tree, &parents, *tree, index)
-                .unwrap()
-                .into_iter()
-                .map(|e| (e.path, e.before, e.after))
-                .collect();
-            events.sort();
-
-            let before = prev.map(&counts).unwrap_or_default();
-            let after = counts(tree);
-            let mut expected: Vec<(String, usize, usize)> = vec![];
-            for path in before.keys().chain(after.keys()) {
-                let b = before.get(path).copied().unwrap_or(0);
-                let a = after.get(path).copied().unwrap_or(0);
-                if b != a && !expected.iter().any(|(p, _, _)| p == path) {
-                    expected.push((path.clone(), b, a));
+                let before = prev.map(&counts).unwrap_or_default();
+                let after = counts(tree);
+                let mut expected: Vec<(String, usize, usize)> = vec![];
+                for path in before.keys().chain(after.keys()) {
+                    let before_count = before.get(path).copied().unwrap_or(0);
+                    let after_count = after.get(path).copied().unwrap_or(0);
+                    if before_count != after_count
+                        && !expected.iter().any(|(existing, _, _)| existing == path)
+                    {
+                        expected.push((path.clone(), before_count, after_count));
+                    }
                 }
+                expected.sort();
+                assert_eq!(events, expected, "pattern {pattern:?}, tree {tree}");
+                prev = Some(tree);
             }
-            expected.sort();
-            assert_eq!(events, expected, "at step tree {}", tree);
-            prev = Some(tree);
         }
     }
 
