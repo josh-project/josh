@@ -5,7 +5,6 @@ use super::tree_cache::{TreeBytes, TreeCache};
 use anyhow::anyhow;
 
 use std::collections::HashMap;
-use std::sync::{LazyLock, RwLock};
 
 pub trait FilterHook {
     fn filter_for_commit(
@@ -80,31 +79,6 @@ fn previous_value(expected: Expected) -> gix::refs::transaction::PreviousValue {
     }
 }
 
-static REF_CACHE: LazyLock<
-    RwLock<HashMap<gix_hash::ObjectId, HashMap<gix_hash::ObjectId, gix_hash::ObjectId>>>,
-> = LazyLock::new(Default::default);
-
-static POPULATE_MAP: LazyLock<
-    RwLock<HashMap<(gix_hash::ObjectId, gix_hash::ObjectId), gix_hash::ObjectId>>,
-> = LazyLock::new(Default::default);
-
-// Keyed by (input tree, pattern key, NFA state mask). The state mask makes entries independent
-// of the path a subtree was reached through; the legacy full-path fallback folds its root path
-// into a synthetic pattern key and uses mask 0.
-static GLOB_MAP: LazyLock<
-    RwLock<HashMap<(gix_hash::ObjectId, gix_hash::ObjectId, u64), gix_hash::ObjectId>>,
-> = LazyLock::new(Default::default);
-
-// Path-projection memoization for `:PATHS` and its inverse, keyed by (input tree oid, root path).
-// Both are pure functions of the input tree, and workspace filters walk commits parent-first, so a
-// child commit reuses the projections its parent just computed for the subtrees they share, which
-// an in-process map captures.
-static PATHS_MAP: LazyLock<RwLock<HashMap<(gix_hash::ObjectId, String), gix_hash::ObjectId>>> =
-    LazyLock::new(Default::default);
-
-static INVERT_MAP: LazyLock<RwLock<HashMap<(gix_hash::ObjectId, String), gix_hash::ObjectId>>> =
-    LazyLock::new(Default::default);
-
 /// Placeholder hint for tree-keyed records with no commit context. Sequence 0 is
 /// eligible and lands in shard 0 of the distributed backend; the local backend
 /// ignores the hint.
@@ -114,15 +88,6 @@ const TREE_KEYED_FALLBACK_HINT: HistoryGraphHint = HistoryGraphHint {
     jump_delta: 1,
     jump_is_second: false,
 };
-
-/// Clear the process-global in-memory caches shared across all transactions.
-pub fn clear_global_caches() {
-    REF_CACHE.write().unwrap().clear();
-    POPULATE_MAP.write().unwrap().clear();
-    GLOB_MAP.write().unwrap().clear();
-    PATHS_MAP.write().unwrap().clear();
-    INVERT_MAP.write().unwrap().clear();
-}
 
 pub struct TransactionContext {
     path: std::path::PathBuf,
@@ -140,18 +105,18 @@ pub struct TransactionContext {
 /// refresh mode), so a pack another transaction has just flushed is still found, and ref reads
 /// see the loose and packed files as they are. Entries live for the process; the proxy has a
 /// fixed pair of repositories and other processes see few paths each.
-static GIX_REPOS: LazyLock<
-    std::sync::RwLock<HashMap<std::path::PathBuf, std::sync::Arc<gix::ThreadSafeRepository>>>,
-> = LazyLock::new(Default::default);
+static GIX_REPOS: std::sync::LazyLock<
+    parking_lot::RwLock<HashMap<std::path::PathBuf, std::sync::Arc<gix::ThreadSafeRepository>>>,
+> = std::sync::LazyLock::new(Default::default);
 
 fn shared_gix_repo(
     path: &std::path::Path,
 ) -> anyhow::Result<std::sync::Arc<gix::ThreadSafeRepository>> {
-    if let Some(repo) = GIX_REPOS.read().unwrap().get(path) {
+    if let Some(repo) = GIX_REPOS.read().get(path) {
         return Ok(repo.clone());
     }
 
-    let mut repos = GIX_REPOS.write().unwrap();
+    let mut repos = GIX_REPOS.write();
     if let Some(repo) = repos.get(path) {
         return Ok(repo.clone());
     }
@@ -243,6 +208,19 @@ struct Transaction2 {
         HashMap<gix_hash::ObjectId, std::collections::HashSet<crate::filter::DownstackDep>>,
     merge_trees_map:
         HashMap<(gix_hash::ObjectId, gix_hash::ObjectId, gix_hash::ObjectId), gix_hash::ObjectId>,
+    ref_map: HashMap<gix_hash::ObjectId, HashMap<gix_hash::ObjectId, gix_hash::ObjectId>>,
+    populate_map: HashMap<(gix_hash::ObjectId, gix_hash::ObjectId), gix_hash::ObjectId>,
+    /// Keyed by (input tree, pattern key, NFA state mask). The state mask makes entries
+    /// independent of the path a subtree was reached through; the legacy full-path fallback
+    /// folds its root path into a synthetic pattern key and uses mask 0.
+    glob_map: HashMap<(gix_hash::ObjectId, gix_hash::ObjectId, u64), gix_hash::ObjectId>,
+    /// Path-projection memoization for `:PATHS` and its inverse, keyed by (input tree oid,
+    /// root path). Workspace filters walk commits parent-first, so a child commit reuses the
+    /// projections its parent computed for shared subtrees.
+    paths_map: HashMap<(gix_hash::ObjectId, String), gix_hash::ObjectId>,
+    invert_map: HashMap<(gix_hash::ObjectId, String), gix_hash::ObjectId>,
+    workspace_map: HashMap<gix_hash::ObjectId, crate::filter::Filter>,
+    ancestor_map: HashMap<gix_hash::ObjectId, std::collections::HashSet<gix_hash::ObjectId>>,
     last_written_commit: Option<(gix_hash::ObjectId, gix_hash::ObjectId)>,
     tree_cache: TreeCache,
 
@@ -369,6 +347,13 @@ impl Transaction {
                 legalize_map: HashMap::new(),
                 downstack_deps_map: HashMap::new(),
                 merge_trees_map: HashMap::new(),
+                ref_map: HashMap::new(),
+                populate_map: HashMap::new(),
+                glob_map: HashMap::new(),
+                paths_map: HashMap::new(),
+                invert_map: HashMap::new(),
+                workspace_map: HashMap::new(),
+                ancestor_map: HashMap::new(),
                 last_written_commit: None,
                 tree_cache: Default::default(),
                 cache,
@@ -1182,19 +1167,51 @@ impl Transaction {
     }
 
     pub fn insert_paths(&self, tree: (gix_hash::ObjectId, String), result: gix_hash::ObjectId) {
-        PATHS_MAP.write().unwrap().entry(tree).or_insert(result);
+        self.t2.borrow_mut().paths_map.entry(tree).or_insert(result);
     }
 
     pub fn get_paths(&self, tree: (gix_hash::ObjectId, String)) -> Option<gix_hash::ObjectId> {
-        PATHS_MAP.read().unwrap().get(&tree).cloned()
+        self.t2.borrow().paths_map.get(&tree).copied()
     }
 
     pub fn insert_invert(&self, tree: (gix_hash::ObjectId, String), result: gix_hash::ObjectId) {
-        INVERT_MAP.write().unwrap().entry(tree).or_insert(result);
+        self.t2
+            .borrow_mut()
+            .invert_map
+            .entry(tree)
+            .or_insert(result);
     }
 
     pub fn get_invert(&self, tree: (gix_hash::ObjectId, String)) -> Option<gix_hash::ObjectId> {
-        INVERT_MAP.read().unwrap().get(&tree).cloned()
+        self.t2.borrow().invert_map.get(&tree).copied()
+    }
+
+    pub(crate) fn get_workspace(&self, blob: gix_hash::ObjectId) -> Option<crate::filter::Filter> {
+        self.t2.borrow().workspace_map.get(&blob).copied()
+    }
+
+    pub(crate) fn insert_workspace(&self, blob: gix_hash::ObjectId, filter: crate::filter::Filter) {
+        self.t2.borrow_mut().workspace_map.insert(blob, filter);
+    }
+
+    pub(crate) fn get_ancestor(
+        &self,
+        tip: gix_hash::ObjectId,
+        commit: gix_hash::ObjectId,
+    ) -> Option<bool> {
+        self.t2
+            .borrow()
+            .ancestor_map
+            .get(&tip)
+            .map(|ancestors| ancestors.contains(&commit))
+    }
+
+    pub(crate) fn insert_ancestors(
+        &self,
+        tip: gix_hash::ObjectId,
+        ancestors: std::collections::HashSet<gix_hash::ObjectId>,
+    ) {
+        self.t2.borrow_mut().ancestor_map.insert(tip, ancestors);
     }
 
     /// Cache indexes under the commit's history shard. A null ID means no commit context.
@@ -1255,14 +1272,18 @@ impl Transaction {
         tree: (gix_hash::ObjectId, gix_hash::ObjectId),
         result: gix_hash::ObjectId,
     ) {
-        POPULATE_MAP.write().unwrap().entry(tree).or_insert(result);
+        self.t2
+            .borrow_mut()
+            .populate_map
+            .entry(tree)
+            .or_insert(result);
     }
 
     pub fn get_populate(
         &self,
         tree: (gix_hash::ObjectId, gix_hash::ObjectId),
     ) -> Option<gix_hash::ObjectId> {
-        POPULATE_MAP.read().unwrap().get(&tree).cloned()
+        self.t2.borrow().populate_map.get(&tree).copied()
     }
 
     pub fn insert_glob(
@@ -1270,14 +1291,14 @@ impl Transaction {
         tree: (gix_hash::ObjectId, gix_hash::ObjectId, u64),
         result: gix_hash::ObjectId,
     ) {
-        GLOB_MAP.write().unwrap().entry(tree).or_insert(result);
+        self.t2.borrow_mut().glob_map.entry(tree).or_insert(result);
     }
 
     pub fn get_glob(
         &self,
         tree: (gix_hash::ObjectId, gix_hash::ObjectId, u64),
     ) -> Option<gix_hash::ObjectId> {
-        GLOB_MAP.read().unwrap().get(&tree).cloned()
+        self.t2.borrow().glob_map.get(&tree).copied()
     }
 
     pub fn insert_ref(
@@ -1286,9 +1307,9 @@ impl Transaction {
         from: gix_hash::ObjectId,
         to: gix_hash::ObjectId,
     ) {
-        REF_CACHE
-            .write()
-            .unwrap()
+        self.t2
+            .borrow_mut()
+            .ref_map
             .entry(filter.id())
             .or_default()
             .insert(from, to);
@@ -1299,13 +1320,14 @@ impl Transaction {
         filter: crate::filter::Filter,
         from: gix_hash::ObjectId,
     ) -> Option<gix_hash::ObjectId> {
-        if let Some(m) = REF_CACHE.read().unwrap().get(&filter.id())
-            && let Some(oid) = m.get(&from)
-            && self.odb().contains(*oid)
-        {
-            return Some(*oid);
-        }
-        None
+        let oid = self
+            .t2
+            .borrow()
+            .ref_map
+            .get(&filter.id())
+            .and_then(|entries| entries.get(&from))
+            .copied()?;
+        self.odb().contains(oid).then_some(oid)
     }
 
     pub fn get_unapply(
@@ -1555,6 +1577,44 @@ mod tests {
             .ok()
             .filter(|object| object.kind == gix_object::Kind::Blob)
             .map(|object| object.data.clone())
+    }
+
+    #[test]
+    fn caches_are_transaction_scoped() {
+        let dir = tempfile::tempdir().unwrap();
+        gix::init_bare(dir.path()).unwrap();
+        let context = TransactionContext::new(
+            dir.path(),
+            std::sync::Arc::new(crate::cache::CacheStack::new()),
+        );
+        let first = context.open().unwrap();
+        let oid = commit(&first, "cached");
+        let filter = crate::filter::Filter::new();
+
+        first.insert_ref(filter, oid, oid);
+        first.insert_populate((oid, oid), oid);
+        first.insert_glob((oid, oid, 1), oid);
+        first.insert_paths((oid, "root".to_owned()), oid);
+        first.insert_invert((oid, "root".to_owned()), oid);
+        first.insert_workspace(oid, filter);
+        first.insert_ancestors(oid, std::collections::HashSet::from([oid]));
+
+        assert_eq!(first.get_ref(filter, oid), Some(oid));
+        assert_eq!(first.get_populate((oid, oid)), Some(oid));
+        assert_eq!(first.get_glob((oid, oid, 1)), Some(oid));
+        assert_eq!(first.get_paths((oid, "root".to_owned())), Some(oid));
+        assert_eq!(first.get_invert((oid, "root".to_owned())), Some(oid));
+        assert_eq!(first.get_workspace(oid), Some(filter));
+        assert_eq!(first.get_ancestor(oid, oid), Some(true));
+
+        let second = context.open().unwrap();
+        assert_eq!(second.get_ref(filter, oid), None);
+        assert_eq!(second.get_populate((oid, oid)), None);
+        assert_eq!(second.get_glob((oid, oid, 1)), None);
+        assert_eq!(second.get_paths((oid, "root".to_owned())), None);
+        assert_eq!(second.get_invert((oid, "root".to_owned())), None);
+        assert_eq!(second.get_workspace(oid), None);
+        assert_eq!(second.get_ancestor(oid, oid), None);
     }
 
     #[test]
