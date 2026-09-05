@@ -446,7 +446,7 @@ impl Revision {
         // Resolve the filtered tree through the commit-level cache (persistent, and already
         // warm in a history+search query: the history resolver just filtered this commit).
         let filtered_id = filter::apply_to_commit(self.filter, self.commit_id, &transaction)?;
-        if filtered_id == git2::Oid::ZERO_SHA1 {
+        if filtered_id == gix_hash::ObjectId::null(gix_hash::Kind::Sha1) {
             return Ok(Some(vec![]));
         }
         let x = Rewrite::from_tree(CommitData::read(odb, filtered_id)?.tree_id()?);
@@ -471,7 +471,10 @@ impl Revision {
                     && let Ok(name) = std::str::from_utf8(entry.filename)
                 {
                     let separator = if parent.is_empty() { "" } else { "/" };
-                    scan.push(format!("{}{}{}", parent, separator, name));
+                    scan.push((
+                        format!("{}{}{}", parent, separator, name),
+                        entry.oid.to_owned(),
+                    ));
                 }
                 Ok(())
             })?;
@@ -480,7 +483,6 @@ impl Revision {
         let results = josh_search::search_matches(
             odb,
             &mut transaction.search_cache(),
-            x.tree_id(),
             &string,
             &candidates,
         )?;
