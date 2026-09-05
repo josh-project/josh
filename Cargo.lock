@@ -3783,6 +3783,8 @@ dependencies = [
  "josh-gix-ext",
  "josh-test-support",
  "rand 0.10.2",
+ "regex",
+ "regex-syntax",
  "tempfile",
  "tracing",
 ]
