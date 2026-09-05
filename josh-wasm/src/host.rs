@@ -135,8 +135,7 @@ fn host_err(e: impl std::fmt::Display) -> wasmi::Error {
 }
 
 /// Blob content at `path`; empty string for absent, non-blob, binary,
-/// non-UTF-8 or oversized (larger than `max_bytes`) entries (the semantics
-/// of the Starlark filter's `tree.file`).
+/// non-UTF-8 or oversized (larger than `max_bytes`) entries.
 pub(crate) fn tree_file_content(
     repo: &git2::Repository,
     tree_oid: git2::Oid,
@@ -475,20 +474,29 @@ pub(crate) fn add_to_linker(linker: &mut Linker<HostState>) -> anyhow::Result<()
             push_handle(&mut caller, f)
         },
     )?;
-    // `Filter::wasm` only exists after the op rename lands; registered with its
-    // final signature so modules validate, but calling it is an error for now.
+    // Args are passed newline-joined; an empty string means no args.
     linker.func_wrap(
         "josh",
         "wasm",
-        |_caller: HCaller,
-         _f: u32,
-         _path_ptr: u32,
-         _path_len: u32,
-         _args_ptr: u32,
-         _args_len: u32,
-         _ctx: u32|
+        |mut caller: HCaller,
+         f: u32,
+         path_ptr: u32,
+         path_len: u32,
+         args_ptr: u32,
+         args_len: u32,
+         ctx: u32|
          -> Result<u32, wasmi::Error> {
-            Err(wasmi::Error::new("wasm builder import not wired yet"))
+            let f = get_handle(&caller, f)?;
+            let path = read_string(&caller, path_ptr, path_len)?;
+            let args_str = read_string(&caller, args_ptr, args_len)?;
+            let args: Vec<String> = if args_str.is_empty() {
+                Vec::new()
+            } else {
+                args_str.split('\n').map(str::to_string).collect()
+            };
+            let ctx = get_handle(&caller, ctx)?;
+            let f = f.wasm(path, args, ctx).map_err(host_err)?;
+            push_handle(&mut caller, f)
         },
     )?;
     linker.func_wrap(

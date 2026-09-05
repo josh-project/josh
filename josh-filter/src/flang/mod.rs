@@ -202,10 +202,22 @@ pub(crate) fn spec2(op: &Op) -> String {
         Op::Stored(path) => {
             format!(":+{}", parse::quote_if(&path.to_string_lossy()))
         }
-        Op::Starlark(path, sub) => {
+        Op::Wasm(path, args, sub) => {
+            let args_str = if args.is_empty() {
+                String::new()
+            } else {
+                format!(
+                    "={}",
+                    args.iter()
+                        .map(|a| parse::quote_if(a))
+                        .collect::<Vec<_>>()
+                        .join(",")
+                )
+            };
             format!(
-                ":!{}[{}]",
+                ":!{}{}[{}]",
                 parse::quote_if(&path.to_string_lossy()),
+                args_str,
                 spec(*sub)
             )
         }

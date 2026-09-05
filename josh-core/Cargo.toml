@@ -85,7 +85,7 @@ josh-filter.workspace = true
 josh-gix-ext.workspace = true
 josh-memodb.workspace = true
 josh-search.workspace = true
-josh-starlark.workspace = true
+josh-wasm.workspace = true
 
 [dev-dependencies]
 rand = "0.10.2"
