@@ -97,12 +97,7 @@ pub(super) fn step(filter: Filter) -> Filter {
                 Op::File(dest_path.clone(), source_path.clone())
             }
         }
-        Op::Rev(filters) => Op::Rev(
-            filters
-                .iter()
-                .map(|(m, i, f)| (*m, i.clone(), step(*f)))
-                .collect(),
-        ),
+        Op::Rev(filters) => Op::Rev(filters.iter().map(|(m, f)| (*m, step(*f))).collect()),
         Op::Compose(filters) if filters.is_empty() => Op::Empty,
         Op::Compose(filters) if filters.len() == 1 => to_op(filters[0]),
         Op::Compose(filters) => {
