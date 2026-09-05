@@ -255,18 +255,19 @@ fn parse_item(pair: pest::iterators::Pair<Rule>) -> anyhow::Result<Filter> {
                                     .next()
                                     .context("rev_default: missing filter")?;
                                 let filter = parse(filter_pair.as_str())?;
-                                entries.push((
-                                    RevMatch::Default,
-                                    gix_hash::ObjectId::null(gix_hash::Kind::Sha1),
-                                    filter,
-                                ));
+                                entries.push((RevMatch::Default, filter));
                             }
                             Rule::rev_match => {
                                 // Regular match with operator, SHA, and filter
+                                let oid_pair = inner.next().context("rev_entry: missing rev")?;
+                                let filter_pair =
+                                    inner.next().context("rev_entry: missing filter")?;
+                                let oid = oid_pair.as_str().parse()?;
+                                let filter = parse(filter_pair.as_str())?;
                                 let match_op = match first.as_str() {
-                                    "<" => RevMatch::AncestorStrict,
-                                    "<=" => RevMatch::AncestorInclusive,
-                                    "==" => RevMatch::Equal,
+                                    "<" => RevMatch::AncestorStrict(oid),
+                                    "<=" => RevMatch::AncestorInclusive(oid),
+                                    "==" => RevMatch::Equal(oid),
                                     _ => {
                                         return Err(anyhow!(
                                             "invalid rev match operator: {:?}",
@@ -274,14 +275,8 @@ fn parse_item(pair: pest::iterators::Pair<Rule>) -> anyhow::Result<Filter> {
                                         ));
                                     }
                                 };
-                                let oid_pair = inner.next().context("rev_entry: missing rev")?;
-                                let filter_pair =
-                                    inner.next().context("rev_entry: missing filter")?;
 
-                                let oid = oid_pair.as_str().parse()?;
-                                let filter = parse(filter_pair.as_str())?;
-
-                                entries.push((match_op, oid, filter));
+                                entries.push((match_op, filter));
                             }
                             _ => {
                                 return Err(anyhow!(

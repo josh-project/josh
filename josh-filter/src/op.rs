@@ -37,13 +37,13 @@ pub enum InsertContent {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum RevMatch {
-    /// `<` - matches if is_ancestor_of(commit, tip) && commit != tip (strict)
-    AncestorStrict,
-    /// `<=` - matches if is_ancestor_of(commit, tip) || commit == tip (inclusive)
-    AncestorInclusive,
-    /// `==` - matches if commit == tip
-    Equal,
-    /// `_` - default filter when no other matches (no SHA needed)
+    /// `<` - matches strict ancestors of the tip.
+    AncestorStrict(gix_hash::ObjectId),
+    /// `<=` - matches the tip and its ancestors.
+    AncestorInclusive(gix_hash::ObjectId),
+    /// `==` - matches only the tip.
+    Equal(gix_hash::ObjectId),
+    /// `_` - matches when no previous arm did.
     Default,
 }
 
@@ -62,7 +62,7 @@ pub enum Op {
     Committer(String, String),
 
     // Vec instead of BTreeMap to preserve order - first match wins
-    Rev(Vec<(RevMatch, gix_hash::ObjectId, Filter)>),
+    Rev(Vec<(RevMatch, Filter)>),
     Prune,
     RegexReplace(Vec<(Regex, String)>),
 

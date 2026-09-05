@@ -86,10 +86,10 @@ impl Filter {
         self.chain(to_filter(Op::Pin(other)))
     }
 
-    /// Chain a `:rev(...)` filter. Each `(match, tip, then)` arm applies `then` to a commit whose
-    /// relationship to `tip` satisfies `match` (e.g. `AncestorInclusive` is `<=tip`); the first
-    /// matching arm wins and a commit matching none passes through unchanged.
-    pub fn rev(self, arms: Vec<(RevMatch, gix_hash::ObjectId, Filter)>) -> Filter {
+    /// Chain a `:rev(...)` filter. Each `(match, then)` arm applies `then` to a commit
+    /// satisfying `match`; the first matching arm wins and a commit matching none passes
+    /// through unchanged.
+    pub fn rev(self, arms: Vec<(RevMatch, Filter)>) -> Filter {
         self.chain(to_filter(Op::Rev(arms)))
     }
 
@@ -359,15 +359,11 @@ pub fn invert(filter: Filter) -> anyhow::Result<Filter> {
 
 /// Lower squash-with-ids to a deterministic `:rev(...)` filter.
 pub fn squash_to_rev(ids: impl IntoIterator<Item = (gix_hash::ObjectId, Filter)>) -> Op {
-    let mut entries: Vec<(RevMatch, gix_hash::ObjectId, Filter)> = ids
+    let mut entries: Vec<(RevMatch, Filter)> = ids
         .into_iter()
-        .map(|(r, f)| (RevMatch::Equal, r, f))
+        .map(|(oid, filter)| (RevMatch::Equal(oid), filter))
         .collect();
-    entries.push((
-        RevMatch::Default,
-        gix_hash::ObjectId::null(gix_hash::Kind::Sha1),
-        to_filter(Op::Squash),
-    ));
+    entries.push((RevMatch::Default, to_filter(Op::Squash)));
     Op::Rev(entries)
 }
 

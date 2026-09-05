@@ -304,8 +304,7 @@ fn deephistory_rev(c: &mut Criterion) {
     {
         let case = bench.cases.first().expect("at least one case");
         let rev_filter = Filter::new().rev(vec![(
-            RevMatch::AncestorInclusive,
-            case.head,
+            RevMatch::AncestorInclusive(case.head),
             Filter::new().subdir(SUBDIR),
         )]);
         let transaction = bench.context.open().expect("open transaction");
@@ -332,8 +331,7 @@ fn deephistory_rev(c: &mut Criterion) {
     group.sample_size(10);
     for case in &bench.cases {
         let rev_filter = Filter::new().rev(vec![(
-            RevMatch::AncestorInclusive,
-            case.head,
+            RevMatch::AncestorInclusive(case.head),
             Filter::new().subdir(SUBDIR),
         )]);
         group.throughput(Throughput::Elements(case.n_commits as u64));
