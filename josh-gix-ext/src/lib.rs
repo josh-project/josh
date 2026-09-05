@@ -18,6 +18,15 @@ pub fn component_bytes(c: &std::ffi::OsStr) -> &[u8] {
         .expect("path component is not valid Unicode")
         .as_bytes()
 }
+/// Split an object ID into `aa/bbb/rest`, keeping SHA-keyed Git trees narrow.
+///
+/// The two fanout levels provide about one million buckets. A single two-hex level makes updates
+/// to dense trees increasingly expensive, while a third level adds another tree write without
+/// making the second-level subtrees meaningfully narrower.
+pub fn oid_fanout_path(oid: gix_hash::ObjectId) -> std::path::PathBuf {
+    let oid = oid.to_string();
+    [&oid[..2], &oid[2..5], &oid[5..]].iter().collect()
+}
 
 pub mod graph;
 pub mod merge;
@@ -531,6 +540,16 @@ impl gix_object::Exists for StagingOdb {
 mod tests {
     use super::*;
     use std::str::FromStr;
+    #[test]
+    fn object_id_fanout_path_uses_two_levels() {
+        let oid = gix_hash::ObjectId::from_str("0123456789abcdef0123456789abcdef01234567").unwrap();
+        assert_eq!(
+            oid_fanout_path(oid),
+            std::path::Path::new("01")
+                .join("234")
+                .join("56789abcdef0123456789abcdef01234567")
+        );
+    }
 
     fn test_repo() -> (tempfile::TempDir, gix::Repository) {
         let dir = tempfile::tempdir().unwrap();

@@ -8,7 +8,7 @@ use josh_cli::commands::comment::CommentArgs;
 use josh_cli::commands::fetch::FetchArgs;
 use josh_cli::commands::pull::PullArgs;
 use josh_cli::commands::push::{PublishArgs, PushArgs};
-use josh_cli::commands::run::ComposeArgs;
+use josh_cli::commands::run::{ComposeArgs, ComposeCommand};
 use josh_cli::commands::sync::SyncArgs;
 use josh_cli::config::{read_remote_config, write_remote_config};
 use josh_cli::forge::{Forge, GerritMode};
@@ -233,6 +233,14 @@ fn run_repo(cmd: &RepoCommand, distributed_cache: bool) -> anyhow::Result<()> {
     };
 
     let is_compose = matches!(cmd, RepoCommand::Compose(_));
+    let ephemeral_compose = match cmd {
+        RepoCommand::Compose(args) => match &args.command {
+            ComposeCommand::Run(args) => !args.clean && !args.clean_all,
+            ComposeCommand::ListImages(_) | ComposeCommand::ListJobs(_) => true,
+            ComposeCommand::Pull(_) | ComposeCommand::Push(_) => false,
+        },
+        _ => false,
+    };
 
     let mut cache_stack = josh_core::cache::CacheStack::new();
     // Compose does one-shot, throwaway filtering and then hands off to a long container run; the
@@ -250,13 +258,10 @@ fn run_repo(cmd: &RepoCommand, distributed_cache: bool) -> anyhow::Result<()> {
     let cache = std::sync::Arc::new(cache_stack);
 
     let mut ctx = josh_core::cache::TransactionContext::new(&repo_path, cache.clone());
-
-    // For compose, we don't need to flush the objects to disk;
-    // everything else gets mem odb setup with an upper flush limit
-    if is_compose {
+    if ephemeral_compose {
         ctx = ctx.ephemeral();
     } else {
-        ctx = ctx.with_mem_odb_limit(josh_cli::MAX_MEM_PACK_SIZE)
+        ctx = ctx.with_mem_odb_limit(josh_cli::MAX_MEM_PACK_SIZE);
     }
 
     let transaction = ctx.open().context("Failed TransactionContext::open")?;

@@ -24,6 +24,48 @@ pub fn env(build_tree: gix_hash::ObjectId) -> String {
     format!("{ENV_PREFIX}{build_tree}")
 }
 
+pub(crate) fn output_oid(name: &str) -> Option<gix_hash::ObjectId> {
+    parse_oid(name.strip_prefix(OUTPUT_PREFIX)?)
+}
+
+pub(crate) fn env_oid(name: &str) -> Option<gix_hash::ObjectId> {
+    let (_, suffix) = name.split_once(ENV_PREFIX)?;
+    parse_oid(suffix)
+}
+
+fn parse_oid(value: &str) -> Option<gix_hash::ObjectId> {
+    let hex = value.get(..40)?;
+    if value.as_bytes().get(40).is_some_and(u8::is_ascii_hexdigit) {
+        return None;
+    }
+    gix_hash::ObjectId::from_hex(hex.as_bytes()).ok()
+}
+
 pub const OUTPUT_PREFIX: &str = "josh_out_";
 pub const ENV_PREFIX: &str = "josh_ws_image_";
 pub const CACHE_PREFIX: &str = "josh_cache_";
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const OID: &str = "0123456789abcdef0123456789abcdef01234567";
+
+    #[test]
+    fn parses_runtime_resource_names() {
+        assert_eq!(
+            output_oid(&format!("{OUTPUT_PREFIX}{OID}"))
+                .unwrap()
+                .to_string(),
+            OID
+        );
+        assert_eq!(
+            env_oid(&format!("localhost/{ENV_PREFIX}{OID}:latest"))
+                .unwrap()
+                .to_string(),
+            OID
+        );
+        assert!(output_oid("not-a-compose-volume").is_none());
+        assert!(env_oid(&format!("{ENV_PREFIX}{OID}0")).is_none());
+    }
+}
