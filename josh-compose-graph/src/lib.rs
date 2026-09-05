@@ -8,6 +8,7 @@
 
 mod graph;
 mod meta;
+mod visualize;
 
 pub use graph::{Graph, ImageNode, Job, load_graph};
 pub use meta::{SidecarSpec, WorkspaceMeta};

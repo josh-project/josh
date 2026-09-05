@@ -22,6 +22,35 @@ Pulling compose metadata must persist the ref for later CLI invocations.
   $ git cat-file -t refs/josh/compose
   commit
 
+Compose graphing must discard objects created while applying the workspace filter.
+
+  $ git init -q ${TESTTMP}/filtered
+  $ cd ${TESTTMP}/filtered
+  $ mkdir -p image-context images
+  $ echo 'FROM scratch' > image-context/Dockerfile
+  $ echo ':$label="friendly image"' > images/test.josh
+  $ echo 'context = :/image-context' >> images/test.josh
+  $ echo ':$label="ephemeral-workspace"' > compose.josh
+  $ echo ':#image[:+images/test]' >> compose.josh
+  $ echo ':$output="none"' >> compose.josh
+  $ echo 'worktree = :/image-context' >> compose.josh
+  $ git add compose.josh image-context images
+  $ git commit -q -m "add compose workspace"
+  $ workspace=$(josh compose list-jobs --all HEAD)
+
+Abbreviated commit SHAs must select the same compose input.
+
+  $ short=$(git rev-parse --short HEAD)
+  $ test "$(josh compose list-jobs --all "${short}")" = "${workspace}"
+  $ josh compose graph HEAD | sed -E 's/[0-9a-f]{40}/OID/g'
+  direction: down
+  image_OID: "image OID"
+  job_OID: "ephemeral-workspace"
+  image_OID -> job_OID: "image"
+  $ test -n "${workspace}"
+  $ git cat-file -e "${workspace}" 2>/dev/null
+  [1]
+
 Revision object expressions resolve across every compose planning command.
 
   $ git init -q ${TESTTMP}/revisions
@@ -52,6 +81,10 @@ Revision object expressions resolve across every compose planning command.
   $ test -n "${default_job}"
   $ test -n "${explicit_job}"
   $ test "${default_job}" != "${explicit_job}"
+  $ default_graph=$(josh compose graph "${current}" "${filter}")
+  $ explicit_graph=$(josh compose graph --arg baseline="${explicit}" "${current}" "${filter}")
+  $ case "${default_graph}" in *"job_${default_job}"*) true;; *) false;; esac
+  $ case "${explicit_graph}" in *"job_${explicit_job}"*) true;; *) false;; esac
   $ test -z "$(josh compose list-images --all "${current}" "${filter}")"
   $ test -z "$(josh compose list-images --all --arg baseline="${explicit}" "${current}" "${filter}")"
   $ mkdir bin
