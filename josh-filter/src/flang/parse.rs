@@ -3,7 +3,7 @@ use crate::filter::Filter;
 use crate::opt;
 use crate::opt::invert;
 use crate::persist::to_filter;
-use crate::{InsertContent, LazyRef, Op, Regex, RevMatch};
+use crate::{InsertContent, Op, Regex, RevMatch};
 
 use anyhow::{Context, anyhow};
 use indoc::{formatdoc, indoc};
@@ -79,7 +79,7 @@ fn make_filter(args: &[&str]) -> anyhow::Result<Filter> {
         ["hook", arg] => Ok(f.hook(arg)),
         ["_", sha] => {
             check_experimental_features_enabled("downstack filter")?;
-            Ok(to_filter(Op::Downstack(LazyRef::parse(sha)?)))
+            Ok(to_filter(Op::Downstack(sha.parse()?)))
         }
         ["_"] => Err(anyhow!(indoc!(
             r#"
@@ -257,9 +257,7 @@ fn parse_item(pair: pest::iterators::Pair<Rule>) -> anyhow::Result<Filter> {
                                 let filter = parse(filter_pair.as_str())?;
                                 entries.push((
                                     RevMatch::Default,
-                                    LazyRef::Resolved(gix_hash::ObjectId::null(
-                                        gix_hash::Kind::Sha1,
-                                    )),
+                                    gix_hash::ObjectId::null(gix_hash::Kind::Sha1),
                                     filter,
                                 ));
                             }
@@ -280,7 +278,7 @@ fn parse_item(pair: pest::iterators::Pair<Rule>) -> anyhow::Result<Filter> {
                                 let filter_pair =
                                     inner.next().context("rev_entry: missing filter")?;
 
-                                let oid = LazyRef::parse(oid_pair.as_str())?;
+                                let oid = oid_pair.as_str().parse()?;
                                 let filter = parse(filter_pair.as_str())?;
 
                                 entries.push((match_op, oid, filter));
@@ -309,7 +307,7 @@ fn parse_item(pair: pest::iterators::Pair<Rule>) -> anyhow::Result<Filter> {
             let v: Vec<_> = pair.into_inner().map(|x| x.as_str()).collect();
 
             if v.len() == 2 {
-                let oid = LazyRef::parse(v[0])?;
+                let oid = v[0].parse()?;
                 let filter = parse(v[1])?;
                 Ok(to_filter(Op::Unapply(oid, filter)))
             } else {
@@ -332,12 +330,14 @@ fn parse_item(pair: pest::iterators::Pair<Rule>) -> anyhow::Result<Filter> {
         }
         Rule::filter_squash => {
             // BTreeMap deduplicates IDs and makes the expansion deterministic.
-            let ids: std::collections::BTreeMap<LazyRef, Filter> = pair
+            let ids: std::collections::BTreeMap<gix_hash::ObjectId, Filter> = pair
                 .into_inner()
                 .tuples()
-                .map(|(oid, filter)| -> anyhow::Result<(LazyRef, Filter)> {
-                    Ok((LazyRef::parse(oid.as_str())?, parse(filter.as_str())?))
-                })
+                .map(
+                    |(oid, filter)| -> anyhow::Result<(gix_hash::ObjectId, Filter)> {
+                        Ok((oid.as_str().parse()?, parse(filter.as_str())?))
+                    },
+                )
                 .collect::<Result<Vec<_>, _>>()?
                 .into_iter()
                 .collect();
@@ -540,3 +540,13 @@ pub fn get_comments(filter_spec: &str) -> Result<String, String> {
 #[derive(pest_derive::Parser)]
 #[grammar = "flang/grammar.pest"]
 struct Grammar;
+
+#[cfg(test)]
+mod tests {
+    use super::parse;
+
+    #[test]
+    fn revision_references_require_object_ids() {
+        assert!(parse(r#":rev(=="/repo.git@refs/heads/main":/)"#).is_err());
+    }
+}

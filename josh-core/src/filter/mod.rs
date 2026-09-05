@@ -18,7 +18,7 @@ pub use josh_filter::flang::parse::{get_comments, parse};
 pub use josh_filter::opt;
 pub use josh_filter::opt::invert;
 pub use josh_filter::persist::{peel_filter, peel_op, to_filter, to_op, to_ops};
-pub use josh_filter::{Filter, InsertContent, LazyRef, Op, RevMatch};
+pub use josh_filter::{Filter, InsertContent, Op, RevMatch};
 pub use josh_filter::{as_file, pretty, spec};
 
 mod object_deref;
@@ -161,104 +161,6 @@ impl Rewrite {
 }
 
 pub use josh_filter::compose;
-
-pub fn lazy_refs(filter: Filter) -> Vec<String> {
-    lazy_refs2(&peel_op(filter))
-}
-
-fn lazy_refs2(op: &Op) -> Vec<String> {
-    let mut lr = match op {
-        Op::Compose(filters) => {
-            filters
-                .iter()
-                .map(|f| lazy_refs(*f))
-                .fold(vec![], |mut acc, mut v| {
-                    acc.append(&mut v);
-                    acc
-                })
-        }
-        Op::Exclude(filter) | Op::Select(filter) | Op::Pin(filter) => lazy_refs(*filter),
-        Op::Chain(filters) => {
-            let mut av = vec![];
-            for filter in filters {
-                av.append(&mut lazy_refs(*filter));
-            }
-            av
-        }
-        Op::Subtract(a, b) => {
-            let mut av = lazy_refs(*a);
-            av.append(&mut lazy_refs(*b));
-            av
-        }
-        Op::Rev(filters) => {
-            let mut lr = lazy_refs2(&Op::Compose(filters.iter().map(|(_, _, f)| *f).collect()));
-            lr.extend(filters.iter().filter_map(|(_, nested, _)| {
-                if let LazyRef::Lazy(s) = nested {
-                    Some(s.to_owned())
-                } else {
-                    None
-                }
-            }));
-            lr.sort();
-            lr.dedup();
-            lr
-        }
-        Op::Downstack(LazyRef::Lazy(s)) => vec![s.to_owned()],
-        Op::Downstack(_) => vec![],
-        _ => vec![],
-    };
-    lr.sort();
-    lr.dedup();
-    lr
-}
-
-pub fn resolve_refs(
-    refs: &std::collections::HashMap<String, gix_hash::ObjectId>,
-    filter: Filter,
-) -> Filter {
-    to_filter(resolve_refs2(refs, &to_op(filter)))
-}
-
-fn resolve_refs2(refs: &std::collections::HashMap<String, gix_hash::ObjectId>, op: &Op) -> Op {
-    match op {
-        Op::Compose(filters) => {
-            Op::Compose(filters.iter().map(|f| resolve_refs(refs, *f)).collect())
-        }
-        Op::Exclude(filter) => Op::Exclude(resolve_refs(refs, *filter)),
-        Op::Select(filter) => Op::Select(resolve_refs(refs, *filter)),
-        Op::Pin(filter) => Op::Pin(resolve_refs(refs, *filter)),
-        Op::Chain(filters) => Op::Chain(filters.iter().map(|f| resolve_refs(refs, *f)).collect()),
-        Op::Subtract(a, b) => Op::Subtract(resolve_refs(refs, *a), resolve_refs(refs, *b)),
-        Op::Rev(filters) => {
-            let lr = filters
-                .iter()
-                .map(|(match_op, r, f)| {
-                    let f = resolve_refs(refs, *f);
-                    let resolved_r = if let LazyRef::Lazy(s) = r {
-                        if let Some(res) = refs.get(s) {
-                            LazyRef::Resolved(*res)
-                        } else {
-                            r.clone()
-                        }
-                    } else {
-                        r.clone()
-                    };
-                    (*match_op, resolved_r, f)
-                })
-                .collect();
-            Op::Rev(lr)
-        }
-
-        Op::Downstack(LazyRef::Lazy(s)) => {
-            if let Some(res) = refs.get(s) {
-                Op::Downstack(LazyRef::Resolved(*res))
-            } else {
-                op.clone()
-            }
-        }
-        _ => op.clone(),
-    }
-}
 
 pub fn src_path(filter: Filter) -> std::path::PathBuf {
     src_path2(&peel_op(filter))
@@ -498,15 +400,11 @@ fn get_filter(
 fn get_rev_filter(
     transaction: &cache::Transaction,
     commit_id: gix_hash::ObjectId,
-    filters: &[(RevMatch, LazyRef, Filter)],
+    filters: &[(RevMatch, gix_hash::ObjectId, Filter)],
 ) -> anyhow::Result<Filter> {
     // First match wins - iterate in order
-    for (match_op, filter_tip_ref, startfilter) in filters.iter() {
-        let filter_tip = if let LazyRef::Resolved(filter_tip) = filter_tip_ref {
-            filter_tip.to_owned()
-        } else {
-            return Err(anyhow!("unresolved lazy ref"));
-        };
+    for (match_op, filter_tip, startfilter) in filters.iter() {
+        let filter_tip = filter_tip.to_owned();
         if match_op != &RevMatch::Default && !transaction.odb().contains(filter_tip) {
             return Err(anyhow!("`:rev(...)` with nonexistent OID: {}", filter_tip));
         }
@@ -583,16 +481,13 @@ pub fn apply_to_commit2(
             ))
             .transpose();
         }
-        Op::Downstack(LazyRef::Resolved(base)) => {
+        Op::Downstack(base) => {
             if let Some(oid) = transaction.get(filter, commit_id)? {
                 return Ok(Some(oid));
             }
             let new_oid = downstack(transaction, commit_id, base.to_owned())?;
             transaction.insert(filter, commit_id, new_oid, false)?;
             return Ok(Some(new_oid));
-        }
-        Op::Downstack(LazyRef::Lazy(_)) => {
-            return Err(anyhow!("`:_=...` with unresolved base ref"));
         }
         _ => {
             if let Some(oid) = transaction.get(filter, commit_id)? {
@@ -797,9 +692,6 @@ pub fn apply_to_commit2(
                 .collect::<anyhow::Result<Vec<_>>>()?;
 
             return per_rev_filter(transaction, &commit, filter, commit_filter, parent_filters);
-        }
-        Op::Unapply(LazyRef::Lazy(_), _) => {
-            return Err(anyhow!("unresolved lazy ref"));
         }
         Op::Unapply(..) => apply(transaction, filter, Rewrite::from_commit_data(&commit)?)?,
 
@@ -1195,23 +1087,19 @@ fn apply_impl(
 
         Op::Unapply(target, uf) => {
             check_experimental_features_enabled("unapply filter")?;
-            if let LazyRef::Resolved(target) = target {
-                let target = objects::CommitData::read(odb, target.to_owned())?;
-                // The message must parse as an oid, so non-UTF-8 is an error.
-                let target_msg = target.message()?;
-                let target = gix_hash::ObjectId::from_str(std::str::from_utf8(target_msg)?)?;
-                let target_tree = git::read_tree_id(odb, target)?;
-                /* dbg!(&uf); */
-                Ok(Rewrite::from_tree(filter::unapply(
-                    transaction,
-                    *uf,
-                    x.tree_id(),
-                    target_tree,
-                    None,
-                )?))
-            } else {
-                return Err(anyhow!("unresolved lazy ref"));
-            }
+            let target = objects::CommitData::read(odb, target.to_owned())?;
+            // The message must parse as an oid, so non-UTF-8 is an error.
+            let target_msg = target.message()?;
+            let target = gix_hash::ObjectId::from_str(std::str::from_utf8(target_msg)?)?;
+            let target_tree = git::read_tree_id(odb, target)?;
+            /* dbg!(&uf); */
+            Ok(Rewrite::from_tree(filter::unapply(
+                transaction,
+                *uf,
+                x.tree_id(),
+                target_tree,
+                None,
+            )?))
         }
         Op::Pin(_) => Ok(x),
         Op::Downstack(_) => Err(anyhow!("not applicable to tree: downstack")),

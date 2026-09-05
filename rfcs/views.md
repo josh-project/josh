@@ -123,8 +123,7 @@ A view *denotes* a filter; it is not an op in the filter language. Two structura
 1. **Referential transparency.** A filter is a pure function of its input — `:/sub` means the
    same thing forever, which is what makes interning, caching, and the optimizer sound. A view
    resolves against a mutable ref. Making view lookup a first-class op would put external mutable
-   state inside the algebra. (`LazyRef` in `:squash` flirts with this, but those are resolved once
-   at invocation and frozen.)
+   state inside the algebra.
 2. **Policy placement.** A view carries evaluation pragmas — `:~(...)` history flags, migration
    points — that only make sense governing a whole filtering run. An op can appear nested anywhere
    in a composition; "what does `history=linear` mean three levels deep inside a compose" is a

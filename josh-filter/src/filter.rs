@@ -1,5 +1,5 @@
 use crate::check_experimental_features_enabled;
-use crate::op::{InsertContent, LazyRef, Op, Regex, RevMatch};
+use crate::op::{InsertContent, Op, Regex, RevMatch};
 use crate::opt;
 use crate::persist::{self, Node, to_filter, to_op};
 use std::sync::LazyLock;
@@ -88,14 +88,9 @@ impl Filter {
 
     /// Chain a `:rev(...)` filter. Each `(match, tip, then)` arm applies `then` to a commit whose
     /// relationship to `tip` satisfies `match` (e.g. `AncestorInclusive` is `<=tip`); the first
-    /// matching arm wins and a commit matching none passes through unchanged. Tips are resolved
-    /// oids (`RevMatch::Default` ignores its tip); construct `Op::Rev` directly for lazy refs.
+    /// matching arm wins and a commit matching none passes through unchanged.
     pub fn rev(self, arms: Vec<(RevMatch, gix_hash::ObjectId, Filter)>) -> Filter {
-        self.chain(to_filter(Op::Rev(
-            arms.into_iter()
-                .map(|(m, tip, then)| (m, LazyRef::Resolved(tip), then))
-                .collect(),
-        )))
+        self.chain(to_filter(Op::Rev(arms)))
     }
 
     /// Create a no-op filter that passes everything through unchanged
@@ -249,7 +244,7 @@ impl Filter {
     /// Chain a downstack filter that rebuilds the stack from `base` to the input commit,
     /// dropping intermediate commits whose paths are disjoint from the tip's changes.
     pub fn downstack(self, base: gix_hash::ObjectId) -> Filter {
-        self.chain(to_filter(Op::Downstack(LazyRef::Resolved(base))))
+        self.chain(to_filter(Op::Downstack(base)))
     }
 
     /// Chain a message filter that transforms commit messages
@@ -363,14 +358,14 @@ pub fn invert(filter: Filter) -> anyhow::Result<Filter> {
 }
 
 /// Lower squash-with-ids to a deterministic `:rev(...)` filter.
-pub fn squash_to_rev(ids: impl IntoIterator<Item = (LazyRef, Filter)>) -> Op {
-    let mut entries: Vec<(RevMatch, LazyRef, Filter)> = ids
+pub fn squash_to_rev(ids: impl IntoIterator<Item = (gix_hash::ObjectId, Filter)>) -> Op {
+    let mut entries: Vec<(RevMatch, gix_hash::ObjectId, Filter)> = ids
         .into_iter()
         .map(|(r, f)| (RevMatch::Equal, r, f))
         .collect();
     entries.push((
         RevMatch::Default,
-        LazyRef::Resolved(gix_hash::ObjectId::null(gix_hash::Kind::Sha1)),
+        gix_hash::ObjectId::null(gix_hash::Kind::Sha1),
         to_filter(Op::Squash),
     ));
     Op::Rev(entries)
