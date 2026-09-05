@@ -22,7 +22,7 @@ Pulling compose metadata must persist the ref for later CLI invocations.
   $ git cat-file -t refs/josh/compose
   commit
 
-Compose planning must discard objects created while applying the workspace filter.
+Compose graphing must discard objects created while applying the workspace filter.
 
   $ git init -q ${TESTTMP}/filtered
   $ cd ${TESTTMP}/filtered
@@ -30,6 +30,9 @@ Compose planning must discard objects created while applying the workspace filte
   $ git add compose.josh
   $ git commit -q -m "add compose workspace"
   $ workspace=$(josh compose list-jobs --all HEAD)
+  $ josh compose graph HEAD | sed -E 's/[0-9a-f]{40}/OID/g'
+  direction: down
+  job_OID: "ephemeral-workspace"
   $ test -n "${workspace}"
   $ git cat-file -e "${workspace}" 2>/dev/null
   [1]

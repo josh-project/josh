@@ -21,12 +21,12 @@ use crate::meta::{self, WorkspaceMeta};
 pub struct Graph {
     /// Workspaces in dependency order (a workspace always appears after its
     /// inputs), deduplicated. The last job is the run's root.
-    jobs: Vec<Job>,
+    pub(super) jobs: Vec<Job>,
     /// Images in bases-first order (a base image always appears before any
     /// image that uses it), deduplicated.
-    images: Vec<ImageNode>,
-    job_index: HashMap<gix_hash::ObjectId, usize>,
-    image_index: HashMap<gix_hash::ObjectId, usize>,
+    pub(super) images: Vec<ImageNode>,
+    pub(super) job_index: HashMap<gix_hash::ObjectId, usize>,
+    pub(super) image_index: HashMap<gix_hash::ObjectId, usize>,
 }
 
 /// One workspace step in the build graph.

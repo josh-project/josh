@@ -51,6 +51,8 @@ pub struct ComposeArgs {
 pub enum ComposeCommand {
     /// Run a workspace in a container
     Run(RunArgs),
+    /// Print the workspace graph as D2 source
+    Graph(GraphArgs),
     /// List every image (as `josh_ws_image_<oid>`) a `run` with the same args would need
     ListImages(ListImagesArgs),
     /// List the job hash of every workspace a `run` with the same args would touch
@@ -74,6 +76,7 @@ pub fn handle_compose(
     #[cfg(not(windows))]
     match &args.command {
         ComposeCommand::Run(run_args) => handle_run(run_args, transaction),
+        ComposeCommand::Graph(graph_args) => handle_graph(graph_args, transaction),
         ComposeCommand::ListImages(list_args) => handle_list_images(list_args, transaction),
         ComposeCommand::ListJobs(list_args) => handle_list_jobs(list_args, transaction),
         ComposeCommand::Pull(transfer_args) => {
@@ -137,6 +140,26 @@ pub fn handle_run(
         },
         runtime.as_ref(),
     )
+}
+
+#[derive(Debug, clap::Parser)]
+pub struct GraphArgs {
+    /// Git revision to use as input: "." (working tree), "+" (index), or any rev (e.g. "HEAD", "HEAD~1", "main")
+    #[arg(default_value = ".")]
+    pub reference: String,
+
+    /// Filter spec to apply, e.g. ":+ws/test" (defaults to ":+compose")
+    #[arg(default_value = ":+compose")]
+    pub filter: String,
+}
+
+pub fn handle_graph(
+    args: &GraphArgs,
+    transaction: &josh_core::cache::Transaction,
+) -> anyhow::Result<()> {
+    let graph = josh_compose::load_plan(transaction, &args.filter, &args.reference)?;
+    println!("{}", graph.d2());
+    Ok(())
 }
 
 #[derive(Debug, clap::Parser)]
