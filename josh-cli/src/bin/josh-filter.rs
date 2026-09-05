@@ -22,7 +22,7 @@ fn resolve_input_ref(
 }
 
 fn squash_ids_filter(
-    ids: &[(josh_core::filter::LazyRef, josh_core::filter::Filter)],
+    ids: &[(gix_hash::ObjectId, josh_core::filter::Filter)],
 ) -> josh_core::filter::Filter {
     josh_core::filter::to_filter(josh_core::filter::squash_to_rev(ids.iter().cloned()))
 }
@@ -236,10 +236,7 @@ fn run_filter(args: Vec<String>) -> anyhow::Result<i32> {
                 return Ok(());
             }
             let target = josh_core::objects::peel_to_commit(transaction.odb(), oid)?;
-            ids.push((
-                josh_core::filter::LazyRef::Resolved(target),
-                josh_core::filter::Filter::new().message(name),
-            ));
+            ids.push((target, josh_core::filter::Filter::new().message(name)));
             refs.push((name.to_string(), target));
             Ok(())
         })?;
@@ -254,10 +251,7 @@ fn run_filter(args: Vec<String>) -> anyhow::Result<i32> {
             if let [sha, name] = split.as_slice() {
                 let target = gix_hash::ObjectId::from_str(sha)?;
                 let target = josh_core::objects::peel_to_commit(transaction.odb(), target)?;
-                ids.push((
-                    josh_core::filter::LazyRef::Resolved(target),
-                    josh_core::filter::Filter::new().message(name),
-                ));
+                ids.push((target, josh_core::filter::Filter::new().message(name)));
                 refs.push((name.to_string(), target));
             } else if !split.is_empty() {
                 eprintln!("Warning: malformed line: {:?}", line);

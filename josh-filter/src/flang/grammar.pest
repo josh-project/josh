@@ -9,7 +9,7 @@ GROUP_END = _{ "]" }
 PATH = _{ (ALNUM | "/")+ }
 filter_path = { PATH }
 argument = { string | PATH }
-rev = { string | ALNUM+ }
+rev = { object_oid }
 
 sstring = _{"\'" ~ inner ~ "\'"}
 dstring = _{"\"" ~ inner ~ "\""}
