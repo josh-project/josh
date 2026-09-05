@@ -140,7 +140,13 @@ impl DistributedCacheBackend {
                 } else {
                     (gix_object::tree::EntryKind::Commit, *to)
                 };
-                editor.upsert(fanout(*from), kind, target)?;
+                let path = objects::oid_fanout_path(*from);
+                editor.upsert(
+                    path.components()
+                        .map(|component| objects::component_bytes(component.as_os_str())),
+                    kind,
+                    target,
+                )?;
             }
 
             let updated = editor.write(|tree| {
@@ -220,16 +226,6 @@ fn ref_path(filter_tree_id: gix_hash::ObjectId, shard: u64) -> String {
     )
 }
 
-// Two fanout levels (~1M buckets) keep per-flush cost proportional to the flush size: subtrees
-// stay near-singleton even for shards with tens of thousands of entries, so a flush never
-// rewrites subtrees that grow with the accumulated shard. A single 2-hex level goes quadratic on
-// dense shards for exactly that reason, while a third level only adds one more tree write per
-// entry without making any subtree meaningfully smaller.
-fn fanout(commit: gix_hash::ObjectId) -> [gix_object::bstr::BString; 3] {
-    let commit = commit.to_string();
-    [commit[..2].into(), commit[2..5].into(), commit[5..].into()]
-}
-
 impl CacheBackend for DistributedCacheBackend {
     fn read(
         &self,
@@ -280,8 +276,14 @@ impl CacheBackend for DistributedCacheBackend {
         let mut buf = Vec::new();
         let root = gix_object::FindExt::find_tree_iter(odb, &tree, &mut buf)?;
         let mut entry_buf = Vec::new();
+        let path = objects::oid_fanout_path(from);
         let entry = root
-            .lookup_entry(odb, &mut entry_buf, fanout(from))
+            .lookup_entry(
+                odb,
+                &mut entry_buf,
+                path.components()
+                    .map(|component| objects::component_bytes(component.as_os_str())),
+            )
             .map_err(|e| anyhow::anyhow!("cache lookup: {e}"))?;
         let Some(e) = entry else {
             return Ok(None);

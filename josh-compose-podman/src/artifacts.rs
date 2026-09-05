@@ -3,7 +3,7 @@ use std::io::Write;
 use std::process::{Command, Stdio};
 
 use super::{PodmanRuntime, align_artifact};
-use josh_compose_backend::ArtifactBackend;
+use josh_compose_backend::{ArtifactBackend, StorageStatus};
 
 fn artifact_exists(name: &str) -> anyhow::Result<bool> {
     let status = Command::new("podman")
@@ -96,6 +96,47 @@ fn list_artifacts(prefix: &str) -> anyhow::Result<Vec<String>> {
         .collect())
 }
 
+fn storage_status() -> anyhow::Result<StorageStatus> {
+    let output = Command::new("podman")
+        .args([
+            "info",
+            "--format",
+            "{{.Store.GraphRootAllocated}} {{.Store.GraphRootUsed}}",
+        ])
+        .output()
+        .context("failed to run podman info")?;
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        anyhow::bail!("podman info failed: {stderr}");
+    }
+
+    let stdout = String::from_utf8(output.stdout).context("podman info returned non-UTF-8")?;
+    parse_storage_status(&stdout)
+}
+
+fn parse_storage_status(stdout: &str) -> anyhow::Result<StorageStatus> {
+    let mut fields = stdout.split_whitespace();
+    let total_bytes = fields
+        .next()
+        .context("podman info omitted graph-root capacity")?
+        .parse()
+        .context("podman info returned invalid graph-root capacity")?;
+    let used_bytes = fields
+        .next()
+        .context("podman info omitted graph-root usage")?
+        .parse()
+        .context("podman info returned invalid graph-root usage")?;
+    anyhow::ensure!(
+        fields.next().is_none(),
+        "podman info returned unexpected graph-root storage fields"
+    );
+
+    Ok(StorageStatus {
+        total_bytes,
+        used_bytes,
+    })
+}
+
 fn extract_artifact(name: &str, dest: &std::path::Path) -> anyhow::Result<()> {
     let tar_data = export_artifact(name)?;
     tar::Archive::new(std::io::Cursor::new(tar_data))
@@ -165,11 +206,32 @@ impl ArtifactBackend for PodmanRuntime {
         list_artifacts(prefix)
     }
 
+    fn storage_status(&self) -> anyhow::Result<Option<StorageStatus>> {
+        storage_status().map(Some)
+    }
+
     fn create_scratch_artifact(&self, tar: &[u8]) -> anyhow::Result<String> {
         create_scratch_artifact(tar)
     }
 
     fn recreate_artifact(&self, name: &str) -> anyhow::Result<()> {
         recreate_artifact(name)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parses_podman_graph_root_usage() {
+        assert_eq!(
+            parse_storage_status("106678648832 88296652800\n").unwrap(),
+            StorageStatus {
+                total_bytes: 106_678_648_832,
+                used_bytes: 88_296_652_800,
+            }
+        );
+        assert!(parse_storage_status("unknown 42").is_err());
     }
 }
