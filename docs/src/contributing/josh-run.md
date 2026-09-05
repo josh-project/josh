@@ -60,6 +60,17 @@ josh compose run + :+ws/test
 josh compose run HEAD :+ws/test
 ```
 
+### Inspect the execution plan
+
+```sh
+josh compose graph HEAD :+ws/test
+```
+
+`josh compose graph` accepts the same reference and filter arguments as `run` and prints D2 source
+to standard output. The graph includes workspace inputs, images, image bases, and sidecars;
+dependency edges point toward the steps that consume them. Pipe the output to a `.d2` file or a D2
+renderer if rendered output is needed.
+
 ## Syntax
 
 ```
