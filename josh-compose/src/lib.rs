@@ -74,6 +74,22 @@ pub fn run_with_executor(
     };
     executor.execute(transaction, &graph, runtime, &exec_opts)
 }
+
+/// Load the complete workspace and image dependency graph for a compose run.
+pub fn load_plan(
+    transaction: &josh_core::cache::Transaction,
+    filter_spec: &str,
+    input_ref: &str,
+    arguments: &[ArgumentBinding],
+) -> anyhow::Result<josh_compose_graph::Graph> {
+    josh_filter::check_experimental_features_enabled("josh compose graph")?;
+
+    let (ws_tree, _safe_name) =
+        filter::prepare_workspace(transaction, filter_spec, input_ref, arguments)?;
+
+    josh_compose_graph::load_graph(transaction, transaction.odb(), ws_tree)
+}
+
 /// Pull compose result metadata from `remote`, merging concurrent local results.
 pub fn pull(transaction: &josh_core::cache::Transaction, remote: &str) -> anyhow::Result<()> {
     josh_filter::check_experimental_features_enabled("josh compose pull")?;

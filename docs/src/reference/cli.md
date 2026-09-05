@@ -335,7 +335,25 @@ josh compose run . :+ws/test
 josh compose run + :+ws/test
 ```
 
+## josh compose graph
+
+> **Experimental:** requires `JOSH_EXPERIMENTAL_FEATURES=1`.
+
+Print the complete workspace plan as D2 source. The command does not run containers or render the
+diagram.
+
+```
+josh compose graph [REFERENCE] [FILTER]
+```
+
+`REFERENCE` and `FILTER` have the same meaning and defaults as `josh compose run`.
+
+```shell
+josh compose graph HEAD :+ws/test > graph.d2
+```
+
 ---
+
 
 ## josh-filter (standalone binary)
 
