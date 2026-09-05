@@ -88,6 +88,33 @@ impl Change {
         }
         Ok(oids)
     }
+
+    /// Return known downstack Change-Ids in dependency order, excluding this change.
+    /// Trailer matching survives commit splitting, unlike tip-OID matching.
+    pub fn dependency_ids(
+        &self,
+        transaction: &josh_core::cache::Transaction,
+        known: &std::collections::HashSet<String>,
+    ) -> anyhow::Result<Vec<String>> {
+        let odb = transaction.odb();
+        let mut deps = Vec::new();
+        let mut seen = std::collections::HashSet::new();
+        for oid in self.contributing(transaction)? {
+            let commit = objects::CommitData::read(odb, oid)?;
+            let (id, _) = commit_change_meta(&commit);
+            let id = match id {
+                Some(id) => id,
+                None => continue,
+            };
+            if Some(id.as_str()) == self.id() || !known.contains(&id) {
+                continue;
+            }
+            if seen.insert(id.clone()) {
+                deps.push(id);
+            }
+        }
+        Ok(deps)
+    }
 }
 
 pub fn encode_change_id_path(id: &str) -> String {
