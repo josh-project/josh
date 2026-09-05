@@ -15,6 +15,8 @@ mod stacked;
 mod store;
 mod votes;
 
+pub mod remote_config;
+
 pub use change::*;
 pub use comments::*;
 pub use refs::*;

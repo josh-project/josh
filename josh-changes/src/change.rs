@@ -184,6 +184,23 @@ pub fn sync_changes(
     Ok(changes)
 }
 
+/// Synchronize HEAD into a local changes scope.
+/// The destination uses `branch`; HEAD's branch selects the remote-tracking base.
+pub fn sync_local(
+    transaction: &josh_core::cache::Transaction,
+    branch: &str,
+) -> anyhow::Result<Vec<Change>> {
+    let head = transaction.head()?;
+    let base = match head.short_branch() {
+        Some(head_branch) => transaction
+            .resolve_ref(&format!("refs/remotes/origin/{head_branch}"))?
+            .and_then(|oid| josh_core::objects::peel_to_commit(transaction.odb(), oid).ok())
+            .unwrap_or(gix_hash::ObjectId::null(gix_hash::Kind::Sha1)),
+        None => gix_hash::ObjectId::null(gix_hash::Kind::Sha1),
+    };
+    sync_changes(transaction, head.commit, base, branch)
+}
+
 pub fn list_changes(
     transaction: &josh_core::cache::Transaction,
     scope: &ChangesRef,
