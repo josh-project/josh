@@ -1685,7 +1685,6 @@ mod tests {
             "a/x and c/x must be identical subtrees for the aliasing case to be exercised"
         );
 
-        let t = open_transaction(&td);
         for pattern in [
             "**/*.rs",
             "*.rs",
@@ -1707,8 +1706,7 @@ mod tests {
             "dir_0[!/]/**",
             "a/**/**/x*.rs",
         ] {
-            // Isolate the cases from each other (and from other tests in this process).
-            cache::clear_global_caches();
+            let t = open_transaction(&td);
 
             let key = objects::hash_blob(pattern.as_bytes());
             let cp = CompiledPattern::compile(pattern).unwrap();
