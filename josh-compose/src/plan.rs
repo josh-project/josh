@@ -33,7 +33,7 @@ pub fn collect_image_oids(
     runtime: &dyn ArtifactBackend,
 ) -> anyhow::Result<Vec<gix_hash::ObjectId>> {
     let graph = load_graph(transaction, odb, ws_tree)?;
-    let runnable = runnable_jobs(&graph, ignore_cache, runtime, true)?;
+    let runnable = runnable_jobs(transaction, &graph, ignore_cache, runtime, true)?;
 
     let mut wanted: HashSet<gix_hash::ObjectId> = HashSet::new();
     for job in graph.jobs() {
@@ -58,6 +58,32 @@ pub fn collect_image_oids(
         .collect())
 }
 
+/// Collect images directly used to execute one workspace, including sidecars and
+/// transitive base images but excluding dependency workspaces.
+pub(crate) fn collect_workspace_image_oids(
+    transaction: &cache::Transaction,
+    odb: &memodb::Odb,
+    ws_tree: gix_hash::ObjectId,
+) -> anyhow::Result<Vec<gix_hash::ObjectId>> {
+    let graph = load_graph(transaction, odb, ws_tree)?;
+    let job = graph.root();
+    let mut wanted = HashSet::new();
+
+    if let Some(image_oid) = job.meta.image {
+        collect_with_bases(&graph, image_oid, &mut wanted);
+    }
+    for spec in &job.meta.sidecars {
+        collect_with_bases(&graph, spec.image, &mut wanted);
+    }
+
+    Ok(graph
+        .images()
+        .iter()
+        .filter(|image| wanted.contains(&image.oid))
+        .map(|image| image.oid)
+        .collect())
+}
+
 /// Collect the job hash (ws_tree OID) of every workspace a run would touch, in
 /// dependency order (dependencies first) — including orchestrator workspaces
 /// that don't build an image, since those still write a `job_cache` entry.
@@ -73,7 +99,7 @@ pub fn collect_job_hashes(
     runtime: &dyn ArtifactBackend,
 ) -> anyhow::Result<Vec<gix_hash::ObjectId>> {
     let graph = load_graph(transaction, odb, ws_tree)?;
-    let runnable = runnable_jobs(&graph, ignore_cache, runtime, false)?;
+    let runnable = runnable_jobs(transaction, &graph, ignore_cache, runtime, false)?;
 
     Ok(graph
         .jobs()
@@ -87,6 +113,7 @@ pub fn collect_job_hashes(
 /// root without descending into cache-skippable workspaces (a skippable
 /// workspace's dependencies are not run either).
 fn runnable_jobs(
+    transaction: &cache::Transaction,
     graph: &Graph,
     ignore_cache: bool,
     runtime: &dyn ArtifactBackend,
@@ -102,7 +129,7 @@ fn runnable_jobs(
         let job = graph
             .job(ws_tree)
             .expect("job inputs reference jobs in the graph");
-        if !ignore_cache && workspace_is_skippable(job, runtime)? {
+        if !ignore_cache && workspace_is_skippable(transaction, job, runtime)? {
             if log_skips {
                 eprintln!("[{}] Using cached output ({})", job.meta.label, ws_tree);
             }
@@ -117,9 +144,12 @@ fn runnable_jobs(
 /// Mirror the executor's cache check: a job is skippable when a previous
 /// successful run is recorded AND its output volume still exists (when one is
 /// expected).
-fn workspace_is_skippable(job: &Job, runtime: &dyn ArtifactBackend) -> anyhow::Result<bool> {
-    let hash = job.ws_tree.to_string();
-    if !job_cache::is_cached_success(&hash) {
+fn workspace_is_skippable(
+    transaction: &cache::Transaction,
+    job: &Job,
+    runtime: &dyn ArtifactBackend,
+) -> anyhow::Result<bool> {
+    if !job_cache::is_cached_success(transaction, job.ws_tree)? {
         return Ok(false);
     }
     if job.meta.output == OutputMode::None {
