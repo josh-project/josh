@@ -4,7 +4,7 @@ use std::collections::HashMap;
 use std::sync::{LazyLock, OnceLock};
 
 use crate::filter::Filter;
-use crate::op::{InsertContent, LazyRef, Op, Regex, RevMatch};
+use crate::op::{InsertContent, Op, Regex, RevMatch};
 
 /// An interned, immutable `Op` together with its lazily-computed content OID.
 /// Nodes are leaked (`&'static`) and live for the process lifetime. A `Filter` is just a
@@ -188,15 +188,15 @@ impl<'a> InMemoryBuilder<'a> {
 
     fn build_rev_params(
         &mut self,
-        params: &[(RevMatch, LazyRef, Filter)],
+        params: &[(RevMatch, gix_hash::ObjectId, Filter)],
     ) -> anyhow::Result<gix_hash::ObjectId> {
         let mut outer_entries = Vec::new();
-        for (i, (match_op, lazy_ref, filter)) in params.iter().enumerate() {
+        for (i, (match_op, oid, filter)) in params.iter().enumerate() {
             // Encode match operator as prefix
             let key = match match_op {
-                RevMatch::AncestorStrict => format!("<{}", lazy_ref),
-                RevMatch::AncestorInclusive => format!("<={}", lazy_ref),
-                RevMatch::Equal => format!("=={}", lazy_ref),
+                RevMatch::AncestorStrict => format!("<{}", oid),
+                RevMatch::AncestorInclusive => format!("<={}", oid),
+                RevMatch::Equal => format!("=={}", oid),
                 RevMatch::Default => {
                     // Default filter uses "_" as key (no SHA)
                     "_".to_string()
@@ -234,12 +234,12 @@ impl<'a> InMemoryBuilder<'a> {
         Ok(self.write_tree(outer_tree))
     }
 
-    fn build_lazyref_filter_params(
+    fn build_oid_filter_params(
         &mut self,
-        lazy_ref: &LazyRef,
+        oid: &gix_hash::ObjectId,
         filter: Filter,
     ) -> anyhow::Result<gix_hash::ObjectId> {
-        let key_blob = self.write_blob(lazy_ref.to_string().as_bytes());
+        let key_blob = self.write_blob(oid.to_string().as_bytes());
         let filter_tree = self.node_oid(filter);
 
         let inner_entries = vec![
@@ -475,8 +475,8 @@ impl<'a> InMemoryBuilder<'a> {
                 let params_tree = self.build_rev_params(filters)?;
                 push_tree_entries(&mut entries, [("rev", params_tree)]);
             }
-            Op::Unapply(lr, f) => {
-                let params_tree = self.build_lazyref_filter_params(lr, *f)?;
+            Op::Unapply(oid, f) => {
+                let params_tree = self.build_oid_filter_params(oid, *f)?;
                 push_tree_entries(&mut entries, [("unapply", params_tree)]);
             }
             Op::RegexReplace(replacements) => {
@@ -487,8 +487,8 @@ impl<'a> InMemoryBuilder<'a> {
                 let params_tree = self.build_str_params(&[hook.as_ref()]);
                 push_tree_entries(&mut entries, [("hook", params_tree)]);
             }
-            Op::Downstack(lazy_ref) => {
-                let params_tree = self.build_str_params(&[lazy_ref.to_string().as_str()]);
+            Op::Downstack(base) => {
+                let params_tree = self.build_str_params(&[base.to_string().as_str()]);
                 push_tree_entries(&mut entries, [("downstack", params_tree)]);
             }
             Op::Meta(meta, filter) => {
@@ -1084,18 +1084,18 @@ fn from_tree2(src: &impl gix_object::Find, tree_oid: gix_hash::ObjectId) -> anyh
                 let key = std::str::from_utf8(key_blob.content())?;
 
                 // Parse match operator from key
-                let (match_op, lazy_ref) = if key == "_" {
-                    // Default filter - no SHA needed
+                let (match_op, oid) = if key == "_" {
+                    // Default filter uses a null OID that is ignored during matching.
                     (
                         RevMatch::Default,
-                        LazyRef::Resolved(gix_hash::ObjectId::null(gix_hash::Kind::Sha1)),
+                        gix_hash::ObjectId::null(gix_hash::Kind::Sha1),
                     )
                 } else if let Some(ref_str) = key.strip_prefix("<=") {
-                    (RevMatch::AncestorInclusive, LazyRef::parse(ref_str)?)
+                    (RevMatch::AncestorInclusive, ref_str.parse()?)
                 } else if let Some(ref_str) = key.strip_prefix('<') {
-                    (RevMatch::AncestorStrict, LazyRef::parse(ref_str)?)
+                    (RevMatch::AncestorStrict, ref_str.parse()?)
                 } else if let Some(ref_str) = key.strip_prefix("==") {
-                    (RevMatch::Equal, LazyRef::parse(ref_str)?)
+                    (RevMatch::Equal, ref_str.parse()?)
                 } else {
                     return Err(anyhow!(
                         "rev: invalid key format, must start with '<', '<=', '==', or be '_': {}",
@@ -1104,7 +1104,7 @@ fn from_tree2(src: &impl gix_object::Find, tree_oid: gix_hash::ObjectId) -> anyh
                 };
 
                 let filter = from_tree2(src, filter_tree.id())?;
-                filters.push((match_op, lazy_ref, to_filter(filter)));
+                filters.push((match_op, oid, to_filter(filter)));
             }
             Ok(Op::Rev(filters))
         }
@@ -1128,7 +1128,7 @@ fn from_tree2(src: &impl gix_object::Find, tree_oid: gix_hash::ObjectId) -> anyh
             )?;
             let key = std::str::from_utf8(key_blob.content())?;
             let filter = from_tree2(src, filter_tree.id())?;
-            Ok(Op::Unapply(LazyRef::parse(&key)?, to_filter(filter)))
+            Ok(Op::Unapply(key.parse()?, to_filter(filter)))
         }
         "squash" => {
             let _ = Blob::read(src, entry.id())?;
@@ -1173,7 +1173,7 @@ fn from_tree2(src: &impl gix_object::Find, tree_oid: gix_hash::ObjectId) -> anyh
                     .id(),
             )?;
             let key = std::str::from_utf8(key_blob.content())?;
-            Ok(Op::Downstack(LazyRef::parse(key)?))
+            Ok(Op::Downstack(key.parse()?))
         }
         "meta" => {
             let meta_tree = PersistedTree::read(src, entry.id())?;

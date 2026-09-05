@@ -602,28 +602,6 @@ async fn filter_to_namespace(
             &josh_core::to_ns(&repo)
         )))?;
 
-        // Resolve all refs mentioned in the filter to concrete OIDs,
-        // and apply this information to the filter
-        let filter = {
-            let lazy_refs: Vec<_> = josh_core::filter::lazy_refs(filter)
-                .iter()
-                .map(|x| x.split_once("@").unwrap())
-                .map(|(x, y)| (x.to_string(), y.to_string()))
-                .collect();
-
-            let resolved_refs = lazy_refs
-                .iter()
-                .map(|(rp, rf)| {
-                    (
-                        format!("{}@{}", rp, rf),
-                        resolve_upstream_ref(&transaction, rp, rf).unwrap(),
-                    )
-                })
-                .collect();
-
-            josh_core::filter::resolve_refs(&resolved_refs, filter)
-        };
-
         let head_symref_target = match &head_ref {
             HeadRef::ExplicitHead | HeadRef::Implicit => head_symref_map
                 .read()
@@ -1167,16 +1145,6 @@ async fn upstream_fetch_middleware(
         serv.filter_prefix.chain(filter)
     };
 
-    let mut fetch_repos = vec![upstream_repo.clone()];
-
-    let lazy_refs: Vec<_> = josh_core::filter::lazy_refs(filter)
-        .iter()
-        .map(|x| x.split_once("@").unwrap())
-        .map(|(x, y)| (x.trim_start_matches('/').to_string(), y.to_string()))
-        .collect();
-
-    fetch_repos.extend(lazy_refs.iter().map(|(x, _y)| x.clone()));
-
     let remote_url = format!("{}/{}", upstream, upstream_repo);
 
     let headref = match HeadRef::from_str(&parsed_url.headref) {
@@ -1188,55 +1156,48 @@ async fn upstream_fetch_middleware(
 
     let http_auth_required = serv.require_auth && parsed_url.pathinfo == "/git-receive-pack";
 
-    for fetch_repo in fetch_repos.iter() {
-        let fetch_url = format!("{}/{}", upstream, fetch_repo);
+    match crate::auth::check_http_auth(&remote_url, &auth, http_auth_required, serv.http_retry)
+        .await
+    {
+        Ok(false) => {
+            tracing::trace!("require-auth");
 
-        match crate::auth::check_http_auth(&fetch_url, &auth, http_auth_required, serv.http_retry)
-            .await
-        {
-            Ok(false) => {
-                tracing::trace!("require-auth");
-
-                return Ok((
-                    StatusCode::UNAUTHORIZED,
-                    [(
-                        header::WWW_AUTHENTICATE,
-                        r#"Basic realm="User Visible Realm""#,
-                    )],
-                )
-                    .into_response());
-            }
-            Err(e) => {
-                return Ok((StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response());
-            }
-            Ok(true) => {}
+            return Ok((
+                StatusCode::UNAUTHORIZED,
+                [(
+                    header::WWW_AUTHENTICATE,
+                    r#"Basic realm="User Visible Realm""#,
+                )],
+            )
+                .into_response());
         }
+        Err(e) => {
+            return Ok((StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response());
+        }
+        Ok(true) => {}
     }
 
-    for fetch_repo in fetch_repos.iter() {
-        let fetch_url = format!("{}/{}", upstream, fetch_repo);
-        match crate::upstream::fetch_upstream(
-            serv.clone(),
-            &fetch_repo,
-            &remote_auth,
-            fetch_url.to_owned(),
-            Some(headref.get()),
-            None,
-            false,
-        )
-        .await
-        {
-            Ok(_) => {}
-            Err(FetchError::AuthRequired) => {
-                return Ok(Response::builder()
-                    .header(header::WWW_AUTHENTICATE, "Basic realm=User Visible Realm")
-                    .status(StatusCode::UNAUTHORIZED)
-                    .body(Body::default())
-                    .expect("Failed to build response"));
-            }
-            Err(FetchError::Other(e)) => {
-                return Ok((StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response());
-            }
+    match crate::upstream::fetch_upstream(
+        serv.clone(),
+        &upstream_repo,
+        &remote_auth,
+        remote_url.clone(),
+        Some(headref.get()),
+        None,
+        false,
+    )
+    .await
+    {
+        Ok(_) => {}
+        Err(FetchError::AuthRequired) => {
+            return Ok(Response::builder()
+                .header(header::WWW_AUTHENTICATE, "Basic realm=User Visible Realm")
+                .status(StatusCode::UNAUTHORIZED)
+                .body(Body::default())
+                .expect("Failed to build response"));
+        }
+        Err(FetchError::Other(e)) => {
+            return Ok((StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response());
         }
     }
 
