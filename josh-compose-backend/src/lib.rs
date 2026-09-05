@@ -102,6 +102,22 @@ pub trait EnvironmentBackend: Send + Sync {
     fn remove_env(&self, key: &str) -> anyhow::Result<()>;
 }
 
+/// Capacity of the filesystem backing a runtime's local artifacts and environments.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct StorageStatus {
+    pub total_bytes: u64,
+    pub used_bytes: u64,
+}
+
+impl StorageStatus {
+    pub fn used_percent(self) -> u64 {
+        if self.total_bytes == 0 {
+            return 0;
+        }
+        ((u128::from(self.used_bytes) * 100) / u128::from(self.total_bytes)) as u64
+    }
+}
+
 /// Named, tar-addressable artifact management for `josh-compose`.
 ///
 /// `Send + Sync` for the same reason as [`EnvironmentBackend`].
@@ -118,6 +134,13 @@ pub trait ArtifactBackend: Send + Sync {
     fn remove_artifact(&self, name: &str, force: bool) -> anyhow::Result<()>;
     /// List artifacts whose name starts with `prefix`.
     fn list_artifacts(&self, prefix: &str) -> anyhow::Result<Vec<String>>;
+    /// Capacity of the shared local storage backing artifacts and environments.
+    ///
+    /// Backends that cannot report storage capacity may return `None`; automatic
+    /// space reclamation is then disabled.
+    fn storage_status(&self) -> anyhow::Result<Option<StorageStatus>> {
+        Ok(None)
+    }
     /// Create a uniquely-named ephemeral artifact seeded with `tar` and return its
     /// opaque name. The caller mounts it and removes it when done. The backend
     /// fixes ownership for the invoking user as needed.
