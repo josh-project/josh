@@ -40,11 +40,34 @@ pub fn resolve_snapshot_input(
             "WIP",
         )
     } else {
-        let oid = transaction
-            .rev_parse(input_ref)?
-            .with_context(|| format!("could not resolve input: {input_ref:?}"))?;
+        let oid = if is_abbreviated_sha(input_ref) {
+            resolve_abbreviated_sha(transaction, input_ref)?
+                .with_context(|| format!("could not resolve abbreviated input: {input_ref:?}"))?
+        } else {
+            transaction
+                .rev_parse(input_ref)?
+                .with_context(|| format!("could not resolve input: {input_ref:?}"))?
+        };
         crate::objects::peel_to_commit(transaction.odb(), oid)
             .with_context(|| format!("could not peel input to a commit: {input_ref:?}"))
+    }
+}
+
+fn is_abbreviated_sha(value: &str) -> bool {
+    value.len() >= gix_hash::Prefix::MIN_HEX_LEN
+        && value.len() < gix_hash::Kind::Sha1.len_in_hex()
+        && value.bytes().all(|byte| byte.is_ascii_hexdigit())
+}
+
+fn resolve_abbreviated_sha(
+    transaction: &crate::cache::Transaction,
+    value: &str,
+) -> anyhow::Result<Option<gix_hash::ObjectId>> {
+    let prefix = gix_hash::Prefix::from_hex(value).context("invalid abbreviated SHA")?;
+    match transaction.repo().objects.lookup_prefix(prefix, None)? {
+        Some(Ok(oid)) => Ok(Some(oid)),
+        Some(Err(())) => Err(anyhow!("ambiguous abbreviated input: {value:?}")),
+        None => Ok(None),
     }
 }
 
@@ -558,6 +581,23 @@ mod tests {
             message,
         )
         .unwrap()
+    }
+
+    #[test]
+    fn snapshot_input_resolves_abbreviated_sha() {
+        let dir = tempfile::tempdir().unwrap();
+        let repo = gix::init(dir.path()).unwrap();
+        let commit_id = commit(&repo, empty_tree(&repo), &[], "test");
+        let cache = std::sync::Arc::new(crate::cache::CacheStack::new());
+        let transaction = crate::cache::TransactionContext::new(repo.path(), cache)
+            .open()
+            .unwrap();
+        let oid = commit_id.to_string();
+
+        assert_eq!(
+            super::resolve_snapshot_input(&transaction, &oid[..10]).unwrap(),
+            commit_id
+        );
     }
 
     #[test]
