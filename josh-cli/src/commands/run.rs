@@ -15,6 +15,10 @@ pub enum ComposeCommand {
     ListImages(ListImagesArgs),
     /// List the job hash of every workspace a `run` with the same args would touch
     ListJobs(ListJobsArgs),
+    /// Pull compose result metadata from a Git remote
+    Pull(TransferArgs),
+    /// Push compose result metadata to a Git remote
+    Push(TransferArgs),
 }
 
 pub fn handle_compose(
@@ -32,7 +36,20 @@ pub fn handle_compose(
         ComposeCommand::Run(run_args) => handle_run(run_args, transaction),
         ComposeCommand::ListImages(list_args) => handle_list_images(list_args, transaction),
         ComposeCommand::ListJobs(list_args) => handle_list_jobs(list_args, transaction),
+        ComposeCommand::Pull(transfer_args) => {
+            josh_compose::pull(transaction, &transfer_args.remote)
+        }
+        ComposeCommand::Push(transfer_args) => {
+            josh_compose::push(transaction, &transfer_args.remote)
+        }
     }
+}
+
+#[derive(Debug, clap::Parser)]
+pub struct TransferArgs {
+    /// Remote name or URL
+    #[arg(short = 'r', long = "remote", default_value = "origin")]
+    pub remote: String,
 }
 
 #[derive(Debug, clap::Parser)]

@@ -35,15 +35,33 @@ impl Executor for SequentialExecutor {
     ) -> anyhow::Result<()> {
         let odb = transaction.odb();
         let mut failed: HashMap<gix_hash::ObjectId, String> = HashMap::new();
+        let mut pending = job_cache::PendingResults::default();
         for job in graph.jobs() {
-            if let Err(e) = run_job(transaction, odb, graph, job, &failed, runtime, opts) {
+            if let Err(e) = run_job(
+                transaction,
+                odb,
+                graph,
+                job,
+                &failed,
+                &mut pending,
+                runtime,
+                opts,
+            ) {
                 failed.insert(job.ws_tree, e.to_string());
             }
         }
 
-        let root = graph.root();
-        if let Some(e) = failed.get(&root.ws_tree) {
-            anyhow::bail!("{e}");
+        let run_error = failed.get(&graph.root().ws_tree).cloned();
+        if let Err(commit_error) = job_cache::commit_results_persistent(transaction, pending) {
+            return match run_error {
+                None => Err(commit_error),
+                Some(run_error) => Err(commit_error.context(format!(
+                    "workspace run also failed before results were committed: {run_error}"
+                ))),
+            };
+        }
+        if let Some(run_error) = run_error {
+            anyhow::bail!("{run_error}");
         }
         Ok(())
     }
@@ -114,6 +132,7 @@ fn run_job(
     graph: &Graph,
     job: &Job,
     failed: &HashMap<gix_hash::ObjectId, String>,
+    pending: &mut job_cache::PendingResults,
     runtime: &dyn Runtime,
     opts: &ExecOpts,
 ) -> anyhow::Result<()> {
@@ -124,11 +143,13 @@ fn run_job(
     // without its volume — reachable when an R2 volume pull fails after the
     // marker pull succeeded — self-heals by re-running rather than failing
     // downstream dep-mounts.
-    let hash = job.ws_tree.to_string();
     let out_vol = naming::output(job.ws_tree);
-    if job_cache::is_cached_success(&hash)
+    if job_cache::is_cached_success(transaction, job.ws_tree)?
         && (workspace_meta.output == OutputMode::None || runtime.artifact_exists(&out_vol)?)
     {
+        if workspace_meta.output != OutputMode::None {
+            pending.touch(job.ws_tree);
+        }
         eprintln!(
             "[{}] Using cached output ({})",
             workspace_meta.label, job.ws_tree
@@ -167,12 +188,12 @@ fn run_job(
 
     // If there's no image, this is an orchestrator workspace — deps are all we run.
     let Some(image_oid) = workspace_meta.image else {
-        job_cache::write_result(&hash, true, &[], &[]);
+        pending.record(job.ws_tree, true, Vec::new(), Vec::new());
         eprintln!("[{}] Done (orchestrator)", workspace_meta.label);
         return Ok(());
     };
     let Some(worktree_oid) = workspace_meta.worktree else {
-        job_cache::write_result(&hash, true, &[], &[]);
+        pending.record(job.ws_tree, true, Vec::new(), Vec::new());
         eprintln!("[{}] Done (no worktree)", workspace_meta.label);
         return Ok(());
     };
@@ -283,8 +304,9 @@ fn run_job(
         working_dir: Some(workdir.to_string()),
     })?;
 
-    let success = output.exit_code == 0;
-    job_cache::write_result(&hash, success, &output.stdout, &output.stderr);
+    let exit_code = output.exit_code;
+    let success = exit_code == 0;
+    pending.record(job.ws_tree, success, output.stdout, output.stderr);
 
     if workspace_meta.output == OutputMode::Workdir && opts.extract_to_workdir {
         runtime.extract_artifact(&out_vol, Path::new("."))?;
@@ -294,7 +316,7 @@ fn run_job(
         anyhow::bail!(
             "[{}] FAILED with exit code {}",
             workspace_meta.label,
-            output.exit_code
+            exit_code
         );
     }
 

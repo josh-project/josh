@@ -3358,6 +3358,11 @@ dependencies = [
  "josh-compose-graph",
  "josh-core",
  "josh-filter",
+ "josh-git-serde",
+ "josh-gix-ext",
+ "log",
+ "parking_lot 0.12.5",
+ "serde",
  "tar",
  "tempfile",
 ]

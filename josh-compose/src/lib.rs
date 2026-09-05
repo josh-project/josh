@@ -13,7 +13,7 @@ pub mod plan;
 pub enum CleanMode {
     /// No cleanup.
     None,
-    /// Remove output artifacts, environment images, and job-cache directories.
+    /// Remove output artifacts, environment images, and compose result metadata.
     Clean,
     /// Like `Clean`, but also remove persistent cache artifacts.
     CleanAll,
@@ -49,13 +49,15 @@ pub fn run_with_executor(
     josh_filter::check_experimental_features_enabled("josh run")?;
 
     if opts.clean != CleanMode::None {
-        return clean::clean(opts.clean, runtime);
+        return clean::clean(transaction, opts.clean, runtime);
     }
 
     let filter_spec = opts.filter_spec.trim().to_string();
     let source_commit = filter::resolve_input(transaction, &opts.input_ref)?;
 
     let (ws_tree, _safe_name) = filter::compute_ws_tree(transaction, &filter_spec, source_commit)?;
+
+    clean::reclaim_if_needed(transaction, ws_tree, runtime)?;
 
     let graph = josh_compose_graph::load_graph(transaction, transaction.odb(), ws_tree)?;
 
@@ -66,6 +68,17 @@ pub fn run_with_executor(
         extract_to_workdir: opts.input_ref == ".",
     };
     executor.execute(transaction, &graph, runtime, &exec_opts)
+}
+/// Pull compose result metadata from `remote`, merging concurrent local results.
+pub fn pull(transaction: &josh_core::cache::Transaction, remote: &str) -> anyhow::Result<()> {
+    josh_filter::check_experimental_features_enabled("josh compose pull")?;
+    job_cache::pull_results(transaction, remote)
+}
+
+/// Push compose result metadata to `remote`, merging and retrying concurrent updates.
+pub fn push(transaction: &josh_core::cache::Transaction, remote: &str) -> anyhow::Result<()> {
+    josh_filter::check_experimental_features_enabled("josh compose push")?;
+    job_cache::push_results(transaction, remote)
 }
 
 /// Enumerate every image build-tree OID that a `run` with the same options would

@@ -8,16 +8,18 @@ on:
     types: [opened, synchronize, reopened, ready_for_review]
   merge_group:
 
+permissions:
+  contents: write
+
 env:
   CARGO_TERM_COLOR: always
   JOSH_EXPERIMENTAL_FEATURES: "1"
-  # Bootstrap `josh` binary used by CI to drive `josh compose run` and to
-  # pull/push job markers, volumes, and images from R2. Pinned to a known-good
-  # commit that is already merged into `master` (so the build is reproducible
-  # for any branch and the binary is not rebuilt for every PR / merge-queue
-  # run). Bump when a backward-incompatible change to `josh compose` requires
-  # it; the new SHA must also already be on `origin/master`.
-  JOSH_BOOTSTRAP_SHA: 5cf4c32e64a41bcad67afca5e662b3535768b49f
+  # Bootstrap the `josh` binary used by CI to drive `josh compose run`, sync the
+  # compose result ref through Git, and pull/push volumes and images from R2.
+  # Keep this pinned so every branch reuses one known-good binary from R2. Bump
+  # it only when an incompatible compose metadata or transport change requires
+  # a newer bootstrap.
+  JOSH_BOOTSTRAP_SHA: a829e5b1ec659aa6a99af969feb521d8147d5338
 
 jobs:
   test:
@@ -69,8 +71,7 @@ jobs:
         AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
         AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
       run: .github/workflows/scripts/bootstrap-josh.sh
-    - name: Pull cached job markers and volumes from R2
-      if: env.SECRETLESS != 'true'
+    - name: Pull compose results ref and cached volumes
       env:
         AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
         AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
@@ -102,7 +103,7 @@ jobs:
           echo "::error::sccache remote cache was not used during the build"
           exit 1
         fi
-    - name: Push job markers and volumes to R2
+    - name: Push compose results ref and cached volumes
       if: success() && env.SECRETLESS != 'true'
       env:
         AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
