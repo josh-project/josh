@@ -400,34 +400,30 @@ fn get_filter(
 fn get_rev_filter(
     transaction: &cache::Transaction,
     commit_id: gix_hash::ObjectId,
-    filters: &[(RevMatch, gix_hash::ObjectId, Filter)],
+    filters: &[(RevMatch, Filter)],
 ) -> anyhow::Result<Filter> {
     // First match wins - iterate in order
-    for (match_op, filter_tip, startfilter) in filters.iter() {
-        let filter_tip = filter_tip.to_owned();
-        if match_op != &RevMatch::Default && !transaction.odb().contains(filter_tip) {
+    for (match_op, startfilter) in filters {
+        let filter_tip = match *match_op {
+            RevMatch::AncestorStrict(oid)
+            | RevMatch::AncestorInclusive(oid)
+            | RevMatch::Equal(oid) => Some(oid),
+            RevMatch::Default => None,
+        };
+        if let Some(filter_tip) = filter_tip
+            && !transaction.odb().contains(filter_tip)
+        {
             return Err(anyhow!("`:rev(...)` with nonexistent OID: {}", filter_tip));
         }
-        let matches = match match_op {
-            RevMatch::AncestorStrict => {
-                // `<` - matches if commit is ancestor of tip AND commit != tip (strict)
-
+        let matches = match *match_op {
+            RevMatch::AncestorStrict(filter_tip) => {
                 is_ancestor_of(transaction, commit_id, filter_tip)? && commit_id != filter_tip
             }
-            RevMatch::AncestorInclusive => {
-                // `<=` - matches if commit is ancestor of tip OR commit == tip (inclusive)
-
+            RevMatch::AncestorInclusive(filter_tip) => {
                 is_ancestor_of(transaction, commit_id, filter_tip)?
             }
-            RevMatch::Equal => {
-                // `==` - matches if commit == tip
-
-                commit_id == filter_tip
-            }
-            RevMatch::Default => {
-                // `_` - always matches (makes filters after it unreachable)
-                true
-            }
+            RevMatch::Equal(filter_tip) => commit_id == filter_tip,
+            RevMatch::Default => true,
         };
 
         if matches {

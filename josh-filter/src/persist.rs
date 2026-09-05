@@ -63,7 +63,7 @@ fn child_filters(op: &Op) -> Vec<Filter> {
         | Op::Unapply(_, f) => vec![*f],
         Op::Subtract(a, b) => vec![*a, *b],
         Op::Compose(v) | Op::Chain(v) => v.clone(),
-        Op::Rev(v) => v.iter().map(|(_, _, f)| *f).collect(),
+        Op::Rev(v) => v.iter().map(|(_, f)| *f).collect(),
         _ => vec![],
     }
 }
@@ -188,15 +188,15 @@ impl<'a> InMemoryBuilder<'a> {
 
     fn build_rev_params(
         &mut self,
-        params: &[(RevMatch, gix_hash::ObjectId, Filter)],
+        params: &[(RevMatch, Filter)],
     ) -> anyhow::Result<gix_hash::ObjectId> {
         let mut outer_entries = Vec::new();
-        for (i, (match_op, oid, filter)) in params.iter().enumerate() {
+        for (i, (match_op, filter)) in params.iter().enumerate() {
             // Encode match operator as prefix
             let key = match match_op {
-                RevMatch::AncestorStrict => format!("<{}", oid),
-                RevMatch::AncestorInclusive => format!("<={}", oid),
-                RevMatch::Equal => format!("=={}", oid),
+                RevMatch::AncestorStrict(oid) => format!("<{}", oid),
+                RevMatch::AncestorInclusive(oid) => format!("<={}", oid),
+                RevMatch::Equal(oid) => format!("=={}", oid),
                 RevMatch::Default => {
                     // Default filter uses "_" as key (no SHA)
                     "_".to_string()
@@ -1084,18 +1084,14 @@ fn from_tree2(src: &impl gix_object::Find, tree_oid: gix_hash::ObjectId) -> anyh
                 let key = std::str::from_utf8(key_blob.content())?;
 
                 // Parse match operator from key
-                let (match_op, oid) = if key == "_" {
-                    // Default filter uses a null OID that is ignored during matching.
-                    (
-                        RevMatch::Default,
-                        gix_hash::ObjectId::null(gix_hash::Kind::Sha1),
-                    )
+                let match_op = if key == "_" {
+                    RevMatch::Default
                 } else if let Some(ref_str) = key.strip_prefix("<=") {
-                    (RevMatch::AncestorInclusive, ref_str.parse()?)
+                    RevMatch::AncestorInclusive(ref_str.parse()?)
                 } else if let Some(ref_str) = key.strip_prefix('<') {
-                    (RevMatch::AncestorStrict, ref_str.parse()?)
+                    RevMatch::AncestorStrict(ref_str.parse()?)
                 } else if let Some(ref_str) = key.strip_prefix("==") {
-                    (RevMatch::Equal, ref_str.parse()?)
+                    RevMatch::Equal(ref_str.parse()?)
                 } else {
                     return Err(anyhow!(
                         "rev: invalid key format, must start with '<', '<=', '==', or be '_': {}",
@@ -1104,7 +1100,7 @@ fn from_tree2(src: &impl gix_object::Find, tree_oid: gix_hash::ObjectId) -> anyh
                 };
 
                 let filter = from_tree2(src, filter_tree.id())?;
-                filters.push((match_op, oid, to_filter(filter)));
+                filters.push((match_op, to_filter(filter)));
             }
             Ok(Op::Rev(filters))
         }
