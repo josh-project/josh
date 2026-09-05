@@ -30,6 +30,11 @@ Compose graphing must discard objects created while applying the workspace filte
   $ git add compose.josh
   $ git commit -q -m "add compose workspace"
   $ workspace=$(josh compose list-jobs --all HEAD)
+
+Abbreviated commit SHAs must select the same compose input.
+
+  $ short=$(git rev-parse --short HEAD)
+  $ test "$(josh compose list-jobs --all "${short}")" = "${workspace}"
   $ josh compose graph HEAD | sed -E 's/[0-9a-f]{40}/OID/g'
   direction: down
   job_OID: "ephemeral-workspace"
