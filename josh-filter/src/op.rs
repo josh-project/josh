@@ -1,5 +1,4 @@
 use crate::filter::Filter;
-use anyhow::anyhow;
 
 /// Newtype around `regex::Regex` adding structural `PartialEq`/`Eq`/`Hash` (by pattern
 /// string) so `Op` can derive them for use as an interning key. Derefs to the inner regex.
@@ -27,12 +26,6 @@ impl std::hash::Hash for Regex {
     }
 }
 
-#[derive(Hash, Clone, Debug, PartialEq, PartialOrd, Eq, Ord)]
-pub enum LazyRef {
-    Resolved(gix_hash::ObjectId),
-    Lazy(String),
-}
-
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub enum InsertContent {
     Inline(String),
@@ -54,30 +47,6 @@ pub enum RevMatch {
     Default,
 }
 
-impl std::fmt::Display for LazyRef {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            LazyRef::Resolved(id) => write!(f, "{}", id),
-            LazyRef::Lazy(lazy) => write!(f, "\"{}\"", lazy),
-        }
-    }
-}
-
-impl LazyRef {
-    pub fn parse(s: &str) -> anyhow::Result<LazyRef> {
-        let s = s.replace("'", "\"");
-        if let Ok(serde_json::Value::String(s)) = serde_json::from_str(&s) {
-            return Ok(LazyRef::Lazy(s));
-        }
-
-        if let Ok(oid) = s.parse() {
-            Ok(LazyRef::Resolved(oid))
-        } else {
-            Err(anyhow!("invalid ref: {:?}", s))
-        }
-    }
-}
-
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub enum Op {
     Meta(std::collections::BTreeMap<String, String>, Filter),
@@ -93,7 +62,7 @@ pub enum Op {
     Committer(String, String),
 
     // Vec instead of BTreeMap to preserve order - first match wins
-    Rev(Vec<(RevMatch, LazyRef, Filter)>),
+    Rev(Vec<(RevMatch, gix_hash::ObjectId, Filter)>),
     Prune,
     RegexReplace(Vec<(Regex, String)>),
 
@@ -118,7 +87,7 @@ pub enum Op {
     Pattern(std::sync::Arc<crate::pattern::CompiledPattern>),
     Message(String, Regex),
 
-    Unapply(LazyRef, Filter),
+    Unapply(gix_hash::ObjectId, Filter),
 
     Compose(Vec<Filter>),
     Chain(Vec<Filter>),
@@ -127,7 +96,7 @@ pub enum Op {
     Select(Filter),
     Pin(Filter),
 
-    Downstack(LazyRef),
+    Downstack(gix_hash::ObjectId),
 }
 
 impl Op {
