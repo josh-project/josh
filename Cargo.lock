@@ -3330,6 +3330,8 @@ dependencies = [
  "glob",
  "josh-changes",
  "josh-compose",
+ "josh-compose-backend",
+ "josh-compose-docker",
  "josh-compose-podman",
  "josh-core",
  "josh-gerrit-changes",
@@ -3385,6 +3387,21 @@ dependencies = [
  "anyhow",
  "josh-compose-graph",
  "josh-core",
+]
+
+[[package]]
+name = "josh-compose-docker"
+version = "26.8.28"
+dependencies = [
+ "anyhow",
+ "backon",
+ "hex",
+ "josh-compose-backend",
+ "josh-compose-graph",
+ "libc",
+ "log",
+ "rand 0.10.2",
+ "tar",
 ]
 
 [[package]]
