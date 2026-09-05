@@ -1,22 +1,24 @@
 use anyhow::Context;
 
+use crate::naming;
 use josh_compose_backend::{EnvRecipe, EnvironmentBackend};
+use josh_compose_graph::Graph;
 use josh_core::cache;
-use josh_core::filter::tree;
 use josh_core::memodb;
 
-use crate::meta;
-use crate::naming;
-
-/// Ensure the environment for the given build tree exists, building it if needed.
+/// Ensure the environment for the given image exists, building it if needed.
 /// Returns the environment key (image name).
+///
+/// Base images are ensured first, recursively, and passed to the build as args
+/// so the Containerfile can reference them (e.g. `ARG my_base; FROM $my_base`).
 pub fn ensure_image(
     transaction: &cache::Transaction,
     odb: &memodb::Odb,
-    build_tree: gix_hash::ObjectId,
+    graph: &Graph,
+    image_oid: gix_hash::ObjectId,
     runtime: &dyn EnvironmentBackend,
 ) -> anyhow::Result<String> {
-    let image_name = naming::env(build_tree);
+    let image_name = naming::env(image_oid);
 
     if runtime.env_exists(&image_name)? {
         eprintln!("[image:{image_name}] Already built");
@@ -25,26 +27,21 @@ pub fn ensure_image(
 
     eprintln!("[image:{image_name}] Building...");
 
+    let node = graph
+        .image(image_oid)
+        .with_context(|| format!("image {image_oid} is not in the build graph"))?;
+
     let mut build_args: Vec<(String, String)> = vec![];
-
-    // Build each base environment and pass its key as a build arg so the
-    // Containerfile can reference it (e.g. ARG my_base; FROM $my_base).
-    for (base_name, base_oid) in meta::read_gitlink_entries(transaction, odb, build_tree, "bases")?
-    {
-        let base_env = ensure_image(transaction, odb, base_oid, runtime)?;
-        build_args.push((base_name, base_env));
+    for (base_name, base_oid) in &node.bases {
+        let base_env = ensure_image(transaction, odb, graph, *base_oid, runtime)?;
+        build_args.push((base_name.clone(), base_env));
     }
+    build_args.extend(node.args.iter().cloned());
 
-    for (k, v) in meta::read_blob_entries(transaction, odb, build_tree, "args") {
-        build_args.push((k, v));
-    }
-
-    let context_entry = tree::read_tree(transaction, odb, build_tree)?
-        .entry(b"context")
-        .map(|e| e.oid.to_owned())
+    let context_oid = node
+        .context
         .context("workspace image tree missing 'context' subtree")?;
-
-    let context = crate::archive::tree_to_tar(transaction, odb, context_entry)?;
+    let context = crate::archive::tree_to_tar(transaction, odb, context_oid)?;
 
     runtime.prepare_env(
         &image_name,

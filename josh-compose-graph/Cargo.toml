@@ -1,24 +1,18 @@
 [package]
 authors = ["Josh Project authors <contact@josh-project.dev>"]
-description = "Josh container workspace runner"
+description = "Build-graph data structures and loading for josh-compose"
 edition = "2024"
 keywords = ["git", "monorepo", "workflow", "scm"]
 license-file = "../LICENSE"
-name = "josh-compose"
+name = "josh-compose-graph"
 readme = "../README.md"
 repository = "https://github.com/josh-project/josh"
 version = "26.8.28"
 
 [dependencies]
 anyhow.workspace = true
-defer.workspace = true
 gix-hash.workspace = true
 josh-core.workspace = true
-josh-filter.workspace = true
-josh-compose-backend.workspace = true
-josh-compose-graph.workspace = true
-
-tar = "0.4"
 
 [dev-dependencies]
 gix.workspace = true

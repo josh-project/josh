@@ -3369,6 +3369,7 @@ dependencies = [
  "gix",
  "gix-hash",
  "josh-compose-backend",
+ "josh-compose-graph",
  "josh-core",
  "josh-filter",
  "tar",
@@ -3380,6 +3381,19 @@ name = "josh-compose-backend"
 version = "26.8.28"
 dependencies = [
  "anyhow",
+ "josh-compose-graph",
+ "josh-core",
+]
+
+[[package]]
+name = "josh-compose-graph"
+version = "26.8.28"
+dependencies = [
+ "anyhow",
+ "gix",
+ "gix-hash",
+ "josh-core",
+ "tempfile",
 ]
 
 [[package]]
@@ -3390,6 +3404,7 @@ dependencies = [
  "backon",
  "hex",
  "josh-compose-backend",
+ "josh-compose-graph",
  "libc",
  "log",
  "rand 0.10.2",

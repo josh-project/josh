@@ -14,6 +14,7 @@ anyhow.workspace = true
 backon.workspace = true
 hex.workspace = true
 josh-compose-backend.workspace = true
+josh-compose-graph.workspace = true
 libc.workspace = true
 log.workspace = true
 rand.workspace = true

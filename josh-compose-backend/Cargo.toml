@@ -11,3 +11,5 @@ version = "26.8.28"
 
 [dependencies]
 anyhow.workspace = true
+josh-compose-graph.workspace = true
+josh-core.workspace = true

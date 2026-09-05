@@ -3,8 +3,9 @@ use std::process::{Command, Stdio};
 
 use super::{PodmanRuntime, SIDECAR_NETWORK, align_artifact, host_identity, sidecars};
 use josh_compose_backend::{
-    ExecutionBackend, Mount, NetworkPolicy, RunArgs, RunOutput, SidecarArgs, SidecarHandle,
+    ExecutionBackend, Mount, RunArgs, RunOutput, SidecarArgs, SidecarHandle,
 };
+use josh_compose_graph::NetworkPolicy;
 
 fn run(args: RunArgs) -> anyhow::Result<RunOutput> {
     // Defensively fix ownership of read-only mounts — pre-existing artifacts such
