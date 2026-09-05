@@ -74,6 +74,7 @@ gix-submodule.workspace = true
 gix-hash.workspace = true
 hex.workspace = true
 log.workspace = true
+parking_lot.workspace = true
 regex.workspace = true
 serde.workspace = true
 serde_json.workspace = true

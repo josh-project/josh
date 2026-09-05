@@ -3438,6 +3438,7 @@ dependencies = [
  "josh-starlark",
  "josh-test-support",
  "log",
+ "parking_lot 0.12.5",
  "percent-encoding",
  "pest",
  "pest_derive",
