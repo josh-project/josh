@@ -57,9 +57,9 @@ the subject as the tiebreaker.
   $ josh changes list
   Changes on Local [master]:
   
-  c2  D=  1  C=  0  V=      B change
-  c1  D=  0  C=  0  V=      A change
-  c3  D=  0  C=  0  V=      C change
+  5ecf7d2  c2  D=  1  C=  0  V=      B change
+  28e4ce5  c1  D=  0  C=  0  V=      A change
+  b28ecba  c3  D=  0  C=  0  V=      C change
 
 Add two private comments to c1. The C= column for c1 should pick them up.
 
@@ -71,9 +71,9 @@ Add two private comments to c1. The C= column for c1 should pick them up.
   $ josh changes list
   Changes on Local [master]:
   
-  c2  D=  1  C=  0  V=      B change
-  c1  D=  0  C=  2  V=      A change
-  c3  D=  0  C=  0  V=      C change
+  5ecf7d2  c2  D=  1  C=  0  V=      B change
+  28e4ce5  c1  D=  0  C=  2  V=      A change
+  b28ecba  c3  D=  0  C=  0  V=      C change
 
 deps: c2 depends on c1; c1 and c3 depend on nothing on the ref.
 
@@ -135,9 +135,9 @@ directly:
   $ josh changes list
   Changes on Local [master]:
   
-  c2  D=  1  C=  0  V=         B change
-  c1  D=  0  C=  2  V=approve  A change
-  c3  D=  0  C=  0  V=         C change
+  5ecf7d2  c2  D=  1  C=  0  V=         B change
+  28e4ce5  c1  D=  0  C=  2  V=approve  A change
+  b28ecba  c3  D=  0  C=  0  V=         C change
 
   $ josh changes show c1
   Change-Id: c1

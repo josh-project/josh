@@ -53,6 +53,7 @@ pub fn handle_list(
 
     struct Row {
         id: String,
+        commit_sha: String,
         subject: String,
         deps_count: usize,
         comments_count: usize,
@@ -62,6 +63,7 @@ pub fn handle_list(
     let mut rows: Vec<Row> = Vec::with_capacity(changes.len());
     for change in &changes {
         let id = change.id().unwrap_or("<no-change-id>").to_string();
+        let commit_sha = change.commit().to_string();
         let commit = josh_core::objects::CommitData::read(odb, change.commit())?;
         let subject = commit.summary().unwrap_or_default();
 
@@ -91,6 +93,7 @@ pub fn handle_list(
 
         rows.push(Row {
             id,
+            commit_sha,
             subject,
             deps_count,
             comments_count,
@@ -111,7 +114,8 @@ pub fn handle_list(
     println!("Changes on {}:\n", scope_label);
     for r in &rows {
         println!(
-            "{:<id_w$}  D={:>3}  C={:>3}  V={:<vote_w$}  {}",
+            "{:<7}  {:<id_w$}  D={:>3}  C={:>3}  V={:<vote_w$}  {}",
+            &r.commit_sha[..7],
             r.id,
             r.deps_count,
             r.comments_count,
