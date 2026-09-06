@@ -252,11 +252,19 @@ This workspace:
 - Places `ws/build-rust.sh` into the container as `run.sh` (the entrypoint).
 - Includes only the source trees needed to compile.
 
-## Using job outputs in image builds
+## Image definitions
+
+An image definition accepts `:$label="..."`. The label identifies the image in
+`josh compose run` status lines and `josh compose graph` nodes; without one,
+these outputs fall back to the image tree OID.
+
+### Using job outputs in image builds
 
 An image definition can declare normal workspaces as named `inputs`:
 
 ```
+:$label="runtime image"
+
 inputs = :[
     :#josh-binaries[:+ws/build-rust]
 ]
