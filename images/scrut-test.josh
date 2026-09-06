@@ -1,3 +1,5 @@
+:$label="scrut test"
+
 bases = :[
     :#BUILDER_IMAGE[:+images/rust-base]
 ]
