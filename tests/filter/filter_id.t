@@ -572,6 +572,10 @@ Test :PATHS
   .
   └── paths
 
+Test revision object expressions (the syntax is experimental)
+  $ josh-filter -i ':$.={#}' 2>&1 | head -1
+  ERROR: revision object expression requires JOSH_EXPERIMENTAL_FEATURES=1
+
 Test :INDEX (the filter is experimental; parsing it needs the opt-in)
   $ josh-filter -i ':INDEX' 2>&1 | head -1
   ERROR: :INDEX filter requires JOSH_EXPERIMENTAL_FEATURES=1

@@ -1,4 +1,4 @@
-use josh_compose::{CleanMode, RunOptions};
+use josh_compose::{ArgumentBinding, CleanMode, RunOptions};
 use josh_compose_backend::Runtime;
 use josh_compose_docker::DockerRuntime;
 use josh_compose_podman::PodmanRuntime;
@@ -88,6 +88,9 @@ pub struct RunArgs {
     /// Container backend to run the workspace in [default: podman, or docker on macOS when OrbStack is running]
     #[arg(long, value_enum, env = "JOSH_COMPOSE_BACKEND")]
     pub backend: Option<Backend>,
+    /// Bind a named compose argument (currently a Git revision)
+    #[arg(long = "arg", value_name = "NAME=VALUE")]
+    pub arguments: Vec<ArgumentBinding>,
 
     /// Git revision to use as input: "." (working tree), "+" (index), or any rev (e.g. "HEAD", "HEAD~1", "main")
     #[arg(default_value = ".")]
@@ -116,6 +119,7 @@ pub fn handle_run(
         RunOptions {
             filter_spec: args.filter.clone(),
             input_ref: args.reference.clone(),
+            arguments: args.arguments.clone(),
             clean,
         },
         runtime.as_ref(),
@@ -131,6 +135,9 @@ pub struct ListImagesArgs {
     /// Container backend to check for prepared images [default: podman, or docker on macOS when OrbStack is running]
     #[arg(long, value_enum, env = "JOSH_COMPOSE_BACKEND")]
     pub backend: Option<Backend>,
+    /// Bind a named compose argument (currently a Git revision)
+    #[arg(long = "arg", value_name = "NAME=VALUE")]
+    pub arguments: Vec<ArgumentBinding>,
 
     /// Git revision to use as input: "." (working tree), "+" (index), or any rev (e.g. "HEAD", "HEAD~1", "main")
     #[arg(default_value = ".")]
@@ -152,6 +159,7 @@ pub fn handle_list_images(
         RunOptions {
             filter_spec: args.filter.clone(),
             input_ref: args.reference.clone(),
+            arguments: args.arguments.clone(),
             clean: CleanMode::None,
         },
         args.all,
@@ -173,6 +181,9 @@ pub struct ListJobsArgs {
     /// Container backend to check for existing outputs [default: podman, or docker on macOS when OrbStack is running]
     #[arg(long, value_enum, env = "JOSH_COMPOSE_BACKEND")]
     pub backend: Option<Backend>,
+    /// Bind a named compose argument (currently a Git revision)
+    #[arg(long = "arg", value_name = "NAME=VALUE")]
+    pub arguments: Vec<ArgumentBinding>,
 
     /// Git revision to use as input: "." (working tree), "+" (index), or any rev (e.g. "HEAD", "HEAD~1", "main")
     #[arg(default_value = ".")]
@@ -194,6 +205,7 @@ pub fn handle_list_jobs(
         RunOptions {
             filter_spec: args.filter.clone(),
             input_ref: args.reference.clone(),
+            arguments: args.arguments.clone(),
             clean: CleanMode::None,
         },
         args.all,

@@ -86,6 +86,71 @@ josh compose run [OPTIONS] [REFERENCE] [FILTER]
 |---|---|
 | `--clean` | Remove cached images and output volumes |
 | `--clean-all` | Remove cached images, output volumes, and persistent cache volumes |
+| `--arg NAME=VALUE` | Bind a named compose argument. Values are currently Git revision expressions; additional value types may be added later. Repeatable on `run`, `graph`, `list-images`, and `list-jobs`. |
+
+### Revision object expressions
+
+> **Experimental:** revision object expression syntax requires `JOSH_EXPERIMENTAL_FEATURES=1`.
+
+Compose filters can select the input commit, a named `--arg` binding, or a
+fallback when an argument is absent:
+
+```sh
+# Use the input commit's first parent
+josh compose run . :+ws/size-delta/s32k148-gcc
+
+# Use an explicit, possibly unrelated baseline
+josh compose run --arg baseline=origin/main . :+ws/size-delta/s32k148-gcc
+```
+
+The workspace can make that selection in an object-valued filter position:
+
+```josh
+:$.={#baseline|#^}
+```
+
+| Expression | Value |
+|---|---|
+| `{#}` | Tree of the selected compose input |
+| `{@}` | Selected compose input commit |
+| `{#^}` | Tree of the input's first parent |
+| `{@~2}` | Input commit after two first-parent steps |
+| `{#baseline}` | Tree of the commit bound as `baseline` |
+| `{@target^2}` | Second parent commit of the `target` binding |
+| `{#baseline\|#^}` | Baseline tree, or the input's first-parent tree when `baseline` is absent |
+
+`#` selects a commit's tree; `@` selects the commit itself. `^`, `^N`, `~`,
+and `~N` follow Git's parent and first-parent conventions and can be combined.
+Both fallback arms must use the same selector. The primary arm must be a named
+binding, so an input-relative fallback such as `{#^\|#baseline}` is rejected.
+
+Each `--arg NAME=VALUE` is resolved and peeled to a commit before the filter
+is parsed; currently `VALUE` must be a Git single-revision expression. Names
+are ordinary bindings; `input` is reserved, and duplicates are rejected.
+Missing, malformed, ranged, ambiguous, and non-commit revision values fail
+command setup even when the filter does not reference that argument. A
+fallback means only that the named argument was not supplied: an invalid
+supplied argument or a missing selected parent is an error.
+
+Object expressions are not text or environment-variable substitution and
+never evaluate shell input. Repository ref names enter committed filters only
+through `--arg`; each revision argument may use Git's full single-revision
+syntax.
+
+Resolution happens once, before compose filtering. The parser lowers every
+expression to the existing concrete object-ID operations, so the canonical
+filter ID and workspace cache key contain the selected OID. Pretty-printing
+therefore prints a hexadecimal OID rather than the original expression, and a
+ref moving after plan construction cannot alter that plan.
+
+Quoted commit-message templates are separate syntax and remain dynamic:
+
+```josh
+:"commit {@}, tree {#}"
+```
+
+Here `{@}` and `{#}` are template text resolved for each filtered commit, not
+compose object expressions.
 
 ## Inspecting test results
 

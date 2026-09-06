@@ -12,6 +12,141 @@ use pest::Parser;
 
 use std::path::Path;
 
+/// Object type requested by a contextual revision expression.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ObjectKind {
+    /// The expression selects a commit object.
+    Commit,
+    /// The expression selects the selected commit's tree.
+    Tree,
+}
+
+/// Resolves the revision portion of contextual object expressions.
+///
+/// `revision` is canonical grammar text without its `#` or `@` selector, such
+/// as `""`, `"^"`, `"baseline"`, or `"target^2"`.
+pub trait ObjectResolver {
+    /// Resolve a commit- or tree-valued revision expression.
+    ///
+    /// `Ok(None)` means that a named revision variable is unset. Invalid
+    /// values and failed ancestry or type resolution are errors.
+    fn resolve(
+        &self,
+        kind: ObjectKind,
+        revision: &str,
+    ) -> anyhow::Result<Option<gix_hash::ObjectId>>;
+}
+
+#[derive(Clone, Copy)]
+struct ParserContext<'a> {
+    resolver: Option<&'a dyn ObjectResolver>,
+}
+
+fn object_kind_name(kind: ObjectKind) -> &'static str {
+    match kind {
+        ObjectKind::Commit => "commit",
+        ObjectKind::Tree => "tree",
+    }
+}
+
+fn parse_object_arm(pair: pest::iterators::Pair<'_, Rule>) -> (ObjectKind, &str, Option<&str>) {
+    let arm = pair.as_str();
+    let (selector, revision) = arm.split_at(1);
+    let kind = match selector {
+        "@" => ObjectKind::Commit,
+        "#" => ObjectKind::Tree,
+        _ => unreachable!(),
+    };
+    let name_end = revision
+        .find(|c| c == '^' || c == '~')
+        .unwrap_or(revision.len());
+    let name = &revision[..name_end];
+    let name = (!name.is_empty()).then_some(name);
+    (kind, revision, name)
+}
+
+fn parse_object_value(
+    pair: pest::iterators::Pair<Rule>,
+    expected: ObjectKind,
+    context: ParserContext<'_>,
+) -> anyhow::Result<gix_hash::ObjectId> {
+    match pair.as_rule() {
+        Rule::rev | Rule::object_value => parse_object_value(
+            pair.into_inner().next().context("object value is empty")?,
+            expected,
+            context,
+        ),
+        Rule::object_oid => Ok(pair.as_str().parse()?),
+        Rule::object_expr => {
+            check_experimental_features_enabled("revision object expression")?;
+            let expression = pair.as_str().to_owned();
+            let arms = pair.into_inner().map(parse_object_arm).collect::<Vec<_>>();
+            let resolver = context.resolver.ok_or_else(|| {
+                anyhow!("object expression `{expression}` requires a revision resolver")
+            })?;
+            let (primary_kind, primary_revision, primary_name) = arms[0];
+
+            if primary_kind != expected {
+                return Err(anyhow!(
+                    "object expression `{expression}` selects a {}, but this position requires a {}",
+                    object_kind_name(primary_kind),
+                    object_kind_name(expected)
+                ));
+            }
+
+            if let Some((fallback_kind, _, _)) = arms.get(1)
+                && *fallback_kind != primary_kind
+            {
+                return Err(anyhow!(
+                    "object expression `{expression}` has mismatched selectors"
+                ));
+            }
+            if arms.len() == 2 && primary_name.is_none() {
+                return Err(anyhow!(
+                    "object expression `{expression}` has an unreachable fallback because its primary arm is input-relative"
+                ));
+            }
+
+            let resolve = |kind: ObjectKind, revision: &str, name: Option<&str>| {
+                resolver
+                    .resolve(kind, revision)
+                    .with_context(|| {
+                        let selected = name.unwrap_or("input");
+                        format!(
+                            "failed to resolve object expression `{expression}` using `{selected}`"
+                        )
+                    })?
+                    .ok_or_else(|| {
+                        anyhow!(
+                            "object expression `{expression}` references undefined revision variable `{}`",
+                            name.unwrap_or("input")
+                        )
+                    })
+            };
+
+            match resolver
+                .resolve(primary_kind, primary_revision)
+                .with_context(|| {
+                    let selected = primary_name.unwrap_or("input");
+                    format!("failed to resolve object expression `{expression}` using `{selected}`")
+                })? {
+                Some(oid) => Ok(oid),
+                None => {
+                    if let Some((kind, revision, name)) = arms.get(1).copied() {
+                        resolve(kind, revision, name)
+                    } else {
+                        Err(anyhow!(
+                            "object expression `{expression}` references undefined revision variable `{}`",
+                            primary_name.unwrap_or("input")
+                        ))
+                    }
+                }
+            }
+        }
+        rule => Err(anyhow!("expected object value, found {rule:?}")),
+    }
+}
+
 fn make_filter(args: &[&str]) -> anyhow::Result<Filter> {
     let f = Filter::new();
     match args {
@@ -77,10 +212,6 @@ fn make_filter(args: &[&str]) -> anyhow::Result<Filter> {
         ["INVERT"] => Ok(to_filter(Op::Invert)),
         ["FOLD"] => Ok(to_filter(Op::Fold)),
         ["hook", arg] => Ok(f.hook(arg)),
-        ["_", sha] => {
-            check_experimental_features_enabled("downstack filter")?;
-            Ok(to_filter(Op::Downstack(sha.parse()?)))
-        }
         ["_"] => Err(anyhow!(indoc!(
             r#"
             Filter ":_" requires a base SHA argument.
@@ -118,7 +249,10 @@ fn parse_treederef(arg: &str) -> Filter {
     }
 }
 
-fn parse_item(pair: pest::iterators::Pair<Rule>) -> anyhow::Result<Filter> {
+fn parse_item(
+    pair: pest::iterators::Pair<Rule>,
+    context: ParserContext<'_>,
+) -> anyhow::Result<Filter> {
     let f = Filter::new();
     match pair.as_rule() {
         Rule::filter => {
@@ -136,14 +270,20 @@ fn parse_item(pair: pest::iterators::Pair<Rule>) -> anyhow::Result<Filter> {
             check_experimental_features_enabled("Starlark filter")?;
             let mut inner = pair.into_inner();
             let path = Path::new(&unquote(inner.next().unwrap().as_str())).to_owned();
-            let subfilter = to_filter(Op::Compose(parse_group(inner.next().unwrap().as_str())?));
+            let subfilter = to_filter(Op::Compose(parse_group(
+                inner.next().unwrap().as_str(),
+                context,
+            )?));
             Ok(f.starlark(path, subfilter)?)
         }
         Rule::filter_treeid => {
             check_experimental_features_enabled("TreeId filter")?;
             let mut inner = pair.into_inner();
             let path = Path::new(&unquote(inner.next().unwrap().as_str())).to_owned();
-            let sf = to_filter(Op::Compose(parse_group(inner.next().unwrap().as_str())?));
+            let sf = to_filter(Op::Compose(parse_group(
+                inner.next().unwrap().as_str(),
+                context,
+            )?));
             Ok(f.treeid(path, sf)?)
         }
         Rule::filter_treeref => {
@@ -162,10 +302,24 @@ fn parse_item(pair: pest::iterators::Pair<Rule>) -> anyhow::Result<Filter> {
             let content_pair = inner.next().unwrap();
             let content = match content_pair.as_rule() {
                 Rule::string => InsertContent::Inline(unquote(content_pair.as_str())),
-                Rule::object_oid => InsertContent::Oid(content_pair.as_str().parse()?),
+                Rule::object_value => {
+                    InsertContent::Oid(parse_object_value(content_pair, ObjectKind::Tree, context)?)
+                }
                 _ => unreachable!(),
             };
             Ok(to_filter(Op::Insert(path, content)))
+        }
+        Rule::filter_downstack => {
+            check_experimental_features_enabled("downstack filter")?;
+            let value = pair
+                .into_inner()
+                .next()
+                .context("downstack filter is missing its base commit")?;
+            Ok(to_filter(Op::Downstack(parse_object_value(
+                value,
+                ObjectKind::Commit,
+                context,
+            )?)))
         }
         Rule::filter_presub => {
             let mut inner = pair.into_inner();
@@ -219,9 +373,9 @@ fn parse_item(pair: pest::iterators::Pair<Rule>) -> anyhow::Result<Filter> {
             let v: Vec<_> = pair.into_inner().map(|x| unquote(x.as_str())).collect();
 
             match v.iter().map(String::as_str).collect::<Vec<_>>().as_slice() {
-                [args] => Ok(to_filter(Op::Compose(parse_group(args)?))),
+                [args] => Ok(to_filter(Op::Compose(parse_group(args, context)?))),
                 [cmd, args] => {
-                    let g = parse_group(args)?;
+                    let g = parse_group(args, context)?;
                     match *cmd {
                         "pin" => Ok(to_filter(Op::Pin(to_filter(Op::Compose(g))))),
                         "exclude" => Ok(to_filter(Op::Exclude(to_filter(Op::Compose(g))))),
@@ -254,7 +408,7 @@ fn parse_item(pair: pest::iterators::Pair<Rule>) -> anyhow::Result<Filter> {
                                     .into_inner()
                                     .next()
                                     .context("rev_default: missing filter")?;
-                                let filter = parse(filter_pair.as_str())?;
+                                let filter = parse_internal(filter_pair.as_str(), context)?;
                                 entries.push((RevMatch::Default, filter));
                             }
                             Rule::rev_match => {
@@ -262,8 +416,9 @@ fn parse_item(pair: pest::iterators::Pair<Rule>) -> anyhow::Result<Filter> {
                                 let oid_pair = inner.next().context("rev_entry: missing rev")?;
                                 let filter_pair =
                                     inner.next().context("rev_entry: missing filter")?;
-                                let oid = oid_pair.as_str().parse()?;
-                                let filter = parse(filter_pair.as_str())?;
+                                let oid =
+                                    parse_object_value(oid_pair, ObjectKind::Commit, context)?;
+                                let filter = parse_internal(filter_pair.as_str(), context)?;
                                 let match_op = match first.as_str() {
                                     "<" => RevMatch::AncestorStrict(oid),
                                     "<=" => RevMatch::AncestorInclusive(oid),
@@ -299,15 +454,25 @@ fn parse_item(pair: pest::iterators::Pair<Rule>) -> anyhow::Result<Filter> {
         }
         Rule::filter_unapply => {
             check_experimental_features_enabled("unapply filter")?;
-            let v: Vec<_> = pair.into_inner().map(|x| x.as_str()).collect();
-
-            if v.len() == 2 {
-                let oid = v[0].parse()?;
-                let filter = parse(v[1])?;
-                Ok(to_filter(Op::Unapply(oid, filter)))
-            } else {
-                Err(anyhow!("wrong argument count for :unapply"))
+            let mut inner = pair.into_inner();
+            let oid = parse_object_value(
+                inner
+                    .next()
+                    .context("unapply filter is missing its commit")?,
+                ObjectKind::Commit,
+                context,
+            )?;
+            let filter = parse_internal(
+                inner
+                    .next()
+                    .context("unapply filter is missing its body")?
+                    .as_str(),
+                context,
+            )?;
+            if inner.next().is_some() {
+                return Err(anyhow!("wrong argument count for :unapply"));
             }
+            Ok(to_filter(Op::Unapply(oid, filter)))
         }
         Rule::filter_replace => {
             let replacements = pair
@@ -330,7 +495,10 @@ fn parse_item(pair: pest::iterators::Pair<Rule>) -> anyhow::Result<Filter> {
                 .tuples()
                 .map(
                     |(oid, filter)| -> anyhow::Result<(gix_hash::ObjectId, Filter)> {
-                        Ok((oid.as_str().parse()?, parse(filter.as_str())?))
+                        Ok((
+                            parse_object_value(oid, ObjectKind::Commit, context)?,
+                            parse_internal(filter.as_str(), context)?,
+                        ))
                     },
                 )
                 .collect::<Result<Vec<_>, _>>()?
@@ -368,7 +536,7 @@ fn parse_item(pair: pest::iterators::Pair<Rule>) -> anyhow::Result<Filter> {
             }
 
             let filter = if let Some(compose_pair) = compose_item {
-                let filters = parse_group(compose_pair.as_str())?;
+                let filters = parse_group(compose_pair.as_str(), context)?;
                 if filters.len() == 1 {
                     filters[0]
                 } else {
@@ -385,8 +553,8 @@ fn parse_item(pair: pest::iterators::Pair<Rule>) -> anyhow::Result<Filter> {
             let x_filter_spec = inner.next().context("filter_scope: missing filter_spec")?;
             let y_compose = inner.next().context("filter_scope: missing compose")?;
 
-            let x = parse(x_filter_spec.as_str())?;
-            let y_filters = parse_group(y_compose.as_str())?;
+            let x = parse_internal(x_filter_spec.as_str(), context)?;
+            let y_filters = parse_group(y_compose.as_str(), context)?;
             let y = to_filter(Op::Compose(y_filters));
 
             Ok(f.chain(x).chain(y).chain(invert(x)?))
@@ -398,6 +566,7 @@ fn parse_item(pair: pest::iterators::Pair<Rule>) -> anyhow::Result<Filter> {
 fn parse_file_entry(
     pair: pest::iterators::Pair<Rule>,
     filters: &mut Vec<Filter>,
+    context: ParserContext<'_>,
 ) -> anyhow::Result<()> {
     match pair.as_rule() {
         Rule::file_entry => {
@@ -407,14 +576,14 @@ fn parse_file_entry(
                 .next()
                 .map(|x| x.as_str().to_owned())
                 .unwrap_or(format!(":/{}", path));
-            let filter = parse(&filter)?;
+            let filter = parse_internal(&filter, context)?;
             let filter = filter.chain(to_filter(Op::Prefix(Path::new(path).to_owned())));
             filters.push(filter);
             Ok(())
         }
         Rule::filter_spec => {
             let filter = pair.as_str();
-            filters.push(parse(filter)?);
+            filters.push(parse_internal(filter, context)?);
             Ok(())
         }
         Rule::EOI => Ok(()),
@@ -422,14 +591,14 @@ fn parse_file_entry(
     }
 }
 
-fn parse_group(filter_spec: &str) -> anyhow::Result<Vec<Filter>> {
+fn parse_group(filter_spec: &str, context: ParserContext<'_>) -> anyhow::Result<Vec<Filter>> {
     let mut filters = vec![];
 
     match Grammar::parse(Rule::compose, filter_spec) {
         Ok(mut r) => {
             let r = r.next().unwrap();
             for pair in r.into_inner() {
-                parse_file_entry(pair, &mut filters)?;
+                parse_file_entry(pair, &mut filters, context)?;
             }
 
             Ok(filters)
@@ -442,14 +611,14 @@ fn parse_group(filter_spec: &str) -> anyhow::Result<Vec<Filter>> {
     }
 }
 
-fn parse_workspace(filter_spec: &str) -> anyhow::Result<Vec<Filter>> {
+fn parse_workspace(filter_spec: &str, context: ParserContext<'_>) -> anyhow::Result<Vec<Filter>> {
     match Grammar::parse(Rule::workspace_file, filter_spec) {
         Ok(mut r) => {
             let r = r.next().unwrap();
             for pair in r.into_inner() {
                 match pair.as_rule() {
                     Rule::compose => {
-                        let filters = parse_group(pair.as_str())?;
+                        let filters = parse_group(pair.as_str(), context)?;
                         return Ok(filters);
                     }
                     Rule::workspace_comments => {
@@ -494,8 +663,7 @@ pub fn quote(s: &str) -> String {
         .unwrap_or("<invalid string>".to_string())
 }
 
-/// Create a `Filter` from a string representation
-pub fn parse(filter_spec: &str) -> anyhow::Result<Filter> {
+fn parse_internal(filter_spec: &str, context: ParserContext<'_>) -> anyhow::Result<Filter> {
     if filter_spec.is_empty() {
         return Ok(to_filter(Op::Empty));
     }
@@ -504,7 +672,7 @@ pub fn parse(filter_spec: &str) -> anyhow::Result<Filter> {
         let mut r = r;
         let r = r.next().unwrap();
         for pair in r.into_inner() {
-            let v = parse_item(pair)?;
+            let v = parse_item(pair, context)?;
             chain = chain.chain(v);
         }
         return Ok(chain);
@@ -512,7 +680,29 @@ pub fn parse(filter_spec: &str) -> anyhow::Result<Filter> {
 
     Ok(opt::optimize(to_filter(Op::Compose(parse_workspace(
         filter_spec,
+        context,
     )?))))
+}
+
+/// Create a `Filter` from a string representation.
+pub fn parse(filter_spec: &str) -> anyhow::Result<Filter> {
+    parse_internal(filter_spec, ParserContext { resolver: None })
+}
+
+/// Parse and immediately lower object expressions through `resolver`.
+///
+/// The resulting filter is canonical and context-free: every accepted object
+/// expression has been replaced by its resolved object ID.
+pub fn parse_with_resolver(
+    filter_spec: &str,
+    resolver: &dyn ObjectResolver,
+) -> anyhow::Result<Filter> {
+    parse_internal(
+        filter_spec,
+        ParserContext {
+            resolver: Some(resolver),
+        },
+    )
 }
 
 /// Get the potential leading comments from a workspace.josh as a string
@@ -538,10 +728,261 @@ struct Grammar;
 
 #[cfg(test)]
 mod tests {
-    use super::parse;
+    use super::*;
+    use std::cell::RefCell;
+
+    const BASELINE_TREE: &str = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+
+    #[derive(Clone, Copy)]
+    enum Baseline {
+        Present,
+        Unset,
+        Invalid,
+    }
+
+    struct FakeResolver {
+        baseline: Baseline,
+        calls: RefCell<Vec<(ObjectKind, String)>>,
+    }
+
+    impl FakeResolver {
+        fn new(baseline: Baseline) -> Self {
+            Self {
+                baseline,
+                calls: RefCell::new(Vec::new()),
+            }
+        }
+    }
+
+    fn oid(value: &str) -> gix_hash::ObjectId {
+        value.parse().unwrap()
+    }
+
+    impl ObjectResolver for FakeResolver {
+        fn resolve(
+            &self,
+            kind: ObjectKind,
+            revision: &str,
+        ) -> anyhow::Result<Option<gix_hash::ObjectId>> {
+            self.calls.borrow_mut().push((kind, revision.to_owned()));
+            let value = match revision {
+                "baseline" => match self.baseline {
+                    Baseline::Present => Some(BASELINE_TREE),
+                    Baseline::Unset => None,
+                    Baseline::Invalid => return Err(anyhow!("invalid baseline")),
+                },
+                "^9" => return Err(anyhow!("missing parent")),
+                "missing" => None,
+                "" => Some("1111111111111111111111111111111111111111"),
+                "^" => Some("2222222222222222222222222222222222222222"),
+                "^2" => Some("3333333333333333333333333333333333333333"),
+                "~" => Some("4444444444444444444444444444444444444444"),
+                "~3" => Some("5555555555555555555555555555555555555555"),
+                "^2~3" => Some("6666666666666666666666666666666666666666"),
+                "target" => Some("7777777777777777777777777777777777777777"),
+                "target^2" => Some("8888888888888888888888888888888888888888"),
+                other => panic!("unexpected revision expression {other}"),
+            };
+            Ok(value.map(oid))
+        }
+    }
 
     #[test]
-    fn revision_references_require_object_ids() {
+    fn input_and_ancestry_expressions_reach_the_resolver() {
+        if !crate::experimental_features_enabled() {
+            return;
+        }
+        let resolver = FakeResolver::new(Baseline::Present);
+        for expression in ["{#}", "{#^}", "{#^2}", "{#~}", "{#~3}", "{#^2~3}"] {
+            parse_with_resolver(&format!(":$.={expression}"), &resolver).unwrap();
+        }
+        parse_with_resolver(":rev(=={@}:/)", &resolver).unwrap();
+        assert_eq!(
+            resolver.calls.into_inner(),
+            ["", "^", "^2", "~", "~3", "^2~3"]
+                .into_iter()
+                .map(|revision| (ObjectKind::Tree, revision.to_owned()))
+                .chain(std::iter::once((ObjectKind::Commit, String::new())))
+                .collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn named_tree_and_commit_expressions_are_lowered() {
+        if !crate::experimental_features_enabled() {
+            return;
+        }
+        let resolver = FakeResolver::new(Baseline::Present);
+        let filter = parse_with_resolver(
+            ":[tree=:$.={#baseline},commit=:rev(=={@target^2}:/)]",
+            &resolver,
+        )
+        .unwrap();
+        let rendered = crate::pretty(filter, 0);
+        assert!(rendered.contains(BASELINE_TREE));
+        assert!(rendered.contains("8888888888888888888888888888888888888888"));
+        assert!(!rendered.contains("{#"));
+        assert!(!rendered.contains("{@"));
+    }
+
+    #[test]
+    fn present_primary_does_not_resolve_fallback() {
+        if !crate::experimental_features_enabled() {
+            return;
+        }
+        let resolver = FakeResolver::new(Baseline::Present);
+        parse_with_resolver(":$.={#baseline|#^9}", &resolver).unwrap();
+        assert_eq!(
+            resolver.calls.into_inner(),
+            vec![(ObjectKind::Tree, "baseline".to_owned())]
+        );
+    }
+
+    #[test]
+    fn absent_primary_selects_fallback() {
+        if !crate::experimental_features_enabled() {
+            return;
+        }
+        let resolver = FakeResolver::new(Baseline::Unset);
+        parse_with_resolver(":$.={#baseline|#^}", &resolver).unwrap();
+        assert_eq!(
+            resolver.calls.into_inner(),
+            vec![
+                (ObjectKind::Tree, "baseline".to_owned()),
+                (ObjectKind::Tree, "^".to_owned())
+            ]
+        );
+    }
+
+    #[test]
+    fn invalid_primary_does_not_select_fallback() {
+        if !crate::experimental_features_enabled() {
+            return;
+        }
+        let resolver = FakeResolver::new(Baseline::Invalid);
+        let error = parse_with_resolver(":$.={#baseline|#^}", &resolver)
+            .unwrap_err()
+            .to_string();
+        assert!(error.contains("failed to resolve object expression"));
+        assert_eq!(
+            resolver.calls.into_inner(),
+            vec![(ObjectKind::Tree, "baseline".to_owned())]
+        );
+    }
+
+    #[test]
+    fn undefined_variables_and_fallback_failures_are_reported() {
+        if !crate::experimental_features_enabled() {
+            return;
+        }
+        let resolver = FakeResolver::new(Baseline::Unset);
+        let undefined = parse_with_resolver(":$.={#baseline}", &resolver)
+            .unwrap_err()
+            .to_string();
+        assert!(undefined.contains("undefined revision variable `baseline`"));
+
+        let fallback = parse_with_resolver(":$.={#baseline|#^9}", &resolver).unwrap_err();
+        let fallback = format!("{fallback:#}");
+        assert!(fallback.contains("missing parent"));
+        assert!(fallback.contains("`input`"));
+    }
+
+    #[test]
+    fn invalid_fallback_forms_are_rejected() {
+        if !crate::experimental_features_enabled() {
+            return;
+        }
+        let resolver = FakeResolver::new(Baseline::Unset);
+        assert!(
+            parse_with_resolver(":$.={#baseline|@^}", &resolver)
+                .unwrap_err()
+                .to_string()
+                .contains("mismatched selectors")
+        );
+        assert!(
+            parse_with_resolver(":$.={#^|#baseline}", &resolver)
+                .unwrap_err()
+                .to_string()
+                .contains("unreachable fallback")
+        );
+        assert!(parse_with_resolver(":$.={#baseline|#^|#~2}", &resolver).is_err());
+    }
+
+    #[test]
+    fn object_positions_enforce_selector_kind() {
+        if !crate::experimental_features_enabled() {
+            return;
+        }
+        let resolver = FakeResolver::new(Baseline::Present);
+        assert!(parse_with_resolver(":$.={#baseline}", &resolver).is_ok());
+        assert!(parse_with_resolver(":$.={@baseline}", &resolver).is_err());
+        assert!(parse_with_resolver(":rev(=={@baseline}:/)", &resolver).is_ok());
+        assert!(parse_with_resolver(":rev(=={#baseline}:/)", &resolver).is_err());
+        assert!(parse_with_resolver(":squash({@baseline}:/)", &resolver).is_ok());
+        assert!(parse_with_resolver(":squash({#baseline}:/)", &resolver).is_err());
+
+        for spec in [
+            ":unapply({@baseline}:/)",
+            ":squash({@baseline}:/)",
+            ":_={@baseline}",
+        ] {
+            assert!(Grammar::parse(Rule::filter_chain, spec).is_ok(), "{spec}");
+        }
+    }
+
+    #[test]
+    fn nested_filters_keep_the_resolver_context() {
+        if !crate::experimental_features_enabled() {
+            return;
+        }
+        let resolver = FakeResolver::new(Baseline::Present);
+        parse_with_resolver(
+            ":[outer=:[inner=:$.={#baseline}],rev=:rev(=={@target}:$.={#^})]",
+            &resolver,
+        )
+        .unwrap();
+        assert!(
+            resolver
+                .calls
+                .borrow()
+                .contains(&(ObjectKind::Tree, "baseline".to_owned()))
+        );
+        assert!(
+            resolver
+                .calls
+                .borrow()
+                .contains(&(ObjectKind::Commit, "target".to_owned()))
+        );
+        assert!(
+            resolver
+                .calls
+                .borrow()
+                .contains(&(ObjectKind::Tree, "^".to_owned()))
+        );
+    }
+
+    #[test]
+    fn context_free_parser_requires_a_resolver() {
+        let error = parse(":$.={#baseline|#^}").unwrap_err().to_string();
+        if crate::experimental_features_enabled() {
+            assert_eq!(
+                error,
+                "object expression `{#baseline|#^}` requires a revision resolver"
+            );
+        } else {
+            assert_eq!(
+                error,
+                "revision object expression requires JOSH_EXPERIMENTAL_FEATURES=1"
+            );
+        }
+    }
+
+    #[test]
+    fn existing_object_ids_strings_and_message_templates_are_unchanged() {
+        let tree = "0123456789012345678901234567890123456789";
+        assert!(parse(&format!(":$.={tree}")).is_ok());
+        assert!(parse(r#":$.="inline content""#).is_ok());
+        assert!(parse(r#":"commit {@}, tree {#}""#).is_ok());
         assert!(parse(r#":rev(=="/repo.git@refs/heads/main":/)"#).is_err());
     }
 }

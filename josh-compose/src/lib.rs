@@ -1,3 +1,4 @@
+pub use filter::ArgumentBinding;
 use josh_compose_backend::{ArtifactBackend, ExecOpts, Executor, Runtime};
 
 pub mod archive;
@@ -24,6 +25,8 @@ pub struct RunOptions {
     pub filter_spec: String,
     /// Input ref: "." (working tree), "+" (index), "HEAD", or any git ref
     pub input_ref: String,
+    /// Named arguments supplied as `--arg NAME=VALUE`.
+    pub arguments: Vec<ArgumentBinding>,
     pub clean: CleanMode,
 }
 
@@ -52,10 +55,12 @@ pub fn run_with_executor(
         return clean::clean(opts.clean, runtime);
     }
 
-    let filter_spec = opts.filter_spec.trim().to_string();
-    let source_commit = filter::resolve_input(transaction, &opts.input_ref)?;
-
-    let (ws_tree, _safe_name) = filter::compute_ws_tree(transaction, &filter_spec, source_commit)?;
+    let (ws_tree, _safe_name) = filter::prepare_workspace(
+        transaction,
+        &opts.filter_spec,
+        &opts.input_ref,
+        &opts.arguments,
+    )?;
 
     let graph = josh_compose_graph::load_graph(transaction, transaction.odb(), ws_tree)?;
 
@@ -83,10 +88,12 @@ pub fn plan_images(
 ) -> anyhow::Result<Vec<gix_hash::ObjectId>> {
     josh_filter::check_experimental_features_enabled("josh compose images")?;
 
-    let filter_spec = opts.filter_spec.trim().to_string();
-    let source_commit = filter::resolve_input(transaction, &opts.input_ref)?;
-
-    let (ws_tree, _safe_name) = filter::compute_ws_tree(transaction, &filter_spec, source_commit)?;
+    let (ws_tree, _safe_name) = filter::prepare_workspace(
+        transaction,
+        &opts.filter_spec,
+        &opts.input_ref,
+        &opts.arguments,
+    )?;
 
     let odb = transaction.odb();
     plan::collect_image_oids(transaction, odb, ws_tree, ignore_cache, runtime)
@@ -107,10 +114,12 @@ pub fn plan_jobs(
 ) -> anyhow::Result<Vec<gix_hash::ObjectId>> {
     josh_filter::check_experimental_features_enabled("josh compose jobs")?;
 
-    let filter_spec = opts.filter_spec.trim().to_string();
-    let source_commit = filter::resolve_input(transaction, &opts.input_ref)?;
-
-    let (ws_tree, _safe_name) = filter::compute_ws_tree(transaction, &filter_spec, source_commit)?;
+    let (ws_tree, _safe_name) = filter::prepare_workspace(
+        transaction,
+        &opts.filter_spec,
+        &opts.input_ref,
+        &opts.arguments,
+    )?;
 
     let odb = transaction.odb();
     plan::collect_job_hashes(transaction, odb, ws_tree, ignore_cache, runtime)
