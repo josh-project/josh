@@ -1,7 +1,9 @@
+use std::collections::HashMap;
+
 use anyhow::Context;
 
 use crate::naming;
-use josh_compose_backend::{EnvRecipe, EnvironmentBackend};
+use josh_compose_backend::{BuildContext, EnvRecipe, Runtime};
 use josh_compose_graph::Graph;
 use josh_core::cache;
 use josh_core::memodb;
@@ -9,14 +11,15 @@ use josh_core::memodb;
 /// Ensure the environment for the given image exists, building it if needed.
 /// Returns the environment key (image name).
 ///
-/// Base images are ensured first, recursively, and passed to the build as args
-/// so the Containerfile can reference them (e.g. `ARG my_base; FROM $my_base`).
+/// Base images are ensured first and passed as build args. Artifact-producing
+/// input jobs must already have completed; their outputs become named contexts.
 pub fn ensure_image(
     transaction: &cache::Transaction,
     odb: &memodb::Odb,
     graph: &Graph,
     image_oid: gix_hash::ObjectId,
-    runtime: &dyn EnvironmentBackend,
+    failed: &HashMap<gix_hash::ObjectId, String>,
+    runtime: &dyn Runtime,
 ) -> anyhow::Result<String> {
     let image_name = naming::env(image_oid);
 
@@ -33,10 +36,27 @@ pub fn ensure_image(
 
     let mut build_args: Vec<(String, String)> = vec![];
     for (base_name, base_oid) in &node.bases {
-        let base_env = ensure_image(transaction, odb, graph, *base_oid, runtime)?;
+        let base_env = ensure_image(transaction, odb, graph, *base_oid, failed, runtime)?;
         build_args.push((base_name.clone(), base_env));
     }
     build_args.extend(node.args.iter().cloned());
+
+    let mut build_contexts = Vec::with_capacity(node.inputs.len());
+    for (name, input_oid) in &node.inputs {
+        if let Some(error) = failed.get(input_oid) {
+            anyhow::bail!("image {image_oid} input {name:?} failed: {error}");
+        }
+        let artifact = naming::output(*input_oid);
+        if !runtime.artifact_exists(&artifact)? {
+            anyhow::bail!(
+                "image {image_oid} input {name:?} has no output artifact from job {input_oid}"
+            );
+        }
+        build_contexts.push(BuildContext {
+            name: name.clone(),
+            artifact,
+        });
+    }
 
     let context_oid = node
         .context
@@ -48,6 +68,7 @@ pub fn ensure_image(
         EnvRecipe {
             context,
             build_args,
+            build_contexts,
         },
     )?;
 

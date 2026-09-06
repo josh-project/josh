@@ -31,6 +31,14 @@ impl fmt::Display for D2<'_> {
                     D2Text(name)
                 )?;
             }
+            for (name, input_oid) in &image.inputs {
+                write!(
+                    f,
+                    "\njob_{input_oid} -> image_{}: \"input: {}\"",
+                    image.oid,
+                    D2Text(name)
+                )?;
+            }
         }
         for job in self.0.jobs() {
             if let Some(image_oid) = job.meta.image {
@@ -147,18 +155,21 @@ mod tests {
                     oid: base,
                     bases: vec![],
                     args: vec![],
+                    inputs: vec![],
                     context: None,
                 },
                 ImageNode {
                     oid: image,
                     bases: vec![("BASE|IMAGE".to_string(), base)],
                     args: vec![],
+                    inputs: vec![("artifact".to_string(), dependency)],
                     context: None,
                 },
                 ImageNode {
                     oid: sidecar,
                     bases: vec![],
                     args: vec![],
+                    inputs: vec![],
                     context: None,
                 },
             ],
@@ -176,6 +187,7 @@ mod tests {
                  \njob_{dependency}: \"dependency\"\
                  \njob_{root}: \"root \\\"<&\\\\path job\"\
                  \nimage_{base} -> image_{image}: \"BASE|IMAGE\"\
+                 \njob_{dependency} -> image_{image}: \"input: artifact\"\
                  \nimage_{image} -> job_{root}: \"image\"\
                  \nimage_{sidecar} -> job_{root}: \"sidecar: db\\\"one\"\
                  \njob_{dependency} -> job_{root}: \"source|code\""

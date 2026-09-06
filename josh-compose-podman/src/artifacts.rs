@@ -137,7 +137,7 @@ fn parse_storage_status(stdout: &str) -> anyhow::Result<StorageStatus> {
     })
 }
 
-fn extract_artifact(name: &str, dest: &std::path::Path) -> anyhow::Result<()> {
+pub(super) fn extract_artifact(name: &str, dest: &std::path::Path) -> anyhow::Result<()> {
     let tar_data = export_artifact(name)?;
     tar::Archive::new(std::io::Cursor::new(tar_data))
         .unpack(dest)
