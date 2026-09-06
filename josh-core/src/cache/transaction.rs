@@ -1372,6 +1372,22 @@ impl Transaction {
         Ok(())
     }
 
+    /// Persist a requested commit in sparse and dense cache backends.
+    pub(crate) fn insert_forced(
+        &self,
+        filter: crate::filter::Filter,
+        from: gix_hash::ObjectId,
+        to: gix_hash::ObjectId,
+    ) -> anyhow::Result<()> {
+        let hint = compute_history_hint(self, from)?;
+        let mut t2 = self.t2.borrow_mut();
+        t2.commit_map
+            .entry(filter.id())
+            .or_default()
+            .insert(from, to);
+        t2.cache.write_forced_all(filter, from, to, hint, false)
+    }
+
     pub fn get_missing(
         &self,
     ) -> anyhow::Result<Vec<(usize, crate::filter::Filter, gix_hash::ObjectId)>> {
