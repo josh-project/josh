@@ -1,9 +1,10 @@
 use super::*;
-use anyhow::anyhow;
+use anyhow::{Context, anyhow};
 use gix_object::bstr::BString;
 pub use josh_filter::check_experimental_features_enabled;
 pub use josh_filter::experimental_features_enabled;
 
+use std::collections::HashMap;
 use std::path::Path;
 use std::str::FromStr;
 use std::sync::LazyLock;
@@ -395,6 +396,274 @@ fn get_filter(
         WORKSPACES.lock().unwrap().insert(ws_id, f);
         f
     }
+}
+
+fn needs_repository_resolution(filter: Filter) -> bool {
+    match to_op(filter) {
+        Op::Workspace(_) | Op::Stored(_) | Op::Starlark(_, _) => true,
+        Op::Compose(filters) | Op::Chain(filters) => {
+            filters.into_iter().any(needs_repository_resolution)
+        }
+        Op::Rev(filters) => filters
+            .into_iter()
+            .any(|(_, filter)| needs_repository_resolution(filter)),
+        Op::Subtract(a, b) => needs_repository_resolution(a) || needs_repository_resolution(b),
+        Op::Exclude(filter)
+        | Op::Select(filter)
+        | Op::Pin(filter)
+        | Op::TreeId(_, filter)
+        | Op::Meta(_, filter)
+        | Op::Unapply(_, filter) => needs_repository_resolution(filter),
+        _ => false,
+    }
+}
+
+struct RepositoryFilterResolver<'a> {
+    transaction: &'a cache::Transaction,
+    odb: &'a josh_memodb::Odb,
+    parser: &'a dyn Fn(&str) -> anyhow::Result<Filter>,
+    parsed_blobs: HashMap<gix_hash::ObjectId, Filter>,
+    resolved: HashMap<(Filter, gix_hash::ObjectId), Option<Filter>>,
+}
+
+impl RepositoryFilterResolver<'_> {
+    fn parsed_definition(
+        &mut self,
+        reader: &tree::TreeReader,
+        path: &Path,
+    ) -> anyhow::Result<Filter> {
+        let path = normalize_path(path);
+        let Some(entry) = tree::get_path_entry_at(self.transaction, self.odb, reader, &path)?
+        else {
+            return Ok(Filter::new().empty());
+        };
+        let parsed = if let Some(filter) = self.parsed_blobs.get(&entry.oid) {
+            *filter
+        } else {
+            let bytes = tree::blob_bytes(self.odb, entry.oid)
+                .ok_or_else(|| anyhow!("definition `{}` is not a readable blob", path.display()))?;
+            anyhow::ensure!(
+                !bytes.contains(&0),
+                "definition `{}` contains NUL bytes",
+                path.display()
+            );
+            let text = std::str::from_utf8(&bytes)
+                .with_context(|| format!("definition `{}` is not UTF-8", path.display()))?;
+            let filter = (self.parser)(text)
+                .with_context(|| format!("failed to parse definition `{}`", path.display()))?;
+            self.parsed_blobs.insert(entry.oid, filter);
+            filter
+        };
+        Ok(parsed)
+    }
+
+    fn definition(
+        &mut self,
+        tree_id: gix_hash::ObjectId,
+        reader: &tree::TreeReader,
+        path: &Path,
+    ) -> anyhow::Result<Filter> {
+        let parsed = self.parsed_definition(reader, path)?;
+        let filter = self.resolve(parsed, tree_id, reader).with_context(|| {
+            format!(
+                "failed to resolve definition `{}` in tree {tree_id}",
+                path.display()
+            )
+        })?;
+        invert(filter).with_context(|| {
+            format!(
+                "definition `{}` in tree {tree_id} is not invertible",
+                path.display()
+            )
+        })?;
+        Ok(filter)
+    }
+
+    fn script(&self, reader: &tree::TreeReader, path: &Path) -> anyhow::Result<String> {
+        let path = normalize_path(path);
+        let entry = tree::get_path_entry_at(self.transaction, self.odb, reader, &path)?
+            .ok_or_else(|| anyhow!("definition `{}` does not exist", path.display()))?;
+        let bytes = tree::blob_bytes(self.odb, entry.oid)
+            .ok_or_else(|| anyhow!("definition `{}` is not a readable blob", path.display()))?;
+        anyhow::ensure!(
+            !bytes.contains(&0),
+            "definition `{}` contains NUL bytes",
+            path.display()
+        );
+        Ok(std::str::from_utf8(&bytes)
+            .with_context(|| format!("definition `{}` is not UTF-8", path.display()))?
+            .to_owned())
+    }
+
+    fn resolve(
+        &mut self,
+        filter: Filter,
+        tree_id: gix_hash::ObjectId,
+        reader: &tree::TreeReader,
+    ) -> anyhow::Result<Filter> {
+        if !needs_repository_resolution(filter) {
+            return Ok(filter);
+        }
+        if let Some(cached) = self.resolved.get(&(filter, tree_id)) {
+            return Ok(cached.unwrap_or_else(|| Filter::new().empty()));
+        }
+        self.resolved.insert((filter, tree_id), None);
+
+        let resolved = match to_op(filter) {
+            Op::Compose(filters) => {
+                let filters = filters
+                    .into_iter()
+                    .map(|filter| self.resolve(filter, tree_id, reader))
+                    .collect::<anyhow::Result<Vec<_>>>()?;
+                to_filter(Op::Compose(filters))
+            }
+            Op::Chain(filters) => {
+                let mut result = Vec::with_capacity(filters.len());
+                let mut current_tree = tree_id;
+                for (index, filter) in filters.iter().copied().enumerate() {
+                    let current_reader;
+                    let reader = if current_tree == tree_id {
+                        reader
+                    } else {
+                        current_reader = tree::read_tree(self.transaction, self.odb, current_tree)?;
+                        &current_reader
+                    };
+                    let filter = self.resolve(filter, current_tree, reader)?;
+                    result.push(filter);
+                    if filters[index + 1..]
+                        .iter()
+                        .copied()
+                        .any(needs_repository_resolution)
+                    {
+                        current_tree =
+                            apply(self.transaction, filter, Rewrite::from_tree(current_tree))
+                                .context("failed to apply repository-filter chain prefix")?
+                                .tree_id();
+                    }
+                }
+                to_filter(Op::Chain(result))
+            }
+            Op::Rev(filters) => to_filter(Op::Rev(
+                filters
+                    .into_iter()
+                    .map(|(matcher, filter)| {
+                        self.resolve(filter, tree_id, reader)
+                            .map(|filter| (matcher, filter))
+                    })
+                    .collect::<anyhow::Result<Vec<_>>>()?,
+            )),
+            Op::Subtract(a, b) => to_filter(Op::Subtract(
+                self.resolve(a, tree_id, reader)?,
+                self.resolve(b, tree_id, reader)?,
+            )),
+            Op::Exclude(filter) => to_filter(Op::Exclude(self.resolve(filter, tree_id, reader)?)),
+            Op::Select(filter) => to_filter(Op::Select(self.resolve(filter, tree_id, reader)?)),
+            Op::Meta(meta, filter) => {
+                to_filter(Op::Meta(meta, self.resolve(filter, tree_id, reader)?))
+            }
+            Op::Pin(filter) => to_filter(Op::Pin(self.resolve(filter, tree_id, reader)?)),
+            Op::TreeId(path, filter) => {
+                to_filter(Op::TreeId(path, self.resolve(filter, tree_id, reader)?))
+            }
+            Op::Unapply(commit, filter) => {
+                to_filter(Op::Unapply(commit, self.resolve(filter, tree_id, reader)?))
+            }
+            Op::Stored(path) => {
+                let definition_path = path.with_added_extension("josh");
+                let definition = self.definition(tree_id, reader, &definition_path)?;
+                compose(&[Filter::new().file(definition_path), definition])
+            }
+            Op::Workspace(path) => {
+                let definition_path = path.join("workspace.josh");
+                let parsed = self.parsed_definition(reader, &definition_path)?;
+                if let Op::Workspace(redirect_path) = peel_op(parsed) {
+                    let redirect =
+                        to_filter(Op::Exclude(Filter::new().file(&path))).chain(parsed.peel());
+                    self.resolve(
+                        propagate_meta(redirect, &parsed.into_meta()),
+                        tree_id,
+                        reader,
+                    )
+                    .with_context(|| {
+                        format!(
+                            "failed to resolve workspace redirect `{}` to `{}` in tree {tree_id}",
+                            path.display(),
+                            redirect_path.display()
+                        )
+                    })?
+                } else {
+                    let parsed = self.definition(tree_id, reader, &definition_path)?;
+                    let base = to_filter(Op::Subdir(path));
+                    compose(&[
+                        base.chain(Filter::new().file("workspace.josh")),
+                        compose(&[parsed, base]),
+                    ])
+                }
+            }
+            Op::Starlark(path, subfilter) => {
+                check_experimental_features_enabled("Starlark filter")?;
+                let subfilter = self.resolve(subfilter, tree_id, reader)?;
+                let filtered_tree = apply(self.transaction, subfilter, Rewrite::from_tree(tree_id))
+                    .with_context(|| {
+                        format!(
+                            "failed to apply Starlark input filter `{}` in tree {tree_id}",
+                            path.display()
+                        )
+                    })?
+                    .tree_id();
+                let script_path = path.with_added_extension("star");
+                let script = self.script(reader, &script_path)?;
+                let generated = josh_starlark::evaluate(&script, filtered_tree, self.odb)
+                    .with_context(|| {
+                        format!(
+                            "failed to evaluate Starlark definition `{}` in tree {tree_id}",
+                            script_path.display()
+                        )
+                    })?;
+                let generated = self.resolve(generated, tree_id, reader)?;
+                let resolved = compose(&[
+                    Filter::new().file(script_path.clone()),
+                    subfilter,
+                    generated,
+                ]);
+                invert(resolved).with_context(|| {
+                    format!(
+                        "Starlark definition `{}` in tree {tree_id} is not invertible",
+                        script_path.display()
+                    )
+                })?;
+                resolved
+            }
+            _ => filter,
+        };
+
+        self.resolved.insert((filter, tree_id), Some(resolved));
+        Ok(resolved)
+    }
+}
+
+/// Resolve repository-backed filters using a caller-supplied parser.
+///
+/// The returned filter contains no `Stored`, `Workspace`, or `Starlark`
+/// operations. Parsing, repository lookup, evaluation, invertibility, and
+/// intermediate-chain application errors are propagated with definition
+/// context. Caches are local to this call.
+pub fn resolve_repository_filters(
+    transaction: &cache::Transaction,
+    filter: Filter,
+    tree_id: gix_hash::ObjectId,
+    parser: &dyn Fn(&str) -> anyhow::Result<Filter>,
+) -> anyhow::Result<Filter> {
+    let odb = transaction.odb();
+    let reader = tree::read_tree(transaction, odb, tree_id)?;
+    RepositoryFilterResolver {
+        transaction,
+        odb,
+        parser,
+        parsed_blobs: HashMap::new(),
+        resolved: HashMap::new(),
+    }
+    .resolve(filter, tree_id, &reader)
 }
 
 fn get_rev_filter(
@@ -2525,5 +2794,254 @@ mod tests {
             build_tree(&repo, &[("ns/keep/f.txt", "keep")]),
             "sibling subtree must survive"
         );
+    }
+    struct FixedResolver(gix_hash::ObjectId);
+
+    impl josh_filter::ObjectResolver for FixedResolver {
+        fn resolve(
+            &self,
+            _kind: josh_filter::ObjectKind,
+            revision: &str,
+        ) -> anyhow::Result<Option<gix_hash::ObjectId>> {
+            Ok(match revision {
+                "baseline" | "" => Some(self.0),
+                _ => None,
+            })
+        }
+    }
+
+    fn test_transaction(repo: &gix::Repository) -> cache::Transaction {
+        cache::TransactionContext::new(repo.path(), std::sync::Arc::new(cache::CacheStack::new()))
+            .open()
+            .unwrap()
+    }
+
+    #[test]
+    fn missing_stored_definition_resolves_to_empty() {
+        let td = tempfile::tempdir().unwrap();
+        let repo = gix::init_bare(td.path()).unwrap();
+        let source_tree = build_tree(&repo, &[("kept", "content")]);
+        let transaction = test_transaction(&repo);
+
+        let resolved = resolve_repository_filters(
+            &transaction,
+            Filter::new().stored("optional"),
+            source_tree,
+            &parse,
+        )
+        .unwrap();
+        let rewritten = apply(&transaction, resolved, Rewrite::from_tree(source_tree)).unwrap();
+
+        assert_eq!(rewritten.tree_id(), tree::empty_id());
+    }
+
+    #[test]
+    fn contextual_resolution_handles_stored_workspace_and_nested_definitions() {
+        if !experimental_features_enabled() {
+            return;
+        }
+        let td = tempfile::tempdir().unwrap();
+        let repo = gix::init_bare(td.path()).unwrap();
+        let baseline_tree = build_tree(&repo, &[("selected", "baseline")]);
+        let source_tree = build_tree(
+            &repo,
+            &[
+                ("defs/base.josh", ":$.={#baseline}\n"),
+                ("defs/nested.josh", ":+defs/base\n"),
+                ("ws/workspace.josh", ":+defs/nested\n"),
+            ],
+        );
+        let transaction = test_transaction(&repo);
+        let resolver = FixedResolver(baseline_tree);
+        let parser = |spec: &str| josh_filter::parse_with_resolver(spec, &resolver);
+        let filter = compose(&[
+            Filter::new().stored("defs/nested"),
+            Filter::new().workspace("ws"),
+        ]);
+
+        let resolved =
+            resolve_repository_filters(&transaction, filter, source_tree, &parser).unwrap();
+        assert!(!needs_repository_resolution(resolved));
+        let rendered = pretty(resolved, 0);
+        assert!(rendered.contains(&baseline_tree.to_string()));
+        assert!(rendered.contains("base.josh"), "{rendered}");
+        assert!(rendered.contains("workspace.josh"));
+    }
+
+    #[test]
+    fn contextual_chain_loads_definitions_from_intermediate_tree() {
+        let td = tempfile::tempdir().unwrap();
+        let repo = gix::init_bare(td.path()).unwrap();
+        let source_tree = build_tree(
+            &repo,
+            &[
+                ("defs/pick.josh", ":/old\n"),
+                ("old/value", "old"),
+                ("new/value", "new"),
+            ],
+        );
+        let replacement_tree = build_tree(
+            &repo,
+            &[
+                ("defs/pick.josh", ":/new\n"),
+                ("old/value", "old"),
+                ("new/value", "new"),
+            ],
+        );
+        let transaction = test_transaction(&repo);
+        let filter = parse(&format!(":$.={replacement_tree}:+defs/pick")).unwrap();
+
+        let resolved =
+            resolve_repository_filters(&transaction, filter, source_tree, &parse).unwrap();
+        let rendered = pretty(resolved, 0);
+        assert!(rendered.contains(":/new"));
+        assert!(!rendered.contains(":/old"));
+    }
+
+    #[test]
+    fn contextual_definition_errors_are_strict_and_cache_local() {
+        if !experimental_features_enabled() {
+            return;
+        }
+        let td = tempfile::tempdir().unwrap();
+        let repo = gix::init_bare(td.path()).unwrap();
+        let source_tree = build_tree(
+            &repo,
+            &[(
+                "defs/context-only.josh",
+                "# unique contextual cache test\n:$.={#missing}\n",
+            )],
+        );
+        let transaction = test_transaction(&repo);
+        let reader = tree::read_tree(&transaction, transaction.odb(), source_tree).unwrap();
+        let blob = tree::get_path_entry_at(
+            &transaction,
+            transaction.odb(),
+            &reader,
+            Path::new("defs/context-only.josh"),
+        )
+        .unwrap()
+        .unwrap()
+        .oid;
+        assert!(!WORKSPACES.lock().unwrap().contains_key(&blob));
+
+        let resolver = FixedResolver(build_tree(&repo, &[("selected", "baseline")]));
+        let parser = |spec: &str| josh_filter::parse_with_resolver(spec, &resolver);
+        let error = resolve_repository_filters(
+            &transaction,
+            Filter::new().stored("defs/context-only"),
+            source_tree,
+            &parser,
+        )
+        .unwrap_err();
+        let error = format!("{error:#}");
+        assert!(error.contains("defs/context-only.josh"));
+        assert!(error.contains("undefined revision variable `missing`"));
+        assert!(!WORKSPACES.lock().unwrap().contains_key(&blob));
+    }
+
+    #[test]
+    fn contextual_bindings_change_filters_without_changing_static_behavior() {
+        if !experimental_features_enabled() {
+            return;
+        }
+        let td = tempfile::tempdir().unwrap();
+        let repo = gix::init_bare(td.path()).unwrap();
+        let source_tree = build_tree(
+            &repo,
+            &[
+                ("defs/context.josh", ":$.={#baseline}\n"),
+                ("defs/static.josh", ":/source\n"),
+                ("source/value", "source"),
+            ],
+        );
+        let first_tree = build_tree(&repo, &[("selected", "first")]);
+        let second_tree = build_tree(&repo, &[("selected", "second")]);
+        let transaction = test_transaction(&repo);
+        let outer = Filter::new().stored("defs/context");
+
+        let first_resolver = FixedResolver(first_tree);
+        let first_parser = |spec: &str| josh_filter::parse_with_resolver(spec, &first_resolver);
+        let first =
+            resolve_repository_filters(&transaction, outer, source_tree, &first_parser).unwrap();
+        let second_resolver = FixedResolver(second_tree);
+        let second_parser = |spec: &str| josh_filter::parse_with_resolver(spec, &second_resolver);
+        let second =
+            resolve_repository_filters(&transaction, outer, source_tree, &second_parser).unwrap();
+        assert_ne!(first, second);
+
+        let static_filter = Filter::new().stored("defs/static");
+        let strict =
+            resolve_repository_filters(&transaction, static_filter, source_tree, &parse).unwrap();
+        let reader = tree::read_tree(&transaction, transaction.odb(), source_tree).unwrap();
+        let existing = get_stored(
+            &transaction,
+            transaction.odb(),
+            source_tree,
+            &reader,
+            Path::new("defs/static"),
+        );
+        assert_eq!(strict, existing);
+    }
+    #[test]
+    fn contextual_resolution_preserves_workspace_redirects() {
+        let td = tempfile::tempdir().unwrap();
+        let repo = gix::init_bare(td.path()).unwrap();
+        let source_tree = build_tree(
+            &repo,
+            &[
+                ("old/workspace.josh", ":workspace=new\n"),
+                ("new/workspace.josh", ":/data\n"),
+                ("data/value", "selected"),
+            ],
+        );
+        let transaction = test_transaction(&repo);
+
+        let resolved = resolve_repository_filters(
+            &transaction,
+            Filter::new().workspace("old"),
+            source_tree,
+            &parse,
+        )
+        .unwrap();
+        assert!(!needs_repository_resolution(resolved));
+        let rendered = pretty(resolved, 0);
+        assert!(rendered.contains("new"), "{rendered}");
+        assert!(rendered.contains("workspace.josh"), "{rendered}");
+    }
+
+    #[test]
+    fn contextual_resolution_recurses_into_starlark_output() {
+        if !experimental_features_enabled() {
+            return;
+        }
+        let td = tempfile::tempdir().unwrap();
+        let repo = gix::init_bare(td.path()).unwrap();
+        let baseline_tree = build_tree(&repo, &[("selected", "baseline")]);
+        let source_tree = build_tree(
+            &repo,
+            &[
+                ("defs/generated.josh", ":$.={#baseline}\n"),
+                (
+                    "scripts/generated.star",
+                    "filter = filter.stored(\"defs/generated\")\n",
+                ),
+            ],
+        );
+        let transaction = test_transaction(&repo);
+        let resolver = FixedResolver(baseline_tree);
+        let parser = |spec: &str| josh_filter::parse_with_resolver(spec, &resolver);
+        let filter = to_filter(Op::Starlark(
+            PathBuf::from("scripts/generated"),
+            Filter::new(),
+        ));
+
+        let resolved =
+            resolve_repository_filters(&transaction, filter, source_tree, &parser).unwrap();
+        assert!(!needs_repository_resolution(resolved));
+        let rendered = pretty(resolved, 0);
+        assert!(rendered.contains(&baseline_tree.to_string()), "{rendered}");
+        assert!(rendered.contains("generated.star"), "{rendered}");
+        assert!(rendered.contains("generated.josh"), "{rendered}");
     }
 }

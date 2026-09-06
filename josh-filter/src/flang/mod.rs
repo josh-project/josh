@@ -1,4 +1,5 @@
 pub mod parse;
+pub use parse::{ObjectKind, ObjectResolver, parse_with_resolver};
 
 use crate::filter::MESSAGE_MATCH_ALL_REGEX;
 use crate::filter::{reachable_roots, sequence_number};

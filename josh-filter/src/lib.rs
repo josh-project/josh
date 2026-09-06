@@ -7,6 +7,7 @@ pub mod persist;
 
 pub use filter::{Filter, compose};
 pub use flang::parse;
+pub use flang::parse::{ObjectKind, ObjectResolver, parse_with_resolver};
 pub use flang::{as_file, pretty, spec};
 pub use op::{InsertContent, Op, Regex, RevMatch};
 

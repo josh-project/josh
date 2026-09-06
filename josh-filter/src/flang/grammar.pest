@@ -9,7 +9,7 @@ GROUP_END = _{ "]" }
 PATH = _{ (ALNUM | "/")+ }
 filter_path = { PATH }
 argument = { string | PATH }
-rev = { object_oid }
+rev = { object_value }
 
 sstring = _{"\'" ~ inner ~ "\'"}
 dstring = _{"\"" ~ inner ~ "\""}
@@ -21,7 +21,13 @@ char = {
 }
 
 object_oid = @{ ASCII_HEX_DIGIT+ }
-filter_insert = { CMD_START ~ "$" ~ argument ~ "=" ~ (string | object_oid) }
+object_value = { object_oid | object_expr }
+object_expr = { "{" ~ object_arm ~ ("|" ~ object_arm)? ~ "}" }
+object_arm = { object_selector ~ revision_variable? ~ revision_suffix* }
+object_selector = { "#" | "@" }
+revision_variable = @{ (ASCII_ALPHA | "_") ~ (ASCII_ALPHANUMERIC | "_" | "-")* }
+revision_suffix = @{ ("^" | "~") ~ ASCII_DIGIT* }
+filter_insert = { CMD_START ~ "$" ~ argument ~ "=" ~ (string | object_value) }
 
 filter_spec = { (
     filter_group
@@ -31,6 +37,7 @@ filter_spec = { (
   | filter_replace
   | filter_squash
   | filter_insert
+  | filter_downstack
   | filter_presub
   | filter_subdir
   | filter_stored
@@ -54,6 +61,7 @@ filter_treeref   = { CMD_START ~ "&" ~ argument }
 filter_treederef = { CMD_START ~ "#" ~ argument }
 filter_nop = { CMD_START ~ "/" }
 filter_presub = { CMD_START ~ ":" ~ argument ~ ("=" ~ argument)? }
+filter_downstack = { CMD_START ~ "_" ~ "=" ~ object_value }
 filter = { CMD_START ~ cmd ~ "=" ~ (argument ~ (";" ~ argument)*)? }
 filter_noarg = { CMD_START ~ cmd }
 filter_message = { CMD_START ~ string ~ (";" ~ string)? }
