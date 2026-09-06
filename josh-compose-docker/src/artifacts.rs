@@ -123,7 +123,7 @@ fn list_artifacts(prefix: &str) -> anyhow::Result<Vec<String>> {
         .collect())
 }
 
-fn extract_artifact(name: &str, dest: &std::path::Path) -> anyhow::Result<()> {
+pub(super) fn extract_artifact(name: &str, dest: &std::path::Path) -> anyhow::Result<()> {
     let tar_data = export_artifact(name)?;
     tar::Archive::new(std::io::Cursor::new(tar_data))
         .unpack(dest)
