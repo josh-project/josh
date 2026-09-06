@@ -1,3 +1,5 @@
+:$label="josh build"
+
 bases = :[
     :#BASE_IMAGE[:+images/dev]
 ]

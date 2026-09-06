@@ -1,1 +1,3 @@
+:$label="rust test runner"
+
 context = :/images/rust-test-runner

@@ -1,3 +1,5 @@
+:$label="go development local"
+
 bases = :[
     :#BASE_IMAGE[:+images/go-dev]
 ]
