@@ -10,17 +10,18 @@
 //!   `WORKSPACES` map.
 
 use crate::engine::CompiledModule;
+use parking_lot::Mutex;
 use std::collections::HashMap;
-use std::sync::{Arc, LazyLock, Mutex};
+use std::sync::{Arc, LazyLock};
 
-pub(crate) type EvalMemoKey = (git2::Oid, Vec<String>, git2::Oid);
+pub(crate) type EvalMemoKey = (gix_hash::ObjectId, Vec<String>, gix_hash::ObjectId);
 
 /// Hand-rolled LRU: last-use tick per entry, evict the smallest tick on
 /// insert at capacity. The O(n) eviction scan is fine at the default n=64.
 pub(crate) struct ModuleLru {
     capacity: usize,
     tick: u64,
-    entries: HashMap<git2::Oid, (Arc<dyn CompiledModule>, u64)>,
+    entries: HashMap<gix_hash::ObjectId, (Arc<dyn CompiledModule>, u64)>,
 }
 
 impl ModuleLru {
@@ -32,7 +33,7 @@ impl ModuleLru {
         }
     }
 
-    pub(crate) fn get(&mut self, oid: &git2::Oid) -> Option<Arc<dyn CompiledModule>> {
+    pub(crate) fn get(&mut self, oid: &gix_hash::ObjectId) -> Option<Arc<dyn CompiledModule>> {
         self.tick += 1;
         let tick = self.tick;
         self.entries.get_mut(oid).map(|entry| {
@@ -41,7 +42,7 @@ impl ModuleLru {
         })
     }
 
-    pub(crate) fn insert(&mut self, oid: git2::Oid, module: Arc<dyn CompiledModule>) {
+    pub(crate) fn insert(&mut self, oid: gix_hash::ObjectId, module: Arc<dyn CompiledModule>) {
         if self.capacity == 0 {
             return;
         }
@@ -61,7 +62,7 @@ impl ModuleLru {
     }
 
     #[cfg(test)]
-    pub(crate) fn contains(&self, oid: &git2::Oid) -> bool {
+    pub(crate) fn contains(&self, oid: &gix_hash::ObjectId) -> bool {
         self.entries.contains_key(oid)
     }
 
@@ -90,18 +91,17 @@ pub(crate) fn eval_memo() -> &'static Mutex<HashMap<EvalMemoKey, josh_filter::Fi
 }
 
 pub(crate) fn clear() {
-    MODULE_CACHE.lock().unwrap().clear();
-    EVAL_MEMO.lock().unwrap().clear();
+    MODULE_CACHE.lock().clear();
+    EVAL_MEMO.lock().clear();
 }
 
 /// Number of memo entries for a given module blob OID. Test helper: global
 /// cache state is shared across parallel tests, so assertions must be scoped
 /// to a module OID unique to the asserting test.
 #[cfg(test)]
-pub(crate) fn eval_memo_entries_for(module_oid: git2::Oid) -> usize {
+pub(crate) fn eval_memo_entries_for(module_oid: gix_hash::ObjectId) -> usize {
     EVAL_MEMO
         .lock()
-        .unwrap()
         .keys()
         .filter(|(oid, _, _)| *oid == module_oid)
         .count()

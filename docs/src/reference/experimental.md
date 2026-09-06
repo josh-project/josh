@@ -49,18 +49,183 @@ This lets you record a stable, content-addressed reference to a subtree alongsid
 
 Example: `:#version[:/sub1]` writes the ID of the `sub1` directory tree into the gitlink `version`.
 
-### Starlark filter **`:!path/to/script[context filter]`**
-Evaluates a [Starlark](https://github.com/bazelbuild/starlark) script stored in the repository
-and uses the filter it produces. The script file is loaded from `path` with a `.star` extension
-appended automatically.
+### Wasm filter **`:!path=arg,...[context filter]`**
+Runs a [WebAssembly](https://webassembly.org/) module stored in the repository and applies the
+filter it returns. The module is the blob at `path` with a `.wasm` extension appended
+automatically, looked up in the tree being filtered at the op's position in the pipeline (so in
+`:/sub:!tools/mod`, the module is looked up in the already-`:/sub`-filtered tree).
 
-The optional `[context filter]` scopes the tree that is visible to the script: the context
-filter is applied to the input tree first, and the result is what the script sees as `tree`. The
-context filter does not affect the filter that the script returns — it only controls what the
-script can read.
+The optional `=arg1,arg2,...` list passes invocation arguments to the module. Arguments are part
+of the filter spec, not repo content; they lex like other filter-language arguments, so they
+cannot contain commas, brackets or whitespace.
 
-The script file itself is always included in the output tree alongside whatever the script's
-filter selects.
+The optional `[context filter]` scopes the tree that is visible to the module: the context
+filter is applied to the input tree first, and the result is the only tree the module can read.
+The context filter does not affect the filter that the module returns — it only controls what
+the module can see.
+
+The output is `compose([context filter, returned filter])`. The module blob itself is *not*
+forced into the output: it appears in the projection only if the context filter selects it.
+
+Any evaluation failure — missing, oversized or invalid module, trap, fuel or memory exhaustion,
+unsupported ABI version — degrades to the empty filter for that commit (trace-logged).
+
+Evaluation is a pure function of `(module blob OID, invocation args, context-filtered tree
+OID)`; results are memoized on that key, so a module runs when its *visible* input changes, not
+once per commit. A narrow context filter is therefore also a performance tool.
+
+**Resource limits**
+
+Modules run sandboxed: no filesystem, network, clock or randomness access — only the `josh`
+host imports listed below. Limits are configurable via environment variables:
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `JOSH_WASM_FUEL` | `100000000` | Instruction budget per evaluation. |
+| `JOSH_WASM_MEMORY_LIMIT` | `67108864` | Guest memory limit in bytes (64 MiB). |
+| `JOSH_WASM_MODULE_SIZE_LIMIT` | `16777216` | Maximum module blob size in bytes (16 MiB). |
+| `JOSH_WASM_MODULE_CACHE_SIZE` | `64` | Compiled-module LRU cache capacity (entries). |
+| `JOSH_WASM_MAX_DEPTH` | `10` | Nesting cap for wasm filters returning wasm filters. |
+| `JOSH_WASM_MAX_HANDLES` | `100000` | Maximum filter handles constructed per evaluation. |
+
+The limits are part of the persistent cache key for wasm filter results: changing a limit does
+not serve results (including failure degradations) computed under the old configuration.
+
+**Position in the filter expression**
+
+`:!` works as the top-level op or as a chain element (with per-parent resolution and history
+splicing, like `:workspace`), inside an `:exclude[...]`/`:select[...]` subfilter, and inside
+`workspace.josh` or stored filter content (where it is legalized against a concrete tree).
+Writing `:!` directly inside a compose group (e.g. `:[::other/,:!tools/mod]`) is not
+supported: compose requires statically invertible parts and the wasm op has no static
+inverse, so this fails deterministically with a `no invert` error. The same constraint
+applies to a compose built by a module-returned filter that contains a nested wasm filter.
+
+**Text format support**
+
+If the blob at `path.wasm` does not start with the wasm binary magic and is valid UTF-8, it is
+assembled as [WAT](https://webassembly.github.io/spec/core/text/index.html) text on the fly.
+Small filters can stay human-readable in the repository:
+
+```wat
+(module
+  (import "josh" "nop" (func $nop (result i32)))
+  (import "josh" "subdir" (func $subdir (param i32 i32 i32) (result i32)))
+  (memory (export "memory") 1)
+  (data (i32.const 16) "sub1")
+  (func (export "josh_abi_version") (result i32) (i32.const 1))
+  (func (export "josh_alloc") (param i32) (result i32) (i32.const 1024))
+  (func (export "josh_run") (result i32)
+    (call $subdir (call $nop) (i32.const 16) (i32.const 4))))
+```
+
+Applied with `:!st/config[::st/]` (the blob committed as `st/config.wasm`), this selects
+`sub1` composed over the context.
+
+**ABI (version 1)**
+
+Plain core wasm, no WASI, no component model. Strings are UTF-8 `(ptr, len)` pairs in guest
+memory; filters are opaque `u32` handles into a host-side table. Strings returned by the host
+are written into a buffer obtained by calling the guest's exported `josh_alloc` and returned as
+a packed `i64` (`ptr << 32 | len`; a zero length means the empty string and the pointer must
+not be dereferenced).
+
+The guest must export:
+
+| Export | Type | Description |
+|--------|------|-------------|
+| `memory` | linear memory | The guest's memory. |
+| `josh_abi_version` | `() -> i32` | Must return `1`. |
+| `josh_alloc` | `(len: i32) -> i32` | Allocate a buffer for host-to-guest strings. Never freed. |
+| `josh_run` | `() -> i32` | Entry point; returns the handle of the resulting filter. |
+
+Host imports all live in module `"josh"`. The filter builder imports delegate to the native
+filter constructors; `h` is a filter handle, `s` a string `(ptr, len)` pair, `S` a packed
+host-to-guest string:
+
+| Import | Signature | Description |
+|--------|-----------|-------------|
+| `nop` | `() -> h` | No-op filter. |
+| `empty` | `() -> h` | Empty filter. |
+| `chain` | `(a: h, b: h) -> h` | Apply `b` after `a`. |
+| `compose` | `(ptr, count) -> h` | Overlay `count` little-endian `u32` handles read at `ptr`. |
+| `subdir` | `(f: h, path: s) -> h` | Select a subdirectory and make it the root. |
+| `prefix` | `(f: h, path: s) -> h` | Place the tree under a prefix. |
+| `file` | `(f: h, path: s) -> h` | Select a single file. |
+| `rename` | `(f: h, dst: s, src: s) -> h` | Select `src` and place it at `dst` (destination first). |
+| `pattern` | `(f: h, glob: s) -> h` | Select paths matching a glob pattern. |
+| `linear` | `(f: h) -> h` | Linearise history. |
+| `workspace` | `(f: h, path: s) -> h` | Workspace filter rooted at `path`. |
+| `stored` | `(f: h, path: s) -> h` | Stored filter at `path.josh`. |
+| `author` | `(f: h, name: s, email: s) -> h` | Override the commit author. |
+| `committer` | `(f: h, name: s, email: s) -> h` | Override the committer. |
+| `message` | `(f: h, template: s) -> h` | Rewrite commit messages. |
+| `unsign` | `(f: h) -> h` | Strip GPG signatures. |
+| `prune_trivial_merge` | `(f: h) -> h` | Remove trivial merges. |
+| `hook` | `(f: h, hook: s) -> h` | Apply a hook filter. |
+| `with_meta` | `(f: h, key: s, value: s) -> h` | Attach metadata. |
+| `insert` | `(f: h, path: s, content: s) -> h` | Insert a file with inline content. |
+| `treeid` | `(f: h, path: s, sub: h) -> h` | Tree ID capture, like `:#path[sub]`. |
+| `wasm` | `(f: h, path: s, args: s, ctx: h) -> h` | Nested wasm filter; `args` newline-joined. |
+| `peel` | `(f: h) -> h` | Strip metadata from the filter. |
+| `is_nop` | `(f: h) -> i32` | Returns 1 if the filter is a no-op. |
+
+Tree access operates on the context-filtered tree; there is no way to read outside it:
+
+| Import | Signature | Description |
+|--------|-----------|-------------|
+| `tree_file` | `(path: s) -> S` | Blob content at `path`; empty if absent, binary, not UTF-8 or larger than the memory limit. |
+| `tree_files` | `(path: s) -> S` | Newline-joined full paths of files directly under `path`. |
+| `tree_dirs` | `(path: s) -> S` | Newline-joined full paths of directories directly under `path`. |
+| `tree_entry_oid` | `(path: s) -> S` | Hex OID of the entry at `path`; empty if absent. |
+| `invocation_args` | `() -> S` | The newline-joined `=arg,...` list; empty if none. |
+
+An invalid handle, a non-UTF-8 string or an out-of-bounds pointer traps and fails the
+evaluation. Modules only link the imports they use, so adding builder imports in later josh
+versions never breaks existing modules.
+
+**Writing modules in Rust**
+
+The `josh-filter-guest` crate (in `josh-guest/` in the josh repository) wraps the ABI in a
+typed API: a `Filter` type with the builder methods, a `Tree` type for tree access, and an
+entry-point macro. A module that mounts every top-level directory at its own name:
+
+```rust
+#![no_std]
+
+use josh_filter_guest::{Filter, Tree, compose, josh_filter_entry, josh_guest_rt, nop};
+
+fn run(tree: Tree) -> Filter {
+    compose(
+        tree.dirs("")
+            .into_iter()
+            .map(|d| nop().subdir(&d).prefix(&d)),
+    )
+}
+
+josh_filter_entry!(run);
+josh_guest_rt!();
+```
+
+Built with `cargo build --release --target wasm32-unknown-unknown`, this compiles to a
+few-KiB `.wasm` blob. Committing the source next to the blob keeps reviews meaningful.
+
+**Starlark scripts via the interpreter module**
+
+Starlark filters are supported through a Starlark interpreter compiled to wasm
+(`josh-starlark-guest`, built with `scripts/build-starlark-guest.sh` in the josh repository).
+The interpreter blob is committed once per repository and takes the script path as its
+invocation argument:
+
+```
+:!tools/starlark=st/config.star[::st/]
+```
+
+with the interpreter blob at `tools/starlark.wasm` and the script at `st/config.star`. The
+script must be visible in the context-filtered tree — a missing or out-of-context script is a
+deterministic evaluation error (resulting in the empty filter). Whether the script appears in
+the projection is the author's choice, expressed through the context filter: above, the
+script is part of the output while the interpreter blob is not.
 
 **Script contract**
 
@@ -77,7 +242,7 @@ filter = filter.subdir("src")
 | Variable | Type     | Description |
 |----------|----------|-------------|
 | `filter` | `Filter` | Starts as a no-op filter. Assign your result here. |
-| `tree`   | `Tree`   | The commit tree (or the context-filtered tree if a context filter was given). |
+| `tree`   | `Tree`   | The context-filtered tree. |
 
 **Global functions**
 
@@ -102,7 +267,7 @@ All methods return a new `Filter` and can be chained.
 | `filter.linear()` | Linearise history (drop merge parents). |
 | `filter.workspace(path)` | Apply the workspace filter rooted at `path`. |
 | `filter.stored(path)` | Apply the stored filter at `path.josh`. |
-| `filter.starlark(path, context_filter)` | Apply another Starlark filter with an optional context filter. |
+| `filter.wasm(path, args, context_filter)` | Apply another wasm filter (replaces `filter.starlark(...)`). |
 | `filter.author(name, email)` | Override the commit author. |
 | `filter.committer(name, email)` | Override the committer. |
 | `filter.message(template)` | Rewrite commit messages using a template. |
@@ -110,12 +275,14 @@ All methods return a new `Filter` and can be chained.
 | `filter.prune_trivial_merge()` | Remove merge commits whose tree equals their first parent. |
 | `filter.hook(hook)` | Apply a hook filter. |
 | `filter.with_meta(key, value)` | Attach metadata to the filter. |
+| `filter.insert(path, content)` | Insert a file with inline content. |
+| `filter.treeid(path, subfilter)` | Tree ID capture, like `:#path[subfilter]`. |
 | `filter.is_nop()` | Returns `True` if the filter is a no-op. |
 | `filter.peel()` | Strip metadata from the filter. |
 
 **`Tree` methods**
 
-The `tree` object provides read-only access to the commit tree visible to the script.
+The `tree` object provides read-only access to the tree visible to the script.
 
 | Method | Description |
 |--------|-------------|
@@ -134,4 +301,4 @@ parts = [filter.subdir(d).prefix(d) for d in tree.dirs("")]
 filter = compose(parts)
 ```
 
-Applied with `:!st/config`.
+Applied with `:!tools/starlark=st/config.star[::st/]`.

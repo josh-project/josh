@@ -460,13 +460,13 @@ fn get_wasm(
     // The module blob is resolved from the INPUT tree at this op's position in
     // the pipeline; a missing blob is an evaluation error (-> Empty), not a nop.
     let module_oid = match tree::get_path_entry_at(transaction, odb, reader, &module_path) {
-        Ok(Some(entry)) if entry.mode.is_blob() => objects::git2_oid(&entry.oid),
+        Ok(Some(entry)) if entry.mode.is_blob() => entry.oid,
         _ => {
             tracing::trace!("wasm module not found: {:?}", module_path);
             return to_filter(Op::Empty);
         }
     };
-    match josh_wasm::evaluate(transaction.git2_repo(), module_oid, args, filtered_tree) {
+    match josh_wasm::evaluate(odb, module_oid, args, filtered_tree) {
         // The module blob is NOT forced into the output; it is only present if
         // the context subfilter (or the returned filter) selects it.
         Ok(f) => compose(&[subfilter, f]),
@@ -751,7 +751,7 @@ pub fn apply_to_commit2(
             // Held across resolution AND application (per_rev_filter): see
             // WasmDepthGuard. On cap exhaustion the filters degrade to Empty.
             let guard = WasmDepthGuard::enter(Some(filter));
-            let resolve = |tree: git2::Oid| {
+            let resolve = |tree: gix_hash::ObjectId| {
                 if guard.is_none() {
                     return to_filter(Op::Empty);
                 }

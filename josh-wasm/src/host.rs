@@ -8,18 +8,17 @@
 
 use crate::engine::{EvalContext, Limits};
 use josh_filter::Filter;
-use std::path::Path;
 use wasmi::{Caller, Extern, Linker, Memory};
 
 pub(crate) struct HostState {
     // Evaluation is fully synchronous: `CompiledModule::evaluate` creates the
     // store, runs the guest to completion and drops the store before
-    // returning, so the repository always outlives this pointer. A raw
-    // pointer (instead of `&'a git2::Repository`) is needed because wasmi's
+    // returning, so the object database always outlives this pointer. A raw
+    // pointer (instead of `&'a josh_memodb::Odb`) is needed because wasmi's
     // host function closures must be `'static`, which forbids a lifetime
     // parameter on the store data type.
-    repo: *const git2::Repository,
-    tree_oid: git2::Oid,
+    odb: *const josh_memodb::Odb,
+    tree_oid: gix_hash::ObjectId,
     args: Vec<String>,
     handles: Vec<Filter>,
     max_handles: usize,
@@ -30,7 +29,7 @@ pub(crate) struct HostState {
 impl HostState {
     pub(crate) fn new(ctx: &EvalContext<'_>, limits: &Limits) -> HostState {
         HostState {
-            repo: ctx.repo as *const _,
+            odb: ctx.odb as *const _,
             tree_oid: ctx.tree_oid,
             args: ctx.args.to_vec(),
             handles: Vec::new(),
@@ -64,9 +63,9 @@ impl HostState {
 
 type HCaller<'c> = Caller<'c, HostState>;
 
-fn repo<'c>(caller: &'c HCaller<'_>) -> &'c git2::Repository {
-    // SAFETY: see the `HostState::repo` field documentation.
-    unsafe { &*caller.data().repo }
+fn odb<'c>(caller: &'c HCaller<'_>) -> &'c josh_memodb::Odb {
+    // SAFETY: see the `HostState::odb` field documentation.
+    unsafe { &*caller.data().odb }
 }
 
 fn memory(caller: &HCaller<'_>) -> Result<Memory, wasmi::Error> {
@@ -134,79 +133,115 @@ fn host_err(e: impl std::fmt::Display) -> wasmi::Error {
     wasmi::Error::new(e.to_string())
 }
 
+/// Descend a slash-separated guest path from `root`. Invalid paths, missing
+/// components and non-tree intermediate entries are lookup misses.
+fn tree_entry(
+    odb: &josh_memodb::Odb,
+    root: gix_hash::ObjectId,
+    path: &str,
+) -> Option<gix_object::tree::Entry> {
+    if path.is_empty() || path.starts_with('/') {
+        return None;
+    }
+    let mut components = path
+        .split('/')
+        .filter(|component| !component.is_empty() && *component != ".")
+        .peekable();
+    let mut tree_oid = root;
+    while let Some(component) = components.next() {
+        if component == ".." {
+            return None;
+        }
+        let (kind, bytes) = odb.read(tree_oid).ok()?;
+        if kind != gix_object::Kind::Tree {
+            return None;
+        }
+        let entry: gix_object::tree::Entry =
+            gix_object::TreeRefIter::from_bytes(&bytes, gix_hash::Kind::Sha1)
+                .filter_map(Result::ok)
+                .find(|entry| entry.filename == component.as_bytes())?
+                .into();
+        if components.peek().is_none() {
+            return Some(entry);
+        }
+        if !entry.mode.is_tree() {
+            return None;
+        }
+        tree_oid = entry.oid;
+    }
+    None
+}
+
 /// Blob content at `path`; empty string for absent, non-blob, binary,
 /// non-UTF-8 or oversized (larger than `max_bytes`) entries.
 pub(crate) fn tree_file_content(
-    repo: &git2::Repository,
-    tree_oid: git2::Oid,
+    odb: &josh_memodb::Odb,
+    tree_oid: gix_hash::ObjectId,
     path: &str,
     max_bytes: usize,
 ) -> String {
-    let Ok(tree) = repo.find_tree(tree_oid) else {
+    let Some(entry) = tree_entry(odb, tree_oid, path) else {
         return String::new();
     };
-    let Ok(entry) = tree.get_path(Path::new(path)) else {
-        return String::new();
-    };
-    if entry.kind() != Some(git2::ObjectType::Blob) {
+    if !entry.mode.is_blob_or_symlink() {
         return String::new();
     }
+    let oid = entry.oid;
     // Check the size from the odb header BEFORE loading the blob: a blob that
     // could never be delivered into guest memory must not be decompressed and
     // copied host-side either — none of fuel, module size or the guest memory
     // limit would otherwise bound this allocation.
-    let Ok(odb) = repo.odb() else {
-        return String::new();
-    };
-    match odb.read_header(entry.id()) {
-        Ok((size, _)) if size <= max_bytes => {}
+    match odb.read_header(oid) {
+        Ok((gix_object::Kind::Blob, size)) if size <= max_bytes as u64 => {}
         _ => return String::new(),
     }
-    let Ok(blob) = repo.find_blob(entry.id()) else {
+    let Ok((gix_object::Kind::Blob, blob)) = odb.read(oid) else {
         return String::new();
     };
-    if blob.is_binary() {
+    if blob.iter().take(8000).any(|byte| *byte == 0) {
         return String::new();
     }
-    std::str::from_utf8(blob.content())
+    std::str::from_utf8(&blob)
         .map(str::to_string)
         .unwrap_or_default()
 }
 
-fn tree_at<'r>(
-    repo: &'r git2::Repository,
-    tree_oid: git2::Oid,
+fn tree_oid_at(
+    odb: &josh_memodb::Odb,
+    tree_oid: gix_hash::ObjectId,
     path: &str,
-) -> Option<git2::Tree<'r>> {
-    let root = repo.find_tree(tree_oid).ok()?;
+) -> Option<gix_hash::ObjectId> {
     if path.is_empty() {
-        return Some(root);
+        return matches!(odb.read_header(tree_oid), Ok((gix_object::Kind::Tree, _)))
+            .then_some(tree_oid);
     }
-    let entry = root.get_path(Path::new(path)).ok()?;
-    if entry.kind() != Some(git2::ObjectType::Tree) {
-        return None;
-    }
-    repo.find_tree(entry.id()).ok()
+    let entry = tree_entry(odb, tree_oid, path)?;
+    entry.mode.is_tree().then_some(entry.oid)
 }
 
 /// Newline-joined full slash-joined paths of the immediate child entries of
 /// `kind` at `path`, in git tree entry order. Non-UTF-8 names and paths
 /// containing a newline are skipped; a bad path yields an empty result.
 fn tree_entry_list(
-    repo: &git2::Repository,
-    tree_oid: git2::Oid,
+    odb: &josh_memodb::Odb,
+    tree_oid: gix_hash::ObjectId,
     path: &str,
-    kind: git2::ObjectType,
+    want_tree: bool,
 ) -> String {
-    let Some(tree) = tree_at(repo, tree_oid, path) else {
+    let Some(tree_oid) = tree_oid_at(odb, tree_oid, path) else {
+        return String::new();
+    };
+    let Ok((gix_object::Kind::Tree, bytes)) = odb.read(tree_oid) else {
         return String::new();
     };
     let mut entries = Vec::new();
-    for entry in tree.iter() {
-        if entry.kind() != Some(kind) {
+    for entry in
+        gix_object::TreeRefIter::from_bytes(&bytes, gix_hash::Kind::Sha1).filter_map(Result::ok)
+    {
+        if entry.mode.is_tree() != want_tree || (!want_tree && !entry.mode.is_blob_or_symlink()) {
             continue;
         }
-        let Ok(name) = entry.name() else {
+        let Ok(name) = std::str::from_utf8(&entry.filename) else {
             continue;
         };
         let full = if path.is_empty() {
@@ -224,17 +259,13 @@ fn tree_entry_list(
 
 /// Hex OID of the entry at `path`; the tree's own OID for the empty path;
 /// empty string if absent.
-fn tree_entry_oid_hex(repo: &git2::Repository, tree_oid: git2::Oid, path: &str) -> String {
+fn tree_entry_oid_hex(odb: &josh_memodb::Odb, tree_oid: gix_hash::ObjectId, path: &str) -> String {
     if path.is_empty() {
         return tree_oid.to_string();
     }
-    let Ok(tree) = repo.find_tree(tree_oid) else {
-        return String::new();
-    };
-    match tree.get_path(Path::new(path)) {
-        Ok(entry) => entry.id().to_string(),
-        Err(_) => String::new(),
-    }
+    tree_entry(odb, tree_oid, path)
+        .map(|entry| entry.oid.to_string())
+        .unwrap_or_default()
 }
 
 pub(crate) fn add_to_linker(linker: &mut Linker<HostState>) -> anyhow::Result<()> {
@@ -523,7 +554,7 @@ pub(crate) fn add_to_linker(linker: &mut Linker<HostState>) -> anyhow::Result<()
         |mut caller: HCaller, ptr: u32, len: u32| -> Result<i64, wasmi::Error> {
             let path = read_string(&caller, ptr, len)?;
             let content = tree_file_content(
-                repo(&caller),
+                odb(&caller),
                 caller.data().tree_oid,
                 &path,
                 caller.data().memory_bytes,
@@ -536,12 +567,7 @@ pub(crate) fn add_to_linker(linker: &mut Linker<HostState>) -> anyhow::Result<()
         "tree_files",
         |mut caller: HCaller, ptr: u32, len: u32| -> Result<i64, wasmi::Error> {
             let path = read_string(&caller, ptr, len)?;
-            let list = tree_entry_list(
-                repo(&caller),
-                caller.data().tree_oid,
-                &path,
-                git2::ObjectType::Blob,
-            );
+            let list = tree_entry_list(odb(&caller), caller.data().tree_oid, &path, false);
             return_string(&mut caller, &list)
         },
     )?;
@@ -550,12 +576,7 @@ pub(crate) fn add_to_linker(linker: &mut Linker<HostState>) -> anyhow::Result<()
         "tree_dirs",
         |mut caller: HCaller, ptr: u32, len: u32| -> Result<i64, wasmi::Error> {
             let path = read_string(&caller, ptr, len)?;
-            let list = tree_entry_list(
-                repo(&caller),
-                caller.data().tree_oid,
-                &path,
-                git2::ObjectType::Tree,
-            );
+            let list = tree_entry_list(odb(&caller), caller.data().tree_oid, &path, true);
             return_string(&mut caller, &list)
         },
     )?;
@@ -564,7 +585,7 @@ pub(crate) fn add_to_linker(linker: &mut Linker<HostState>) -> anyhow::Result<()
         "tree_entry_oid",
         |mut caller: HCaller, ptr: u32, len: u32| -> Result<i64, wasmi::Error> {
             let path = read_string(&caller, ptr, len)?;
-            let hex = tree_entry_oid_hex(repo(&caller), caller.data().tree_oid, &path);
+            let hex = tree_entry_oid_hex(odb(&caller), caller.data().tree_oid, &path);
             return_string(&mut caller, &hex)
         },
     )?;
