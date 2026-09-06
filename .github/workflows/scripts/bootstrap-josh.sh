@@ -2,7 +2,8 @@
 set -euo pipefail
 
 # Provide the CI bootstrap `josh` binary at target/release/josh, used by the
-# workflow to drive `josh compose run` and the R2 pull/push scripts.
+# workflow to drive `josh compose run`, sync its Git result ref, and transfer
+# cached volumes and images through R2.
 #
 # Strategy:
 #   1. If R2 credentials are present, try to download a binary built from the
@@ -13,9 +14,8 @@ set -euo pipefail
 #   3. If R2 credentials are present after a build, upload so the next run on
 #      any branch finds the object.
 #
-# Branch scope is not relevant: R2 objects are visible to every workflow run
-# with the credentials, which sidesteps the GitHub Actions cache-scope problem
-# that caused PR runs and merge_group runs to each rebuild the binary.
+# The pin must provide the compose metadata and transport implementation used
+# by this workflow, including `josh compose pull` and `josh compose push`.
 
 BUCKET="josh-project-cache"
 ENDPOINT="https://19f2dfdd7c93980184be5e5809e8b252.r2.cloudflarestorage.com"
@@ -51,8 +51,7 @@ WORKTREE="$(mktemp -d -t josh-bootstrap-XXXXXX)"
 trap 'git worktree remove --force "$WORKTREE" >/dev/null 2>&1 || true; rm -rf "$WORKTREE"' EXIT
 
 # Ensure the pinned SHA is present locally. The CI checkout may not contain it
-# (e.g. PR runs only fetch the PR head). The pin is required to live on
-# `origin/master`, so fetching it from `origin` always succeeds.
+# (for example, when a pull request checkout only fetches its head).
 if ! git cat-file -e "${JOSH_BOOTSTRAP_SHA}^{commit}" 2>/dev/null; then
     git fetch --no-tags --depth=1 origin "$JOSH_BOOTSTRAP_SHA"
 fi
