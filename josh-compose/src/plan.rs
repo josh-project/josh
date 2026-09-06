@@ -8,7 +8,7 @@
 
 use std::collections::HashSet;
 
-use josh_compose_backend::ArtifactBackend;
+use josh_compose_backend::{ArtifactBackend, Runtime};
 use josh_compose_graph::{Graph, Job, OutputMode, load_graph};
 use josh_core::cache;
 use josh_core::memodb;
@@ -30,7 +30,7 @@ pub fn collect_image_oids(
     odb: &memodb::Odb,
     ws_tree: gix_hash::ObjectId,
     ignore_cache: bool,
-    runtime: &dyn ArtifactBackend,
+    runtime: &dyn Runtime,
 ) -> anyhow::Result<Vec<gix_hash::ObjectId>> {
     let graph = load_graph(transaction, odb, ws_tree)?;
     let runnable = runnable_jobs(transaction, &graph, ignore_cache, runtime, true)?;
@@ -96,7 +96,7 @@ pub fn collect_job_hashes(
     odb: &memodb::Odb,
     ws_tree: gix_hash::ObjectId,
     ignore_cache: bool,
-    runtime: &dyn ArtifactBackend,
+    runtime: &dyn Runtime,
 ) -> anyhow::Result<Vec<gix_hash::ObjectId>> {
     let graph = load_graph(transaction, odb, ws_tree)?;
     let runnable = runnable_jobs(transaction, &graph, ignore_cache, runtime, false)?;
@@ -109,26 +109,26 @@ pub fn collect_job_hashes(
         .collect())
 }
 
-/// Compute the set of jobs a run would execute: everything reachable from the
-/// root without descending into cache-skippable workspaces (a skippable
-/// workspace's dependencies are not run either).
+/// Compute the set of jobs a run would execute. Cached jobs prune ordinary
+/// inputs; cached images prune artifact-producing image inputs.
 fn runnable_jobs(
     transaction: &cache::Transaction,
     graph: &Graph,
     ignore_cache: bool,
-    runtime: &dyn ArtifactBackend,
+    runtime: &dyn Runtime,
     log_skips: bool,
 ) -> anyhow::Result<HashSet<gix_hash::ObjectId>> {
-    let mut visited: HashSet<gix_hash::ObjectId> = HashSet::new();
-    let mut runnable: HashSet<gix_hash::ObjectId> = HashSet::new();
+    let mut visited_jobs = HashSet::new();
+    let mut visited_images = HashSet::new();
+    let mut runnable = HashSet::new();
     let mut stack = vec![graph.root().ws_tree];
     while let Some(ws_tree) = stack.pop() {
-        if !visited.insert(ws_tree) {
+        if !visited_jobs.insert(ws_tree) {
             continue;
         }
         let job = graph
             .job(ws_tree)
-            .expect("job inputs reference jobs in the graph");
+            .expect("job dependencies are present in the graph");
         if !ignore_cache && workspace_is_skippable(transaction, job, runtime)? {
             if log_skips {
                 eprintln!("[{}] Using cached output ({})", job.meta.label, ws_tree);
@@ -137,17 +137,60 @@ fn runnable_jobs(
         }
         runnable.insert(ws_tree);
         stack.extend(job.inputs.iter().map(|(_, dep_tree)| *dep_tree));
+        if let Some(image_oid) = job.meta.image {
+            collect_image_input_jobs(
+                graph,
+                image_oid,
+                ignore_cache,
+                runtime,
+                &mut visited_images,
+                &mut stack,
+            )?;
+        }
+        for sidecar in &job.meta.sidecars {
+            collect_image_input_jobs(
+                graph,
+                sidecar.image,
+                ignore_cache,
+                runtime,
+                &mut visited_images,
+                &mut stack,
+            )?;
+        }
     }
     Ok(runnable)
+}
+
+fn collect_image_input_jobs(
+    graph: &Graph,
+    image_oid: gix_hash::ObjectId,
+    ignore_cache: bool,
+    runtime: &dyn Runtime,
+    visited: &mut HashSet<gix_hash::ObjectId>,
+    jobs: &mut Vec<gix_hash::ObjectId>,
+) -> anyhow::Result<()> {
+    if !visited.insert(image_oid)
+        || (!ignore_cache && runtime.env_exists(&naming::env(image_oid))?)
+    {
+        return Ok(());
+    }
+    let image = graph
+        .image(image_oid)
+        .expect("image dependencies are present in the graph");
+    for (_, base_oid) in &image.bases {
+        collect_image_input_jobs(graph, *base_oid, ignore_cache, runtime, visited, jobs)?;
+    }
+    jobs.extend(image.inputs.iter().map(|(_, input_oid)| *input_oid));
+    Ok(())
 }
 
 /// Mirror the executor's cache check: a job is skippable when a previous
 /// successful run is recorded AND its output volume still exists (when one is
 /// expected).
-fn workspace_is_skippable(
+pub(crate) fn workspace_is_skippable<R: ArtifactBackend + ?Sized>(
     transaction: &cache::Transaction,
     job: &Job,
-    runtime: &dyn ArtifactBackend,
+    runtime: &R,
 ) -> anyhow::Result<bool> {
     if !job_cache::is_cached_success(transaction, job.ws_tree)? {
         return Ok(false);
