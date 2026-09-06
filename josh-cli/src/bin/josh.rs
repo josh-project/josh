@@ -236,7 +236,9 @@ fn run_repo(cmd: &RepoCommand, distributed_cache: bool) -> anyhow::Result<()> {
     let ephemeral_compose = match cmd {
         RepoCommand::Compose(args) => match &args.command {
             ComposeCommand::Run(args) => !args.clean && !args.clean_all,
-            ComposeCommand::ListImages(_) | ComposeCommand::ListJobs(_) => true,
+            ComposeCommand::Graph(_)
+            | ComposeCommand::ListImages(_)
+            | ComposeCommand::ListJobs(_) => true,
             ComposeCommand::Pull(_) | ComposeCommand::Push(_) => false,
         },
         _ => false,
