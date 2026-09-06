@@ -16,7 +16,12 @@ impl fmt::Display for D2<'_> {
         f.write_str("direction: down")?;
 
         for image in self.0.images() {
-            write!(f, "\nimage_{}: \"image {}\"", image.oid, image.oid)?;
+            write!(
+                f,
+                "\nimage_{}: \"image {}\"",
+                image.oid,
+                D2Text(&image.label)
+            )?;
         }
         for job in self.0.jobs() {
             write!(f, "\njob_{}: \"{}\"", job.ws_tree, D2Text(&job.meta.label))?;
@@ -153,6 +158,7 @@ mod tests {
             images: vec![
                 ImageNode {
                     oid: base,
+                    label: "base \"<&\\path\r\nimage".to_string(),
                     bases: vec![],
                     args: vec![],
                     inputs: vec![],
@@ -160,6 +166,7 @@ mod tests {
                 },
                 ImageNode {
                     oid: image,
+                    label: "build image".to_string(),
                     bases: vec![("BASE|IMAGE".to_string(), base)],
                     args: vec![],
                     inputs: vec![("artifact".to_string(), dependency)],
@@ -167,6 +174,7 @@ mod tests {
                 },
                 ImageNode {
                     oid: sidecar,
+                    label: "sidecar image".to_string(),
                     bases: vec![],
                     args: vec![],
                     inputs: vec![],
@@ -181,9 +189,9 @@ mod tests {
             graph.d2().to_string(),
             format!(
                 "direction: down\
-                 \nimage_{base}: \"image {base}\"\
-                 \nimage_{image}: \"image {image}\"\
-                 \nimage_{sidecar}: \"image {sidecar}\"\
+                 \nimage_{base}: \"image base \\\"<&\\\\path image\"\
+                 \nimage_{image}: \"image build image\"\
+                 \nimage_{sidecar}: \"image sidecar image\"\
                  \njob_{dependency}: \"dependency\"\
                  \njob_{root}: \"root \\\"<&\\\\path job\"\
                  \nimage_{base} -> image_{image}: \"BASE|IMAGE\"\
