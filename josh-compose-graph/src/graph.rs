@@ -46,6 +46,8 @@ pub struct Job {
 /// materialized to a tar lazily by the executor.
 pub struct ImageNode {
     pub oid: gix_hash::ObjectId,
+    /// Human-readable label used in console and graph output.
+    pub label: String,
     /// Base images as (build-arg name, base image tree OID).
     pub bases: Vec<(String, gix_hash::ObjectId)>,
     /// Artifact-producing jobs as (named build-context name, workspace tree OID).
@@ -199,6 +201,9 @@ fn load_image(
         return Ok(());
     }
     enter_node(stack, NodeId::Image(image_oid))?;
+    let label = meta::read_blob(transaction, odb, image_oid, "label")
+        .filter(|label| !label.is_empty())
+        .unwrap_or_else(|| image_oid.to_string());
 
     let mut bases = vec![];
     for (base_name, base_oid) in meta::read_gitlink_entries(transaction, odb, image_oid, "bases")? {
@@ -232,6 +237,7 @@ fn load_image(
         graph,
         ImageNode {
             oid: image_oid,
+            label,
             bases,
             inputs,
             args,
@@ -271,6 +277,7 @@ mod tests {
     }
 
     #[test]
+
     fn loads_image_artifact_inputs_before_the_consuming_job() {
         let dir = tempfile::tempdir().unwrap();
         gix::init_bare(dir.path()).unwrap();
@@ -292,7 +299,7 @@ mod tests {
         .unwrap();
         let image = tree::insert_oid(
             odb,
-            tree::empty_id(),
+            insert_blob(odb, tree::empty_id(), "label", b"artifact image"),
             std::path::Path::new("inputs"),
             image_inputs,
             0o040000,
@@ -320,6 +327,7 @@ mod tests {
             graph.image(image).unwrap().inputs,
             vec![("artifact".to_string(), producer)]
         );
+        assert_eq!(graph.image(image).unwrap().label, "artifact image");
     }
 
     #[test]

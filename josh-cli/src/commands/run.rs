@@ -151,6 +151,7 @@ pub struct GraphArgs {
     /// Bind a named compose argument (currently a Git revision)
     #[arg(long = "arg", value_name = "NAME=VALUE")]
     pub arguments: Vec<ArgumentBinding>,
+
     /// Git revision to use as input: "." (working tree), "+" (index), or any rev (e.g. "HEAD", "HEAD~1", "main")
     #[arg(default_value = ".")]
     pub reference: String,
