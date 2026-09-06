@@ -14,12 +14,17 @@ anyhow.workspace = true
 defer.workspace = true
 gix-hash.workspace = true
 josh-core.workspace = true
+josh-git-serde.workspace = true
+josh-gix-ext.workspace = true
 josh-filter.workspace = true
 josh-compose-backend.workspace = true
 josh-compose-graph.workspace = true
+log.workspace = true
+serde.workspace = true
 
 tar = "0.4"
 
 [dev-dependencies]
 gix.workspace = true
 tempfile.workspace = true
+parking_lot.workspace = true

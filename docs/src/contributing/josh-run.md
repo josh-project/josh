@@ -122,11 +122,30 @@ FAILED: <safe-name>
 
 ## Cache behavior
 
-Each run produces a podman volume named `out_<WS_TREE>`. Successful runs are also recorded under `.josh/success/<WS_TREE>`. A cached result is reused only when that success marker is present and, for workspaces that keep output, the matching `out_<WS_TREE>` volume still exists. The cache key is the git SHA of the filtered workspace tree, so:
+Each run produces a podman volume named `out_<WS_TREE>`. Successful and failed result metadata is stored on `refs/josh/compose`, under `success/<AA>/<BBB>/<REST>` and `failed/<AA>/<BBB>/<REST>` respectively, where `<WS_TREE>` is split into the two-character `<AA>`, three-character `<BBB>`, and remaining `<REST>` components. A cached result is reused only when its successful result entry is present and, for workspaces that keep output, the matching `out_<WS_TREE>` volume still exists. The cache key is the git SHA of the filtered workspace tree, so:
 
 - Changing any file included in the workspace automatically produces a new SHA and bypasses the cache.
 - Changing unrelated files has no effect on the cache.
 - Two developers with identical workspace contents share the same cache key (useful if volumes are shared via a registry).
+
+### Sharing result metadata
+
+Compose result metadata can be synchronized through the repository's `refs/josh/compose` ref:
+
+```sh
+josh compose pull --remote origin
+josh compose push --remote origin
+```
+
+Both commands default to `origin`. Pull merges remote results with local results. Push retries when another writer advances the remote ref, merging both result trees before retrying. The commands transfer only Git metadata; output volumes use their runtime-specific transport separately.
+
+Each `josh compose run` invocation batches all result updates and cache-hit touches into at most one commit on the result ref.
+
+### Local disk reclamation
+
+Before executing a workspace, `josh compose run` checks the filesystem usage reported by podman for its graph root. When usage reaches 90%, josh removes local `josh_ws_image_*` images and `josh_out_*` output volumes in least-recently-used order until usage is at most 80%. Images and outputs required by the pending run are protected.
+
+The usage order comes from update and cache-hit commits on `refs/josh/compose`. Automatic reclamation does not remove persistent `josh_cache_*` volumes, result metadata, or any R2 objects. The explicit `--clean` and `--clean-all` options retain their destructive behavior.
 
 ### Forcing a re-run
 
@@ -140,7 +159,7 @@ podman volume ls | grep out_
 podman volume rm out_<sha>
 ```
 
-Alternatively, use `josh compose run --clean` to remove all cached images and output volumes, or `--clean-all` to also remove persistent cache volumes (e.g. the Cargo registry cache).
+Alternatively, use `josh compose run --clean` to remove all cached images, output volumes, and the compose result ref, or `--clean-all` to also remove persistent cache volumes (e.g. the Cargo registry cache).
 
 ### Clearing all output volumes
 
