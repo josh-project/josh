@@ -3392,6 +3392,7 @@ dependencies = [
  "log",
  "rand 0.10.2",
  "tar",
+ "tempfile",
 ]
 
 [[package]]
@@ -3418,6 +3419,7 @@ dependencies = [
  "log",
  "rand 0.10.2",
  "tar",
+ "tempfile",
 ]
 
 [[package]]
