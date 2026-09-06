@@ -1,1 +1,3 @@
+:$label="sccache proxy"
+
 context = :/images/sccache-proxy
