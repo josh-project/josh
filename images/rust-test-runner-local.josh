@@ -1,3 +1,5 @@
+:$label="rust test runner local"
+
 bases = :[
     :#BASE_IMAGE[:+images/rust-test-runner]
 ]
