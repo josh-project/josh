@@ -1,4 +1,4 @@
-use josh_compose_backend::{ArtifactBackend, ExecOpts, Executor, Runtime};
+use josh_compose_backend::{ExecOpts, Executor, Runtime};
 
 pub mod archive;
 pub mod clean;
@@ -107,7 +107,7 @@ pub fn plan_images(
     transaction: &josh_core::cache::Transaction,
     opts: RunOptions,
     ignore_cache: bool,
-    runtime: &dyn ArtifactBackend,
+    runtime: &dyn Runtime,
 ) -> anyhow::Result<Vec<gix_hash::ObjectId>> {
     josh_filter::check_experimental_features_enabled("josh compose images")?;
 
@@ -131,7 +131,7 @@ pub fn plan_jobs(
     transaction: &josh_core::cache::Transaction,
     opts: RunOptions,
     ignore_cache: bool,
-    runtime: &dyn ArtifactBackend,
+    runtime: &dyn Runtime,
 ) -> anyhow::Result<Vec<gix_hash::ObjectId>> {
     josh_filter::check_experimental_features_enabled("josh compose jobs")?;
 

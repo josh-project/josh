@@ -67,9 +67,9 @@ josh compose graph HEAD :+ws/test
 ```
 
 `josh compose graph` accepts the same reference and filter arguments as `run` and prints D2 source
-to standard output. The graph includes workspace inputs, images, image bases, and sidecars;
-dependency edges point toward the steps that consume them. Pipe the output to a `.d2` file or a D2
-renderer if rendered output is needed.
+to standard output. The graph includes workspace inputs, images, image bases, image artifact inputs,
+and sidecars; dependency edges point toward the steps that consume them. Pipe the output to a `.d2`
+file or a D2 renderer if rendered output is needed.
 
 ## Syntax
 
@@ -251,6 +251,31 @@ This workspace:
 - Injects the `JOSH_VERSION` environment variable from the `VERSION_STRING` file.
 - Places `ws/build-rust.sh` into the container as `run.sh` (the entrypoint).
 - Includes only the source trees needed to compile.
+
+## Using job outputs in image builds
+
+An image definition can declare normal workspaces as named `inputs`:
+
+```
+inputs = :[
+    :#josh-binaries[:+ws/build-rust]
+]
+
+context = :/images/run
+```
+
+Each input workspace must produce an output artifact. Its `/out` directory is exposed to the
+Dockerfile as a named build context:
+
+```dockerfile
+# syntax=docker/dockerfile:1
+FROM alpine
+COPY --from=josh-binaries /josh /usr/local/bin/josh
+```
+
+Here `/josh` refers to `/out/josh` from `ws/build-rust`. Named contexts also work with
+`RUN --mount=from=josh-binaries,...`. Input jobs run only when the image needs building; an existing
+image does not require their output artifacts to remain locally available.
 
 ## Creating a new workspace
 

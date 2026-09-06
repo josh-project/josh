@@ -2,7 +2,7 @@
 //! backend one job at a time, in dependency order. The [`Executor`] strategy
 //! contract itself lives in `josh-compose-backend`.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::Path;
 
 use josh_compose_backend::{
@@ -15,6 +15,7 @@ use josh_core::memodb;
 use crate::image;
 use crate::job_cache;
 use crate::naming;
+use crate::plan;
 
 const SIDECAR_IP_PLACEHOLDER: &str = "{SIDECAR_IP}";
 
@@ -34,9 +35,13 @@ impl Executor for SequentialExecutor {
         opts: &ExecOpts,
     ) -> anyhow::Result<()> {
         let odb = transaction.odb();
+        let scheduled = scheduled_jobs(transaction, graph, runtime)?;
         let mut failed: HashMap<gix_hash::ObjectId, String> = HashMap::new();
         let mut pending = job_cache::PendingResults::default();
         for job in graph.jobs() {
+            if !scheduled.contains(&job.ws_tree) {
+                continue;
+            }
             if let Err(e) = run_job(
                 transaction,
                 odb,
@@ -65,6 +70,68 @@ impl Executor for SequentialExecutor {
         }
         Ok(())
     }
+}
+
+/// Select jobs reachable through cache-missing jobs and images. A cached image
+/// cuts off its artifact-producing input jobs just as a cached job cuts off its
+/// ordinary inputs.
+fn scheduled_jobs(
+    transaction: &cache::Transaction,
+    graph: &Graph,
+    runtime: &dyn Runtime,
+) -> anyhow::Result<HashSet<gix_hash::ObjectId>> {
+    let mut scheduled = HashSet::new();
+    let mut visited_images = HashSet::new();
+    let mut stack = vec![graph.root().ws_tree];
+
+    while let Some(ws_tree) = stack.pop() {
+        if !scheduled.insert(ws_tree) {
+            continue;
+        }
+        let job = graph
+            .job(ws_tree)
+            .expect("scheduled jobs are present in the graph");
+        if plan::workspace_is_skippable(transaction, job, runtime)? {
+            continue;
+        }
+
+        stack.extend(job.inputs.iter().map(|(_, input_oid)| *input_oid));
+        if let Some(image_oid) = job.meta.image {
+            schedule_image_inputs(graph, image_oid, runtime, &mut visited_images, &mut stack)?;
+        }
+        for sidecar in &job.meta.sidecars {
+            schedule_image_inputs(
+                graph,
+                sidecar.image,
+                runtime,
+                &mut visited_images,
+                &mut stack,
+            )?;
+        }
+    }
+
+    Ok(scheduled)
+}
+
+fn schedule_image_inputs(
+    graph: &Graph,
+    image_oid: gix_hash::ObjectId,
+    runtime: &dyn Runtime,
+    visited: &mut HashSet<gix_hash::ObjectId>,
+    jobs: &mut Vec<gix_hash::ObjectId>,
+) -> anyhow::Result<()> {
+    if !visited.insert(image_oid) || runtime.env_exists(&naming::env(image_oid))? {
+        return Ok(());
+    }
+
+    let image = graph
+        .image(image_oid)
+        .expect("scheduled images are present in the graph");
+    for (_, base_oid) in &image.bases {
+        schedule_image_inputs(graph, *base_oid, runtime, visited, jobs)?;
+    }
+    jobs.extend(image.inputs.iter().map(|(_, input_oid)| *input_oid));
+    Ok(())
 }
 
 /// Resolve passthrough env names by looking each up in the outer process environment.
@@ -102,9 +169,10 @@ fn start_sidecar(
     odb: &memodb::Odb,
     graph: &Graph,
     spec: &SidecarSpec,
+    failed: &HashMap<gix_hash::ObjectId, String>,
     runtime: &dyn Runtime,
 ) -> anyhow::Result<SidecarHandle> {
-    let env_key = image::ensure_image(transaction, odb, graph, spec.image, runtime)?;
+    let env_key = image::ensure_image(transaction, odb, graph, spec.image, failed, runtime)?;
 
     let passthrough_env = resolve_passthrough(&spec.name, &spec.passthrough)?;
 
@@ -199,7 +267,7 @@ fn run_job(
     };
 
     // Resolve the environment (cache-or-build).
-    let image_name = image::ensure_image(transaction, odb, graph, image_oid, runtime)?;
+    let image_name = image::ensure_image(transaction, odb, graph, image_oid, failed, runtime)?;
 
     let mut cache_volume: Option<String> = None;
     if let Some(cache_name) = &workspace_meta.cache {
@@ -217,7 +285,7 @@ fn run_job(
     let mut started_sidecars: Vec<SidecarHandle> = vec![];
     if !workspace_meta.sidecars.is_empty() {
         for spec in &workspace_meta.sidecars {
-            match start_sidecar(transaction, odb, graph, spec, runtime) {
+            match start_sidecar(transaction, odb, graph, spec, failed, runtime) {
                 Ok(handle) => {
                     for (k, v) in &spec.inject {
                         env_vars.push((
@@ -322,4 +390,249 @@ fn run_job(
 
     eprintln!("[{}] SUCCESS", workspace_meta.label);
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::Arc;
+
+    use josh_compose_backend::{
+        ArtifactBackend, EnvRecipe, EnvironmentBackend, ExecutionBackend, RunOutput, StorageStatus,
+    };
+    use josh_core::filter::tree;
+    use parking_lot::Mutex;
+
+    use super::*;
+
+    #[derive(Default)]
+    struct FakeRuntime {
+        artifacts: Mutex<HashSet<String>>,
+        envs: Mutex<HashSet<String>>,
+        builds: Mutex<Vec<(String, EnvRecipe)>>,
+        runs: Mutex<usize>,
+    }
+
+    impl EnvironmentBackend for FakeRuntime {
+        fn env_exists(&self, key: &str) -> anyhow::Result<bool> {
+            Ok(self.envs.lock().contains(key))
+        }
+
+        fn prepare_env(&self, key: &str, recipe: EnvRecipe) -> anyhow::Result<()> {
+            self.envs.lock().insert(key.to_string());
+            self.builds.lock().push((key.to_string(), recipe));
+            Ok(())
+        }
+
+        fn list_envs(&self, prefix: &str) -> anyhow::Result<Vec<String>> {
+            Ok(self
+                .envs
+                .lock()
+                .iter()
+                .filter(|name| name.starts_with(prefix))
+                .cloned()
+                .collect())
+        }
+
+        fn remove_env(&self, key: &str) -> anyhow::Result<()> {
+            self.envs.lock().remove(key);
+            Ok(())
+        }
+    }
+
+    impl ArtifactBackend for FakeRuntime {
+        fn artifact_exists(&self, name: &str) -> anyhow::Result<bool> {
+            Ok(self.artifacts.lock().contains(name))
+        }
+
+        fn create_artifact(&self, name: &str) -> anyhow::Result<()> {
+            self.artifacts.lock().insert(name.to_string());
+            Ok(())
+        }
+
+        fn import_artifact(&self, name: &str, _tar: &[u8]) -> anyhow::Result<()> {
+            self.artifacts.lock().insert(name.to_string());
+            Ok(())
+        }
+
+        fn export_artifact(&self, _name: &str) -> anyhow::Result<Vec<u8>> {
+            Ok(Vec::new())
+        }
+
+        fn extract_artifact(&self, _name: &str, _dest: &std::path::Path) -> anyhow::Result<()> {
+            Ok(())
+        }
+
+        fn remove_artifact(&self, name: &str, _force: bool) -> anyhow::Result<()> {
+            self.artifacts.lock().remove(name);
+            Ok(())
+        }
+
+        fn list_artifacts(&self, prefix: &str) -> anyhow::Result<Vec<String>> {
+            Ok(self
+                .artifacts
+                .lock()
+                .iter()
+                .filter(|name| name.starts_with(prefix))
+                .cloned()
+                .collect())
+        }
+
+        fn storage_status(&self) -> anyhow::Result<Option<StorageStatus>> {
+            Ok(None)
+        }
+
+        fn create_scratch_artifact(&self, _tar: &[u8]) -> anyhow::Result<String> {
+            let name = format!("scratch-{}", self.artifacts.lock().len());
+            self.artifacts.lock().insert(name.clone());
+            Ok(name)
+        }
+    }
+
+    impl ExecutionBackend for FakeRuntime {
+        fn run(&self, args: RunArgs) -> anyhow::Result<RunOutput> {
+            *self.runs.lock() += 1;
+            for mount in args.mounts {
+                if mount.path == "/out" {
+                    self.artifacts.lock().insert(mount.artifact);
+                }
+            }
+            Ok(RunOutput {
+                exit_code: 0,
+                stdout: Vec::new(),
+                stderr: Vec::new(),
+            })
+        }
+
+        fn start_sidecar(&self, _args: SidecarArgs) -> anyhow::Result<SidecarHandle> {
+            anyhow::bail!("sidecars are not used by these tests")
+        }
+
+        fn stop_sidecar(&self, _handle: &SidecarHandle) -> anyhow::Result<()> {
+            Ok(())
+        }
+    }
+
+    fn insert_blob(
+        odb: &memodb::Odb,
+        root: gix_hash::ObjectId,
+        path: &str,
+        contents: &[u8],
+    ) -> gix_hash::ObjectId {
+        let blob = josh_core::objects::write_blob(odb, contents).unwrap();
+        tree::insert_oid(odb, root, Path::new(path), blob, 0o100644).unwrap()
+    }
+
+    fn image(odb: &memodb::Odb, dockerfile: &[u8]) -> gix_hash::ObjectId {
+        let context = insert_blob(odb, tree::empty_id(), "Dockerfile", dockerfile);
+        tree::insert_oid(
+            odb,
+            tree::empty_id(),
+            Path::new("context"),
+            context,
+            0o040000,
+        )
+        .unwrap()
+    }
+
+    fn job(odb: &memodb::Odb, label: &[u8], image: gix_hash::ObjectId) -> gix_hash::ObjectId {
+        let worktree = insert_blob(odb, tree::empty_id(), "run.sh", b"true");
+        let root = insert_blob(odb, tree::empty_id(), "label", label);
+        let root = tree::insert_oid(odb, root, Path::new("image"), image, 0o160000).unwrap();
+        tree::insert_oid(odb, root, Path::new("worktree"), worktree, 0o040000).unwrap()
+    }
+
+    fn graph_with_image_input(
+        transaction: &cache::Transaction,
+    ) -> (
+        Graph,
+        gix_hash::ObjectId,
+        gix_hash::ObjectId,
+        gix_hash::ObjectId,
+    ) {
+        let odb = transaction.odb();
+        let producer_image = image(odb, b"FROM scratch\n");
+        let producer = job(odb, b"producer", producer_image);
+
+        let input_tree = tree::insert_oid(
+            odb,
+            tree::empty_id(),
+            Path::new("binary"),
+            producer,
+            0o160000,
+        )
+        .unwrap();
+        let consumer_image = tree::insert_oid(
+            odb,
+            image(odb, b"FROM scratch\nCOPY --from=binary /app /app\n"),
+            Path::new("inputs"),
+            input_tree,
+            0o040000,
+        )
+        .unwrap();
+        let root = job(odb, b"consumer", consumer_image);
+        (
+            josh_compose_graph::load_graph(transaction, odb, root).unwrap(),
+            producer,
+            producer_image,
+            consumer_image,
+        )
+    }
+
+    #[test]
+    fn builds_image_from_normal_job_output() {
+        let dir = tempfile::tempdir().unwrap();
+        gix::init_bare(dir.path()).unwrap();
+        let context =
+            cache::TransactionContext::new(dir.path(), Arc::new(cache::CacheStack::new()));
+        let transaction = context.open().unwrap();
+        let (graph, producer, _, consumer_image) = graph_with_image_input(&transaction);
+        let runtime = FakeRuntime::default();
+
+        SequentialExecutor
+            .execute(
+                &transaction,
+                &graph,
+                &runtime,
+                &ExecOpts {
+                    extract_to_workdir: false,
+                },
+            )
+            .unwrap();
+
+        assert_eq!(*runtime.runs.lock(), 2);
+        let builds = runtime.builds.lock();
+        let (_, recipe) = builds
+            .iter()
+            .find(|(name, _)| name == &naming::env(consumer_image))
+            .unwrap();
+        assert_eq!(recipe.build_contexts.len(), 1);
+        assert_eq!(recipe.build_contexts[0].name, "binary");
+        assert_eq!(recipe.build_contexts[0].artifact, naming::output(producer));
+    }
+
+    #[test]
+    fn cached_image_prunes_its_producer_job() {
+        let dir = tempfile::tempdir().unwrap();
+        gix::init_bare(dir.path()).unwrap();
+        let context =
+            cache::TransactionContext::new(dir.path(), Arc::new(cache::CacheStack::new()));
+        let transaction = context.open().unwrap();
+        let (graph, _, _, consumer_image) = graph_with_image_input(&transaction);
+        let runtime = FakeRuntime::default();
+        runtime.envs.lock().insert(naming::env(consumer_image));
+
+        SequentialExecutor
+            .execute(
+                &transaction,
+                &graph,
+                &runtime,
+                &ExecOpts {
+                    extract_to_workdir: false,
+                },
+            )
+            .unwrap();
+
+        assert_eq!(*runtime.runs.lock(), 1);
+        assert!(runtime.builds.lock().is_empty());
+    }
 }
