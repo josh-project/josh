@@ -76,13 +76,6 @@ fn filter_methods(builder: &mut MethodsBuilder) {
     fn stored(this: &StarlarkFilter, path: StringValue) -> anyhow::Result<StarlarkFilter> {
         Ok(this.stored(path))
     }
-    fn starlark(
-        this: &StarlarkFilter,
-        path: StringValue,
-        subfilter: &StarlarkFilter,
-    ) -> anyhow::Result<StarlarkFilter> {
-        this.starlark(path, *subfilter)
-    }
     fn pattern(this: &StarlarkFilter, pattern: StringValue) -> anyhow::Result<StarlarkFilter> {
         this.pattern(pattern)
     }
@@ -220,20 +213,6 @@ impl StarlarkFilter {
         StarlarkFilter {
             filter: self.filter.stored(PathBuf::from(path.as_str())),
         }
-    }
-
-    /// Starlark filter (evaluate a .star file). Path gets .star extension.
-    /// The subfilter is applied to the input tree to get the tree passed to the script.
-    pub fn starlark(
-        &self,
-        path: StringValue,
-        subfilter: StarlarkFilter,
-    ) -> anyhow::Result<StarlarkFilter> {
-        Ok(StarlarkFilter {
-            filter: self
-                .filter
-                .starlark(PathBuf::from(path.as_str()), subfilter.filter)?,
-        })
     }
 
     /// Pattern filter

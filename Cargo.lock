@@ -3452,8 +3452,8 @@ dependencies = [
  "josh-gix-ext",
  "josh-memodb",
  "josh-search",
- "josh-starlark",
  "josh-test-support",
+ "josh-wasm",
  "log",
  "percent-encoding",
  "pest",
@@ -3519,6 +3519,7 @@ dependencies = [
  "regex",
  "serde_json",
  "smallvec",
+ "tempfile",
 ]
 
 [[package]]
