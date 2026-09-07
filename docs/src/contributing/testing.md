@@ -14,7 +14,7 @@ cargo test --all
 
 ### 1. Setup the test environment
 Due to the fact that the integration tests need additional tools and a more complex
-environment and due to the fact that the integration test are done using [scrut](https://github.com/facebookincubator/scrut)
+environment and due to the fact that the integration test are done using [scrut](https://github.com/vlad-ivanov-name/scrut/tree/fix-cram-compat-update)
 (with cram-style `.t` test files), you will need to crate an extra environment to run these tests. To simplify the
 setup of the integration testing we have set up a [Nix Shell](https://nixos.org/manual/nix/stable/#chap-installation) environment which
 you can start by using the following command if you have installed the [Nix Shell](https://nixos.org/manual/nix/stable/#chap-installation).

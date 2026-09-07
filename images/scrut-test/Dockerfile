@@ -15,30 +15,13 @@ RUN apk add --no-cache \
 
 RUN cargo install --verbose --version 0.14.0 graphql_client_cli
 
-# Update check: https://github.com/facebookincubator/scrut/releases
-ARG SCRUT_VERSION=0.4.3
-# sha1 of scrut-v${SCRUT_VERSION}-linux-x86_64.tar.gz from the GitHub release
-ARG SCRUT_SHA1=e3048b47f9bc4a6ec2d14ff9b5b05befe679521c
-ARG TARGETARCH
-RUN <<EOF
-set -eux
-
-# Install to /usr/local/cargo/bin so the "COPY --from=graphql-builder" in the
-# final stage below works unchanged.
-if [ "$TARGETARCH" = amd64 ]; then
-    tarball=scrut-v${SCRUT_VERSION}-linux-x86_64.tar.gz
-    curl -fsSL -o /tmp/${tarball} \
-        https://github.com/facebookincubator/scrut/releases/download/v${SCRUT_VERSION}/${tarball}
-    echo "${SCRUT_SHA1}  /tmp/${tarball}" | sha1sum -c -
-    tar -xzf /tmp/${tarball} -C /tmp
-    install -m 0755 /tmp/scrut-linux-x86_64/scrut /usr/local/cargo/bin/scrut
-    rm -rf /tmp/${tarball} /tmp/scrut-linux-x86_64
-else
-    # The upstream aarch64 release tarball is mis-packaged (it contains
-    # an x86-64 binary), so build from source on other architectures.
-    cargo install --verbose --version ${SCRUT_VERSION} scrut
-fi
-EOF
+# Update check: https://github.com/vlad-ivanov-name/scrut/tree/fix-cram-compat-update
+ARG SCRUT_REPOSITORY=https://github.com/vlad-ivanov-name/scrut
+ARG SCRUT_BRANCH=fix-cram-compat-update
+RUN cargo install --verbose \
+    --git ${SCRUT_REPOSITORY} \
+    --branch ${SCRUT_BRANCH} \
+    scrut
 
 FROM alpine:${ALPINE_VERSION}
 

@@ -35,10 +35,10 @@ in
       echo "Rust version: $(rustc --version)"
       echo "Cargo version: $(cargo --version)"
 
-      # Install scrut using cargo with specific version
+      # Install scrut from the fork that preserves cram files during updates
       if ! command -v scrut &> /dev/null; then
         echo "Installing scrut..."
-        cargo install --version 0.4.3 scrut
+        cargo install --git https://github.com/vlad-ivanov-name/scrut --branch fix-cram-compat-update scrut
       fi
 
       echo "Scrut version: $(scrut --version 2>/dev/null || echo 'Installing...')"
