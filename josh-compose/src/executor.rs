@@ -3,6 +3,7 @@
 //! contract itself lives in `josh-compose-backend`.
 
 use std::collections::{HashMap, HashSet};
+use std::io::Write;
 use std::path::Path;
 
 use josh_compose_backend::{
@@ -215,6 +216,11 @@ fn run_job(
     if job_cache::is_cached_success(transaction, job.ws_tree)?
         && (workspace_meta.output == OutputMode::None || runtime.artifact_exists(&out_vol)?)
     {
+        let cached_stdout = if job.ws_tree == graph.root().ws_tree {
+            Some(job_cache::read_cached_stdout(transaction, job.ws_tree)?)
+        } else {
+            None
+        };
         if workspace_meta.output != OutputMode::None {
             pending.touch(job.ws_tree);
         }
@@ -222,6 +228,11 @@ fn run_job(
             "[{}] Using cached output ({})",
             workspace_meta.label, job.ws_tree
         );
+        if let Some(cached_stdout) = cached_stdout {
+            let mut stdout = std::io::stdout().lock();
+            stdout.write_all(&cached_stdout)?;
+            stdout.flush()?;
+        }
         return Ok(());
     }
 
