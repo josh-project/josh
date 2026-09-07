@@ -215,6 +215,34 @@ pub fn is_cached_success(
     )?
     .is_some_and(|entry| entry.mode.is_tree()))
 }
+pub(crate) fn read_cached_stdout(
+    transaction: &Transaction,
+    hash: gix_hash::ObjectId,
+) -> anyhow::Result<Vec<u8>> {
+    let tip = transaction
+        .resolve_ref(REF_NAME)?
+        .context("cached compose result ref is missing")?;
+    let root = objects::CommitData::read(transaction.odb(), tip)?.tree_id()?;
+    let result = tree::get_path_entry(
+        transaction,
+        transaction.odb(),
+        root,
+        &result_path("success", hash),
+    )?
+    .filter(|entry| entry.mode.is_tree())
+    .with_context(|| format!("cached compose result is missing for {hash}"))?;
+    let stdout = tree::get_path_entry(
+        transaction,
+        transaction.odb(),
+        result.oid,
+        Path::new("stdout"),
+    )?
+    .filter(|entry| entry.mode.is_blob())
+    .with_context(|| format!("cached stdout is missing for {hash}"))?;
+    let bytes = tree::blob_bytes(transaction.odb(), stdout.oid)
+        .with_context(|| format!("cached stdout blob is missing for {hash}"))?;
+    Ok(bytes.to_vec())
+}
 fn fetch_remote_ref(
     transaction: &Transaction,
     remote: &str,
@@ -483,6 +511,10 @@ mod tests {
             .unwrap();
         let stdout_bytes = tree::blob_bytes(transaction.odb(), stdout.oid).unwrap();
         assert_eq!(&*stdout_bytes, b"passed\xff");
+        assert_eq!(
+            read_cached_stdout(&transaction, hash).unwrap(),
+            b"passed\xff"
+        );
 
         commit_result(&transaction, hash, true, b"passed\xff", b"warning");
         let refreshed = transaction.resolve_ref(REF_NAME).unwrap().unwrap();
