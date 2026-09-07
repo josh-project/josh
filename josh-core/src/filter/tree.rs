@@ -1288,6 +1288,88 @@ mod tests {
         ctx.open().unwrap()
     }
 
+    #[test]
+    fn pathstree_rebuilds_missing_cached_tree() {
+        let td = tempfile::tempdir().unwrap();
+        let repo = gix::init_bare(td.path()).unwrap();
+        let input = make_tree(&repo, &["paths-recovery/file.txt"]);
+        let transaction = open_transaction(&td);
+        let missing = objects::hash_blob(b"missing paths tree");
+        transaction.insert_paths((input, String::new()), missing);
+        let rebuilt = pathstree("", input, &transaction).unwrap();
+        assert_ne!(rebuilt, missing);
+        assert_eq!(transaction.get_paths((input, String::new())), Some(rebuilt));
+        assert!(
+            get_path_entry(
+                &transaction,
+                transaction.odb(),
+                rebuilt,
+                Path::new("paths-recovery/file.txt")
+            )
+            .unwrap()
+            .is_some()
+        );
+    }
+
+    #[test]
+    fn invert_paths_rebuilds_missing_cached_tree() {
+        let td = tempfile::tempdir().unwrap();
+        let repo = gix::init_bare(td.path()).unwrap();
+        let input = make_tree(&repo, &["invert-recovery/file.txt"]);
+        let transaction = open_transaction(&td);
+        let projected = pathstree("", input, &transaction).unwrap();
+        let missing = objects::hash_blob(b"missing inverse tree");
+        transaction.insert_invert((projected, String::new()), missing);
+        let rebuilt = invert_paths(&transaction, transaction.odb(), "", projected).unwrap();
+        assert_ne!(rebuilt, missing);
+        assert_eq!(
+            transaction.get_invert((projected, String::new())),
+            Some(rebuilt)
+        );
+        assert!(
+            get_path_entry(
+                &transaction,
+                transaction.odb(),
+                rebuilt,
+                Path::new("invert-recovery/file.txt")
+            )
+            .unwrap()
+            .is_some()
+        );
+    }
+
+    #[test]
+    fn remove_pred_rebuilds_missing_cached_tree() {
+        let td = tempfile::tempdir().unwrap();
+        let repo = gix::init_bare(td.path()).unwrap();
+        let input = make_tree(&repo, &["pred-recovery/file.txt"]);
+        let transaction = open_transaction(&td);
+        let key = objects::hash_blob(b"predicate recovery");
+        let root_key = objects::hash_blob(format!("glob-fallback:{:?}:", key).as_bytes());
+        let missing = objects::hash_blob(b"missing predicate tree");
+        transaction.insert_glob((input, root_key, 0), missing);
+        let rebuilt =
+            remove_pred(&transaction, &mut String::new(), input, &|_, _| true, key).unwrap();
+        assert_eq!(rebuilt, input);
+        assert_eq!(transaction.get_glob((input, root_key, 0)), Some(rebuilt));
+    }
+
+    #[test]
+    fn remove_pattern_rebuilds_missing_cached_tree() {
+        let td = tempfile::tempdir().unwrap();
+        let repo = gix::init_bare(td.path()).unwrap();
+        let input = make_tree(&repo, &["pattern-recovery/file.txt"]);
+        let transaction = open_transaction(&td);
+        let key = objects::hash_blob(b"pattern recovery");
+        let missing = objects::hash_blob(b"missing pattern tree");
+        let pattern = CompiledPattern::compile("**/*.txt").unwrap();
+        let state = pattern.closure(CompiledPattern::initial_state());
+        transaction.insert_glob((input, key, state), missing);
+        let rebuilt = remove_pattern(&transaction, input, &pattern, key, state).unwrap();
+        assert_eq!(rebuilt, input);
+        assert_eq!(transaction.get_glob((input, key, state)), Some(rebuilt));
+    }
+
     // A gitlink (submodule) entry must be dropped from the rebuilt tree -- and must therefore
     // defeat the "unchanged input" fast path -- while a symlink blob accepted by the predicate
     // keeps its 0o120000 filemode.
