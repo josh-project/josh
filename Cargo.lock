@@ -3327,6 +3327,7 @@ dependencies = [
  "josh-graphql",
  "josh-search",
  "josh-templates",
+ "josh-view",
  "juniper",
  "log",
  "reqwest",
@@ -3880,6 +3881,18 @@ dependencies = [
  "tower-http 0.7.0",
  "tracing",
  "tracing-subscriber",
+]
+
+[[package]]
+name = "josh-view"
+version = "26.8.28"
+dependencies = [
+ "anyhow",
+ "gix",
+ "gix-hash",
+ "josh-core",
+ "josh-filter",
+ "tempfile",
 ]
 
 [[package]]
