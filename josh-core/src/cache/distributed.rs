@@ -207,8 +207,9 @@ impl DistributedCacheBackend {
 // is used in addition to the sparse cache.
 // The sparse cache is mostly only used for initial "cold starts" or longer "catch up".
 // For incremental filtering it's fine re-filter commits and rely on the local "dense" cache.
-// Only the sample points are persisted; see `HistoryGraphHint::is_sample_point` for the
+// Ordinary writes persist only sample points; see `HistoryGraphHint::is_sample_point` for the
 // invariant that bounds how far a walk runs before it hits one.
+// Explicitly requested endpoints can also be persisted and reused during history traversal.
 //
 // To additionally limit the size of the trees the cache is also sharded by sequence
 // number in groups of 10000. Note that this does not limit the number of entries per bucket
@@ -236,17 +237,12 @@ impl CacheBackend for DistributedCacheBackend {
         filter: Filter,
         from: gix_hash::ObjectId,
         hint: HistoryGraphHint,
-        tree_keyed: bool,
+        _tree_keyed: bool,
     ) -> anyhow::Result<Option<gix_hash::ObjectId>> {
         if filter == filter::sequence_number() || filter == filter::reachable_roots() {
             return Ok(None);
         }
-        // Tree-keyed records were written by whichever indexing commit was eligible,
-        // so gating reads on the reader's eligibility would hide them from the
-        // (usually non-sampled) commits that reuse them.
-        if !tree_keyed && !hint.is_sample_point() {
-            return Ok(None);
-        }
+        // Reads also honor forced endpoints and tree-keyed records from sampled commits.
         let repo = self.repo.to_thread_local();
 
         let guard = self.new_entries.lock().unwrap();
@@ -308,6 +304,20 @@ impl CacheBackend for DistributedCacheBackend {
         hint: HistoryGraphHint,
         // Writes stay eligibility-gated for tree-keyed records too: subtrees recur
         // across commits, so a stable subtree is still caught at some sampled commit.
+        tree_keyed: bool,
+    ) -> anyhow::Result<()> {
+        if !hint.is_sample_point() {
+            return Ok(());
+        }
+        self.write_forced(filter, from, to, hint, tree_keyed)
+    }
+
+    fn write_forced(
+        &self,
+        filter: Filter,
+        from: gix_hash::ObjectId,
+        to: gix_hash::ObjectId,
+        hint: HistoryGraphHint,
         _tree_keyed: bool,
     ) -> anyhow::Result<()> {
         if !self.writable {
@@ -316,10 +326,6 @@ impl CacheBackend for DistributedCacheBackend {
         if filter == filter::sequence_number() || filter == filter::reachable_roots() {
             return Ok(());
         }
-        if !hint.is_sample_point() {
-            return Ok(());
-        }
-
         let shard = hint.sequence_number / 10000;
 
         let mut guard = self.new_entries.lock().unwrap();
@@ -337,5 +343,62 @@ impl CacheBackend for DistributedCacheBackend {
         self.flush(false)?;
 
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn unsampled_hint() -> HistoryGraphHint {
+        HistoryGraphHint {
+            sequence_number: 1,
+            parent_count: 1,
+            jump_delta: 1,
+            jump_is_second: false,
+        }
+    }
+
+    #[test]
+    fn forced_entries_bypass_sparse_eligibility() {
+        for to in [
+            objects::hash_blob(b"filtered"),
+            gix_hash::ObjectId::null(gix_hash::Kind::Sha1),
+        ] {
+            let directory = tempfile::tempdir().unwrap();
+            gix::init_bare(directory.path()).unwrap();
+            let filter = Filter::new().subdir("selected");
+            let from = objects::hash_blob(b"source");
+            let hint = unsampled_hint();
+            let backend = DistributedCacheBackend::writable(directory.path()).unwrap();
+
+            backend.write(filter, from, to, hint, false).unwrap();
+            assert_eq!(backend.read(filter, from, hint, false).unwrap(), None);
+            backend.write_forced(filter, from, to, hint, false).unwrap();
+            assert_eq!(backend.read(filter, from, hint, false).unwrap(), Some(to));
+            backend.flush(true).unwrap();
+
+            let reader = DistributedCacheBackend::new(directory.path()).unwrap();
+            assert_eq!(reader.read(filter, from, hint, false).unwrap(), Some(to));
+        }
+    }
+
+    #[test]
+    fn forced_writes_preserve_read_only_mode_and_internal_filters() {
+        let directory = tempfile::tempdir().unwrap();
+        gix::init_bare(directory.path()).unwrap();
+        let from = objects::hash_blob(b"source");
+        let to = objects::hash_blob(b"filtered");
+        let hint = unsampled_hint();
+        let reader = DistributedCacheBackend::new(directory.path()).unwrap();
+        let filter = Filter::new().subdir("selected");
+        reader.write_forced(filter, from, to, hint, false).unwrap();
+        assert!(reader.new_entries.lock().unwrap().is_empty());
+
+        let writer = DistributedCacheBackend::writable(directory.path()).unwrap();
+        for filter in [filter::sequence_number(), filter::reachable_roots()] {
+            writer.write_forced(filter, from, to, hint, false).unwrap();
+        }
+        assert!(writer.new_entries.lock().unwrap().is_empty());
     }
 }
