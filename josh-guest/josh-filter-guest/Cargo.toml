@@ -13,9 +13,11 @@ crate-type = ["rlib"]
 
 [features]
 default = ["rt"]
-# Bump allocator and aborting panic handler for pure-`no_std` guests. Must be
-# disabled for guests that link `std` (e.g. an interpreter build): `std`
-# already provides an allocator and a panic handler.
+# Bump allocator and aborting panic handler for pure-`no_std` guests,
+# installed by invoking `josh_guest_rt!()` in the guest crate. Guests that
+# link `std` (e.g. an interpreter build) must not invoke the macro and should
+# disable this feature: `std` already provides an allocator and a panic
+# handler.
 rt = []
 
 [dependencies]
