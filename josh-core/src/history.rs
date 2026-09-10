@@ -918,7 +918,10 @@ fn create_filtered_commit2(
     )?;
     // Record the freshly written commit's tree so the next commit in this walk (usually its child)
     // reads its parent's tree from the slot instead of re-parsing the commit from the odb.
-    transaction.set_last_written_commit(new_oid, new_tree_id);
+    transaction
+        .memo()
+        .last_written_commit
+        .set(Some((new_oid, new_tree_id)));
     Ok((new_oid, true))
 }
 
@@ -930,7 +933,7 @@ pub(crate) fn filtered_parent_tree_id(
     transaction: &cache::Transaction,
     oid: gix_hash::ObjectId,
 ) -> anyhow::Result<gix_hash::ObjectId> {
-    if let Some((last, tree_id)) = transaction.last_written_commit() {
+    if let Some((last, tree_id)) = transaction.memo().last_written_commit.get() {
         if last == oid {
             return Ok(tree_id);
         }
