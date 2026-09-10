@@ -75,6 +75,7 @@ gix-zlib = "0.1"
 gix-config = "0.59.0"
 libc = "0.2.189"
 regex = "1.13.1"
+quick_cache = "0.7.0"
 regex-syntax = "0.8.11"
 serde = { version = "1.0.229", features = ["std", "derive"] }
 serde_json = "1.0.151"

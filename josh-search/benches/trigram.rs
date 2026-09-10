@@ -56,6 +56,7 @@ const NEEDLE_RARE: &str = "xylophonequagmirezephyr";
 const NEEDLE_COMMON: &str = "quixoticjubileewombat";
 const NEEDLE_ABSENT: &str = "grumblesnorkelvortex";
 const NEEDLE_PUNCT: &str = "->sprocketflange(";
+const PATTERN_PUNCT: &str = r"->sprocketflange\(";
 // Numeric: digits cannot occur in the generated text (letters and spaces only), and this
 // gates that number-shaped queries keep their selectivity under the fold rules.
 const NEEDLE_NUM: &str = "0x8f3a92c471";
@@ -444,7 +445,7 @@ impl TrigramBench {
             // candidate set — the curated fold must keep punctuation-shaped queries selective.
             let punct_path = path_for(n_files / 3).to_string_lossy().into_owned();
             let (candidates, matches) =
-                search(odb, &mut scache, index_tree_oid, tip_tree, NEEDLE_PUNCT)?;
+                search(odb, &mut scache, index_tree_oid, tip_tree, PATTERN_PUNCT)?;
             anyhow::ensure!(
                 matches.len() == 1 && matches[0].0 == punct_path,
                 "punct needle not found in exactly its planted file {punct_path}: {matches:?}"
@@ -635,7 +636,7 @@ fn trigram_benches(c: &mut Criterion) {
             ("rare", NEEDLE_RARE),
             ("common", NEEDLE_COMMON),
             ("absent", NEEDLE_ABSENT),
-            ("punct", NEEDLE_PUNCT),
+            ("punct", PATTERN_PUNCT),
             ("num", NEEDLE_NUM),
             ("vowel", NEEDLE_VOWEL),
         ] {
@@ -675,7 +676,7 @@ fn trigram_benches(c: &mut Criterion) {
             ("rare", NEEDLE_RARE),
             ("common", NEEDLE_COMMON),
             ("absent", NEEDLE_ABSENT),
-            ("punct", NEEDLE_PUNCT),
+            ("punct", PATTERN_PUNCT),
             ("num", NEEDLE_NUM),
             ("vowel", NEEDLE_VOWEL),
         ] {
