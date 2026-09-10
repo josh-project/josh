@@ -1,6 +1,7 @@
 mod backend;
 pub mod distributed;
 mod history_graph;
+mod memo;
 pub mod sled;
 pub mod stack;
 mod transaction;

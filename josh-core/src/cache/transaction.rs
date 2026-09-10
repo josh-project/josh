@@ -1,5 +1,6 @@
 use super::backend::HistoryGraphHint;
 use super::history_graph::compute_history_hint;
+use super::memo::TransactionMemo;
 use super::stack::CacheStack;
 use super::tree_cache::{TreeBytes, TreeCache};
 use anyhow::anyhow;
@@ -199,32 +200,7 @@ impl TransactionContext {
 #[allow(unused)]
 struct Transaction2 {
     commit_map: HashMap<gix_hash::ObjectId, HashMap<gix_hash::ObjectId, gix_hash::ObjectId>>,
-    apply_map: HashMap<gix_hash::ObjectId, HashMap<gix_hash::ObjectId, gix_hash::ObjectId>>,
-    subtract_map: HashMap<(gix_hash::ObjectId, gix_hash::ObjectId), gix_hash::ObjectId>,
-    intersect_map: HashMap<(gix_hash::ObjectId, gix_hash::ObjectId), gix_hash::ObjectId>,
-    overlay_map: HashMap<(gix_hash::ObjectId, gix_hash::ObjectId), gix_hash::ObjectId>,
-    unapply_map: HashMap<gix_hash::ObjectId, HashMap<gix_hash::ObjectId, gix_hash::ObjectId>>,
-    legalize_map: HashMap<(crate::filter::Filter, gix_hash::ObjectId), crate::filter::Filter>,
-    downstack_deps_map:
-        HashMap<gix_hash::ObjectId, std::collections::HashSet<crate::filter::DownstackDep>>,
-    merge_trees_map:
-        HashMap<(gix_hash::ObjectId, gix_hash::ObjectId, gix_hash::ObjectId), gix_hash::ObjectId>,
-    ref_map: HashMap<gix_hash::ObjectId, HashMap<gix_hash::ObjectId, gix_hash::ObjectId>>,
-    populate_map: HashMap<(gix_hash::ObjectId, gix_hash::ObjectId), gix_hash::ObjectId>,
-    /// Keyed by (input tree, pattern key, NFA state mask). The state mask makes entries
-    /// independent of the path a subtree was reached through; the legacy full-path fallback
-    /// folds its root path into a synthetic pattern key and uses mask 0.
-    glob_map: HashMap<(gix_hash::ObjectId, gix_hash::ObjectId, u64), gix_hash::ObjectId>,
-    /// Path-projection memoization for `:PATHS` and its inverse, keyed by (input tree oid,
-    /// root path). Workspace filters walk commits parent-first, so a child commit reuses the
-    /// projections its parent computed for shared subtrees.
-    paths_map: HashMap<(gix_hash::ObjectId, String), gix_hash::ObjectId>,
-    invert_map: HashMap<(gix_hash::ObjectId, String), gix_hash::ObjectId>,
-    workspace_map: HashMap<gix_hash::ObjectId, crate::filter::Filter>,
-    ancestor_map: HashMap<gix_hash::ObjectId, std::collections::HashSet<gix_hash::ObjectId>>,
-    last_written_commit: Option<(gix_hash::ObjectId, gix_hash::ObjectId)>,
     tree_cache: TreeCache,
-
     cache: std::sync::Arc<CacheStack>,
     // In-transaction memoization of the trigram index (source tree -> index tree); the
     // cache backend behind it holds the durable, cross-transaction copy.
@@ -236,6 +212,7 @@ struct Transaction2 {
 
 pub struct Transaction {
     t2: std::cell::RefCell<Transaction2>,
+    memo: TransactionMemo,
     /// josh-search indexing state kept for the whole transaction, so indexing a chain of
     /// commits reuses the merge work of earlier commits. Its own cell because `trigram_index`
     /// borrows it for the entire call while also borrowing other caches through `t2`.
@@ -340,22 +317,6 @@ impl Transaction {
         Transaction {
             t2: std::cell::RefCell::new(Transaction2 {
                 commit_map: HashMap::new(),
-                apply_map: HashMap::new(),
-                subtract_map: HashMap::new(),
-                intersect_map: HashMap::new(),
-                overlay_map: HashMap::new(),
-                unapply_map: HashMap::new(),
-                legalize_map: HashMap::new(),
-                downstack_deps_map: HashMap::new(),
-                merge_trees_map: HashMap::new(),
-                ref_map: HashMap::new(),
-                populate_map: HashMap::new(),
-                glob_map: HashMap::new(),
-                paths_map: HashMap::new(),
-                invert_map: HashMap::new(),
-                workspace_map: HashMap::new(),
-                ancestor_map: HashMap::new(),
-                last_written_commit: None,
                 tree_cache: Default::default(),
                 cache,
                 index_map: HashMap::new(),
@@ -363,6 +324,7 @@ impl Transaction {
                 misses: 0,
                 nesting_level: 0,
             }),
+            memo: Default::default(),
             trigram_indexer: Default::default(),
             search_cache: Default::default(),
             gix_repo,
@@ -399,6 +361,10 @@ impl Transaction {
     /// fallback (see [`josh_memodb::Odb`]).
     pub fn odb(&self) -> &josh_memodb::Odb {
         &self.odb
+    }
+
+    pub(crate) fn memo(&self) -> &TransactionMemo {
+        &self.memo
     }
 
     /// Add `path` (an objects directory) as a runtime alternate: the facade reads through it
@@ -1015,206 +981,6 @@ impl Transaction {
         prev
     }
 
-    pub fn insert_apply(
-        &self,
-        filter: crate::filter::Filter,
-        from: gix_hash::ObjectId,
-        to: gix_hash::ObjectId,
-    ) {
-        let mut t2 = self.t2.borrow_mut();
-        t2.apply_map
-            .entry(filter.id())
-            .or_default()
-            .insert(from, to);
-    }
-
-    pub fn get_apply(
-        &self,
-        filter: crate::filter::Filter,
-        from: gix_hash::ObjectId,
-    ) -> Option<gix_hash::ObjectId> {
-        let t2 = self.t2.borrow_mut();
-        if let Some(m) = t2.apply_map.get(&filter.id()) {
-            return m.get(&from).cloned();
-        }
-        None
-    }
-
-    pub(crate) fn insert_downstack_deps(
-        &self,
-        oid: gix_hash::ObjectId,
-        deps: std::collections::HashSet<crate::filter::DownstackDep>,
-    ) {
-        let mut t2 = self.t2.borrow_mut();
-        t2.downstack_deps_map.insert(oid, deps);
-    }
-
-    pub(crate) fn get_downstack_deps(
-        &self,
-        oid: gix_hash::ObjectId,
-    ) -> Option<std::collections::HashSet<crate::filter::DownstackDep>> {
-        let t2 = self.t2.borrow_mut();
-        t2.downstack_deps_map.get(&oid).cloned()
-    }
-
-    pub(crate) fn insert_merge_trees(
-        &self,
-        key: (gix_hash::ObjectId, gix_hash::ObjectId, gix_hash::ObjectId),
-        result: gix_hash::ObjectId,
-    ) {
-        let mut t2 = self.t2.borrow_mut();
-        t2.merge_trees_map.insert(key, result);
-    }
-
-    pub(crate) fn get_merge_trees(
-        &self,
-        key: (gix_hash::ObjectId, gix_hash::ObjectId, gix_hash::ObjectId),
-    ) -> Option<gix_hash::ObjectId> {
-        let t2 = self.t2.borrow_mut();
-        t2.merge_trees_map.get(&key).copied()
-    }
-
-    pub fn insert_subtract(
-        &self,
-        from: (gix_hash::ObjectId, gix_hash::ObjectId),
-        to: gix_hash::ObjectId,
-    ) {
-        let mut t2 = self.t2.borrow_mut();
-        t2.subtract_map.insert(from, to);
-    }
-
-    pub fn get_subtract(
-        &self,
-        from: (gix_hash::ObjectId, gix_hash::ObjectId),
-    ) -> Option<gix_hash::ObjectId> {
-        let t2 = self.t2.borrow_mut();
-        t2.subtract_map.get(&from).cloned()
-    }
-
-    pub fn insert_intersect(
-        &self,
-        from: (gix_hash::ObjectId, gix_hash::ObjectId),
-        to: gix_hash::ObjectId,
-    ) {
-        let mut t2 = self.t2.borrow_mut();
-        t2.intersect_map.insert(from, to);
-    }
-
-    pub fn get_intersect(
-        &self,
-        from: (gix_hash::ObjectId, gix_hash::ObjectId),
-    ) -> Option<gix_hash::ObjectId> {
-        let t2 = self.t2.borrow_mut();
-        t2.intersect_map.get(&from).cloned()
-    }
-
-    pub fn insert_overlay(
-        &self,
-        from: (gix_hash::ObjectId, gix_hash::ObjectId),
-        to: gix_hash::ObjectId,
-    ) {
-        let mut t2 = self.t2.borrow_mut();
-        t2.overlay_map.insert(from, to);
-    }
-
-    pub fn get_overlay(
-        &self,
-        from: (gix_hash::ObjectId, gix_hash::ObjectId),
-    ) -> Option<gix_hash::ObjectId> {
-        let t2 = self.t2.borrow_mut();
-        t2.overlay_map.get(&from).cloned()
-    }
-
-    /// Remember the most recent commit josh wrote in this transaction as `(oid, tree_id)`. A history
-    /// walk processes a commit right after writing its parent, so this single slot answers the
-    /// common "what tree does my filtered parent have" lookup without re-parsing the parent from the
-    /// odb -- and without retaining every written commit the way a map would.
-    pub fn set_last_written_commit(&self, commit: gix_hash::ObjectId, tree: gix_hash::ObjectId) {
-        self.t2.borrow_mut().last_written_commit = Some((commit, tree));
-    }
-
-    pub fn last_written_commit(&self) -> Option<(gix_hash::ObjectId, gix_hash::ObjectId)> {
-        self.t2.borrow().last_written_commit
-    }
-
-    pub fn insert_legalize(
-        &self,
-        from: (crate::filter::Filter, gix_hash::ObjectId),
-        to: crate::filter::Filter,
-    ) {
-        let mut t2 = self.t2.borrow_mut();
-        t2.legalize_map.insert(from, to);
-    }
-
-    pub fn get_legalize(
-        &self,
-        from: (crate::filter::Filter, gix_hash::ObjectId),
-    ) -> Option<crate::filter::Filter> {
-        let t2 = self.t2.borrow_mut();
-        t2.legalize_map.get(&from).cloned()
-    }
-
-    pub fn insert_unapply(
-        &self,
-        filter: crate::filter::Filter,
-        from: gix_hash::ObjectId,
-        to: gix_hash::ObjectId,
-    ) {
-        let mut t2 = self.t2.borrow_mut();
-        t2.unapply_map
-            .entry(filter.id())
-            .or_default()
-            .insert(from, to);
-    }
-
-    pub fn insert_paths(&self, tree: (gix_hash::ObjectId, String), result: gix_hash::ObjectId) {
-        self.t2.borrow_mut().paths_map.entry(tree).or_insert(result);
-    }
-
-    pub fn get_paths(&self, tree: (gix_hash::ObjectId, String)) -> Option<gix_hash::ObjectId> {
-        self.t2.borrow().paths_map.get(&tree).copied()
-    }
-
-    pub fn insert_invert(&self, tree: (gix_hash::ObjectId, String), result: gix_hash::ObjectId) {
-        self.t2
-            .borrow_mut()
-            .invert_map
-            .entry(tree)
-            .or_insert(result);
-    }
-
-    pub fn get_invert(&self, tree: (gix_hash::ObjectId, String)) -> Option<gix_hash::ObjectId> {
-        self.t2.borrow().invert_map.get(&tree).copied()
-    }
-
-    pub(crate) fn get_workspace(&self, blob: gix_hash::ObjectId) -> Option<crate::filter::Filter> {
-        self.t2.borrow().workspace_map.get(&blob).copied()
-    }
-
-    pub(crate) fn insert_workspace(&self, blob: gix_hash::ObjectId, filter: crate::filter::Filter) {
-        self.t2.borrow_mut().workspace_map.insert(blob, filter);
-    }
-
-    pub(crate) fn get_ancestor(
-        &self,
-        tip: gix_hash::ObjectId,
-        commit: gix_hash::ObjectId,
-    ) -> Option<bool> {
-        self.t2
-            .borrow()
-            .ancestor_map
-            .get(&tip)
-            .map(|ancestors| ancestors.contains(&commit))
-    }
-
-    pub(crate) fn insert_ancestors(
-        &self,
-        tip: gix_hash::ObjectId,
-        ancestors: std::collections::HashSet<gix_hash::ObjectId>,
-    ) {
-        self.t2.borrow_mut().ancestor_map.insert(tip, ancestors);
-    }
-
     /// Cache indexes under the commit's history shard. A null ID means no commit context.
     pub fn trigram_index_cache(&self, commit: gix_hash::ObjectId) -> TrigramIndexCache<'_> {
         TrigramIndexCache {
@@ -1266,81 +1032,6 @@ impl Transaction {
         } else {
             None
         }
-    }
-
-    pub fn insert_populate(
-        &self,
-        tree: (gix_hash::ObjectId, gix_hash::ObjectId),
-        result: gix_hash::ObjectId,
-    ) {
-        self.t2
-            .borrow_mut()
-            .populate_map
-            .entry(tree)
-            .or_insert(result);
-    }
-
-    pub fn get_populate(
-        &self,
-        tree: (gix_hash::ObjectId, gix_hash::ObjectId),
-    ) -> Option<gix_hash::ObjectId> {
-        self.t2.borrow().populate_map.get(&tree).copied()
-    }
-
-    pub fn insert_glob(
-        &self,
-        tree: (gix_hash::ObjectId, gix_hash::ObjectId, u64),
-        result: gix_hash::ObjectId,
-    ) {
-        self.t2.borrow_mut().glob_map.entry(tree).or_insert(result);
-    }
-
-    pub fn get_glob(
-        &self,
-        tree: (gix_hash::ObjectId, gix_hash::ObjectId, u64),
-    ) -> Option<gix_hash::ObjectId> {
-        self.t2.borrow().glob_map.get(&tree).copied()
-    }
-
-    pub fn insert_ref(
-        &self,
-        filter: crate::filter::Filter,
-        from: gix_hash::ObjectId,
-        to: gix_hash::ObjectId,
-    ) {
-        self.t2
-            .borrow_mut()
-            .ref_map
-            .entry(filter.id())
-            .or_default()
-            .insert(from, to);
-    }
-
-    pub fn get_ref(
-        &self,
-        filter: crate::filter::Filter,
-        from: gix_hash::ObjectId,
-    ) -> Option<gix_hash::ObjectId> {
-        let oid = self
-            .t2
-            .borrow()
-            .ref_map
-            .get(&filter.id())
-            .and_then(|entries| entries.get(&from))
-            .copied()?;
-        self.odb().contains(oid).then_some(oid)
-    }
-
-    pub fn get_unapply(
-        &self,
-        filter: crate::filter::Filter,
-        from: gix_hash::ObjectId,
-    ) -> Option<gix_hash::ObjectId> {
-        let t2 = self.t2.borrow_mut();
-        if let Some(m) = t2.unapply_map.get(&filter.id()) {
-            return m.get(&from).cloned();
-        }
-        None
     }
 
     pub fn lookup_filter_hook(
@@ -1592,30 +1283,54 @@ mod tests {
         let oid = commit(&first, "cached");
         let filter = crate::filter::Filter::new();
 
-        first.insert_ref(filter, oid, oid);
-        first.insert_populate((oid, oid), oid);
-        first.insert_glob((oid, oid, 1), oid);
-        first.insert_paths((oid, "root".to_owned()), oid);
-        first.insert_invert((oid, "root".to_owned()), oid);
-        first.insert_workspace(oid, filter);
-        first.insert_ancestors(oid, std::collections::HashSet::from([oid]));
+        first.memo().references.insert(filter.id(), oid, oid);
+        first.memo().populate.insert_if_absent((oid, oid), oid);
+        first.memo().glob.insert_if_absent((oid, oid, 1), oid);
+        first
+            .memo()
+            .paths
+            .insert_if_absent((oid, "root".to_owned()), oid);
+        first
+            .memo()
+            .invert
+            .insert_if_absent((oid, "root".to_owned()), oid);
+        first.memo().workspaces.insert(oid, filter);
+        first
+            .memo()
+            .ancestors
+            .insert(oid, std::collections::HashSet::from([oid]));
 
-        assert_eq!(first.get_ref(filter, oid), Some(oid));
-        assert_eq!(first.get_populate((oid, oid)), Some(oid));
-        assert_eq!(first.get_glob((oid, oid, 1)), Some(oid));
-        assert_eq!(first.get_paths((oid, "root".to_owned())), Some(oid));
-        assert_eq!(first.get_invert((oid, "root".to_owned())), Some(oid));
-        assert_eq!(first.get_workspace(oid), Some(filter));
-        assert_eq!(first.get_ancestor(oid, oid), Some(true));
+        assert_eq!(first.memo().references.get(&filter.id(), &oid), Some(oid));
+        assert_eq!(first.memo().populate.get(&(oid, oid)), Some(oid));
+        assert_eq!(first.memo().glob.get(&(oid, oid, 1)), Some(oid));
+        assert_eq!(first.memo().paths.get(&(oid, "root".to_owned())), Some(oid));
+        assert_eq!(
+            first.memo().invert.get(&(oid, "root".to_owned())),
+            Some(oid)
+        );
+        assert_eq!(first.memo().workspaces.get(&oid), Some(filter));
+        assert_eq!(
+            first
+                .memo()
+                .ancestors
+                .get_with(&oid, |ancestors| ancestors.contains(&oid)),
+            Some(true)
+        );
 
         let second = context.open().unwrap();
-        assert_eq!(second.get_ref(filter, oid), None);
-        assert_eq!(second.get_populate((oid, oid)), None);
-        assert_eq!(second.get_glob((oid, oid, 1)), None);
-        assert_eq!(second.get_paths((oid, "root".to_owned())), None);
-        assert_eq!(second.get_invert((oid, "root".to_owned())), None);
-        assert_eq!(second.get_workspace(oid), None);
-        assert_eq!(second.get_ancestor(oid, oid), None);
+        assert_eq!(second.memo().references.get(&filter.id(), &oid), None);
+        assert_eq!(second.memo().populate.get(&(oid, oid)), None);
+        assert_eq!(second.memo().glob.get(&(oid, oid, 1)), None);
+        assert_eq!(second.memo().paths.get(&(oid, "root".to_owned())), None);
+        assert_eq!(second.memo().invert.get(&(oid, "root".to_owned())), None);
+        assert_eq!(second.memo().workspaces.get(&oid), None);
+        assert_eq!(
+            second
+                .memo()
+                .ancestors
+                .get_with(&oid, |ancestors| ancestors.contains(&oid)),
+            None
+        );
     }
 
     #[test]

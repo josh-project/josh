@@ -107,14 +107,11 @@ impl $name {
     }
 }
 
-/// Reset josh's on-disk cache to a cold state.
+/// Clear the disposable on-disk cache used by benchmarks and tests.
 ///
-/// Per-transaction in-memory caches are not cleared here: callers reset them by dropping and
-/// reopening the transaction. Filter interning and optimizer memoization are structural and
-/// independent of repository data.
-///
-/// Nuking the on-disk sled cache is safe: it is ephemeral and, when configured, backed by a
-/// remote cache. Intended for benchmarks and tests that need a cold cache between runs.
+/// Transaction-local memoization expires with its owner. Filter interning and optimizer
+/// memoization are structural and remain valid independently of repository data.
+/// A configured remote backend can repopulate the sled cache.
 pub fn reset_caches() -> anyhow::Result<()> {
     cache::sled_clear()?;
     Ok(())
@@ -130,7 +127,12 @@ pub fn filter_commit(
     // has to see the transaction's buffered objects.
     let original_commit = objects::peel_to_commit(transaction.odb(), oid)?;
 
-    let filter_commit = if let Some(s) = transaction.get_ref(filterobj, oid) {
+    let filter_commit = if let Some(s) = transaction
+        .memo()
+        .references
+        .get(&filterobj.id(), &oid)
+        .filter(|oid| transaction.odb().contains(*oid))
+    {
         s
     } else {
         tracing::trace!("apply_to_commit");
@@ -138,7 +140,10 @@ pub fn filter_commit(
         filter::apply_to_commit(filterobj, original_commit, transaction)?
     };
 
-    transaction.insert_ref(filterobj, oid, filter_commit);
+    transaction
+        .memo()
+        .references
+        .insert(filterobj.id(), oid, filter_commit);
 
     Ok(filter_commit)
 }

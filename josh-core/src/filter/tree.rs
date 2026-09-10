@@ -18,7 +18,7 @@ fn pathstree_inner(
     transaction: &cache::Transaction,
     odb: &josh_memodb::Odb,
 ) -> anyhow::Result<gix_hash::ObjectId> {
-    if let Some(cached) = transaction.get_paths((input, root.to_string())) {
+    if let Some(cached) = transaction.memo().paths.get(&(input, root.to_string())) {
         return Ok(cached);
     }
 
@@ -62,7 +62,10 @@ fn pathstree_inner(
         }
     }
     let result = objects::write_tree_now(odb, rebuild.out)?;
-    transaction.insert_paths((input, root.to_string()), result);
+    transaction
+        .memo()
+        .paths
+        .insert_if_absent((input, root.to_string()), result);
     Ok(result)
 }
 
@@ -406,8 +409,8 @@ fn insert_in_order(out: &mut Vec<gix_object::tree::Entry>, entry: gix_object::tr
 /// incoming length before returning. Gitlink (submodule) entries are always dropped.
 ///
 /// The predicate sees full paths, so the result of a subtree depends on where it sits, not only
-/// on its oid. The cache key therefore folds the current root path into a synthetic oid (the
-/// insert_invert idiom): identical subtrees at different paths get distinct entries.
+/// on its oid. The cache key therefore folds the current root path into a synthetic oid, so
+/// identical subtrees at different paths get distinct entries.
 pub fn remove_pred(
     transaction: &cache::Transaction,
     path: &mut String,
@@ -430,7 +433,7 @@ fn remove_pred_inner(
     key: gix_hash::ObjectId,
 ) -> anyhow::Result<gix_hash::ObjectId> {
     let root_key = objects::hash_blob(format!("glob-fallback:{:?}:{}", key, path).as_bytes());
-    if let Some(cached) = transaction.get_glob((input, root_key, 0)) {
+    if let Some(cached) = transaction.memo().glob.get(&(input, root_key, 0)) {
         return Ok(cached);
     }
 
@@ -478,7 +481,10 @@ fn remove_pred_inner(
     }
 
     let result = rebuild.finish(odb, input)?;
-    transaction.insert_glob((input, root_key, 0), result);
+    transaction
+        .memo()
+        .glob
+        .insert_if_absent((input, root_key, 0), result);
     Ok(result)
 }
 
@@ -516,7 +522,7 @@ fn remove_pattern_inner(
     state: u64,
 ) -> anyhow::Result<gix_hash::ObjectId> {
     let state = cp.closure(state);
-    if let Some(cached) = transaction.get_glob((input, key, state)) {
+    if let Some(cached) = transaction.memo().glob.get(&(input, key, state)) {
         return Ok(cached);
     }
 
@@ -615,7 +621,10 @@ fn remove_pattern_inner(
 
     // See remove_pred: an untouched entry set reproduces `input` bit-identically.
     let result = rebuild.finish(odb, input)?;
-    transaction.insert_glob((input, key, state), result);
+    transaction
+        .memo()
+        .glob
+        .insert_if_absent((input, key, state), result);
     Ok(result)
 }
 
@@ -642,7 +651,7 @@ fn subtract_inner(
         return Ok(empty_id());
     }
 
-    if let Some(cached) = transaction.get_subtract((input1, input2)) {
+    if let Some(cached) = transaction.memo().subtract.get(&(input1, input2)) {
         return Ok(cached);
     }
 
@@ -682,12 +691,15 @@ fn subtract_inner(
         }
         let result = objects::write_tree_now(odb, out)?;
 
-        transaction.insert_subtract((input1, input2), result);
+        transaction.memo().subtract.insert((input1, input2), result);
 
         return Ok(result);
     }
 
-    transaction.insert_subtract((input1, input2), empty_id());
+    transaction
+        .memo()
+        .subtract
+        .insert((input1, input2), empty_id());
 
     Ok(empty_id())
 }
@@ -723,7 +735,7 @@ fn intersect_inner(
         return Ok(empty_id());
     }
 
-    if let Some(cached) = transaction.get_intersect((input1, input2)) {
+    if let Some(cached) = transaction.memo().intersect.get(&(input1, input2)) {
         return Ok(cached);
     }
 
@@ -758,7 +770,10 @@ fn intersect_inner(
         input1
     };
 
-    transaction.insert_intersect((input1, input2), result);
+    transaction
+        .memo()
+        .intersect
+        .insert((input1, input2), result);
 
     Ok(result)
 }
@@ -996,7 +1011,7 @@ fn overlay_inner(
     input1: gix_hash::ObjectId,
     input2: gix_hash::ObjectId,
 ) -> anyhow::Result<gix_hash::ObjectId> {
-    if let Some(cached) = transaction.get_overlay((input1, input2)) {
+    if let Some(cached) = transaction.memo().overlay.get(&(input1, input2)) {
         return Ok(cached);
     }
     if input1 == input2 {
@@ -1043,7 +1058,7 @@ fn overlay_inner(
 
         let rid = objects::write_tree_now(odb, out)?;
 
-        transaction.insert_overlay((input1, input2), rid);
+        transaction.memo().overlay.insert((input1, input2), rid);
         return Ok(rid);
     }
 
@@ -1067,7 +1082,7 @@ pub fn invert_paths(
     root: &str,
     tree: gix_hash::ObjectId,
 ) -> anyhow::Result<gix_hash::ObjectId> {
-    if let Some(cached) = transaction.get_invert((tree, root.to_string())) {
+    if let Some(cached) = transaction.memo().invert.get(&(tree, root.to_string())) {
         return Ok(cached);
     }
 
@@ -1114,7 +1129,10 @@ pub fn invert_paths(
         }
     }
 
-    transaction.insert_invert((tree, root.to_string()), result);
+    transaction
+        .memo()
+        .invert
+        .insert_if_absent((tree, root.to_string()), result);
 
     Ok(result)
 }
@@ -1157,7 +1175,7 @@ pub fn populate(
     paths: gix_hash::ObjectId,
     content: gix_hash::ObjectId,
 ) -> anyhow::Result<gix_hash::ObjectId> {
-    if let Some(cached) = transaction.get_populate((paths, content)) {
+    if let Some(cached) = transaction.memo().populate.get(&(paths, content)) {
         return Ok(cached);
     }
 
@@ -1191,7 +1209,10 @@ pub fn populate(
         }
     }
 
-    transaction.insert_populate((paths, content), result_tree);
+    transaction
+        .memo()
+        .populate
+        .insert_if_absent((paths, content), result_tree);
 
     Ok(result_tree)
 }
@@ -1212,22 +1233,22 @@ pub fn compose(
         // since the original filter was already applied by the caller and passed via the "trees"
         // parameter.
         let f = invert(invert(*f)?)?;
-        let taken_applied = if let Some(cached) = transaction.get_apply(f, tid) {
+        let taken_applied = if let Some(cached) = transaction.memo().apply.get(&f.id(), &tid) {
             cached
         } else {
             apply(transaction, f, Rewrite::from_tree(taken))?.tree_id()
         };
-        transaction.insert_apply(f, tid, taken_applied);
+        transaction.memo().apply.insert(f.id(), tid, taken_applied);
 
         let subtracted = subtract(transaction, applied, taken_applied)?;
 
         let aid = applied;
-        let unapplied = if let Some(cached) = transaction.get_unapply(f, aid) {
+        let unapplied = if let Some(cached) = transaction.memo().unapply.get(&f.id(), &aid) {
             cached
         } else {
             apply(transaction, invert(f)?, Rewrite::from_tree(applied))?.tree_id()
         };
-        transaction.insert_unapply(f, aid, unapplied);
+        transaction.memo().unapply.insert(f.id(), aid, unapplied);
         taken = overlay(transaction, taken, unapplied)?;
         result = overlay(transaction, subtracted, result)?;
     }
@@ -1765,8 +1786,7 @@ mod tests {
         );
     }
 
-    // The remove_pred fallback keys its cache by (subtree, pattern, root path), so identical
-    // subtrees at different paths must not alias even in the legacy walk.
+    // The root path is part of the memo key so identical subtrees cannot alias here.
     #[test]
     fn remove_pred_does_not_alias_identical_subtrees() {
         let td = tempfile::tempdir().unwrap();

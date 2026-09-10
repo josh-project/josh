@@ -39,14 +39,6 @@ pub fn from_tree(
     josh_filter::persist::from_tree(transaction.odb(), tree_oid)
 }
 
-// MESSAGE_MATCH_ALL_REGEX is now in josh-filter
-
-// Filter type and builder methods are now in josh-filter
-// Note: TryFrom<String> and From<Filter> for String implementations
-// are not included here because they require parse/spec from josh-core
-// and we cannot implement external traits for external types.
-// These conversions should be done via parse() and spec() functions directly.
-
 /// A signature override for `rewrite_commit`.
 #[derive(Debug, Clone)]
 pub enum SigRewrite {
@@ -352,7 +344,6 @@ fn get_filter(
     path: &Path,
 ) -> Filter {
     let ws_path = normalize_path(path);
-    // One descent resolves the transaction cache key: the workspace.josh entry oid.
     let ws_id = match tree::get_path_entry_at(transaction, odb, reader, &ws_path) {
         Ok(Some(entry)) => entry.oid,
         _ => {
@@ -360,7 +351,7 @@ fn get_filter(
         }
     };
 
-    if let Some(f) = transaction.get_workspace(ws_id) {
+    if let Some(f) = transaction.memo().workspaces.get(&ws_id) {
         f
     } else {
         let ws_blob = tree::blob_text(odb, ws_id);
@@ -373,7 +364,7 @@ fn get_filter(
         } else {
             to_filter(Op::Empty)
         };
-        transaction.insert_workspace(ws_id, f);
+        transaction.memo().workspaces.insert(ws_id, f);
         f
     }
 }
@@ -1695,9 +1686,8 @@ fn compute_warnings2(
     warnings
 }
 
-/// Check if `commit` is an ancestor of `tip`.
-///
-/// Creates a cache for a given `tip` so repeated queries with the same `tip` are more efficient.
+/// Check whether `commit` is an ancestor of `tip`, memoizing the ancestor set because callers
+/// commonly test many commits against the same tip.
 pub fn is_ancestor_of(
     transaction: &cache::Transaction,
     commit: gix_hash::ObjectId,
@@ -1709,25 +1699,26 @@ pub fn is_ancestor_of(
         }
     }
 
-    if let Some(is_ancestor) = transaction.get_ancestor(tip, commit) {
+    if let Some(is_ancestor) = transaction
+        .memo()
+        .ancestors
+        .get_with(&tip, |ancestors| ancestors.contains(&commit))
+    {
         return Ok(is_ancestor);
     }
 
     tracing::trace!("is_ancestor_of tip={tip}");
-    // Recursively compute all ancestors of `tip`.
-    // Invariant: Everything in `todo` is also in `ancestors`.
     let mut todo = vec![tip];
     let mut ancestors = std::collections::HashSet::from_iter(todo.iter().copied());
     while let Some(commit) = todo.pop() {
         for parent in crate::git::read_parent_ids(transaction.odb(), commit)? {
             if ancestors.insert(parent) {
-                // Newly inserted! Also handle its parents.
                 todo.push(parent);
             }
         }
     }
     let is_ancestor = ancestors.contains(&commit);
-    transaction.insert_ancestors(tip, ancestors);
+    transaction.memo().ancestors.insert(tip, ancestors);
     Ok(is_ancestor)
 }
 
@@ -1774,14 +1765,12 @@ fn legalize_stored(
         return Ok(f);
     }
 
-    if let Some(f) = t.get_legalize((f, tree)) {
+    if let Some(f) = t.memo().legalize.get(&(f, tree)) {
         return Ok(f);
     }
 
-    // Put an entry into the hashtable to prevent infinite recursion.
-    // If we get called with the same arguments again before we return,
-    // Above check breaks the recursion.
-    t.insert_legalize((f, tree), Filter::new().empty());
+    // Break cycles while repository-backed filters recursively legalize one another.
+    t.memo().legalize.insert((f, tree), Filter::new().empty());
 
     let r = match to_op(f) {
         Op::Compose(f) => {
@@ -1839,7 +1828,7 @@ fn legalize_stored(
         _ => f,
     };
 
-    t.insert_legalize((f, tree), r);
+    t.memo().legalize.insert((f, tree), r);
 
     Ok(r)
 }
@@ -2207,11 +2196,11 @@ fn cached_merge_trees(
     }
 
     let key = (a, b, c);
-    if let Some(hit) = transaction.get_merge_trees(key) {
+    if let Some(hit) = transaction.memo().merge_trees.get(&key) {
         return Ok(hit);
     }
     let oid = objects::merge_trees(transaction.odb(), a, b, c)?;
-    transaction.insert_merge_trees(key, oid);
+    transaction.memo().merge_trees.insert(key, oid);
     Ok(oid)
 }
 
@@ -2237,7 +2226,7 @@ fn downstack_commit_deps(
     commit: &objects::CommitData,
 ) -> anyhow::Result<std::collections::HashSet<DownstackDep>> {
     let oid = commit.id();
-    if let Some(hit) = transaction.get_downstack_deps(oid) {
+    if let Some(hit) = transaction.memo().downstack_deps.get(&oid) {
         return Ok(hit);
     }
 
@@ -2269,7 +2258,7 @@ fn downstack_commit_deps(
         deps.insert(DownstackDep::Series(s));
     }
 
-    transaction.insert_downstack_deps(oid, deps.clone());
+    transaction.memo().downstack_deps.insert(oid, deps.clone());
     Ok(deps)
 }
 
@@ -2902,7 +2891,7 @@ mod tests {
         .unwrap()
         .unwrap()
         .oid;
-        assert!(transaction.get_workspace(blob).is_none());
+        assert!(transaction.memo().workspaces.get(&blob).is_none());
 
         let resolver = FixedResolver(build_tree(&repo, &[("selected", "baseline")]));
         let parser = |spec: &str| josh_filter::parse_with_resolver(spec, &resolver);
@@ -2916,7 +2905,7 @@ mod tests {
         let error = format!("{error:#}");
         assert!(error.contains("defs/context-only.josh"));
         assert!(error.contains("undefined revision variable `missing`"));
-        assert!(transaction.get_workspace(blob).is_none());
+        assert!(transaction.memo().workspaces.get(&blob).is_none());
     }
 
     #[test]
