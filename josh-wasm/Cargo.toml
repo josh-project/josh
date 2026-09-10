@@ -14,7 +14,12 @@ wasmi = "1.1"
 wat = "1"
 
 anyhow.workspace = true
-git2 = "0.20"
+gix-hash.workspace = true
+gix-object.workspace = true
+parking_lot.workspace = true
+gix.workspace = true
 tracing.workspace = true
 
 josh-filter.workspace = true
+josh-memodb.workspace = true
+josh-gix-ext.workspace = true

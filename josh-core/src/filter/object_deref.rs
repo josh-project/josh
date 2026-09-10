@@ -13,7 +13,7 @@ fn legalize_object_derefs(filter: Filter) -> Filter {
         Op::Exclude(filter) => Op::Exclude(legalize_object_derefs(filter)),
         Op::Select(filter) => Op::Select(legalize_object_derefs(filter)),
         Op::Pin(filter) => Op::Pin(legalize_object_derefs(filter)),
-        Op::Starlark(path, filter) => Op::Starlark(path, legalize_object_derefs(filter)),
+        Op::Wasm(path, args, filter) => Op::Wasm(path, args, legalize_object_derefs(filter)),
         Op::TreeId(path, filter) => Op::TreeId(path, legalize_object_derefs(filter)),
         Op::Unapply(target, filter) => Op::Unapply(target, legalize_object_derefs(filter)),
         Op::Rev(filters) => Op::Rev(

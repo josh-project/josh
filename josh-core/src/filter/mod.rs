@@ -391,7 +391,7 @@ pub(crate) fn contains_wasm(filter: Filter) -> bool {
         | Op::Unapply(_, f) => contains_wasm(*f),
         Op::Compose(filters) | Op::Chain(filters) => filters.iter().any(|f| contains_wasm(*f)),
         Op::Subtract(a, b) => contains_wasm(*a) || contains_wasm(*b),
-        Op::Rev(filters) => filters.iter().any(|(_, _, f)| contains_wasm(*f)),
+        Op::Rev(filters) => filters.iter().any(|(_, f)| contains_wasm(*f)),
         _ => false,
     };
     CONTAINS_WASM.lock().unwrap().insert(filter, r);
@@ -433,13 +433,13 @@ fn get_wasm(
     // The module blob is resolved from the INPUT tree at this op's position in
     // the pipeline; a missing blob is an evaluation error (-> Empty), not a nop.
     let module_oid = match tree::get_path_entry_at(transaction, odb, reader, &module_path) {
-        Ok(Some(entry)) if entry.mode.is_blob() => objects::git2_oid(&entry.oid),
+        Ok(Some(entry)) if entry.mode.is_blob() => entry.oid,
         _ => {
             tracing::trace!("wasm module not found: {:?}", module_path);
             return to_filter(Op::Empty);
         }
     };
-    match josh_wasm::evaluate(transaction.git2_repo(), module_oid, args, filtered_tree) {
+    match josh_wasm::evaluate(odb, module_oid, args, filtered_tree) {
         // The module blob is NOT forced into the output; it is only present if
         // the context subfilter (or the returned filter) selects it.
         Ok(f) => compose(&[subfilter, f]),
@@ -490,7 +490,7 @@ fn get_filter(
 
 fn needs_repository_resolution(filter: Filter) -> bool {
     match to_op(filter) {
-        Op::Workspace(_) | Op::Stored(_) | Op::Starlark(_, _) => true,
+        Op::Workspace(_) | Op::Stored(_) | Op::Wasm(..) => true,
         Op::Compose(filters) | Op::Chain(filters) => {
             filters.into_iter().any(needs_repository_resolution)
         }
@@ -567,22 +567,6 @@ impl RepositoryFilterResolver<'_> {
             )
         })?;
         Ok(filter)
-    }
-
-    fn script(&self, reader: &tree::TreeReader, path: &Path) -> anyhow::Result<String> {
-        let path = normalize_path(path);
-        let entry = tree::get_path_entry_at(self.transaction, self.odb, reader, &path)?
-            .ok_or_else(|| anyhow!("definition `{}` does not exist", path.display()))?;
-        let bytes = tree::blob_bytes(self.odb, entry.oid)
-            .ok_or_else(|| anyhow!("definition `{}` is not a readable blob", path.display()))?;
-        anyhow::ensure!(
-            !bytes.contains(&0),
-            "definition `{}` contains NUL bytes",
-            path.display()
-        );
-        Ok(std::str::from_utf8(&bytes)
-            .with_context(|| format!("definition `{}` is not UTF-8", path.display()))?
-            .to_owned())
     }
 
     fn resolve(
@@ -690,36 +674,47 @@ impl RepositoryFilterResolver<'_> {
                     ])
                 }
             }
-            Op::Starlark(path, subfilter) => {
-                check_experimental_features_enabled("Starlark filter")?;
+            Op::Wasm(path, args, subfilter) => {
+                check_experimental_features_enabled("Wasm filter")?;
+                let Some(_guard) = WasmDepthGuard::enter(None) else {
+                    return Ok(Filter::new().empty());
+                };
                 let subfilter = self.resolve(subfilter, tree_id, reader)?;
                 let filtered_tree = apply(self.transaction, subfilter, Rewrite::from_tree(tree_id))
                     .with_context(|| {
                         format!(
-                            "failed to apply Starlark input filter `{}` in tree {tree_id}",
+                            "failed to apply Wasm input filter `{}` in tree {tree_id}",
                             path.display()
                         )
                     })?
                     .tree_id();
-                let script_path = path.with_added_extension("star");
-                let script = self.script(reader, &script_path)?;
-                let generated = josh_starlark::evaluate(&script, filtered_tree, self.odb)
+                let module_path = path.with_added_extension("wasm");
+                let entry =
+                    tree::get_path_entry_at(self.transaction, self.odb, reader, &module_path)?
+                        .ok_or_else(|| {
+                            anyhow!(
+                                "Wasm module `{}` does not exist in tree {tree_id}",
+                                module_path.display()
+                            )
+                        })?;
+                anyhow::ensure!(
+                    entry.mode.is_blob(),
+                    "Wasm module `{}` is not a blob in tree {tree_id}",
+                    module_path.display()
+                );
+                let generated = josh_wasm::evaluate(self.odb, entry.oid, &args, filtered_tree)
                     .with_context(|| {
                         format!(
-                            "failed to evaluate Starlark definition `{}` in tree {tree_id}",
-                            script_path.display()
+                            "failed to evaluate Wasm module `{}` in tree {tree_id}",
+                            module_path.display()
                         )
                     })?;
                 let generated = self.resolve(generated, tree_id, reader)?;
-                let resolved = compose(&[
-                    Filter::new().file(script_path.clone()),
-                    subfilter,
-                    generated,
-                ]);
+                let resolved = compose(&[subfilter, generated]);
                 invert(resolved).with_context(|| {
                     format!(
-                        "Starlark definition `{}` in tree {tree_id} is not invertible",
-                        script_path.display()
+                        "Wasm module `{}` in tree {tree_id} produced a non-invertible filter",
+                        module_path.display()
                     )
                 })?;
                 resolved
@@ -734,7 +729,7 @@ impl RepositoryFilterResolver<'_> {
 
 /// Resolve repository-backed filters using a caller-supplied parser.
 ///
-/// The returned filter contains no `Stored`, `Workspace`, or `Starlark`
+/// The returned filter contains no `Stored`, `Workspace`, or `Wasm`
 /// operations. Parsing, repository lookup, evaluation, invertibility, and
 /// intermediate-chain application errors are propagated with definition
 /// context. Caches are local to this call.
@@ -986,7 +981,7 @@ pub fn apply_to_commit2(
             // Held across resolution AND application (per_rev_filter): see
             // WasmDepthGuard. On cap exhaustion the filters degrade to Empty.
             let guard = WasmDepthGuard::enter(Some(filter));
-            let resolve = |tree: git2::Oid| {
+            let resolve = |tree: gix_hash::ObjectId| {
                 if guard.is_none() {
                     return to_filter(Op::Empty);
                 }
@@ -3172,7 +3167,7 @@ mod tests {
     }
 
     #[test]
-    fn contextual_resolution_recurses_into_starlark_output() {
+    fn contextual_resolution_recurses_into_wasm_output() {
         if !experimental_features_enabled() {
             return;
         }
@@ -3184,16 +3179,25 @@ mod tests {
             &[
                 ("defs/generated.josh", ":$.={#baseline}\n"),
                 (
-                    "scripts/generated.star",
-                    "filter = filter.stored(\"defs/generated\")\n",
+                    "scripts/generated.wasm",
+                    r#"(module
+  (import "josh" "nop" (func $nop (result i32)))
+  (import "josh" "stored" (func $stored (param i32 i32 i32) (result i32)))
+  (memory (export "memory") 1)
+  (data (i32.const 16) "defs/generated")
+  (func (export "josh_abi_version") (result i32) (i32.const 1))
+  (func (export "josh_alloc") (param i32) (result i32) (i32.const 1024))
+  (func (export "josh_run") (result i32)
+    (call $stored (call $nop) (i32.const 16) (i32.const 14))))"#,
                 ),
             ],
         );
         let transaction = test_transaction(&repo);
         let resolver = FixedResolver(baseline_tree);
         let parser = |spec: &str| josh_filter::parse_with_resolver(spec, &resolver);
-        let filter = to_filter(Op::Starlark(
+        let filter = to_filter(Op::Wasm(
             PathBuf::from("scripts/generated"),
+            Vec::new(),
             Filter::new(),
         ));
 
@@ -3202,7 +3206,7 @@ mod tests {
         assert!(!needs_repository_resolution(resolved));
         let rendered = pretty(resolved, 0);
         assert!(rendered.contains(&baseline_tree.to_string()), "{rendered}");
-        assert!(rendered.contains("generated.star"), "{rendered}");
         assert!(rendered.contains("generated.josh"), "{rendered}");
+        assert!(!rendered.contains("generated.wasm"), "{rendered}");
     }
 }

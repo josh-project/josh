@@ -1,6 +1,11 @@
   $ export TERM=dumb
   $ export RUST_LOG_STYLE=never
 
+The interpreter blob needs a wasm32 toolchain (or a prebuilt blob via
+JOSH_STARLARK_GUEST_WASM); skip when it is not available.
+
+  $ [ -f "$(wasm-guest-blob.sh starlark 2>/dev/null)" ] || exit 80
+
   $ git init -q real_repo 1> /dev/null
   $ cd real_repo
 

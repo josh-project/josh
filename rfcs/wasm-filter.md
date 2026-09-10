@@ -155,9 +155,12 @@ wraps it:
   when the evaluated filter differs between parent and child (module blob,
   visible context tree, or script changed) history splicing keeps the
   projection connected — the same treatment as `:workspace` and `:stored`.
-- **Tree level** — `:!` nested inside a compose, an exclude/select
-  subfilter, or `workspace.josh` content. It is evaluated on whatever tree
-  flows to that point; no per-parent resolution, no splicing.
+- **Tree level** — `:!` nested inside an exclude/select subfilter or
+  `workspace.josh` content. It is evaluated on whatever tree flows to that
+  point; no per-parent resolution, no splicing. Nesting `:!` directly
+  inside a compose group is *not* supported: compose requires statically
+  invertible parts, and the wasm op has none, so it fails deterministically
+  with a `no invert` error (see the round-trip paragraph below).
 
 A consequence of chain semantics: in `:/sub:!tools/mod`, the module is
 looked up in the already-`:/sub`-filtered tree. "The commit tree being
@@ -168,8 +171,11 @@ static inverse, so `unapply` handles it at commit-level positions via the
 per-rev reverse path, and inside `workspace.josh` / stored content via
 legalization (the op is substituted by its resolved filter against a
 concrete tree before the invertibility check). Nested in a compose written
-directly in the filter spec, it cannot be unapplied — true of `:stored`
-today as well.
+directly in the filter spec, it cannot be applied at all: the compose
+machinery double-inverts every part for output uniqueness handling, so a
+non-invertible part is a deterministic `no invert` error, not a degraded
+projection. The same holds for module-returned filters that place a nested
+wasm filter inside a compose.
 
 The memoization key covers both paths, since evaluation is tree-pure either
 way; the commit-level path is simply the same tree function invoked on
@@ -294,7 +300,16 @@ simpler security posture win.
   configurable via the same mechanism as other josh settings). Exhaustion →
   evaluation error → `Op::Empty`.
 - **Memory limit** per instance (default e.g. 64 MiB) and a module size limit
-  (e.g. 16 MiB blob).
+  (e.g. 16 MiB blob). The instance budget must cover everything a module can
+  make the host allocate, not just linear memory: table minimums are
+  committed eagerly at instantiation (before fuel applies), so table
+  elements and instance/memory/table counts are capped alongside memory;
+  host-side blob reads are size-checked against the memory limit before
+  they are materialized; and the number of filter handles (each interning a
+  filter node for the process lifetime) is capped per evaluation.
+- **Limits are part of the persistent cache key** for wasm filter results:
+  exhaustion degrades to `Op::Empty`, so results computed under one limit
+  configuration must not be served under another.
 - **Float determinism:** NaN bit patterns are the one nondeterminism corner in
   wasm. wasmi is deterministic here; if wasmtime is ever adopted, NaN
   canonicalization must be enabled. Worth a test either way.
