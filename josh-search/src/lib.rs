@@ -39,6 +39,101 @@ use gix_object::WriteTo;
 use gix_object::bstr::BString;
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
+/// Approximate resident-entry ceiling for each typed memo cache.
+const INDEXER_CACHE_ENTRIES: usize = 1024 * 1024;
+/// Parsed-tree and serialized intermediate-object budgets.
+const INDEXER_TREE_CACHE_BYTES: usize = 1024 * 1024 * 1024;
+const INDEXER_PENDING_BYTES: usize = 1024 * 1024 * 1024;
+
+struct MemoCache<K, V> {
+    entries: quick_cache::unsync::Cache<K, V>,
+}
+
+impl<K: std::hash::Hash + Eq, V> MemoCache<K, V> {
+    fn new(limit: usize) -> Self {
+        Self {
+            entries: quick_cache::unsync::Cache::new(limit),
+        }
+    }
+
+    fn get(&self, key: &K) -> Option<&V> {
+        self.entries.get(key)
+    }
+
+    fn insert(&mut self, key: K, value: V) {
+        self.entries.insert(key, value);
+    }
+
+    #[cfg(test)]
+    fn len(&self) -> usize {
+        self.entries.len()
+    }
+}
+
+impl<K: std::hash::Hash + Eq, V> Default for MemoCache<K, V> {
+    fn default() -> Self {
+        Self::new(INDEXER_CACHE_ENTRIES)
+    }
+}
+
+#[derive(Clone)]
+struct TreeWeighter;
+
+impl quick_cache::Weighter<gix_hash::ObjectId, std::sync::Arc<gix_object::Tree>> for TreeWeighter {
+    fn weight(&self, _key: &gix_hash::ObjectId, tree: &std::sync::Arc<gix_object::Tree>) -> u64 {
+        (std::mem::size_of::<gix_object::Tree>()
+            + tree.entries.capacity() * std::mem::size_of::<gix_object::tree::Entry>()
+            + tree
+                .entries
+                .iter()
+                .map(|entry| entry.filename.len())
+                .sum::<usize>()) as u64
+    }
+}
+
+struct ParsedTreeCache {
+    entries: quick_cache::unsync::Cache<
+        gix_hash::ObjectId,
+        std::sync::Arc<gix_object::Tree>,
+        TreeWeighter,
+    >,
+}
+
+impl ParsedTreeCache {
+    fn new(limit_bytes: usize) -> Self {
+        Self {
+            entries: quick_cache::unsync::Cache::with_weighter(
+                INDEXER_CACHE_ENTRIES,
+                limit_bytes as u64,
+                TreeWeighter,
+            ),
+        }
+    }
+
+    fn contains_key(&self, oid: &gix_hash::ObjectId) -> bool {
+        self.entries.contains_key(oid)
+    }
+
+    fn get(&self, oid: &gix_hash::ObjectId) -> Option<&std::sync::Arc<gix_object::Tree>> {
+        self.entries.get(oid)
+    }
+
+    fn insert(&mut self, oid: gix_hash::ObjectId, tree: std::sync::Arc<gix_object::Tree>) {
+        self.entries.insert(oid, tree);
+    }
+
+    #[cfg(test)]
+    fn is_empty(&self) -> bool {
+        self.entries.is_empty()
+    }
+}
+
+impl Default for ParsedTreeCache {
+    fn default() -> Self {
+        Self::new(INDEXER_TREE_CACHE_BYTES)
+    }
+}
+
 /// Memoization of tree oid -> index tree oid mappings, provided by the caller.
 ///
 /// [`trigram_index`] consults this per (sub)tree, which is what makes indexing incremental: when
@@ -257,32 +352,91 @@ fn tree_entry(filename: BString, oid: gix_hash::ObjectId) -> gix_object::tree::E
 /// unchanged inputs hit the memos instead of being rebuilt. This is what makes indexing a
 /// chain of commits incremental beyond the per-tree [`IndexCache`].
 ///
-/// Entries are only ever added, so the sole invariant is that a memoized oid must stay
-/// readable — from `pending`, `trees`, or the object database of the repository in use.
-/// [`flush`](Run::flush) upholds this by evicting objects only after they are written.
-#[derive(Default)]
+/// Memo and parsed-tree entries may be evicted independently because their object ids remain
+/// readable from `pending` or the object database. `pending` is one coherent generation: when
+/// its byte budget is exceeded, [`flush`](Run::flush) first makes every finished index durable,
+/// then discards the generation together with all memos that could refer to it.
+///
 pub struct Indexer {
-    /// Objects not yet written to the ODB. Evicted on flush, so what remains are intermediate
-    /// results no persisted index references.
+    /// Objects not yet written to the ODB. Reachable objects leave during flush; what remains are
+    /// intermediate results retained only to back the memo tables.
     pending: HashMap<gix_hash::ObjectId, (gix_object::Kind, Vec<u8>)>,
+    pending_bytes: usize,
+    pending_limit_bytes: usize,
     /// Parsed trees from `pending` and the ODB, so merges don't re-parse the same spine nodes.
-    trees: HashMap<gix_hash::ObjectId, std::sync::Arc<gix_object::Tree>>,
+    trees: ParsedTreeCache,
     /// Source tree -> index, for trees indexed or cache-resolved with this state.
-    tree_memo: HashMap<gix_hash::ObjectId, gix_hash::ObjectId>,
+    tree_memo: MemoCache<gix_hash::ObjectId, gix_hash::ObjectId>,
     /// Source blob and bucket -> the file's wrapped trigram tree. The bucket is part of the
     /// key because the mirror entries inside carry it.
-    blob_memo: HashMap<(gix_hash::ObjectId, String), gix_hash::ObjectId>,
+    blob_memo: MemoCache<(gix_hash::ObjectId, String), gix_hash::ObjectId>,
     /// Source blob -> its nameless trigram spine (empty-blob leaves), the building block of
     /// coarse indexes. Name-independent, so identical blobs share it everywhere.
-    blob_spine_memo: HashMap<gix_hash::ObjectId, gix_hash::ObjectId>,
+    blob_spine_memo: MemoCache<gix_hash::ObjectId, gix_hash::ObjectId>,
     /// Source tree -> its coarse index (the subtree treated as one pseudo-file). Kept apart
     /// from the fine-grained [`IndexCache`]; coarse subtrees are small by definition, so
-    /// keeping this per process is cheap enough.
-    coarse_memo: HashMap<gix_hash::ObjectId, gix_hash::ObjectId>,
+    /// keeping this per transaction is cheap enough.
+    coarse_memo: MemoCache<gix_hash::ObjectId, gix_hash::ObjectId>,
     /// Source tree -> transitive `(file count, content bytes)`, for the granularity decision.
-    stats_memo: HashMap<gix_hash::ObjectId, (u64, u64)>,
-    wrap_memo: HashMap<(gix_hash::ObjectId, String), gix_hash::ObjectId>,
-    overlay_memo: HashMap<Vec<gix_hash::ObjectId>, gix_hash::ObjectId>,
+    stats_memo: MemoCache<gix_hash::ObjectId, (u64, u64)>,
+    wrap_memo: MemoCache<(gix_hash::ObjectId, String), gix_hash::ObjectId>,
+    overlay_memo: MemoCache<Vec<gix_hash::ObjectId>, gix_hash::ObjectId>,
+}
+
+impl Indexer {
+    fn insert_pending(&mut self, oid: gix_hash::ObjectId, kind: gix_object::Kind, data: Vec<u8>) {
+        let bytes = data.capacity();
+        if let Some((_, previous)) = self.pending.insert(oid, (kind, data)) {
+            self.pending_bytes -= previous.capacity();
+        }
+        self.pending_bytes += bytes;
+    }
+
+    fn remove_pending(&mut self, oid: &gix_hash::ObjectId) {
+        if let Some((_, data)) = self.pending.remove(oid) {
+            self.pending_bytes -= data.capacity();
+        }
+    }
+
+    fn evict_pending_generation_if_needed(&mut self) {
+        if self.pending_bytes <= self.pending_limit_bytes {
+            return;
+        }
+        self.pending = HashMap::new();
+        self.pending_bytes = 0;
+        self.trees = Default::default();
+        self.blob_memo = Default::default();
+        self.blob_spine_memo = Default::default();
+        self.coarse_memo = Default::default();
+        self.wrap_memo = Default::default();
+        self.overlay_memo = Default::default();
+    }
+
+    #[cfg(test)]
+    fn with_pending_limit(pending_limit_bytes: usize) -> Self {
+        Self {
+            pending_limit_bytes,
+            ..Self::default()
+        }
+    }
+}
+
+impl Default for Indexer {
+    fn default() -> Self {
+        Self {
+            pending: Default::default(),
+            pending_bytes: 0,
+            pending_limit_bytes: INDEXER_PENDING_BYTES,
+            trees: Default::default(),
+            tree_memo: Default::default(),
+            blob_memo: Default::default(),
+            blob_spine_memo: Default::default(),
+            coarse_memo: Default::default(),
+            stats_memo: Default::default(),
+            wrap_memo: Default::default(),
+            overlay_memo: Default::default(),
+        }
+    }
 }
 
 /// What an index run needs from the object database.
@@ -327,9 +481,7 @@ impl Run<'_> {
         let hash = gix_object::compute_hash(gix_hash::Kind::Sha1, gix_object::Kind::Tree, &buffer)
             .expect("failed to compute hash");
         if !self.ix.trees.contains_key(&hash) {
-            self.ix
-                .pending
-                .insert(hash, (gix_object::Kind::Tree, buffer));
+            self.ix.insert_pending(hash, gix_object::Kind::Tree, buffer);
             self.ix.trees.insert(hash, std::sync::Arc::new(tree));
         }
         hash
@@ -683,8 +835,8 @@ impl Run<'_> {
     }
 
     /// Write the pending objects reachable from the built indexes to the object database,
-    /// then memoize the `(source tree, index)` pairs. Anything still pending afterwards is
-    /// an intermediate result and is dropped unwritten.
+    /// memoize the `(source tree, index)` pairs, then evict the coherent pending generation if
+    /// its retained intermediate objects exceed the byte budget.
     fn flush(&mut self) -> anyhow::Result<()> {
         if self.roots.is_empty() {
             return Ok(());
@@ -727,12 +879,13 @@ impl Run<'_> {
             written.push(id);
         }
         for id in written {
-            self.ix.pending.remove(&id);
+            self.ix.remove_pending(&id);
         }
 
         for (tree, index) in &self.roots {
             self.cache.set_index(*tree, *index);
         }
+        self.ix.evict_pending_generation_if_needed();
         Ok(())
     }
 }
@@ -1734,6 +1887,31 @@ mod tests {
     }
 
     #[test]
+    fn memo_cache_stays_bounded() {
+        let mut cache = MemoCache::new(2);
+        cache.insert(1, "one");
+        cache.insert(2, "two");
+        cache.insert(3, "three");
+
+        assert!(cache.len() <= 2);
+        assert_eq!(cache.get(&3), Some(&"three"));
+    }
+
+    #[test]
+    fn parsed_tree_cache_stays_bounded() {
+        let tree = std::sync::Arc::new(gix_object::Tree { entries: vec![] });
+        let tree_bytes = std::mem::size_of::<gix_object::Tree>();
+        let mut cache = ParsedTreeCache::new(tree_bytes * 2);
+        let oid = |byte| gix_hash::ObjectId::from_bytes_or_panic(&[byte; 20]);
+        cache.insert(oid(1), tree.clone());
+        cache.insert(oid(2), tree.clone());
+        cache.insert(oid(3), tree);
+
+        assert!(cache.entries.weight() <= (tree_bytes * 2) as u64);
+        assert!(cache.get(&oid(3)).is_some());
+    }
+
+    #[test]
     fn distinct_trigrams_basics() {
         assert!(distinct_trigrams("").is_empty());
         assert!(distinct_trigrams("ab").is_empty());
@@ -2304,9 +2482,9 @@ mod tests {
         let (_tmp, repo) = test_repo();
         let cache = MapCache::default();
 
-        // One Indexer shared across both commits, like josh keeps one per transaction: the
-        // second call must reuse blob/wrap/merge state from the first.
-        let mut indexer = Indexer::default();
+        // Force the coherent pending generation out after every indexing call. The durable
+        // per-tree IndexCache must make the next commit correct without any indexer-local state.
+        let mut indexer = Indexer::with_pending_limit(0);
 
         let tree_a = commit_tree(
             &repo,
@@ -2317,6 +2495,11 @@ mod tests {
             ],
         );
         let index_a = trigram_index(objects(&repo), &cache, &mut indexer, tree_a).unwrap();
+        assert!(indexer.pending.is_empty());
+        assert_eq!(indexer.pending_bytes, 0);
+        assert!(indexer.trees.is_empty());
+        assert_eq!(indexer.trees.entries.weight(), 0);
+        assert_eq!(indexer.tree_memo.get(&tree_a), Some(&index_a));
 
         // One file modified, one removed (its unique trigrams must vanish from the spine), one
         // added in a fresh directory.
@@ -2364,7 +2547,6 @@ mod tests {
             hits.iter().map(|(p, _)| p.as_str()).collect::<Vec<_>>(),
             vec!["sub3/new"]
         );
-
         // Warm-cache results equal fresh-cache results.
         let fresh = search_candidates(
             objects(&repo),

@@ -3777,6 +3777,7 @@ dependencies = [
  "josh-core",
  "josh-gix-ext",
  "josh-test-support",
+ "quick_cache",
  "rand 0.10.2",
  "regex",
  "regex-syntax",
@@ -4782,6 +4783,18 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f94967dc7688f3054c7fac87473ffae4cc4c3904800e2d9f5b857246d8963b0a"
 dependencies = [
  "prost",
+]
+
+[[package]]
+name = "quick_cache"
+version = "0.7.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "403c1a912fec895cafb223201e368234842acb9220aaf08ab042ae89ba5f135c"
+dependencies = [
+ "equivalent",
+ "foldhash",
+ "hashbrown 0.17.1",
+ "parking_lot 0.12.5",
 ]
 
 [[package]]
