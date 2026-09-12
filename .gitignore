@@ -7,7 +7,6 @@ docs/_build
 .idea
 .claude/*
 !.claude/skills
-.josh
 .agents/work
 **/.DS_Store
 **/.pixi
