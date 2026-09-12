@@ -1,3 +1,5 @@
+:$label="rust GUI development local"
+
 bases = :[
     :#BASE_IMAGE[:+images/rust-dev-local]
 ]
