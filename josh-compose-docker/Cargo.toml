@@ -18,5 +18,6 @@ josh-compose-graph.workspace = true
 libc.workspace = true
 log.workspace = true
 rand.workspace = true
+tempfile.workspace = true
 
 tar = "0.4"

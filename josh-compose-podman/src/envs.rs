@@ -27,6 +27,15 @@ fn prepare_env(key: &str, recipe: EnvRecipe) -> anyhow::Result<()> {
     };
     let (uid, gid) = host_uid_gid();
 
+    let mut context_dirs = Vec::with_capacity(recipe.build_contexts.len());
+    for build_context in &recipe.build_contexts {
+        let dir = tempfile::tempdir()
+            .with_context(|| format!("failed to create context {}", build_context.name))?;
+        super::artifacts::extract_artifact(&build_context.artifact, dir.path())
+            .with_context(|| format!("failed to materialize context {}", build_context.name))?;
+        context_dirs.push((build_context.name.as_str(), dir));
+    }
+
     let mut cmd = Command::new("podman");
     cmd.args(["build", "--format=docker"]);
     cmd.args(["--build-arg", &format!("ARCH={arch}")]);
@@ -34,6 +43,9 @@ fn prepare_env(key: &str, recipe: EnvRecipe) -> anyhow::Result<()> {
     cmd.args(["--build-arg", &format!("USER_GID={gid}")]);
     for (k, v) in &recipe.build_args {
         cmd.arg(format!("--build-arg={k}={v}"));
+    }
+    for (name, dir) in &context_dirs {
+        cmd.arg(format!("--build-context={name}={}", dir.path().display()));
     }
     cmd.args(["-t", key]);
     cmd.arg("-"); // read build context from stdin
