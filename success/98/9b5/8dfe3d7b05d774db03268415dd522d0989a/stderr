@@ -1,0 +1,287 @@
++ '[' -z  ]
++ pwd
++ TARGET_DIR=/worktree/target
++ uname -s
++ OS=Linux
++ '[' Linux '=' Darwin ]
++ DATE_CMD=date
++ PATH=/josh/debug/:/build-go/debug/:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/opt/git-install/bin:/opt/git-lfs/bin
++ PATH=/worktree/target/debug/:/worktree/target:/josh/debug/:/build-go/debug/:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/opt/git-install/bin:/opt/git-lfs/bin
++ pwd
++ pwd
++ PATH=/worktree/devtools/target/debug/:/worktree/scripts/:/worktree/target/debug/:/worktree/target:/josh/debug/:/build-go/debug/:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/opt/git-install/bin:/opt/git-lfs/bin
++ '[' -d /devtools-build/debug ]
++ PATH=/devtools-build/debug/:/worktree/devtools/target/debug/:/worktree/scripts/:/worktree/target/debug/:/worktree/target:/josh/debug/:/build-go/debug/:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/opt/git-install/bin:/opt/git-lfs/bin
++ export PATH
++ export 'JOSH_COMMIT_TIME=0'
++ export 'GIT_AUTHOR_NAME=Josh'
++ export 'GIT_AUTHOR_EMAIL=josh@example.com'
++ date -R -d 2005-04-07T22:13:13Z
++ GIT_AUTHOR_DATE='Thu, 07 Apr 2005 22:13:13 +0000'
++ export GIT_AUTHOR_DATE
++ export 'GIT_COMMITTER_NAME=Josh'
++ export 'GIT_COMMITTER_EMAIL=josh@example.com'
++ date -R -d 2005-04-07T22:13:13Z
++ GIT_COMMITTER_DATE='Thu, 07 Apr 2005 22:13:13 +0000'
++ export GIT_COMMITTER_DATE
++ export 'EMPTY_TREE=4b825dc642cb6eb9a060e54bf8d69288fbee4904'
++ mktemp
++ CONFIG_FILE=/tmp/tmp.u6uPQUNeZT
++ trap 'rm ${CONFIG_FILE}' EXIT
++ export 'GIT_CONFIG_GLOBAL=/tmp/tmp.u6uPQUNeZT'
++ git config --global init.defaultBranch master
++ export 'RUST_BACKTRACE=1'
++ find tests -name '*.t'
++ sort
++ TESTS='tests/filter/ambiguous_merge.t
+tests/filter/cmdline.t
+tests/filter/commit_message_raw.t
+tests/filter/compose_message.t
+tests/filter/compose_shadow_dir_same_name.t
+tests/filter/deleted_dir.t
+tests/filter/dot_input.t
+tests/filter/empty_head.t
+tests/filter/empty_orphan.t
+tests/filter/empty_reimport.t
+tests/filter/exclude_compose.t
+tests/filter/file.t
+tests/filter/file_destination.t
+tests/filter/filter_id.t
+tests/filter/flatten_stored_compose.t
+tests/filter/gpgsig.t
+tests/filter/graphql_changed_files.t
+tests/filter/graphql_hbs.t
+tests/filter/graphql_history.t
+tests/filter/graphql_refs.t
+tests/filter/hide_view.t
+tests/filter/history_no_splice.t
+tests/filter/hook_notes.t
+tests/filter/infofile.t
+tests/filter/initial_merge_elided_parents.t
+tests/filter/insert.t
+tests/filter/linear.t
+tests/filter/message.t
+tests/filter/message_regex.t
+tests/filter/moved_dir.t
+tests/filter/pattern_glob_aliasing.t
+tests/filter/pattern_glob_dotfiles.t
+tests/filter/pin_compose.t
+tests/filter/pin_filter_hook.t
+tests/filter/pin_filter_workspace.t
+tests/filter/plus_input.t
+tests/filter/prefix.t
+tests/filter/pretty_print.t
+tests/filter/prune_trivial_merge.t
+tests/filter/replace.t
+tests/filter/rev.t
+tests/filter/rev_operators.t
+tests/filter/rev_squash.t
+tests/filter/reverse_glob.t
+tests/filter/reverse_hide.t
+tests/filter/reverse_hide_edit.t
+tests/filter/reverse_hide_edit_missing_change.t
+tests/filter/reverse_merge.t
+tests/filter/reverse_non_ff.t
+tests/filter/reverse_rev_trivial_merge.t
+tests/filter/reverse_split.t
+tests/filter/roundtrip_custom_header.t
+tests/filter/scope_filter.t
+tests/filter/select.t
+tests/filter/sha_input.t
+tests/filter/squash.t
+tests/filter/squash_empty_initial.t
+tests/filter/squash_push.t
+tests/filter/squash_same_oid.t
+tests/filter/stored_combine_filter.t
+tests/filter/stored_implicit_filter.t
+tests/filter/stored_redirect.t
+tests/filter/stored_reverse.t
+tests/filter/stored_reverse_exclude.t
+tests/filter/stored_reverse_shadow.t
+tests/filter/stored_single_file.t
+tests/filter/submodule.t
+tests/filter/submodule_clone.t
+tests/filter/subtree_prefix.t
+tests/filter/subtree_prefix_legacy.t
+tests/filter/unknown_filter.t
+tests/filter/workspace_combine_filter.t
+tests/filter/workspace_discover.t
+tests/filter/workspace_exclude.t
+tests/filter/workspace_implicit_filter.t
+tests/filter/workspace_keep_trivial_merges.t
+tests/filter/workspace_modify_chain.t
+tests/filter/workspace_multiple_globs.t
+tests/filter/workspace_redirect.t
+tests/filter/workspace_shadow_file.t
+tests/filter/workspace_single_file.t
+tests/filter/workspace_trailing_slash.t
+tests/filter/workspace_unique.t'
++ '[' -z 'tests/filter/ambiguous_merge.t
+tests/filter/cmdline.t
+tests/filter/commit_message_raw.t
+tests/filter/compose_message.t
+tests/filter/compose_shadow_dir_same_name.t
+tests/filter/deleted_dir.t
+tests/filter/dot_input.t
+tests/filter/empty_head.t
+tests/filter/empty_orphan.t
+tests/filter/empty_reimport.t
+tests/filter/exclude_compose.t
+tests/filter/file.t
+tests/filter/file_destination.t
+tests/filter/filter_id.t
+tests/filter/flatten_stored_compose.t
+tests/filter/gpgsig.t
+tests/filter/graphql_changed_files.t
+tests/filter/graphql_hbs.t
+tests/filter/graphql_history.t
+tests/filter/graphql_refs.t
+tests/filter/hide_view.t
+tests/filter/history_no_splice.t
+tests/filter/hook_notes.t
+tests/filter/infofile.t
+tests/filter/initial_merge_elided_parents.t
+tests/filter/insert.t
+tests/filter/linear.t
+tests/filter/message.t
+tests/filter/message_regex.t
+tests/filter/moved_dir.t
+tests/filter/pattern_glob_aliasing.t
+tests/filter/pattern_glob_dotfiles.t
+tests/filter/pin_compose.t
+tests/filter/pin_filter_hook.t
+tests/filter/pin_filter_workspace.t
+tests/filter/plus_input.t
+tests/filter/prefix.t
+tests/filter/pretty_print.t
+tests/filter/prune_trivial_merge.t
+tests/filter/replace.t
+tests/filter/rev.t
+tests/filter/rev_operators.t
+tests/filter/rev_squash.t
+tests/filter/reverse_glob.t
+tests/filter/reverse_hide.t
+tests/filter/reverse_hide_edit.t
+tests/filter/reverse_hide_edit_missing_change.t
+tests/filter/reverse_merge.t
+tests/filter/reverse_non_ff.t
+tests/filter/reverse_rev_trivial_merge.t
+tests/filter/reverse_split.t
+tests/filter/roundtrip_custom_header.t
+tests/filter/scope_filter.t
+tests/filter/select.t
+tests/filter/sha_input.t
+tests/filter/squash.t
+tests/filter/squash_empty_initial.t
+tests/filter/squash_push.t
+tests/filter/squash_same_oid.t
+tests/filter/stored_combine_filter.t
+tests/filter/stored_implicit_filter.t
+tests/filter/stored_redirect.t
+tests/filter/stored_reverse.t
+tests/filter/stored_reverse_exclude.t
+tests/filter/stored_reverse_shadow.t
+tests/filter/stored_single_file.t
+tests/filter/submodule.t
+tests/filter/submodule_clone.t
+tests/filter/subtree_prefix.t
+tests/filter/subtree_prefix_legacy.t
+tests/filter/unknown_filter.t
+tests/filter/workspace_combine_filter.t
+tests/filter/workspace_discover.t
+tests/filter/workspace_exclude.t
+tests/filter/workspace_implicit_filter.t
+tests/filter/workspace_keep_trivial_merges.t
+tests/filter/workspace_modify_chain.t
+tests/filter/workspace_multiple_globs.t
+tests/filter/workspace_redirect.t
+tests/filter/workspace_shadow_file.t
+tests/filter/workspace_single_file.t
+tests/filter/workspace_trailing_slash.t
+tests/filter/workspace_unique.t' ]
++ FAILED=0
++ scrut test --cram-compat tests/filter/ambiguous_merge.t
++ scrut test --cram-compat tests/filter/cmdline.t
++ scrut test --cram-compat tests/filter/commit_message_raw.t
++ scrut test --cram-compat tests/filter/compose_message.t
++ scrut test --cram-compat tests/filter/compose_shadow_dir_same_name.t
++ scrut test --cram-compat tests/filter/deleted_dir.t
++ scrut test --cram-compat tests/filter/dot_input.t
++ scrut test --cram-compat tests/filter/empty_head.t
++ scrut test --cram-compat tests/filter/empty_orphan.t
++ scrut test --cram-compat tests/filter/empty_reimport.t
++ scrut test --cram-compat tests/filter/exclude_compose.t
++ scrut test --cram-compat tests/filter/file.t
++ scrut test --cram-compat tests/filter/file_destination.t
++ scrut test --cram-compat tests/filter/filter_id.t
++ scrut test --cram-compat tests/filter/flatten_stored_compose.t
++ scrut test --cram-compat tests/filter/gpgsig.t
++ scrut test --cram-compat tests/filter/graphql_changed_files.t
++ scrut test --cram-compat tests/filter/graphql_hbs.t
++ scrut test --cram-compat tests/filter/graphql_history.t
++ scrut test --cram-compat tests/filter/graphql_refs.t
++ scrut test --cram-compat tests/filter/hide_view.t
++ scrut test --cram-compat tests/filter/history_no_splice.t
++ scrut test --cram-compat tests/filter/hook_notes.t
++ scrut test --cram-compat tests/filter/infofile.t
++ scrut test --cram-compat tests/filter/initial_merge_elided_parents.t
++ scrut test --cram-compat tests/filter/insert.t
++ scrut test --cram-compat tests/filter/linear.t
++ scrut test --cram-compat tests/filter/message.t
++ scrut test --cram-compat tests/filter/message_regex.t
++ scrut test --cram-compat tests/filter/moved_dir.t
++ scrut test --cram-compat tests/filter/pattern_glob_aliasing.t
++ scrut test --cram-compat tests/filter/pattern_glob_dotfiles.t
++ scrut test --cram-compat tests/filter/pin_compose.t
++ scrut test --cram-compat tests/filter/pin_filter_hook.t
++ scrut test --cram-compat tests/filter/pin_filter_workspace.t
++ scrut test --cram-compat tests/filter/plus_input.t
++ scrut test --cram-compat tests/filter/prefix.t
++ scrut test --cram-compat tests/filter/pretty_print.t
++ scrut test --cram-compat tests/filter/prune_trivial_merge.t
++ scrut test --cram-compat tests/filter/replace.t
++ scrut test --cram-compat tests/filter/rev.t
++ scrut test --cram-compat tests/filter/rev_operators.t
++ scrut test --cram-compat tests/filter/rev_squash.t
++ scrut test --cram-compat tests/filter/reverse_glob.t
++ scrut test --cram-compat tests/filter/reverse_hide.t
++ scrut test --cram-compat tests/filter/reverse_hide_edit.t
++ scrut test --cram-compat tests/filter/reverse_hide_edit_missing_change.t
++ scrut test --cram-compat tests/filter/reverse_merge.t
++ scrut test --cram-compat tests/filter/reverse_non_ff.t
++ scrut test --cram-compat tests/filter/reverse_rev_trivial_merge.t
++ scrut test --cram-compat tests/filter/reverse_split.t
++ scrut test --cram-compat tests/filter/roundtrip_custom_header.t
++ scrut test --cram-compat tests/filter/scope_filter.t
++ scrut test --cram-compat tests/filter/select.t
++ scrut test --cram-compat tests/filter/sha_input.t
++ scrut test --cram-compat tests/filter/squash.t
++ scrut test --cram-compat tests/filter/squash_empty_initial.t
++ scrut test --cram-compat tests/filter/squash_push.t
++ scrut test --cram-compat tests/filter/squash_same_oid.t
++ scrut test --cram-compat tests/filter/stored_combine_filter.t
++ scrut test --cram-compat tests/filter/stored_implicit_filter.t
++ scrut test --cram-compat tests/filter/stored_redirect.t
++ scrut test --cram-compat tests/filter/stored_reverse.t
++ scrut test --cram-compat tests/filter/stored_reverse_exclude.t
++ scrut test --cram-compat tests/filter/stored_reverse_shadow.t
++ scrut test --cram-compat tests/filter/stored_single_file.t
++ scrut test --cram-compat tests/filter/submodule.t
++ scrut test --cram-compat tests/filter/submodule_clone.t
++ scrut test --cram-compat tests/filter/subtree_prefix.t
++ scrut test --cram-compat tests/filter/subtree_prefix_legacy.t
++ scrut test --cram-compat tests/filter/unknown_filter.t
++ scrut test --cram-compat tests/filter/workspace_combine_filter.t
++ scrut test --cram-compat tests/filter/workspace_discover.t
++ scrut test --cram-compat tests/filter/workspace_exclude.t
++ scrut test --cram-compat tests/filter/workspace_implicit_filter.t
++ scrut test --cram-compat tests/filter/workspace_keep_trivial_merges.t
++ scrut test --cram-compat tests/filter/workspace_modify_chain.t
++ scrut test --cram-compat tests/filter/workspace_multiple_globs.t
++ scrut test --cram-compat tests/filter/workspace_redirect.t
++ scrut test --cram-compat tests/filter/workspace_shadow_file.t
++ scrut test --cram-compat tests/filter/workspace_single_file.t
++ scrut test --cram-compat tests/filter/workspace_trailing_slash.t
++ scrut test --cram-compat tests/filter/workspace_unique.t
++ exit 0
++ rm /tmp/tmp.u6uPQUNeZT

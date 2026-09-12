@@ -1,0 +1,565 @@
+==> Running axum_cgi-c74842e576783f39
+
+running 1 test
+test tests::run_cmd ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+==> Running axum_cgi_server-e594a0fe5072d666
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+==> Running cache_lock-b84994e12e12f380
+
+running 1 test
+test sled_lock_follows_transaction_lifetime ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s
+
+==> Running de-c95e053ec7357546
+
+running 8 tests
+test test_enum_single_entry_rule ... ok
+test test_non_canonical_key_rejected ... ok
+test test_nested ... ok
+test test_number ... ok
+test test_option_field_absent_vs_present ... ok
+test test_seq_deserialize_unsupported ... ok
+test test_simple ... ok
+test test_unit_from_empty_tree ... ok
+
+test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+==> Running josh-c1b913a2cd3c5e71
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+==> Running josh_changes-0b3d2b77ffd95631
+
+running 8 tests
+test refs::tests::parses_change_id_with_slashes ... ok
+test refs::tests::base_change_conversion_is_lossless ... ok
+test refs::tests::parses_target_with_slashes ... ok
+test refs::tests::parses_shorthand_and_remote_forms ... ok
+test refs::tests::rejects_non_stacked_refs ... ok
+test refs::tests::ref_name_round_trips ... ok
+test store::tests::revisions_track_diff_updates ... ok
+test store::tests::diff_and_vote_writes_merge_and_roundtrip ... ok
+
+test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.16s
+
+==> Running josh_cli-37efbedfa92beb81
+
+running 20 tests
+test commands::pull::tests::summary_deleted_change_is_not_an_update ... ok
+test commands::pull::tests::summary_counts_changes_and_hides_internal_refs ... ok
+test commands::pull::tests::summary_forced_change_counts_without_transaction ... ok
+test commands::pull::tests::summary_ignores_refs_from_other_remotes ... ok
+test commands::pull::tests::summary_rejected_update_errors ... ok
+test commands::push::tests::summary_dry_run_prefixes_would ... ok
+test commands::push::tests::summary_counts_changes_and_hides_internal_refs ... ok
+test commands::pull::tests::summary_renders_branch_updates ... ok
+test commands::push::tests::summary_rejected_update_errors ... ok
+test commands::push::tests::summary_renders_branch_updates ... ok
+test porcelain::tests::parse_porcelain_empty_output ... ok
+test forge::tests::test_guess_forge ... ok
+test commands::push::tests::summary_up_to_date_republish_is_silent ... ok
+test porcelain::tests::parse_porcelain_fast_forward_and_new_ref ... ok
+test porcelain::tests::parse_porcelain_forced_deleted_rejected ... ok
+test porcelain::tests::parse_porcelain_malformed_line_errors ... ok
+test porcelain::tests::parse_push_porcelain_all_flags ... ok
+test porcelain::tests::parse_push_porcelain_empty_output ... ok
+test porcelain::tests::parse_push_porcelain_malformed_line_errors ... ok
+test commands::pull::tests::upstream_change_ids_walks_every_parent_between_base_and_tip ... ok
+
+test result: ok. 20 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+==> Running josh_command_middleware-8e9e6f6a469686b6
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+==> Running josh_compose-dddf407ffacae7c2
+
+running 14 tests
+test clean::tests::starts_reclamation_at_high_water_mark ... ok
+test clean::tests::reclaims_in_lru_order_until_target ... ok
+test clean::tests::rejects_insufficient_reclaimable_space ... ok
+test filter::tests::preparation_resolves_outer_and_stored_expressions ... ok
+test filter::tests::binding_syntax_rejects_invalid_reserved_and_empty_values ... ok
+test filter::tests::resolver_reads_ephemeral_input_parents_from_transaction_odb ... ok
+test filter::tests::arguments_resolve_full_revspecs_and_reject_duplicates_or_ranges ... ok
+test filter::tests::resolver_walks_merge_ancestry_and_projects_trees ... ok
+test archive::tests::round_trips_long_paths_and_symlink_targets ... ok
+test job_cache::tests::commits_run_results_as_one_ref_update ... ok
+test naming::tests::parses_runtime_resource_names ... ok
+test job_cache::tests::persists_results_without_ephemeral_workspace_objects ... ok
+test job_cache::tests::stores_results_in_compose_ref ... ok
+test job_cache::tests::transfers_and_merges_concurrent_results ... ok
+
+test result: ok. 14 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.50s
+
+==> Running josh_compose_backend-6a6837b48ac68f65
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+==> Running josh_compose_docker-3094323503f3c52d
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+==> Running josh_compose_graph-c3184fbafdaf8e2d
+
+running 1 test
+test meta::tests::workspace_references_are_gitlinks ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+==> Running josh_compose_podman-ddecb6f859763221
+
+running 1 test
+test artifacts::tests::parses_podman_graph_root_usage ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+==> Running josh_core-fc444622e92bb1e9
+
+running 90 tests
+test cache::backend::tests::samples_by_sequence_number ... ok
+test cache::backend::tests::samples_merges_that_jump_a_boundary ... ok
+test cache::backend::tests::samples_unbounded_topologies ... ok
+test cache::history_graph::tests::oid_hint_roundtrip_uses_last_10_bytes ... ok
+test cache::transaction::tests::create_symref_dangling_target_allowed ... ok
+test cache::transaction::tests::configuration_methods_use_repository_configuration ... ok
+test cache::transaction::tests::caches_are_transaction_scoped ... ok
+test cache::transaction::tests::create_symref_overwrites ... ok
+test cache::transaction::tests::create_symref_resolves_through ... ok
+test cache::transaction::tests::delete_ref_absent_is_contract_error ... ok
+test cache::transaction::tests::create_symref_skipped_by_for_each_ref_prefixed ... ok
+test cache::transaction::tests::delete_ref_any_absent_is_noop ... ok
+test cache::transaction::tests::delete_ref_any_deletes_existing ... ok
+test cache::transaction::tests::delete_ref_any_deletes_symref_not_target ... ok
+test cache::transaction::tests::delete_ref_at_deletes_on_match ... ok
+test cache::transaction::tests::delete_ref_at_fails_on_mismatch ... ok
+test cache::transaction::tests::delete_ref_at_fails_on_missing_ref ... ok
+test cache::transaction::tests::delete_ref_removes_packed_ref ... ok
+test cache::transaction::tests::ephemeral_reads_the_shared_store_and_discards_its_own ... ok
+test cache::transaction::tests::expand_ref_name_resolves_symbolic_refs ... ok
+test cache::transaction::tests::ephemeral_transaction_never_publishes_refs ... ok
+test cache::transaction::tests::failed_object_flush_does_not_publish_ref ... ok
+test cache::transaction::tests::for_each_ref_prefixed_propagates_callback_errors ... ok
+test cache::transaction::tests::for_each_ref_prefixed_is_sorted_and_skips_symbolic ... ok
+test cache::transaction::tests::for_each_ref_prefixed_takes_a_partial_component ... ok
+test cache::transaction::tests::objects_outlive_a_transaction_that_published_nothing ... ok
+test cache::transaction::tests::for_each_ref_prefixed_takes_a_prefix_no_worktree_could_hold ... ok
+test cache::transaction::tests::reflog_committer_falls_back_to_unknown ... ok
+test cache::transaction::tests::for_each_ref_prefixed_without_a_slash_lists_every_matching_ref ... ok
+test cache::transaction::tests::resolve_ref_dangling_symref_is_none ... ok
+test cache::transaction::tests::resolve_ref_follows_symbolic_chain ... ok
+test cache::transaction::tests::resolve_ref_missing_is_none ... ok
+test cache::transaction::tests::update_ref_absent_creates ... ok
+test cache::transaction::tests::rev_parse_resolves_revision_syntax_and_rejects_user_input ... ok
+test cache::transaction::tests::update_ref_absent_fails_when_pending_refs_are_written ... ok
+test cache::transaction::tests::update_ref_at_fails_on_mismatch_when_pending_refs_are_written ... ok
+test cache::transaction::tests::update_ref_at_fails_on_missing_ref_when_pending_refs_are_written ... ok
+test cache::transaction::tests::update_ref_at_matches_packed_ref ... ok
+test cache::transaction::tests::update_ref_at_updates_on_match ... ok
+test cache::transaction::tests::update_ref_overwrites_unconditionally ... ok
+test cache::transaction::tests::update_ref_to_the_value_a_ref_already_has_writes_nothing ... ok
+test cache::tree_cache::tests::clears_wholesale_over_limit ... ok
+test cache::tree_cache::tests::promotes_on_second_read_only ... ok
+test filter::tests::contextual_bindings_change_filters_without_changing_static_behavior ... ok
+test cache::transaction::tests::update_ref_writes_a_reflog_entry ... ok
+test filter::tests::contextual_definition_errors_are_strict_and_cache_local ... ok
+test filter::tests::contextual_resolution_handles_stored_workspace_and_nested_definitions ... ok
+test cache::transaction::tests::flush_mem_odb_publishes_pending_refs_after_objects ... ok
+test filter::tests::contextual_resolution_preserves_workspace_redirects ... ok
+test filter::tests::contextual_resolution_recurses_into_starlark_output ... ok
+test filter::tests::contextual_chain_loads_definitions_from_intermediate_tree ... ok
+test filter::tests::dst_path_test ... ok
+test filter::tests::invert_filter_parsing_test ... ok
+test filter::tests::meta_filter_parsing_test ... ok
+test filter::tests::missing_stored_definition_resolves_to_empty ... ok
+test filter::tests::scope_filter_parsing_test ... ok
+test filter::tests::src_path_test ... ok
+test filter::tests::meta_filter_tree_roundtrip_test ... ok
+test filter::tests::downstack_keeps_merge_second_parent ... ok
+test cache::transaction::tests::publishing_a_ref_flushes_before_ref_reaches_disk ... ok
+test filter::tests::unapply_multi_component_path ... ok
+test filter::tree::tests::compiled_pattern_fallback_cases ... ok
+test filter::tree::tests::diff_paths_reports_removed_subtree ... ok
+test filter::tree::tests::get_path_entry_contract ... ok
+test filter::tests::unapply_subdir_prefix_leaf_write_and_delete ... ok
+test filter::tree::tests::overlay_keeps_input1_on_collision ... ok
+test filter::tree::tests::protected_names_are_not_special ... ok
+test filter::tests::subtract_optimizer_apply_oracle ... ok
+test filter::tree::tests::remove_pred_drops_gitlink_and_preserves_symlink_mode ... ok
+test filter::tree::tests::remove_pred_does_not_alias_identical_subtrees ... ok
+test filter::tree::tests::remove_pred_preserves_fsck_invalid_trees ... ok
+test filter::tree::tests::remove_pred_passes_full_paths_and_reuses_unchanged_input ... ok
+test filter::tree::tests::remove_pred_rebuild_preserves_survivors ... ok
+test filter::tree::tests::subtract_overlay_tolerate_non_canonical_order ... ok
+test git::tests::read_tree_id_matches_find_commit ... ok
+test filter::tree::tests::subtract_preserves_untouched_raw_modes ... ok
+test git::tests::snapshot_input_resolves_abbreviated_sha ... ok
+test git::tests::file_patch_returns_selected_file_hunks ... ok
+test history::tests::is_empty_root_contract ... ok
+test trailers::tests::footer_followed_by_body_is_ignored ... ok
+test trailers::tests::footer_in_body_is_ignored ... ok
+test trailers::tests::is_trailer_line_basics ... ok
+test trailers::tests::other_trailers_in_block_do_not_break_change ... ok
+test trailers::tests::real_trailing_footer_is_parsed ... ok
+test trailers::tests::series_in_body_is_ignored ... ok
+test trailers::tests::series_in_footer_block_is_collected ... ok
+test trailers::tests::single_line_message_is_its_own_footer ... ok
+test housekeeping::tests::discovers_filters_from_filtered_refs ... ok
+test git::tests::worktree_porcelain_preserves_local_changes ... ok
+test filter::tree::tests::remove_pattern_matches_full_path_glob ... ok
+
+test result: ok. 90 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.53s
+
+==> Running josh_cq-14ce7dbada0f021a
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+==> Running josh_cq-60fcec23fdc7e5cf
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+==> Running josh_cq_test_components-601e9621680ccde6
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+==> Running josh_filter-020bafba5a65aea6
+
+running 1 test
+test verify_app ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+==> Running josh_filter-864e6bb5d9c7895f
+
+running 11 tests
+test flang::parse::tests::absent_primary_selects_fallback ... ok
+test flang::parse::tests::invalid_fallback_forms_are_rejected ... ok
+test flang::parse::tests::input_and_ancestry_expressions_reach_the_resolver ... ok
+test flang::parse::tests::invalid_primary_does_not_select_fallback ... ok
+test flang::parse::tests::nested_filters_keep_the_resolver_context ... ok
+test flang::parse::tests::named_tree_and_commit_expressions_are_lowered ... ok
+test flang::parse::tests::context_free_parser_requires_a_resolver ... ok
+test flang::parse::tests::object_positions_enforce_selector_kind ... ok
+test flang::parse::tests::undefined_variables_and_fallback_failures_are_reported ... ok
+test flang::parse::tests::present_primary_does_not_resolve_fallback ... ok
+test flang::parse::tests::existing_object_ids_strings_and_message_templates_are_unchanged ... ok
+
+test result: ok. 11 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+==> Running josh_gerrit_changes-5cbd0b7ff184dd2d
+
+running 7 tests
+test publish::gerrit_tests::gerrit_change_id_passes_through_valid_ids ... ok
+test publish::gerrit_tests::is_gerrit_change_id_rejects_bad_shapes ... ok
+test publish::gerrit_tests::gerrit_change_id_is_deterministic_and_well_formed ... ok
+test publish::gerrit_tests::message_from_single_change_trailer_line ... ok
+test publish::gerrit_tests::message_appends_footer_when_none_present ... ok
+test publish::gerrit_tests::message_keeps_other_trailers_in_block ... ok
+test publish::gerrit_tests::message_replaces_josh_change_trailer ... ok
+
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+==> Running josh_git_serde-73ed2670ac8ef060
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+==> Running josh_github_auth-77b2cc8933d8fc6d
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+==> Running josh_github_changes-453d9ed08fc40dad
+
+running 13 tests
+test cache::tests::freshness_respects_ttl ... ok
+test cache::tests::matches_identical_summary ... ok
+test cache::tests::mismatch_on_each_field ... ok
+test display::tests::hyperlink_is_plain_text_when_not_a_tty ... ok
+test display::tests::pr_web_url_from_git_urls ... ok
+test prs::tests::fork_dependent_change_is_draft_against_default ... ok
+test prs::tests::fork_change_on_default_is_ready_against_default ... ok
+test prs::tests::fork_without_known_default_is_skipped ... ok
+test prs::tests::same_repo_stacked_change_bases_on_synthetic_branch_as_draft ... ok
+test prs::tests::same_repo_bottom_change_bases_on_default ... ok
+test repo::tests::valid_urls ... ok
+test repo::tests::invalid_urls ... ok
+test node_ids::tests::node_id_writes_merge_without_clobbering ... ok
+
+test result: ok. 13 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.10s
+
+==> Running josh_github_changes-d95b65d2bface846
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+==> Running josh_github_codegen_graphql-763862a298b83119
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+==> Running josh_github_graphql-eb8b15bcc17ca8ed
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+==> Running josh_github_keyring-f75cd3129f98bab5
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+==> Running josh_github_webhooks-5cfb40c72dd06658
+
+running 1 test
+test webhook_server::tests::test_decode_json ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+
+==> Running josh_gix_ext-41a4e76a6fac033c
+
+running 27 tests
+test graph::tests::a_missing_commit_is_an_error ... ok
+test graph::tests::descends_along_parent_edges_only ... ok
+test graph::tests::merge_base_is_the_join_of_two_lineages ... ok
+test merge::tests::a_favor_cannot_decide_delete_against_modify ... ok
+test merge::tests::overlapping_edits_conflict ... ok
+test revwalk::tests::discover_streams_dfs_preorder ... ok
+test merge::tests::a_favor_decides_conflicting_content ... ok
+test revwalk::tests::duplicate_parent_edges ... ok
+test revwalk::tests::input_error_cases ... ok
+test revwalk::tests::malformed_tails_are_tolerated ... ok
+test revwalk::tests::diamond_and_criss_cross ... ok
+test revwalk::tests::linear_chain ... ok
+test revwalk::tests::missing_ancestors_error_only_when_visited ... ok
+test revwalk::tests::merge_of_old_side_branch_is_exact ... ok
+test revwalk::tests::missing_sequence_data_fails_the_walk ... ok
+test revwalk::tests::octopus_merge ... ok
+test revwalk::tests::multiple_tips_and_overlapping_pushes ... ok
+test revwalk::tests::prune_semantics ... ok
+test revwalk::tests::rebase_shape_is_exact ... ok
+test tests::message_trims_leading_newlines ... ok
+test tests::object_id_fanout_path_uses_two_levels ... ok
+test tests::walk_tree_preorder_errors_on_non_utf8_directory ... ok
+test tests::walk_tree_preorder_yields_stored_order_paths ... ok
+test tests::write_commit_preserves_libgit2_bytes ... ok
+test revwalk::tests::ranked_walk_is_bounded ... ok
+test revwalk::tests::range_beyond_probe_limit ... ok
+test revwalk::tests::fuzz_random_dags ... ok
+
+test result: ok. 27 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.37s
+
+==> Running josh_graphql-09f94970360e8c06
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+==> Running josh_memodb-513642368e07fa43
+
+running 13 tests
+test hash::tests::test_passthrough_hasher ... ok
+test mem_odb::tests::flush_leaves_only_pack_and_idx ... ok
+test mem_odb::tests::flush_writes_to_common_dir_for_worktree ... ok
+test mem_odb::tests::limit_only_tightens ... ok
+test odb::tests::buffered_objects_resolve_through_the_gix_traits ... ok
+test odb::tests::facade_write_gate_matches_freshen ... ok
+test mem_odb::tests::flush_writes_objects_to_disk ... ok
+test mem_odb::tests::chained_store_reads_through_and_packs_separately ... ok
+test odb::tests::facade_write_visible_before_flush_durable_after ... ok
+test odb::tests::try_kind_virtualizes_empty_tree ... ok
+test odb::tests::objects_packed_after_the_facade_was_built_are_found ... ok
+test mem_odb::tests::flushes_on_overflow_during_writes ... ok
+test odb::tests::facade_write_gate_sees_packed_alternates ... ok
+
+test result: ok. 13 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.52s
+
+==> Running josh_proxy-01f259f2672d07c9
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+==> Running josh_proxy-696db264146ad0df
+
+running 4 tests
+test housekeeping::tests::test_parse_count_objects ... ok
+test serve::tests::test_git_cap_discovery ... ok
+test graphql::tests::test_sync_axum_integration ... ok
+test graphql::tests::test_axum_integration ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.95s
+
+==> Running josh_rpc-0819f328848f2c27
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+==> Running josh_search-f633615c702ef504
+
+running 18 tests
+test query::tests::alternation_and_classes_keep_branch_constraints ... ok
+test query::tests::optional_short_branch_requires_no_trigram ... ok
+test query::tests::literal_and_concat_extract_trigrams ... ok
+test tests::bucket_name_basics ... ok
+test query::tests::regex_syntax_and_unicode_folding_are_supported ... ok
+test tests::colliding_trigrams_share_a_spine_leaf ... ok
+test tests::curated_punctuation_is_selective ... ok
+test tests::distinct_trigrams_basics ... ok
+test tests::fold_policy ... ok
+test tests::colliding_names_share_a_bucket ... ok
+test tests::incremental_index_equals_cold_build ... ok
+test tests::memo_cache_stays_bounded ... ok
+test tests::parsed_tree_cache_stays_bounded ... ok
+test tests::index_and_search_end_to_end ... ok
+test tests::spine_path_stability ... ok
+test tests::coarse_and_fine_granularity ... ok
+test tests::regex_queries_filter_candidates_and_verify_matches ... ok
+test tests::change_sweep_matches_brute_force ... ok
+
+test result: ok. 18 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.08s
+
+==> Running josh_ssh_shell-4115b85cf427366d
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+==> Running josh_ssh_shell-66d3abc108df1626
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+==> Running josh_starlark-40905e853535fdb7
+
+running 12 tests
+test tests::test_simple_filter ... ok
+test tests::test_file_filter ... ok
+test tests::test_chain_filter ... ok
+test tests::test_compose ... ok
+test tests::test_tree_file ... ok
+test tests::test_tree_dirs ... ok
+test tests::test_tree_build_filter_from_all_files ... ok
+test tests::test_tree_file_nonexistent ... ok
+test tests::test_tree_files ... ok
+test tests::test_tree_nested_access ... ok
+test tests::test_tree_tree ... ok
+test tests::test_tree_tree_nonexistent ... ok
+
+test result: ok. 12 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.05s
+
+==> Running josh_templates-cf83f525dee30d1a
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+==> Running josh_test_webhook_client-3f1a1a47923c9888
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+==> Running josh_test_webhook_service-61d050f6273d0c0a
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+==> Running josh_test_webhook_service-c3aa3810f9438bda
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+==> Running josh_view-abab18e7a1754432
+
+running 6 tests
+test tests::derive_id_from_url_cases ... ok
+test tests::parse_link_file_with_meta ... ok
+test tests::unrelated_meta_stays_on_filter ... ok
+test tests::view_file_round_trip ... ok
+test tests::write_rejects_reserved_meta_keys ... ok
+test tests::write_read_list_delete_round_trip ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.20s
+
+==> Running ser-f564065cb14cf13a
+
+running 14 tests
+test test_borrowed_str_field ... ok
+test test_empty_containers_roundtrip ... ok
+test test_map ... ok
+test test_none_root_and_nested_option_error ... ok
+test test_renamed_field_with_escape_roundtrip ... ok
+test test_map_key_encoding_roundtrip ... ok
+test test_none_field_omission_roundtrip ... ok
+test test_scalar_roots_roundtrip ... ok
+test test_seq_tuple_unsupported ... ok
+test test_simple_struct ... ok
+test test_some_empty_string_field_roundtrip ... ok
+test test_struct_variant ... ok
+test test_unit_and_unit_struct_roundtrip ... ok
+test test_unit_variant_and_newtype_variant_shape ... ok
+
+test result: ok. 14 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+==> Running store-7455842928918b3e
+
+running 10 tests
+test blob_root_roundtrips ... ok
+test empty_tree_roundtrips ... ok
+test commit_object_is_rejected ... ok
+test duplicate_entry_names_are_rejected ... ok
+test executable_blob_entry_is_rejected ... ok
+test missing_object_is_an_error ... ok
+test invalid_entry_names_are_rejected_on_write ... ok
+test written_tree_is_in_canonical_order ... ok
+test roundtrip_nested_tree ... ok
+test excessive_nesting_is_rejected ... ok
+
+test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+
+==> Running test_repo_tests-f8a8bd2d40e11194
+
+running 8 tests
+test commit_first_commit ... ok
+test create_branch ... ok
+test commit_replace ... ok
+test commit_overlay ... ok
+test create_branch_from_oid ... ok
+test create_empty_repo ... ok
+test git_clone_via_http ... ok
+test git_push_via_http ... ok
+
+test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.08s
+

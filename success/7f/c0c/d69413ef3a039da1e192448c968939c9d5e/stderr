@@ -1,0 +1,236 @@
++ '[' -z  ]
++ pwd
++ TARGET_DIR=/worktree/target
++ uname -s
++ OS=Linux
++ '[' Linux '=' Darwin ]
++ DATE_CMD=date
++ PATH=/josh/debug/:/build-go/debug/:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/opt/git-install/bin:/opt/git-lfs/bin
++ PATH=/worktree/target/debug/:/worktree/target:/josh/debug/:/build-go/debug/:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/opt/git-install/bin:/opt/git-lfs/bin
++ pwd
++ pwd
++ PATH=/worktree/devtools/target/debug/:/worktree/scripts/:/worktree/target/debug/:/worktree/target:/josh/debug/:/build-go/debug/:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/opt/git-install/bin:/opt/git-lfs/bin
++ '[' -d /devtools-build/debug ]
++ PATH=/devtools-build/debug/:/worktree/devtools/target/debug/:/worktree/scripts/:/worktree/target/debug/:/worktree/target:/josh/debug/:/build-go/debug/:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/opt/git-install/bin:/opt/git-lfs/bin
++ export PATH
++ export 'JOSH_COMMIT_TIME=0'
++ export 'GIT_AUTHOR_NAME=Josh'
++ export 'GIT_AUTHOR_EMAIL=josh@example.com'
++ date -R -d 2005-04-07T22:13:13Z
++ GIT_AUTHOR_DATE='Thu, 07 Apr 2005 22:13:13 +0000'
++ export GIT_AUTHOR_DATE
++ export 'GIT_COMMITTER_NAME=Josh'
++ export 'GIT_COMMITTER_EMAIL=josh@example.com'
++ date -R -d 2005-04-07T22:13:13Z
++ GIT_COMMITTER_DATE='Thu, 07 Apr 2005 22:13:13 +0000'
++ export GIT_COMMITTER_DATE
++ export 'EMPTY_TREE=4b825dc642cb6eb9a060e54bf8d69288fbee4904'
++ mktemp
++ CONFIG_FILE=/tmp/tmp.IlQyvgPXmh
++ trap 'rm ${CONFIG_FILE}' EXIT
++ export 'GIT_CONFIG_GLOBAL=/tmp/tmp.IlQyvgPXmh'
++ git config --global init.defaultBranch master
++ export 'RUST_BACKTRACE=1'
++ find tests -name '*.t'
++ sort
++ TESTS='tests/proxy/amend_patchset.t
+tests/proxy/authentication.t
+tests/proxy/caching.t
+tests/proxy/clone_absent_head.t
+tests/proxy/clone_all.t
+tests/proxy/clone_invalid_filter.t
+tests/proxy/clone_invalid_url.t
+tests/proxy/clone_prefix.t
+tests/proxy/clone_rev_operators.t
+tests/proxy/clone_sha.t
+tests/proxy/clone_subsubtree.t
+tests/proxy/clone_subtree.t
+tests/proxy/clone_subtree_no_master.t
+tests/proxy/clone_subtree_tags.t
+tests/proxy/empty_commit.t
+tests/proxy/filter_prefix.t
+tests/proxy/get_remote.t
+tests/proxy/get_version.t
+tests/proxy/graphql_error.t
+tests/proxy/graphql_fields.t
+tests/proxy/graphql_path.t
+tests/proxy/graphql_schema.t
+tests/proxy/import_export.t
+tests/proxy/join_with_merge.t
+tests/proxy/lfs_redirect.t
+tests/proxy/markers.t
+tests/proxy/no_proxy.t
+tests/proxy/no_proxy_lfs.t
+tests/proxy/push_error.t
+tests/proxy/push_graphql.t
+tests/proxy/push_new_branch.t
+tests/proxy/push_new_orphan_branch.t
+tests/proxy/push_prefix.t
+tests/proxy/push_review.t
+tests/proxy/push_review_already_in.t
+tests/proxy/push_review_nop_behind.t
+tests/proxy/push_review_old.t
+tests/proxy/push_review_topic.t
+tests/proxy/push_stacked.t
+tests/proxy/push_stacked_gerrit.t
+tests/proxy/push_stacked_split.t
+tests/proxy/push_stacked_sub.t
+tests/proxy/push_subdir_prefix.t
+tests/proxy/push_subtree.t
+tests/proxy/push_subtree_two_repos.t
+tests/proxy/query.t
+tests/proxy/shell.t
+tests/proxy/ssh.t
+tests/proxy/unrelated_leak.t
+tests/proxy/upstream_down.t
+tests/proxy/version_flag.t
+tests/proxy/workspace.t
+tests/proxy/workspace_create.t
+tests/proxy/workspace_discover.t
+tests/proxy/workspace_edit_commit.t
+tests/proxy/workspace_errors.t
+tests/proxy/workspace_in_workspace.t
+tests/proxy/workspace_in_workspace_prefix.t
+tests/proxy/workspace_invalid_trailing_slash.t
+tests/proxy/workspace_modify.t
+tests/proxy/workspace_modify_chain.t
+tests/proxy/workspace_modify_chain_prefix_subtree.t
+tests/proxy/workspace_mv_folder.t
+tests/proxy/workspace_pre_history.t
+tests/proxy/workspace_publish.t
+tests/proxy/workspace_tags.t'
++ '[' -z 'tests/proxy/amend_patchset.t
+tests/proxy/authentication.t
+tests/proxy/caching.t
+tests/proxy/clone_absent_head.t
+tests/proxy/clone_all.t
+tests/proxy/clone_invalid_filter.t
+tests/proxy/clone_invalid_url.t
+tests/proxy/clone_prefix.t
+tests/proxy/clone_rev_operators.t
+tests/proxy/clone_sha.t
+tests/proxy/clone_subsubtree.t
+tests/proxy/clone_subtree.t
+tests/proxy/clone_subtree_no_master.t
+tests/proxy/clone_subtree_tags.t
+tests/proxy/empty_commit.t
+tests/proxy/filter_prefix.t
+tests/proxy/get_remote.t
+tests/proxy/get_version.t
+tests/proxy/graphql_error.t
+tests/proxy/graphql_fields.t
+tests/proxy/graphql_path.t
+tests/proxy/graphql_schema.t
+tests/proxy/import_export.t
+tests/proxy/join_with_merge.t
+tests/proxy/lfs_redirect.t
+tests/proxy/markers.t
+tests/proxy/no_proxy.t
+tests/proxy/no_proxy_lfs.t
+tests/proxy/push_error.t
+tests/proxy/push_graphql.t
+tests/proxy/push_new_branch.t
+tests/proxy/push_new_orphan_branch.t
+tests/proxy/push_prefix.t
+tests/proxy/push_review.t
+tests/proxy/push_review_already_in.t
+tests/proxy/push_review_nop_behind.t
+tests/proxy/push_review_old.t
+tests/proxy/push_review_topic.t
+tests/proxy/push_stacked.t
+tests/proxy/push_stacked_gerrit.t
+tests/proxy/push_stacked_split.t
+tests/proxy/push_stacked_sub.t
+tests/proxy/push_subdir_prefix.t
+tests/proxy/push_subtree.t
+tests/proxy/push_subtree_two_repos.t
+tests/proxy/query.t
+tests/proxy/shell.t
+tests/proxy/ssh.t
+tests/proxy/unrelated_leak.t
+tests/proxy/upstream_down.t
+tests/proxy/version_flag.t
+tests/proxy/workspace.t
+tests/proxy/workspace_create.t
+tests/proxy/workspace_discover.t
+tests/proxy/workspace_edit_commit.t
+tests/proxy/workspace_errors.t
+tests/proxy/workspace_in_workspace.t
+tests/proxy/workspace_in_workspace_prefix.t
+tests/proxy/workspace_invalid_trailing_slash.t
+tests/proxy/workspace_modify.t
+tests/proxy/workspace_modify_chain.t
+tests/proxy/workspace_modify_chain_prefix_subtree.t
+tests/proxy/workspace_mv_folder.t
+tests/proxy/workspace_pre_history.t
+tests/proxy/workspace_publish.t
+tests/proxy/workspace_tags.t' ]
++ FAILED=0
++ scrut test --cram-compat tests/proxy/amend_patchset.t
++ scrut test --cram-compat tests/proxy/authentication.t
++ scrut test --cram-compat tests/proxy/caching.t
++ scrut test --cram-compat tests/proxy/clone_absent_head.t
++ scrut test --cram-compat tests/proxy/clone_all.t
++ scrut test --cram-compat tests/proxy/clone_invalid_filter.t
++ scrut test --cram-compat tests/proxy/clone_invalid_url.t
++ scrut test --cram-compat tests/proxy/clone_prefix.t
++ scrut test --cram-compat tests/proxy/clone_rev_operators.t
++ scrut test --cram-compat tests/proxy/clone_sha.t
++ scrut test --cram-compat tests/proxy/clone_subsubtree.t
++ scrut test --cram-compat tests/proxy/clone_subtree.t
++ scrut test --cram-compat tests/proxy/clone_subtree_no_master.t
++ scrut test --cram-compat tests/proxy/clone_subtree_tags.t
++ scrut test --cram-compat tests/proxy/empty_commit.t
++ scrut test --cram-compat tests/proxy/filter_prefix.t
++ scrut test --cram-compat tests/proxy/get_remote.t
++ scrut test --cram-compat tests/proxy/get_version.t
++ scrut test --cram-compat tests/proxy/graphql_error.t
++ scrut test --cram-compat tests/proxy/graphql_fields.t
++ scrut test --cram-compat tests/proxy/graphql_path.t
++ scrut test --cram-compat tests/proxy/graphql_schema.t
++ scrut test --cram-compat tests/proxy/import_export.t
++ scrut test --cram-compat tests/proxy/join_with_merge.t
++ scrut test --cram-compat tests/proxy/lfs_redirect.t
++ scrut test --cram-compat tests/proxy/markers.t
++ scrut test --cram-compat tests/proxy/no_proxy.t
++ scrut test --cram-compat tests/proxy/no_proxy_lfs.t
++ scrut test --cram-compat tests/proxy/push_error.t
++ scrut test --cram-compat tests/proxy/push_graphql.t
++ scrut test --cram-compat tests/proxy/push_new_branch.t
++ scrut test --cram-compat tests/proxy/push_new_orphan_branch.t
++ scrut test --cram-compat tests/proxy/push_prefix.t
++ scrut test --cram-compat tests/proxy/push_review.t
++ scrut test --cram-compat tests/proxy/push_review_already_in.t
++ scrut test --cram-compat tests/proxy/push_review_nop_behind.t
++ scrut test --cram-compat tests/proxy/push_review_old.t
++ scrut test --cram-compat tests/proxy/push_review_topic.t
++ scrut test --cram-compat tests/proxy/push_stacked.t
++ scrut test --cram-compat tests/proxy/push_stacked_gerrit.t
++ scrut test --cram-compat tests/proxy/push_stacked_split.t
++ scrut test --cram-compat tests/proxy/push_stacked_sub.t
++ scrut test --cram-compat tests/proxy/push_subdir_prefix.t
++ scrut test --cram-compat tests/proxy/push_subtree.t
++ scrut test --cram-compat tests/proxy/push_subtree_two_repos.t
++ scrut test --cram-compat tests/proxy/query.t
++ scrut test --cram-compat tests/proxy/shell.t
++ scrut test --cram-compat tests/proxy/ssh.t
++ scrut test --cram-compat tests/proxy/unrelated_leak.t
++ scrut test --cram-compat tests/proxy/upstream_down.t
++ scrut test --cram-compat tests/proxy/version_flag.t
++ scrut test --cram-compat tests/proxy/workspace.t
++ scrut test --cram-compat tests/proxy/workspace_create.t
++ scrut test --cram-compat tests/proxy/workspace_discover.t
++ scrut test --cram-compat tests/proxy/workspace_edit_commit.t
++ scrut test --cram-compat tests/proxy/workspace_errors.t
++ scrut test --cram-compat tests/proxy/workspace_in_workspace.t
++ scrut test --cram-compat tests/proxy/workspace_in_workspace_prefix.t
++ scrut test --cram-compat tests/proxy/workspace_invalid_trailing_slash.t
++ scrut test --cram-compat tests/proxy/workspace_modify.t
++ scrut test --cram-compat tests/proxy/workspace_modify_chain.t
++ scrut test --cram-compat tests/proxy/workspace_modify_chain_prefix_subtree.t
++ scrut test --cram-compat tests/proxy/workspace_mv_folder.t
++ scrut test --cram-compat tests/proxy/workspace_pre_history.t
++ scrut test --cram-compat tests/proxy/workspace_publish.t
++ scrut test --cram-compat tests/proxy/workspace_tags.t
++ exit 0
++ rm /tmp/tmp.IlQyvgPXmh
