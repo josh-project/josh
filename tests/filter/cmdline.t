@@ -54,6 +54,26 @@
   $ git log --graph --pretty=%s josh/filter/libs/foo
   * add file3
 
+Bulk filtering maps every matching source ref through a Git-style refspec.
+
+  $ josh-filter c=:/sub1 --revspec 'refs/remotes/libs/*:refs/josh/bulk/*'
+  [0-9a-f]{40} refs/josh/bulk/foo (re)
+  [0-9a-f]{40} refs/josh/bulk/master (re)
+  $ git log --pretty=%s refs/josh/bulk/foo
+  add file2
+  add file1
+  $ git log --pretty=%s refs/josh/bulk/master
+  add file2
+  add file1
+
+An unmatched refspec fails without creating its destination.
+
+  $ josh-filter :/ --revspec 'refs/heads/missing:refs/josh/bulk/missing'
+  ERROR: revspec did not match any refs
+  [1]
+  $ git show-ref --verify --quiet refs/josh/bulk/missing
+  [1]
+
   $ git branch -a
   * master
     remotes/libs/HEAD -> libs/foo
@@ -69,6 +89,9 @@
   |-- heads
   |   `-- master
   |-- josh
+  |   |-- bulk
+  |   |   |-- foo
+  |   |   `-- master
   |   `-- filter
   |       `-- libs
   |           |-- foo
@@ -80,7 +103,7 @@
   |       `-- master
   `-- tags
   
-  8 directories, 6 files
+  9 directories, 8 files
 
   $ git read-tree HEAD josh/filter/libs/master josh/filter/libs/foo
   $ git commit -m "sync"

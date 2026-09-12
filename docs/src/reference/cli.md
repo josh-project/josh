@@ -343,16 +343,20 @@ josh compose run + :+ws/test
 It is intended for scripting and one-off history rewriting tasks rather than day-to-day
 development workflows.
 
-**Input:** the second positional argument selects what to filter. It defaults to `HEAD`
-but can be any of:
+**Input:** by default, the second positional argument selects one revision to filter and
+`--update` names its destination. The input defaults to `HEAD` but can be any of:
 
 - `.` - the working tree (including uncommitted changes)
 - `+` - the index (staged changes only)
 - A full or abbreviated commit SHA
 - A ref name (e.g. `main`, `refs/heads/feature`)
 
-**Output:** the filtered commit SHA is printed to stdout. The filtered history is also
-written to the ref given by `--update` (default: `FILTERED_HEAD`).
+With `--revspec <source>:<destination>`, `josh-filter` instead filters every ref matched by
+the Git-style refspec and writes each result to its mapped destination. Wildcard refspecs
+and repeated `--revspec` options are supported.
+
+**Output:** single-revision mode prints the filtered commit SHA. Refspec mode prints one
+`<SHA> <destination-ref>` line per updated ref.
 
 **Basic usage:**
 
@@ -365,6 +369,9 @@ josh-filter :/docs .
 
 # Filter a specific commit SHA
 josh-filter :/docs abc1234 --update refs/my/filtered
+
+# Filter every local branch into refs/filtered/heads/
+josh-filter :/docs --revspec 'refs/heads/*:refs/filtered/heads/*'
 ```
 
 **Options:**
@@ -372,6 +379,7 @@ josh-filter :/docs abc1234 --update refs/my/filtered
 | Flag | Description |
 |------|-------------|
 | `--update <ref>` | Ref to update with the filtered result (default: `FILTERED_HEAD`) |
+| `--revspec <source>:<destination>` | Filter all matching refs into mapped destination refs; may be repeated |
 | `--file <path>` | Read filter spec from a file |
 | `--squash-pattern <pattern>` | Squash commits matching the pattern |
 | `--squash-file <path>` | Read squash patterns from a file |

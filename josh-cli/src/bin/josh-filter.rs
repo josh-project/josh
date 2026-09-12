@@ -1,5 +1,8 @@
 #![warn(unused_extern_crates)]
 
+#[path = "josh-filter/revspec.rs"]
+mod revspec;
+
 use anyhow::{Context, anyhow};
 use std::fs::read_to_string;
 use std::str::FromStr;
@@ -66,6 +69,31 @@ fn make_app() -> clap::Command {
             clap::Arg::new("input")
                 .help("Ref or SHA to apply filter to, '.' for the working tree, or '+' for the index (staged changes)")
                 .default_value("HEAD"),
+        )
+        .arg(
+            clap::Arg::new("revspec")
+                .long("revspec")
+                .value_name("SOURCE:DESTINATION")
+                .action(clap::ArgAction::Append)
+                .conflicts_with_all([
+                    "input",
+                    "update",
+                    "squash-pattern",
+                    "squash-file",
+                    "discover",
+                    "search",
+                    "search-history",
+                    "search-changes",
+                    "graphql",
+                    "query",
+                    "reverse",
+                    "check-roundtrip",
+                    "force",
+                ])
+                .help(
+                    "Filter every ref selected by a Git-style refspec into its mapped destination; \
+                     may be repeated",
+                ),
         )
         .arg(
             clap::Arg::new("file")
@@ -276,13 +304,17 @@ fn run_filter(args: Vec<String>) -> anyhow::Result<i32> {
         josh_core::filter::from_tree(&transaction, tree_oid)?
     };
 
-    let input_ref = args.get_one::<String>("input").unwrap();
-
-    let mut refs = vec![];
+    let revspecs = args
+        .get_many::<String>("revspec")
+        .map(|values| values.cloned().collect::<Vec<_>>());
+    let (input_ref, mut refs) = if let Some(revspecs) = revspecs.as_deref() {
+        (None, revspec::resolve(&transaction, revspecs)?)
+    } else {
+        let input_ref = args.get_one::<String>("input").unwrap();
+        let (input_ref, oid) = resolve_input_ref(&transaction, input_ref)?;
+        (Some(input_ref.clone()), vec![(input_ref, oid)])
+    };
     let mut ids = vec![];
-
-    let (input_ref, oid) = resolve_input_ref(&transaction, input_ref)?;
-    refs.push((input_ref.clone(), oid));
 
     if args.get_flag("single") {
         filterobj = josh_core::filter::Filter::new().squash().chain(filterobj);
@@ -353,8 +385,11 @@ fn run_filter(args: Vec<String>) -> anyhow::Result<i32> {
 
     if args.get_flag("discover") {
         let odb = transaction.odb();
+        let input_ref = input_ref
+            .as_deref()
+            .ok_or_else(|| anyhow!("discovery requires a single input ref"))?;
         let head = transaction
-            .rev_parse(&input_ref)?
+            .rev_parse(input_ref)?
             .ok_or_else(|| anyhow!("no such revision: {}", input_ref))?;
         let tree = josh_core::objects::CommitData::read(odb, head)?.tree_id()?;
         let hs = josh_core::housekeeping::find_all_workspaces_and_subdirectories(odb, tree)?;
@@ -369,41 +404,59 @@ fn run_filter(args: Vec<String>) -> anyhow::Result<i32> {
         }
     }
 
+    let revspec_mode = revspecs.is_some();
     let update_target = args.get_one::<String>("update").unwrap();
-
     let target = update_target;
-
     let reverse = args.get_flag("reverse");
 
-    let old_oid = transaction
-        .resolve_ref(target)?
-        .unwrap_or(gix_hash::ObjectId::null(gix_hash::Kind::Sha1));
+    let old_oid = if revspec_mode {
+        gix_hash::ObjectId::null(gix_hash::Kind::Sha1)
+    } else {
+        transaction
+            .resolve_ref(target)?
+            .unwrap_or(gix_hash::ObjectId::null(gix_hash::Kind::Sha1))
+    };
 
     let (mut updated_refs, errors) = josh_core::filter_refs(&transaction, filterobj, &refs);
 
     if let Some(error) = errors.into_iter().next() {
         return Err(error.1);
     }
-    for item in &mut updated_refs {
-        if item.0 == input_ref {
-            if reverse {
-                item.0 = "refs/JOSH_TMP".to_string();
+    if !revspec_mode {
+        let input_ref = input_ref.as_deref().expect("single-ref mode has an input");
+        for item in &mut updated_refs {
+            if item.0 == input_ref {
+                if reverse {
+                    item.0 = "refs/JOSH_TMP".to_string();
+                } else {
+                    item.0 = target.to_string();
+                }
             } else {
-                item.0 = target.to_string();
+                item.0 = item.0.replacen("refs/heads/", "refs/heads/filtered/", 1);
+                item.0 = item.0.replacen("refs/tags/", "refs/tags/filtered/", 1);
             }
-        } else {
-            item.0 = item.0.replacen("refs/heads/", "refs/heads/filtered/", 1);
-            item.0 = item.0.replacen("refs/tags/", "refs/tags/filtered/", 1);
         }
     }
     josh_core::update_refs(&transaction, updated_refs.clone());
+    if revspec_mode {
+        transaction.flush_mem_odb()?;
+        for (name, oid) in updated_refs {
+            println!("{oid} {name}");
+        }
+        return Ok(0);
+    }
 
     if let Some(pattern) = args.get_one::<String>("search") {
         if args.get_flag("search-changes") {
             if !josh_core::filter::experimental_features_enabled() {
                 anyhow::bail!("--search-changes requires JOSH_EXPERIMENTAL_FEATURES=1");
             }
-            search_changes(&transaction, filterobj, &input_ref, pattern)?;
+            search_changes(
+                &transaction,
+                filterobj,
+                input_ref.as_deref().expect("single-ref mode has an input"),
+                pattern,
+            )?;
             return Ok(0);
         }
         if args.get_flag("search-history") {
@@ -414,8 +467,9 @@ fn run_filter(args: Vec<String>) -> anyhow::Result<i32> {
             // whole graph, not just first-parent). Walking the filtered graph directly gives
             // exactly the trees being searched — no mapping back and forth between original
             // and filtered commits.
+            let input_ref = input_ref.as_deref().expect("single-ref mode has an input");
             let commit = transaction
-                .rev_parse(&input_ref)?
+                .rev_parse(input_ref)?
                 .ok_or_else(|| anyhow!("no such revision: {}", input_ref))?;
             let filtered_id = josh_core::filter_commit(&transaction, filterobj, commit)?;
             let ifilterobj = josh_core::filter::parse(":INDEX")?;
@@ -452,8 +506,9 @@ fn run_filter(args: Vec<String>) -> anyhow::Result<i32> {
             }
             return Ok(0);
         }
+        let input_ref = input_ref.as_deref().expect("single-ref mode has an input");
         let commit = transaction
-            .rev_parse(&input_ref)?
+            .rev_parse(input_ref)?
             .ok_or_else(|| anyhow!("no such revision: {}", input_ref))?;
 
         let odb = transaction.odb();
@@ -525,7 +580,8 @@ fn run_filter(args: Vec<String>) -> anyhow::Result<i32> {
         };
         let new = rev(target)?;
         let old = rev("JOSH_TMP")?;
-        let unfiltered_old = rev(&input_ref)?;
+        let input_ref = input_ref.as_deref().expect("single-ref mode has an input");
+        let unfiltered_old = rev(input_ref)?;
 
         let ret = match josh_core::history::unapply_filter(
             &transaction,
@@ -556,7 +612,7 @@ fn run_filter(args: Vec<String>) -> anyhow::Result<i32> {
                     ));
                 }
                 transaction.update_ref(
-                    &input_ref,
+                    input_ref,
                     josh_core::cache::Expected::At(unfiltered_old),
                     rewritten,
                     "unapply_filter",
