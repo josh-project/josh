@@ -35,6 +35,11 @@ pub struct AdmissionData {
     /// Required status checks from the repository rulesets, keyed by context.
     #[serde(default)]
     pub required_checks: BTreeMap<String, RequiredStatusCheck>,
+    /// Required approving reviews (from classic branch protection; ruleset
+    /// pull-request rules are not read yet). Zero means "unspecified" — the
+    /// evaluation floor is one maintainer approval regardless.
+    #[serde(default)]
+    pub required_approvals: u32,
 }
 
 impl AdmissionData {
@@ -57,9 +62,10 @@ pub struct AdmissionStatus {
 }
 
 /// Evaluate admission conditions for a PR against the remote's admission
-/// data. Admissible means: at least one maintainer approval, no maintainer
-/// requesting changes (dismissed reviews and non-maintainer reviews are
-/// ignored), and every required check present and passed.
+/// data. Admissible means: enough maintainer approvals (at least one, more
+/// when branch protection requires it), no maintainer requesting changes
+/// (dismissed reviews and non-maintainer reviews are ignored), and every
+/// required check present and passed.
 pub fn evaluate(pr: &PrData, data: &AdmissionData) -> AdmissionStatus {
     let mut approved_by = Vec::new();
     let mut changes_requested_by = Vec::new();
@@ -88,8 +94,10 @@ pub fn evaluate(pr: &PrData, data: &AdmissionData) -> AdmissionStatus {
         .cloned()
         .collect::<Vec<_>>();
 
-    let admissible =
-        !approved_by.is_empty() && changes_requested_by.is_empty() && unmet_checks.is_empty();
+    let required_approvals = (data.required_approvals as usize).max(1);
+    let admissible = approved_by.len() >= required_approvals
+        && changes_requested_by.is_empty()
+        && unmet_checks.is_empty();
 
     AdmissionStatus {
         admissible,
@@ -200,6 +208,7 @@ mod tests {
                     )
                 })
                 .collect(),
+            required_approvals: 0,
         }
     }
 
@@ -289,6 +298,20 @@ mod tests {
 
         let pr = pr_data(&[], &[]);
         assert!(!evaluate(&pr, &data).admissible);
+    }
+
+    #[test]
+    fn required_approvals_raises_the_bar() {
+        let pr = pr_data(&[("alice", Approved)], &[("build", CheckState::Success)]);
+        let mut data = admission(&["alice", "bob"], &["build"]);
+        data.required_approvals = 2;
+        assert!(!evaluate(&pr, &data).admissible);
+
+        let pr = pr_data(
+            &[("alice", Approved), ("bob", Approved)],
+            &[("build", CheckState::Success)],
+        );
+        assert!(evaluate(&pr, &data).admissible);
     }
 
     #[test]

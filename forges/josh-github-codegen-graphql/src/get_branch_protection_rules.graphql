@@ -1,0 +1,16 @@
+query GetBranchProtectionRules($owner: String!, $name: String!) {
+  repository(owner: $owner, name: $name) {
+    branchProtectionRules(first: 100) {
+      nodes {
+        pattern
+        requiredApprovingReviewCount
+        requiredStatusChecks {
+          context
+          app {
+            databaseId
+          }
+        }
+      }
+    }
+  }
+}
