@@ -3292,6 +3292,7 @@ dependencies = [
  "josh-core",
  "josh-git-serde",
  "josh-gix-ext",
+ "josh-view",
  "log",
  "serde",
  "tempfile",
@@ -3894,6 +3895,7 @@ name = "josh-view"
 version = "26.8.28"
 dependencies = [
  "anyhow",
+ "clap",
  "gix",
  "gix-hash",
  "josh-core",

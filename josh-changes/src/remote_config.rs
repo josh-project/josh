@@ -1,20 +1,6 @@
 use anyhow::{Context, anyhow};
 
-/// Forge-specific behavior for a remote.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, clap::ValueEnum)]
-pub enum Forge {
-    Github,
-    Gerrit,
-}
-
-impl std::fmt::Display for Forge {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Forge::Github => f.write_str("github"),
-            Forge::Gerrit => f.write_str("gerrit"),
-        }
-    }
-}
+pub use josh_view::Forge;
 
 /// How `josh changes publish` maps a stack onto Gerrit changes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, clap::ValueEnum)]

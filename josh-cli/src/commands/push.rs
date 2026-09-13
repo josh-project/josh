@@ -96,6 +96,10 @@ pub struct PublishArgs {
 struct PreparedPush {
     to_push: Vec<PushRef>,
     pr_infos: Vec<josh_github_changes::PrInfo>,
+    /// The commit being published, mapped into upstream space.
+    published_oid: gix_hash::ObjectId,
+    /// The upstream-space commit the published history is based on.
+    base_oid: gix_hash::ObjectId,
 }
 
 fn prepare_push(
@@ -248,7 +252,12 @@ fn prepare_push(
             vec![]
         };
 
-    Ok(PreparedPush { to_push, pr_infos })
+    Ok(PreparedPush {
+        to_push,
+        pr_infos,
+        published_oid: unfiltered_oid,
+        base_oid: original_target,
+    })
 }
 
 /// Render a curated summary of a push, reframing the stacked-changes refs
@@ -546,24 +555,27 @@ fn orchestrate_push(
             )
         })
         .collect::<anyhow::Result<Vec<_>>>()?;
+    let mut prepared_pushes = prepared_pushes;
 
-    // Phase 2: Flatten the prepared pushes into one bundled set. Dedup by
-    // (destination ref, oid) (keep first) to tolerate duplicate or colliding
-    // refspec arguments, which an atomic push would otherwise reject. The oid is
-    // part of the key because Gerrit publishing intentionally routes several
-    // distinct change commits to the same `refs/for/<branch>` ref.
-    let mut seen = std::collections::HashSet::new();
-    let mut to_push: Vec<PushRef> = Vec::new();
+    // Phase 2: Flatten the prepared pushes into one bundled set.
+    let to_push = dedup_push_refs(
+        prepared_pushes
+            .iter()
+            .flat_map(|prepared| prepared.to_push.iter().cloned()),
+    );
     let mut pr_infos: Vec<josh_github_changes::PrInfo> = Vec::new();
-
-    for prepared in prepared_pushes {
-        for push_ref in prepared.to_push {
-            if seen.insert((push_ref.ref_name.clone(), push_ref.oid)) {
-                to_push.push(push_ref);
-            }
-        }
-        pr_infos.extend(prepared.pr_infos);
+    for prepared in &mut prepared_pushes {
+        pr_infos.append(&mut prepared.pr_infos);
     }
+
+    // Links are published in publish mode only. Building their pushes is pure
+    // computation; do it before any push so errors fail the publish before
+    // any remote is touched.
+    let link_pushes = if let PushMode::Publish(author) = &push_mode {
+        prepare_link_pushes(transaction, &prepared_pushes, author)?
+    } else {
+        vec![]
+    };
 
     // Publish mode always force-updates its per-change refs.
     let force = force || matches!(push_mode, PushMode::Publish(_));
@@ -598,6 +610,118 @@ fn orchestrate_push(
     }
 
     create_prs(&pr_infos, &url, push_url.as_deref(), dry_run)?;
+
+    execute_link_pushes(transaction, link_pushes, atomic, dry_run)?;
+
+    Ok(())
+}
+
+/// Dedup by (destination ref, oid), keeping the first occurrence, to tolerate
+/// duplicate or colliding refspec arguments, which an atomic push would
+/// otherwise reject. The oid is part of the key because Gerrit publishing
+/// intentionally routes several distinct change commits to the same
+/// `refs/for/<branch>` ref.
+fn dedup_push_refs(refs: impl IntoIterator<Item = PushRef>) -> Vec<PushRef> {
+    let mut seen = std::collections::HashSet::new();
+    refs.into_iter()
+        .filter(|push_ref| seen.insert((push_ref.ref_name.clone(), push_ref.oid)))
+        .collect()
+}
+
+struct PreparedLinkPush {
+    id: String,
+    link: josh_view::Link,
+    to_push: Vec<PushRef>,
+}
+
+/// Build the push for every configured link: project the upstream-space
+/// commits through each link's filter into change refs. Pure computation, run
+/// before any push so errors fail the publish before any remote is touched.
+/// Links with no surviving changes are kept with an empty push so the
+/// executor can report the skip.
+fn prepare_link_pushes(
+    transaction: &josh_core::cache::Transaction,
+    prepared_pushes: &[PreparedPush],
+    author: &str,
+) -> anyhow::Result<Vec<PreparedLinkPush>> {
+    let links: Vec<(String, josh_view::View)> = josh_view::list_views(transaction)?
+        .into_iter()
+        .filter(|(_, view)| view.link.is_some())
+        .collect();
+    if links.is_empty() {
+        return Ok(vec![]);
+    }
+
+    // Links are experimental; fail before touching any remote.
+    josh_core::filter::check_experimental_features_enabled("josh link")?;
+
+    let mut prepared_links = Vec::new();
+    for (id, view) in links {
+        let link = view.link.expect("filtered to links above");
+        if link.forge == Some(Forge::Gerrit) {
+            return Err(anyhow!(
+                "publishing to Gerrit links is not supported yet (link '{id}')"
+            ));
+        }
+
+        let to_push = dedup_push_refs(
+            prepared_pushes
+                .iter()
+                .map(|prepared| {
+                    josh_changes::build_link_push(
+                        transaction,
+                        author,
+                        &link.tracked_ref,
+                        prepared.published_oid,
+                        prepared.base_oid,
+                        view.filter,
+                    )
+                })
+                .collect::<anyhow::Result<Vec<_>>>()
+                .with_context(|| format!("Failed to build push for link '{id}'"))?
+                .into_iter()
+                .flatten(),
+        );
+
+        prepared_links.push(PreparedLinkPush { id, link, to_push });
+    }
+
+    Ok(prepared_links)
+}
+
+/// Push the prepared link pushes to the link remotes, opening PRs where the
+/// link's forge supports them.
+fn execute_link_pushes(
+    transaction: &josh_core::cache::Transaction,
+    link_pushes: Vec<PreparedLinkPush>,
+    atomic: bool,
+    dry_run: bool,
+) -> anyhow::Result<()> {
+    for prepared in link_pushes {
+        let PreparedLinkPush { id, link, to_push } = prepared;
+
+        if to_push.is_empty() {
+            eprintln!("link '{id}': no changes after filtering");
+            continue;
+        }
+
+        eprintln!("Publishing to link '{id}' ({}):", link.url);
+        push_branch_based(
+            transaction,
+            &id,
+            &to_push,
+            &link.url,
+            true,
+            atomic,
+            dry_run,
+            true,
+        )?;
+
+        if link.forge == Some(Forge::Github) && !dry_run {
+            let pr_infos = josh_github_changes::collect_pr_infos(transaction, &to_push);
+            create_prs(&pr_infos, &link.url, None, dry_run)?;
+        }
+    }
 
     Ok(())
 }
