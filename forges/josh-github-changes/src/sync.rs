@@ -245,18 +245,20 @@ async fn sync_admission_data(
     }
 
     let maintainers = ctx.api.get_maintainers(ctx.owner, ctx.repo_name).await?;
-    let required_checks = ctx
+    let requirements = ctx
         .api
-        .get_required_checks(ctx.owner, ctx.repo_name, branch)
-        .await?
-        .into_iter()
-        .map(|check| (check.context.clone(), check))
-        .collect();
+        .get_admission_requirements(ctx.owner, ctx.repo_name, branch)
+        .await?;
 
     let data = crate::AdmissionData {
         fetched_at: now,
         maintainers: maintainers.into_iter().map(|login| (login, ())).collect(),
-        required_checks,
+        required_checks: requirements
+            .required_checks
+            .into_iter()
+            .map(|check| (check.context.clone(), check))
+            .collect(),
+        required_approvals: requirements.required_approvals,
     };
     crate::store_admission_data(ctx.transaction, &data, scope)?;
     Ok(())

@@ -42,6 +42,8 @@ fragments = ["required_status_checks_info", "status_checks_params"]
 [queries.get_repository_collaborators]
 fragments = ["collaborator_edge_info"]
 
+[queries.get_branch_protection_rules]
+
 [queries.add_comment]
 
 [queries.add_pull_request_review_thread]

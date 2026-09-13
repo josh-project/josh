@@ -1,12 +1,12 @@
 use crate::connection::GithubApiConnection;
 
 use josh_github_codegen_graphql::{
-    get_default_branch,
+    get_branch_protection_rules, get_default_branch,
     get_repository_rulesets::{self, RepositoryRulesetTarget, RuleEnforcement},
     get_ruleset_required_checks::{
         self, GetRulesetRequiredChecksNode, RequiredStatusChecksInfoParameters,
     },
-    GetDefaultBranch, GetRepositoryRulesets, GetRulesetRequiredChecks,
+    GetBranchProtectionRules, GetDefaultBranch, GetRepositoryRulesets, GetRulesetRequiredChecks,
 };
 use serde::{Deserialize, Serialize};
 
@@ -26,6 +26,52 @@ pub struct RepositoryRuleset {
 pub struct RequiredStatusCheck {
     pub context: String,
     pub integration_id: Option<i64>,
+}
+
+/// A classic branch protection rule.
+#[derive(Debug)]
+pub struct BranchProtectionRuleInfo {
+    /// fnmatch pattern on short branch names (e.g. "master", "release-*").
+    pub pattern: String,
+    pub required_checks: Vec<RequiredStatusCheck>,
+    pub required_approvals: u32,
+}
+
+/// Repository-level admission requirements for one branch, merged from
+/// rulesets and classic branch protection rules.
+#[derive(Debug, Default)]
+pub struct AdmissionRequirements {
+    pub required_checks: Vec<RequiredStatusCheck>,
+    pub required_approvals: u32,
+}
+
+/// fnmatch-lite for branch protection patterns: `*` matches any (possibly
+/// empty) character sequence, everything else is literal.
+fn branch_pattern_matches(pattern: &str, branch: &str) -> bool {
+    if !pattern.contains('*') {
+        return pattern == branch;
+    }
+    let parts: Vec<&str> = pattern.split('*').collect();
+    let mut rest = branch;
+    for (i, part) in parts.iter().enumerate() {
+        if part.is_empty() {
+            continue;
+        }
+        if i == 0 {
+            let Some(r) = rest.strip_prefix(part) else {
+                return false;
+            };
+            rest = r;
+        } else if i == parts.len() - 1 {
+            return rest.ends_with(part);
+        } else {
+            let Some(pos) = rest.find(part) else {
+                return false;
+            };
+            rest = &rest[pos + part.len()..];
+        }
+    }
+    true
 }
 
 impl RepositoryRuleset {
@@ -176,5 +222,96 @@ impl GithubApiConnection {
             checks.extend(self.get_ruleset_required_checks(&ruleset.id).await?);
         }
         Ok(checks)
+    }
+
+    /// Classic branch protection rules, with their required status checks.
+    pub async fn get_branch_protection_rules(
+        &self,
+        owner: &str,
+        name: &str,
+    ) -> anyhow::Result<Vec<BranchProtectionRuleInfo>> {
+        let variables = get_branch_protection_rules::Variables {
+            owner: owner.to_string(),
+            name: name.to_string(),
+        };
+
+        let response = self
+            .make_request::<GetBranchProtectionRules>(variables)
+            .await?;
+
+        let rules = response
+            .repository
+            .map(|r| r.branch_protection_rules)
+            .and_then(|r| r.nodes)
+            .unwrap_or_default();
+
+        Ok(rules
+            .into_iter()
+            .flatten()
+            .map(|node| BranchProtectionRuleInfo {
+                pattern: node.pattern,
+                required_checks: node
+                    .required_status_checks
+                    .unwrap_or_default()
+                    .into_iter()
+                    .map(|check| RequiredStatusCheck {
+                        context: check.context,
+                        integration_id: check
+                            .app
+                            .and_then(|app| app.database_id)
+                            .map(|id| id as i64),
+                    })
+                    .collect(),
+                required_approvals: node.required_approving_review_count.unwrap_or(0).max(0) as u32,
+            })
+            .collect())
+    }
+
+    /// Admission requirements for `branch` (a short branch name), merged
+    /// from active rulesets and matching classic branch protection rules.
+    pub async fn get_admission_requirements(
+        &self,
+        owner: &str,
+        name: &str,
+        branch: &str,
+    ) -> anyhow::Result<AdmissionRequirements> {
+        let mut requirements = AdmissionRequirements {
+            required_checks: self.get_required_checks(owner, name, branch).await?,
+            required_approvals: 0,
+        };
+        for rule in self.get_branch_protection_rules(owner, name).await? {
+            if !branch_pattern_matches(&rule.pattern, branch) {
+                continue;
+            }
+            requirements.required_checks.extend(rule.required_checks);
+            requirements.required_approvals =
+                requirements.required_approvals.max(rule.required_approvals);
+        }
+        Ok(requirements)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn exact_branch_patterns() {
+        assert!(branch_pattern_matches("master", "master"));
+        assert!(!branch_pattern_matches("master", "main"));
+        assert!(!branch_pattern_matches("master", "master-2"));
+    }
+
+    #[test]
+    fn glob_branch_patterns() {
+        assert!(branch_pattern_matches("release-*", "release-1.0"));
+        assert!(!branch_pattern_matches("release-*", "release/1.0.2-alpha"));
+        assert!(branch_pattern_matches("release/*", "release/1.0.2-alpha"));
+        assert!(branch_pattern_matches("*-hotfix", "august-hotfix"));
+        assert!(branch_pattern_matches("rel*", "release"));
+        assert!(branch_pattern_matches("*", "anything"));
+        assert!(branch_pattern_matches("a*b*c", "axbyc"));
+        assert!(!branch_pattern_matches("a*b*c", "acb"));
+        assert!(!branch_pattern_matches("release-*", "release"));
     }
 }
