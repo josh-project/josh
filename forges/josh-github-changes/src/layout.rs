@@ -11,6 +11,7 @@ use josh_changes::VoteData;
 use josh_github_graphql::operations::pull_request::PrData;
 use serde::{Deserialize, Serialize};
 
+use crate::admission::AdmissionData;
 use crate::SyncFingerprint;
 
 pub const GITHUB_COMMENT_NODE_IDS_PATH: &str = "gh_comment_node_ids";
@@ -18,6 +19,9 @@ pub const GITHUB_VOTE_NODE_IDS_PATH: &str = "gh_vote_node_ids";
 
 /// Path of the sync-fingerprint cache namespace.
 pub const GITHUB_CACHE_PATH: &str = "gh_cache";
+
+/// Path of the cached admission-data namespace.
+pub const GITHUB_ADMISSION_PATH: &str = "gh_admission";
 
 /// Path of the stored pull-request data namespace.
 pub const GITHUB_PR_DATA_PATH: &str = "gh";
@@ -57,4 +61,6 @@ pub struct GithubChangesRefData {
     pub gh: PrDataByChange,
     #[serde(default)]
     pub gh_cache: CacheByChange,
+    #[serde(default)]
+    pub gh_admission: AdmissionData,
 }

@@ -374,8 +374,8 @@ fn load_metadata(
             .flatten()
             .map(|s| {
                 (
-                    s.review_decision.unwrap_or_default(),
-                    s.check_status.unwrap_or_default(),
+                    s.review_decision_rollup().unwrap_or_default(),
+                    s.check_status_rollup().unwrap_or_default(),
                 )
             })
             .unwrap_or_default();

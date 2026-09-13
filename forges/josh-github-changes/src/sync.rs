@@ -163,6 +163,20 @@ async fn run_sync(
 
     let mut stats = SyncStats::default();
 
+    // Refresh the cached admission data (maintainers, required checks) for
+    // every branch this sync touches; a failed refresh keeps the stale or
+    // absent cache, and mergeability reads degrade to "unknown".
+    {
+        let branches: std::collections::BTreeSet<String> =
+            prs.iter().map(|pr| target_branch_for_pr(pr)).collect();
+        for branch in branches {
+            let scope = remote_scope_for(remote_name, &branch);
+            if let Err(e) = sync_admission_data(&ctx, &scope, &branch, policy).await {
+                eprintln!("Failed to refresh admission data for '{}': {:#}", branch, e);
+            }
+        }
+    }
+
     // Only PRs whose fingerprint cache misses get their metadata fetched.
     {
         let stale: Vec<&PrSummary> = prs
@@ -205,6 +219,47 @@ async fn run_sync(
     let report = stats.sync_report();
     stats.report();
     Ok(report)
+}
+
+/// Fetch and cache the remote's admission data (maintainers and required
+/// status checks) for one branch scope, unless the cached copy is still
+/// fresh. Admission data changes rarely, so it has its own week-long TTL,
+/// independent of the per-PR fingerprint cache.
+async fn sync_admission_data(
+    ctx: &GithubSyncCtx<'_>,
+    scope: &josh_changes::ChangesRef,
+    branch: &str,
+    policy: &CachePolicy,
+) -> anyhow::Result<()> {
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+
+    if !policy.no_cache() {
+        if let Some(data) = crate::read_admission_data(ctx.transaction, scope)? {
+            if data.is_fresh(now, crate::ADMISSION_TTL_SECS) {
+                return Ok(());
+            }
+        }
+    }
+
+    let maintainers = ctx.api.get_maintainers(ctx.owner, ctx.repo_name).await?;
+    let required_checks = ctx
+        .api
+        .get_required_checks(ctx.owner, ctx.repo_name, branch)
+        .await?
+        .into_iter()
+        .map(|check| (check.context.clone(), check))
+        .collect();
+
+    let data = crate::AdmissionData {
+        fetched_at: now,
+        maintainers: maintainers.into_iter().map(|login| (login, ())).collect(),
+        required_checks,
+    };
+    crate::store_admission_data(ctx.transaction, &data, scope)?;
+    Ok(())
 }
 
 #[derive(Default)]
@@ -413,10 +468,26 @@ impl GithubSyncCtx<'_> {
             None
         };
 
-        let pr_data = self
+        let mut pr_data = self
             .api
             .get_pr_comments(self.owner, self.repo_name, pr.number)
             .await?;
+
+        // Admission inputs: latest review per reviewer, and check-run states
+        // on the head commit.
+        pr_data.reviews = self
+            .api
+            .get_pr_reviews(self.owner, self.repo_name, pr.number)
+            .await?
+            .into_iter()
+            .collect();
+        pr_data.checks = self
+            .api
+            .get_commit_check_runs(self.owner, self.repo_name, &pr.head_oid)
+            .await?
+            .into_iter()
+            .map(|(name, _integration_id, state)| (name, state))
+            .collect();
 
         Ok(PrMeta {
             change_id: existing_change_id

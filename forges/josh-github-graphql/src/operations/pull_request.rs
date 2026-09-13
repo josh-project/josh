@@ -1,6 +1,10 @@
 use crate::connection::GithubApiConnection;
 use anyhow::anyhow;
 use serde::{Deserialize, Serialize};
+use std::collections::BTreeMap;
+
+use super::get_commit_check_runs::CheckState;
+use josh_github_webhooks::webhook_types::PullRequestReviewState;
 
 use josh_github_codegen_graphql::{
     add_comment, add_pull_request_review, add_pull_request_review_thread,
@@ -49,14 +53,72 @@ pub struct PrData {
     pub changed_files: i64,
     pub base_ref_name: String,
     pub head_ref_name: String,
-    pub review_decision: Option<String>,
-    pub check_status: Option<String>,
+    /// Latest review state per reviewer login.
+    #[serde(default)]
+    pub reviews: BTreeMap<String, PullRequestReviewState>,
+    /// Latest state per check-run name on the head commit.
+    #[serde(default)]
+    pub checks: BTreeMap<String, CheckState>,
     // Sequences are unsupported by the git-tree format; labels are fetch-time
     // only and never persisted.
     #[serde(skip)]
     pub labels: Vec<PrLabel>,
     #[serde(skip)]
     pub comments: Vec<PrComment>,
+}
+
+impl PrData {
+    /// Coarse review summary in the same shape as the old stored
+    /// `review_decision` rollup ("Approved" / "ChangesRequested" /
+    /// "ReviewRequired"), derived from the per-reviewer map. Dismissed
+    /// reviews are ignored.
+    pub fn review_decision_rollup(&self) -> Option<String> {
+        let states = self
+            .reviews
+            .values()
+            .filter(|s| !matches!(s, PullRequestReviewState::Dismissed));
+        let mut saw_review = false;
+        let mut saw_approved = false;
+        for state in states {
+            saw_review = true;
+            match state {
+                PullRequestReviewState::ChangesRequested => {
+                    return Some("ChangesRequested".to_string());
+                }
+                PullRequestReviewState::Approved => saw_approved = true,
+                _ => {}
+            }
+        }
+        if saw_approved {
+            Some("Approved".to_string())
+        } else if saw_review {
+            Some("ReviewRequired".to_string())
+        } else {
+            None
+        }
+    }
+
+    /// Coarse check summary in the same shape as the old stored
+    /// `check_status` rollup ("Success" / "Failure" / "Pending"), derived
+    /// from the per-check map.
+    pub fn check_status_rollup(&self) -> Option<String> {
+        if self.checks.is_empty() {
+            return None;
+        }
+        let mut saw_pending = false;
+        for state in self.checks.values() {
+            match state {
+                CheckState::Pending => saw_pending = true,
+                CheckState::Success | CheckState::Neutral | CheckState::Skipped => {}
+                _ => return Some("Failure".to_string()),
+            }
+        }
+        if saw_pending {
+            Some("Pending".to_string())
+        } else {
+            Some("Success".to_string())
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -447,8 +509,10 @@ impl GithubApiConnection {
             changed_files: pr.changed_files,
             base_ref_name: pr.base_ref_name,
             head_ref_name: pr.head_ref_name,
-            review_decision: pr.review_decision.map(|r| format!("{:?}", r)),
-            check_status: pr.status_check_rollup.map(|r| format!("{:?}", r.state)),
+            // Reviews and checks are filled in by the sync layer via
+            // dedicated queries; the GC path leaves them empty.
+            reviews: BTreeMap::new(),
+            checks: BTreeMap::new(),
             labels,
             comments,
         })
