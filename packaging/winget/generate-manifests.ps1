@@ -32,13 +32,15 @@ function Get-PackageVersion([string]$packageDir) {
 }
 
 # Installer entries for the packaged zips; maps the target-triple arch to
-# winget's names ('x86_64' -> 'x64').
+# winget's names ('x86_64' -> 'x64'). VCRedist is a per-arch dependency
+# because the windows-msvc build links VCRUNTIME140.dll dynamically (no
+# crt-static override in rust-windows.yml) and it is not inbox on Windows.
 function Get-InstallerEntries([string]$packageDir, [string]$version, [string]$releaseUrl) {
   $entries = @()
   foreach ($zip in Get-ChildItem "$packageDir/josh-$version-*.zip") {
     $arch = if ($zip.Name -like '*x86_64*') { 'x64' } else { 'arm64' }
     $hash = (Get-FileHash $zip.FullName -Algorithm SHA256).Hash
-    $entries += "- Architecture: $arch`n  InstallerUrl: $releaseUrl/$($zip.Name)`n  InstallerSha256: $hash"
+    $entries += "- Architecture: $arch`n  InstallerUrl: $releaseUrl/$($zip.Name)`n  InstallerSha256: $hash`n  Dependencies:`n    PackageDependencies:`n    - PackageIdentifier: Microsoft.VCRedist.2015+.$arch"
   }
   if ($entries.Count -eq 0) { throw "no josh-$version-*.zip zips found in $packageDir" }
   return $entries -join "`n"
