@@ -4194,6 +4194,7 @@ dependencies = [
  "gix-hash",
  "josh-core",
  "josh-git-serde",
+ "josh-view",
  "log",
  "serde",
 ]
@@ -4463,6 +4464,17 @@ dependencies = [
  "josh-filter",
  "josh-gix-ext",
  "starlark",
+]
+
+[[package]]
+name = "josh-view"
+version = "26.8.28"
+dependencies = [
+ "anyhow",
+ "clap",
+ "gix-hash",
+ "josh-core",
+ "josh-filter",
 ]
 
 [[package]]

@@ -48,7 +48,6 @@ pub(crate) fn changes_to_refs(
                     change.commit
                 ));
             }
-            seen.insert(id);
         }
     }
 
@@ -80,6 +79,82 @@ pub(crate) fn changes_to_refs(
     Ok(refs)
 }
 
+/// The shared tail of publish ref building: per-change `@changes`/`@base`
+/// refs plus the `@heads` stack tip, sorted by ref name. `target` may be
+/// fully qualified (`refs/heads/master`); the `refs/heads/` prefix is
+/// stripped here, the single normalization point.
+fn publish_refs(
+    transaction: &Transaction,
+    target: &str,
+    author: &str,
+    changes: Vec<Change>,
+    head_oid: gix_hash::ObjectId,
+) -> anyhow::Result<Vec<PushRef>> {
+    let target = target.replacen("refs/heads/", "", 1);
+
+    let mut push_refs = changes_to_refs(transaction, &target, author, changes)?;
+
+    push_refs.push(PushRef {
+        ref_name: StackedRef::StackHead {
+            target: target.clone(),
+            author: author.to_string(),
+        }
+        .ref_name(),
+        oid: head_oid,
+        change_id: target,
+    });
+
+    push_refs.sort_by(|a, b| a.ref_name.cmp(&b.ref_name));
+    Ok(push_refs)
+}
+
+/// Build the refs for publishing to a link: the same change refs as
+/// `build_to_push`'s `Publish` mode, projected through the link's filter.
+/// Changes that become empty under the filter are dropped. Returns an empty
+/// vec when nothing survives; the caller then skips the link entirely,
+/// including the `@heads` ref.
+pub fn build_link_push(
+    transaction: &Transaction,
+    author: &str,
+    target: &str,
+    oid_to_push: gix_hash::ObjectId,
+    base_oid: gix_hash::ObjectId,
+    link_filter: josh_core::filter::Filter,
+) -> anyhow::Result<Vec<PushRef>> {
+    let changes = get_changes(transaction, oid_to_push, base_oid)?;
+    let changes = split_changes(transaction, changes)?;
+
+    // A change is empty under the link's filter when its filtered tree equals
+    // its filtered parent's tree. Note filtering collapses an empty commit
+    // onto its parent, so the mapped commit's own parent is not reliable —
+    // filter the original first parent explicitly.
+    let odb = transaction.odb();
+    let mut filtered_changes = Vec::new();
+    for change in changes {
+        let commit = josh_core::filter::apply_to_commit(link_filter, change.commit, transaction)?;
+        let tree = josh_core::objects::CommitData::read(odb, commit)?.tree_id()?;
+        let parent_tree = josh_core::objects::CommitData::read(odb, change.commit)?
+            .first_parent_id()
+            .map(|parent| {
+                let filtered =
+                    josh_core::filter::apply_to_commit(link_filter, parent, transaction)?;
+                josh_core::objects::CommitData::read(odb, filtered)?.tree_id()
+            })
+            .transpose()?;
+        if parent_tree == Some(tree) {
+            continue;
+        }
+        filtered_changes.push(Change { commit, ..change });
+    }
+
+    if filtered_changes.is_empty() {
+        return Ok(vec![]);
+    }
+
+    let head_oid = josh_core::filter::apply_to_commit(link_filter, oid_to_push, transaction)?;
+    publish_refs(transaction, target, author, filtered_changes, head_oid)
+}
+
 pub fn build_to_push(
     transaction: &Transaction,
     push_mode: &PushMode,
@@ -93,21 +168,7 @@ pub fn build_to_push(
             let changes = get_changes(transaction, oid_to_push, base_oid)?;
             let changes = split_changes(transaction, changes)?;
 
-            let mut push_refs = changes_to_refs(transaction, baseref, author, changes)?;
-
-            let target = baseref.replacen("refs/heads/", "", 1);
-            push_refs.push(PushRef {
-                ref_name: StackedRef::StackHead {
-                    target: target.clone(),
-                    author: author.clone(),
-                }
-                .ref_name(),
-                oid: oid_to_push,
-                change_id: target,
-            });
-
-            push_refs.sort_by(|a, b| a.ref_name.cmp(&b.ref_name));
-            Ok(push_refs)
+            publish_refs(transaction, baseref, author, changes, oid_to_push)
         }
         PushMode::Normal => Ok(vec![PushRef {
             ref_name: if ref_with_options.starts_with("refs/") {

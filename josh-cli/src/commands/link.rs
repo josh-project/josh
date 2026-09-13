@@ -30,6 +30,14 @@ pub struct LinkAddArgs {
     /// Link id (defaults to the repository name derived from the URL)
     #[arg(long = "id")]
     pub id: Option<String>,
+
+    /// Forge hosting the linked remote (defaults to guessing from the URL)
+    #[arg(long = "forge", conflicts_with = "no_forge")]
+    pub forge: Option<josh_view::Forge>,
+
+    /// Disable forge integration for this link (refs-only publishing)
+    #[arg(long = "no-forge")]
+    pub no_forge: bool,
 }
 
 #[derive(Debug, clap::Parser)]
@@ -76,15 +84,23 @@ fn handle_link_add(
     let filter = josh_core::filter::parse(&args.filter)
         .with_context(|| format!("Failed to parse filter '{}'", args.filter))?;
 
-    let tracked_ref =
+    let short_ref =
         crate::remote_ops::get_head_branch(&args.url, &transaction.path().to_path_buf(), &id)
             .with_context(|| format!("Failed to determine default branch of '{}'", args.url))?;
+    let tracked_ref = format!("refs/heads/{short_ref}");
+
+    let forge = if args.no_forge {
+        None
+    } else {
+        args.forge.or_else(|| crate::forge::guess_forge(&args.url))
+    };
 
     let view = josh_view::View {
         filter,
         link: Some(josh_view::Link {
             url: args.url.clone(),
             tracked_ref: tracked_ref.clone(),
+            forge,
         }),
     };
 
@@ -112,10 +128,11 @@ fn handle_link_list(transaction: &josh_core::cache::Transaction) -> anyhow::Resu
     for (id, view) in josh_view::list_views(transaction)? {
         match &view.link {
             Some(link) => println!(
-                "{}\t{}\t{}\t{}",
+                "{}\t{}\t{}\t{}\t{}",
                 id,
                 link.url,
                 link.tracked_ref,
+                link.forge.map(|f| f.to_string()).unwrap_or_default(),
                 josh_core::filter::spec(view.filter)
             ),
             None => println!("{}\t{}", id, josh_core::filter::spec(view.filter)),

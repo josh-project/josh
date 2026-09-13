@@ -10,6 +10,7 @@ keywords = ["git", "monorepo", "workflow", "scm"]
 
 [dependencies]
 anyhow.workspace = true
+clap.workspace = true
 gix-hash.workspace = true
 
 josh-core.workspace = true

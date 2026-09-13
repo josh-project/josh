@@ -10,6 +10,9 @@ use josh_core::filter::tree;
 use josh_core::objects;
 use std::path::Path;
 
+mod forge;
+pub use forge::Forge;
+
 /// The file inside a link ref's tree holding the view definition.
 pub const LINK_FILE: &str = "link.josh";
 
@@ -18,13 +21,16 @@ pub const LINKS_REF_PREFIX: &str = "refs/josh/links/";
 
 const META_URL: &str = "url";
 const META_TRACKED_REF: &str = "tracked-ref";
+const META_FORGE: &str = "forge";
 
 /// A view bound to an external remote.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Link {
     pub url: String,
-    /// The main ref of the remote (e.g. `main` or `master`).
+    /// The main ref of the remote, fully qualified (e.g. `refs/heads/main`).
     pub tracked_ref: String,
+    /// The forge hosting the remote; `None` means refs-only publishing.
+    pub forge: Option<Forge>,
 }
 
 /// A named, versioned binding of a filter plus optional link parameters.
@@ -39,26 +45,47 @@ impl View {
     /// link parameters when this view is a link.
     pub fn to_filter(&self) -> josh_filter::Filter {
         match &self.link {
-            Some(link) => self
-                .filter
-                .with_meta(META_URL, link.url.clone())
-                .with_meta(META_TRACKED_REF, link.tracked_ref.clone()),
+            Some(link) => {
+                let filter = self
+                    .filter
+                    .with_meta(META_URL, link.url.clone())
+                    .with_meta(META_TRACKED_REF, link.tracked_ref.clone());
+                match &link.forge {
+                    Some(forge) => filter.with_meta(META_FORGE, forge.to_string()),
+                    None => filter,
+                }
+            }
             None => self.filter,
         }
     }
 
-    /// Recover a view from a filter: link parameters come from the `url` and
-    /// `tracked-ref` meta keys, which are stripped from the body; any other
-    /// meta options stay on the filter.
-    pub fn from_filter(filter: josh_filter::Filter) -> View {
+    /// Recover a view from a filter: link parameters come from the `url`,
+    /// `tracked-ref` and `forge` meta keys, which are stripped from the body;
+    /// any other meta options stay on the filter. An unknown `forge` value or
+    /// a non-fully-qualified `tracked-ref` is an error.
+    pub fn from_filter(filter: josh_filter::Filter) -> anyhow::Result<View> {
         let link = match (filter.get_meta(META_URL), filter.get_meta(META_TRACKED_REF)) {
-            (Some(url), Some(tracked_ref)) => Some(Link { url, tracked_ref }),
+            (Some(url), Some(tracked_ref)) => {
+                validate_tracked_ref(&tracked_ref)?;
+                let forge = filter
+                    .get_meta(META_FORGE)
+                    .map(|f| {
+                        clap::ValueEnum::from_str(&f, true)
+                            .map_err(|_| anyhow!("Unknown forge: {f}"))
+                    })
+                    .transpose()?;
+                Some(Link {
+                    url,
+                    tracked_ref,
+                    forge,
+                })
+            }
             _ => None,
         };
-        View {
-            filter: filter.without_meta_keys(&[META_URL, META_TRACKED_REF]),
+        Ok(View {
+            filter: filter.without_meta_keys(&[META_URL, META_TRACKED_REF, META_FORGE]),
             link,
-        }
+        })
     }
 
     /// The `link.josh` file content for this view.
@@ -70,13 +97,24 @@ impl View {
     pub fn parse(text: &str) -> anyhow::Result<View> {
         let filter = josh_core::filter::parse(text)
             .with_context(|| format!("failed to parse {LINK_FILE}"))?;
-        Ok(View::from_filter(filter))
+        View::from_filter(filter)
     }
 }
 
 /// The fully-qualified ref a link with `id` is versioned under.
 pub fn link_ref_name(id: &str) -> String {
     format!("{LINKS_REF_PREFIX}{id}")
+}
+
+/// The tracked ref is stored fully qualified (e.g. `refs/heads/main`) so the
+/// ref namespace is unambiguous.
+pub fn validate_tracked_ref(tracked_ref: &str) -> anyhow::Result<()> {
+    if !tracked_ref.starts_with("refs/") {
+        return Err(anyhow!(
+            "tracked ref '{tracked_ref}' must be fully qualified (e.g. refs/heads/main)"
+        ));
+    }
+    Ok(())
 }
 
 /// A link id becomes a git ref component, so reject anything that would make
@@ -120,8 +158,9 @@ pub fn write_view(
     message: &str,
 ) -> anyhow::Result<gix_hash::ObjectId> {
     validate_link_id(id)?;
-    if view.link.is_some() {
-        for key in [META_URL, META_TRACKED_REF] {
+    if let Some(link) = &view.link {
+        validate_tracked_ref(&link.tracked_ref)?;
+        for key in [META_URL, META_TRACKED_REF, META_FORGE] {
             if view.filter.get_meta(key).is_some() {
                 return Err(anyhow!(
                     "filter must not set reserved meta key '{key}': it is owned by the link config"
@@ -232,10 +271,24 @@ mod tests {
             filter: josh_core::filter::parse(":/subfolder").unwrap(),
             link: Some(Link {
                 url: "https://example.com/repo.git".to_string(),
-                tracked_ref: "main".to_string(),
+                tracked_ref: "refs/heads/main".to_string(),
+                forge: Some(Forge::Github),
             }),
         };
         assert_eq!(View::parse(&link_view.to_file_string()).unwrap(), link_view);
+
+        let no_forge_view = View {
+            filter: josh_core::filter::parse(":/subfolder").unwrap(),
+            link: Some(Link {
+                url: "https://example.com/repo.git".to_string(),
+                tracked_ref: "refs/heads/main".to_string(),
+                forge: None,
+            }),
+        };
+        assert_eq!(
+            View::parse(&no_forge_view.to_file_string()).unwrap(),
+            no_forge_view
+        );
 
         let plain_view = View {
             filter: josh_core::filter::parse(":/subfolder").unwrap(),
@@ -250,14 +303,15 @@ mod tests {
     #[test]
     fn parse_link_file_with_meta() {
         let view = View::parse(
-            ":~(tracked-ref=\"main\",url=\"https://example.com/repo.git\")[:/subfolder]\n",
+            ":~(forge=\"github\",tracked-ref=\"refs/heads/main\",url=\"https://example.com/repo.git\")[:/subfolder]\n",
         )
         .unwrap();
         assert_eq!(
             view.link,
             Some(Link {
                 url: "https://example.com/repo.git".to_string(),
-                tracked_ref: "main".to_string(),
+                tracked_ref: "refs/heads/main".to_string(),
+                forge: Some(Forge::Github),
             })
         );
         assert_eq!(
@@ -267,9 +321,29 @@ mod tests {
     }
 
     #[test]
+    fn parse_rejects_unknown_forge() {
+        assert!(
+            View::parse(
+                ":~(forge=\"gitlab\",tracked-ref=\"refs/heads/main\",url=\"https://example.com/repo.git\")[:/subfolder]\n",
+            )
+            .is_err()
+        );
+    }
+
+    #[test]
+    fn parse_rejects_short_tracked_ref() {
+        assert!(
+            View::parse(
+                ":~(tracked-ref=\"main\",url=\"https://example.com/repo.git\")[:/subfolder]\n",
+            )
+            .is_err()
+        );
+    }
+
+    #[test]
     fn unrelated_meta_stays_on_filter() {
         let view = View::parse(
-            ":~(history=\"linear\",tracked-ref=\"main\",url=\"https://example.com/repo.git\")[:/subfolder]\n",
+            ":~(history=\"linear\",tracked-ref=\"refs/heads/main\",url=\"https://example.com/repo.git\")[:/subfolder]\n",
         )
         .unwrap();
         assert!(view.link.is_some());
@@ -304,7 +378,8 @@ mod tests {
             filter: josh_core::filter::parse(":/subfolder").unwrap(),
             link: Some(Link {
                 url: "https://example.com/repo.git".to_string(),
-                tracked_ref: "main".to_string(),
+                tracked_ref: "refs/heads/main".to_string(),
+                forge: None,
             }),
         };
 
@@ -340,7 +415,8 @@ mod tests {
             .unwrap(),
             link: Some(Link {
                 url: "https://example.com/repo.git".to_string(),
-                tracked_ref: "main".to_string(),
+                tracked_ref: "refs/heads/main".to_string(),
+                forge: None,
             }),
         };
 
