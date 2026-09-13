@@ -8,6 +8,7 @@ use josh_github_codegen_graphql::{
     },
     GetDefaultBranch, GetRepositoryRulesets, GetRulesetRequiredChecks,
 };
+use serde::{Deserialize, Serialize};
 
 /// A repository ruleset with its branch conditions.
 #[derive(Debug)]
@@ -21,10 +22,30 @@ pub struct RepositoryRuleset {
 }
 
 /// A required status check from a ruleset.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 pub struct RequiredStatusCheck {
     pub context: String,
     pub integration_id: Option<i64>,
+}
+
+impl RepositoryRuleset {
+    /// Whether the ruleset's branch conditions cover `branch` (a short
+    /// branch name). Supports "~ALL", exact "refs/heads/<branch>" and
+    /// trailing-`*` prefixes; "~DEFAULT_BRANCH" is not resolved and never
+    /// matches.
+    pub fn targets_branch(&self, branch: &str) -> bool {
+        let refname = format!("refs/heads/{}", branch);
+        let matches = |pattern: &str| {
+            pattern == "~ALL"
+                || pattern == refname
+                || pattern
+                    .strip_suffix('*')
+                    .is_some_and(|prefix| refname.starts_with(prefix))
+        };
+        let included = self.include_refs.is_empty() || self.include_refs.iter().any(|p| matches(p));
+        let excluded = self.exclude_refs.iter().any(|p| matches(p));
+        included && !excluded
+    }
 }
 
 impl GithubApiConnection {
@@ -134,6 +155,26 @@ impl GithubApiConnection {
             })
             .collect();
 
+        Ok(checks)
+    }
+
+    /// Required status checks from all active rulesets targeting `branch`
+    /// (a short branch name).
+    pub async fn get_required_checks(
+        &self,
+        owner: &str,
+        name: &str,
+        branch: &str,
+    ) -> anyhow::Result<Vec<RequiredStatusCheck>> {
+        let mut checks = Vec::new();
+        for ruleset in self.get_repository_rulesets(owner, name).await? {
+            if !matches!(ruleset.enforcement, RuleEnforcement::Active)
+                || !ruleset.targets_branch(branch)
+            {
+                continue;
+            }
+            checks.extend(self.get_ruleset_required_checks(&ruleset.id).await?);
+        }
         Ok(checks)
     }
 }

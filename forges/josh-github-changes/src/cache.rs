@@ -27,6 +27,10 @@ impl CachePolicy {
         CachePolicy { no_cache, ttl, now }
     }
 
+    pub(crate) fn no_cache(&self) -> bool {
+        self.no_cache
+    }
+
     /// Treat read errors as misses after reporting them.
     pub(crate) fn lookup(
         &self,

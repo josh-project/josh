@@ -321,11 +321,14 @@ pub fn load_detail(sha: &str, scope: &josh_changes::ChangesRef) -> anyhow::Resul
         pr_info = josh_github_changes::read_pr_data(&transaction, cid, scope)
             .ok()
             .flatten()
-            .map(|v| PrInfo {
-                url: v.url,
-                title: v.title,
-                state: v.state,
-                review_decision: v.review_decision.unwrap_or_default(),
+            .map(|v| {
+                let review_decision = v.review_decision_rollup().unwrap_or_default();
+                PrInfo {
+                    url: v.url,
+                    title: v.title,
+                    state: v.state,
+                    review_decision,
+                }
             });
 
         // Adopt the base oid recorded under the selected scope, if present.

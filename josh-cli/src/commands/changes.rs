@@ -51,6 +51,10 @@ pub fn handle_list(
 
     let known = known_change_ids(&changes);
 
+    let admission = josh_github_changes::read_admission_data(transaction, &scope)
+        .ok()
+        .flatten();
+
     struct Row {
         id: String,
         commit_sha: String,
@@ -58,6 +62,7 @@ pub fn handle_list(
         deps_count: usize,
         comments_count: usize,
         vote: String,
+        mergeable: String,
     }
 
     let mut rows: Vec<Row> = Vec::with_capacity(changes.len());
@@ -91,6 +96,22 @@ pub fn handle_list(
             .map(|v| v.state)
             .unwrap_or_default();
 
+        let mergeable = change
+            .id()
+            .and_then(|cid| {
+                josh_github_changes::read_pr_data(transaction, cid, &scope)
+                    .ok()
+                    .flatten()
+            })
+            .and_then(|pr| {
+                admission
+                    .as_ref()
+                    .map(|data| josh_github_changes::evaluate(&pr, data).admissible)
+            })
+            .map(|admissible| if admissible { "yes" } else { "no" })
+            .unwrap_or("-")
+            .to_string();
+
         rows.push(Row {
             id,
             commit_sha,
@@ -98,6 +119,7 @@ pub fn handle_list(
             deps_count,
             comments_count,
             vote,
+            mergeable,
         });
     }
 
@@ -114,12 +136,13 @@ pub fn handle_list(
     println!("Changes on {}:\n", scope_label);
     for r in &rows {
         println!(
-            "{:<7}  {:<id_w$}  D={:>3}  C={:>3}  V={:<vote_w$}  {}",
+            "{:<7}  {:<id_w$}  D={:>3}  C={:>3}  V={:<vote_w$}  M={:<3}  {}",
             &r.commit_sha[..7],
             r.id,
             r.deps_count,
             r.comments_count,
             r.vote,
+            r.mergeable,
             r.subject,
             id_w = id_w,
             vote_w = vote_w,
@@ -157,14 +180,50 @@ pub fn handle_show(
 
     if let Ok(Some(pr)) = josh_github_changes::read_pr_data(transaction, &args.change_id, &scope) {
         print!("PR:        {} [{}]", pr.title, pr.state);
-        let rd = pr.review_decision.as_deref().unwrap_or("");
-        if !rd.is_empty() {
-            print!(" {}", rd);
-        }
         if !pr.url.is_empty() {
             print!(" {}", pr.url);
         }
         println!();
+
+        match josh_github_changes::read_admission_data(transaction, &scope) {
+            Ok(Some(data)) => {
+                let status = josh_github_changes::evaluate(&pr, &data);
+                println!(
+                    "Admission: {}",
+                    if status.admissible {
+                        "admissible"
+                    } else {
+                        "not admissible"
+                    }
+                );
+                if !status.approved_by.is_empty() {
+                    println!("  approved by: {}", status.approved_by.join(", "));
+                }
+                if !status.changes_requested_by.is_empty() {
+                    println!(
+                        "  changes requested by: {}",
+                        status.changes_requested_by.join(", ")
+                    );
+                }
+                if !status.unmet_checks.is_empty() {
+                    let checks = status
+                        .unmet_checks
+                        .iter()
+                        .map(|c| c.context.as_str())
+                        .collect::<Vec<_>>()
+                        .join(", ");
+                    println!("  unmet checks: {}", checks);
+                }
+            }
+            _ => {
+                if let Some(rd) = pr.review_decision_rollup() {
+                    println!("Review:    {}", rd);
+                }
+                if let Some(cs) = pr.check_status_rollup() {
+                    println!("Checks:    {}", cs);
+                }
+            }
+        }
     }
 
     if let Some(vote) = josh_changes::read_vote(transaction, &args.change_id, None, &scope)?

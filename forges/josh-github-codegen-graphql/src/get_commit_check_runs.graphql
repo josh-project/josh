@@ -11,6 +11,7 @@ query GetCommitCheckRuns($owner: String!, $name: String!, $sha: GitObjectID!) {
             checkRuns(first: 100) {
               nodes {
                 name
+                status
                 conclusion
               }
             }
