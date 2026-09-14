@@ -1,3 +1,5 @@
+:$label="scrut test local"
+
 bases = :[
     :#BASE_IMAGE[:+images/scrut-test]
 ]
