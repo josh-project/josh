@@ -32,15 +32,16 @@ function Get-PackageVersion([string]$packageDir) {
 }
 
 # Installer entries for the packaged zips; maps the target-triple arch to
-# winget's names ('x86_64' -> 'x64'). VCRedist is a per-arch dependency
-# because the windows-msvc build links VCRUNTIME140.dll dynamically (no
-# crt-static override in rust-windows.yml) and it is not inbox on Windows.
+# winget's names ('x86_64' -> 'x64'). Dependencies are per-installer because
+# they override, not merge with, the root-level list. VCRedist provides
+# VCRUNTIME140.dll (windows-msvc links the CRT dynamically; not inbox on
+# Windows) and josh shells out to git (ls-remote, patch-id, ...).
 function Get-InstallerEntries([string]$packageDir, [string]$version, [string]$releaseUrl) {
   $entries = @()
   foreach ($zip in Get-ChildItem "$packageDir/josh-$version-*.zip") {
     $arch = if ($zip.Name -like '*x86_64*') { 'x64' } else { 'arm64' }
     $hash = (Get-FileHash $zip.FullName -Algorithm SHA256).Hash
-    $entries += "- Architecture: $arch`n  InstallerUrl: $releaseUrl/$($zip.Name)`n  InstallerSha256: $hash`n  Dependencies:`n    PackageDependencies:`n    - PackageIdentifier: Microsoft.VCRedist.2015+.$arch"
+    $entries += "- Architecture: $arch`n  InstallerUrl: $releaseUrl/$($zip.Name)`n  InstallerSha256: $hash`n  Dependencies:`n    PackageDependencies:`n    - PackageIdentifier: Microsoft.VCRedist.2015+.$arch`n    - PackageIdentifier: Git.Git"
   }
   if ($entries.Count -eq 0) { throw "no josh-$version-*.zip zips found in $packageDir" }
   return $entries -join "`n"
@@ -69,10 +70,6 @@ NestedInstallerType: portable
 NestedInstallerFiles:
 - RelativeFilePath: josh.exe
 ReleaseDate: $(Get-Date -Format yyyy-MM-dd)
-# josh shells out to git (ls-remote, patch-id, ...) so it must be on PATH.
-Dependencies:
-  PackageDependencies:
-  - PackageIdentifier: Git.Git
 Installers:
 $installers
 ManifestType: installer
