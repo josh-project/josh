@@ -14,13 +14,24 @@
 
 use josh_compose_graph::{Graph, NetworkPolicy};
 
-/// Recipe for preparing an environment: a tar build context plus build arguments.
+/// An artifact exposed to a container build as a named build context.
+#[derive(Debug, Clone)]
+pub struct BuildContext {
+    /// Name referenced by `COPY --from=<name>` and `RUN --mount=from=<name>`.
+    pub name: String,
+    /// Runtime artifact containing the context's files.
+    pub artifact: String,
+}
+
+/// Recipe for preparing an environment from a primary context, build arguments,
+/// and artifact-backed named contexts.
 #[derive(Debug, Clone)]
 pub struct EnvRecipe {
-    /// Build context as a tar archive.
+    /// Primary build context as a tar archive.
     pub context: Vec<u8>,
     /// Build arguments, e.g. `[("ARCH", "amd64"), ("BASE", "josh_ws_image_..")]`.
     pub build_args: Vec<(String, String)>,
+    pub build_contexts: Vec<BuildContext>,
 }
 
 /// An artifact mounted into a step at a path.
