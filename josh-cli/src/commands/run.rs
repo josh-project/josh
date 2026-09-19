@@ -197,7 +197,6 @@ pub fn handle_list_images(
     transaction: &josh_core::cache::Transaction,
 ) -> anyhow::Result<()> {
     let runtime = args.backend.unwrap_or_else(default_backend).runtime();
-    let artifacts: &dyn josh_compose_backend::ArtifactBackend = runtime.as_ref();
     let oids = josh_compose::plan_images(
         transaction,
         RunOptions {
@@ -207,7 +206,7 @@ pub fn handle_list_images(
             clean: CleanMode::None,
         },
         args.all,
-        artifacts,
+        runtime.as_ref(),
     )?;
 
     for oid in oids {
@@ -243,7 +242,6 @@ pub fn handle_list_jobs(
     transaction: &josh_core::cache::Transaction,
 ) -> anyhow::Result<()> {
     let runtime = args.backend.unwrap_or_else(default_backend).runtime();
-    let artifacts: &dyn josh_compose_backend::ArtifactBackend = runtime.as_ref();
     let oids = josh_compose::plan_jobs(
         transaction,
         RunOptions {
@@ -253,7 +251,7 @@ pub fn handle_list_jobs(
             clean: CleanMode::None,
         },
         args.all,
-        artifacts,
+        runtime.as_ref(),
     )?;
 
     for oid in oids {
