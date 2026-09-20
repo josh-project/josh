@@ -3328,6 +3328,7 @@ dependencies = [
  "josh-graphql",
  "josh-search",
  "josh-templates",
+ "josh-test-changes",
  "josh-view",
  "juniper",
  "log",
@@ -3837,6 +3838,23 @@ dependencies = [
  "josh-graphql",
  "juniper",
  "serde_json",
+]
+
+[[package]]
+name = "josh-test-changes"
+version = "26.8.28"
+dependencies = [
+ "anyhow",
+ "gix",
+ "gix-actor",
+ "gix-hash",
+ "josh-core",
+ "josh-git-serde",
+ "josh-github-graphql",
+ "josh-github-webhooks",
+ "josh-gix-ext",
+ "serde",
+ "tempfile",
 ]
 
 [[package]]
