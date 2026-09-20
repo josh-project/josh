@@ -187,13 +187,20 @@ remote's changes ref. Set up a bare remote and a clone with two changes.
   $ git add fileB
   $ printf "B change\n\nChange: beta" | git commit -q -F -
 
-Publish: even a branch-based (non-GitHub) publish writes the per-change
-`@changes/<target>/<author>/<change-id>` refs sync enumerates.
+The test forge is push-based: publish pushes the branch as-is, with no
+@changes/@base/@heads ref split and no PRs.
 
   $ josh changes publish
-  published 2 changes (2 new)
+  updated master (bb282e9..6ce5921)
 
-Sync with no forge state written yet: succeeds with empty state.
+The remote has the branch and nothing else.
+
+  $ git ls-remote ${TESTTMP}/upstream
+  6ce5921e36a027e55bd6b6496e0ea532cea0df02\tHEAD (escaped)
+  6ce5921e36a027e55bd6b6496e0ea532cea0df02\trefs/heads/master (escaped)
+
+Sync with no forge state written yet: succeeds with empty state. Changes are
+discovered by walking the fetched branch's commits for Change: trailers.
 
   $ josh changes sync --remote origin
   Found 2 published changes on the test forge.
@@ -243,14 +250,15 @@ with cat-file.
 
 The stored fields are commit-derived, and the PR-specific fields of
 `ChangeData` (number, url, draft/merge state) are absent entirely -- the
-test forge has no values for them, and `None` is not stored.
+test forge has no values for them, and `None` is not stored. Being
+push-based, the head is simply the branch.
 
   $ for p in title state author base_ref_name head_ref_name created_at; do printf "%s: " "$p"; git cat-file blob "refs/josh/remotes/origin/changes/master:test/alpha/$p"; echo; done
   title: A change
   state: Open
   author: josh@example.com
   base_ref_name: master
-  head_ref_name: @changes/master/josh@example.com/alpha
+  head_ref_name: master
   created_at: 2005-04-07T22:13:13Z
 
   $ git ls-tree refs/josh/remotes/origin/changes/master:test/alpha/ | grep -cE "number|url|is_draft|merged" || true
@@ -260,7 +268,7 @@ Now write forge state and sync again: checks keyed by the change's head
 commit (alpha has one, beta has none), reviews by change-id, the maintainer
 set, and the branch's admission rules.
 
-  $ alpha_oid=$(git rev-parse refs/josh/remotes/origin/@changes/master/josh@example.com/alpha)
+  $ alpha_oid=$(git -C ${TESTTMP}/upstream rev-parse master~1)
   $ josh forge --remote origin maintainer add alice
   Added maintainer 'alice'
   $ josh forge --remote origin check set $alpha_oid build success | sed "s|$alpha_oid|OID|"
