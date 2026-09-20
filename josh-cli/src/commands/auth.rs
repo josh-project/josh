@@ -36,16 +36,25 @@ pub fn handle_auth(args: &AuthArgs) -> anyhow::Result<()> {
                 rt.block_on(crate::forge::github::login())
             }
             Forge::Gerrit => gerrit_auth_not_needed(),
+            Forge::Test => test_forge_auth_not_supported(),
         },
         AuthCommand::Logout(forge_args) => match forge_args.forge {
             Forge::Github => crate::forge::github::logout(),
             Forge::Gerrit => gerrit_auth_not_needed(),
+            Forge::Test => test_forge_auth_not_supported(),
         },
         AuthCommand::Debug(forge_args) => match forge_args.forge {
             Forge::Github => handle_debug_github_auth(),
             Forge::Gerrit => gerrit_auth_not_needed(),
+            Forge::Test => test_forge_auth_not_supported(),
         },
     }
+}
+
+/// The test forge is a test-suite fixture with no real server, so there is
+/// nothing to authenticate against.
+fn test_forge_auth_not_supported() -> anyhow::Result<()> {
+    anyhow::bail!("authentication is not supported for the test forge")
 }
 
 /// Gerrit publishing is a plain `git push` to `refs/for/<branch>`, so josh does

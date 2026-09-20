@@ -5,6 +5,8 @@
 pub enum Forge {
     Github,
     Gerrit,
+    /// Test-only forge used by the cram test suite; never guessed from URLs.
+    Test,
 }
 
 impl std::fmt::Display for Forge {
@@ -12,6 +14,7 @@ impl std::fmt::Display for Forge {
         match self {
             Forge::Github => f.write_str("github"),
             Forge::Gerrit => f.write_str("gerrit"),
+            Forge::Test => f.write_str("test"),
         }
     }
 }
