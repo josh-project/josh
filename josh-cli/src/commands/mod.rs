@@ -3,6 +3,7 @@ pub mod cache;
 pub mod changes;
 pub mod comment;
 pub mod fetch;
+pub mod forge_cmd;
 pub mod link;
 pub mod pull;
 pub mod push;

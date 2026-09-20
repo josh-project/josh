@@ -69,6 +69,10 @@ pub enum RepoCommand {
 
     /// Run workspaces in containers
     Compose(ComposeArgs),
+
+    /// Manage test-forge state (test-suite plumbing)
+    #[command(hide = true)]
+    Forge(josh_cli::commands::forge_cmd::ForgeArgs),
 }
 
 /// Commands that don't require a git repository
@@ -331,6 +335,7 @@ fn run_repo(cmd: &RepoCommand, distributed_cache: bool) -> anyhow::Result<()> {
         RepoCommand::Link(args) => josh_cli::commands::link::handle_link(args, &transaction),
         RepoCommand::Compose(args) => josh_cli::commands::run::handle_compose(args, &transaction),
         RepoCommand::Cache(args) => josh_cli::commands::cache::handle_cache(args, &transaction),
+        RepoCommand::Forge(args) => josh_cli::commands::forge_cmd::handle_forge(args, &transaction),
     }
 }
 

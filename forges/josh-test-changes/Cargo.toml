@@ -1,0 +1,25 @@
+[package]
+name = "josh-test-changes"
+version = "26.8.28"
+edition = "2024"
+authors = ["Josh Project authors <contact@josh-project.dev>"]
+description = "Test-forge change tracking for Josh"
+license-file = "../../LICENSE"
+repository = "https://github.com/josh-project/josh"
+keywords = ["git", "monorepo", "workflow", "scm"]
+
+[dependencies]
+anyhow.workspace = true
+gix-hash.workspace = true
+serde.workspace = true
+
+josh-core.workspace = true
+josh-git-serde.workspace = true
+josh-github-graphql.workspace = true
+josh-github-webhooks.workspace = true
+
+[dev-dependencies]
+gix.workspace = true
+gix-actor.workspace = true
+josh-gix-ext.workspace = true
+tempfile.workspace = true
