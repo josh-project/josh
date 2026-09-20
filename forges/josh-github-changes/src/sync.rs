@@ -76,10 +76,17 @@ pub async fn sync(
             let repo_path = normalize_repo_path(transaction.path());
             let remote_config = josh_changes::remote_config::read_remote_config(&repo_path, remote)
                 .with_context(|| format!("Failed to read remote config for '{}'", remote))?;
-            if remote_config.forge != Some(josh_changes::remote_config::Forge::Github) {
-                return Err(anyhow!("sync is only supported for GitHub remotes"));
+            match remote_config.forge {
+                Some(josh_changes::remote_config::Forge::Github) => {
+                    sync_from_github(transaction, remote, branch, &remote_config.url, opts).await
+                }
+                Some(josh_changes::remote_config::Forge::Test) => {
+                    Err(anyhow!("sync is not yet supported for the test forge"))
+                }
+                Some(josh_changes::remote_config::Forge::Gerrit) | None => {
+                    Err(anyhow!("sync is only supported for GitHub remotes"))
+                }
             }
-            sync_from_github(transaction, remote, branch, &remote_config.url, opts).await
         }
     }
 }
