@@ -535,6 +535,13 @@ fn parse_item(
                 }
             }
 
+            if meta
+                .get("history")
+                .is_some_and(|value| value.split(',').any(|flag| flag.trim() == "embed"))
+            {
+                check_experimental_features_enabled("history=embed option")?;
+            }
+
             let filter = if let Some(compose_pair) = compose_item {
                 let filters = parse_group(compose_pair.as_str(), context)?;
                 if filters.len() == 1 {

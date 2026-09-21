@@ -81,6 +81,25 @@ The same history splice applies when the dereference is nested in a compose.
   └── main.txt
       ┆  main content
 
+By default the spliced history contains only the prefixed submodule tree.
+The embed history option instead uses the current filtered tree as the unapply
+baseline for every imported revision, preserving its surroundings without
+changing parents.
+
+  $ git ls-tree -r --name-only refs/josh/filter/combined^2
+  libs/bar/file2.txt
+  libs/foo/file1.txt
+  $ josh-filter ':~(history="embed")[:[:exclude[:#libs],:#libs]]' master --update refs/josh/filter/embedded 1> /dev/null
+  $ [ "$(git rev-list --count refs/josh/filter/combined^2)" = "$(git rev-list --count refs/josh/filter/embedded^2)" ] && echo "splice commit count unchanged"
+  splice commit count unchanged
+  $ [ "$(git rev-list --parents -n 1 refs/josh/filter/embedded^2~1 | wc -w | tr -d ' ')" = 1 ] && echo "embedded splice root remains parentless"
+  embedded splice root remains parentless
+  $ git ls-tree -r --name-only refs/josh/filter/embedded^2
+  .gitmodules
+  libs/bar/file2.txt
+  libs/foo/file1.txt
+  main.txt
+
 Multiple references each contribute a history parent, including duplicate
 target commits that land at different prefixed destinations deep in the AST.
 
@@ -189,7 +208,8 @@ Moving the gitlink merges only the newly referenced submodule commits.
 
   $ cd ${TESTTMP}/main-repo
   $ git submodule update --remote libs 1> /dev/null 2> /dev/null
-  $ git add libs
+  $ echo "main content at link update" > main.txt
+  $ git add libs main.txt
   $ git commit -m "update libs submodule" 1> /dev/null
   $ git fetch ../submodule-repo
   From ../submodule-repo
@@ -222,6 +242,33 @@ Moving the gitlink merges only the newly referenced submodule commits.
           │   ┆  foo content
           └── file3.txt
               ┆  new content
+
+The embedded splice stays connected when the gitlink moves. Every commit in the
+newly spliced segment uses the surrounding tree from the pointer-update commit.
+
+  $ josh-filter ':[:exclude[:#libs],:#libs]' master --update refs/josh/filter/combined 1> /dev/null
+  $ josh-filter ':~(history="embed")[:[:exclude[:#libs],:#libs]]' master --update refs/josh/filter/embedded 1> /dev/null
+  $ [ "$(git rev-list --count refs/josh/filter/combined^1..refs/josh/filter/combined^2)" = "$(git rev-list --count refs/josh/filter/embedded^1..refs/josh/filter/embedded^2)" ] && echo "updated splice commit count unchanged"
+  updated splice commit count unchanged
+  $ [ "$(git rev-parse refs/josh/filter/embedded^2~2)" = "$(git rev-parse refs/josh/filter/embedded^1)" ] && echo "updated splice remains connected"
+  updated splice remains connected
+  $ git ls-tree -r --name-only refs/josh/filter/embedded^2~1
+  .gitmodules
+  libs/bar/file2.txt
+  libs/foo/file1.txt
+  libs/foo/file3.txt
+  main.txt
+  $ git show refs/josh/filter/embedded^2~1:main.txt
+  main content at link update
+  $ git show refs/josh/filter/embedded^2:main.txt
+  main content at link update
+  $ git ls-tree -r --name-only refs/josh/filter/embedded^2
+  .gitmodules
+  libs/bar/file2.txt
+  libs/bar/file4.txt
+  libs/foo/file1.txt
+  libs/foo/file3.txt
+  main.txt
 
 Changes made after the submodule was inlined are exported as a new submodule
 history. Export leaves the superproject unchanged; updating its gitlink is a

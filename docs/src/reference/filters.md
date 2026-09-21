@@ -91,6 +91,22 @@ single option — for example `history="linear,no-splice"`.
   :~(history="no-splice")[:workspace=ws]
   ```
 
+- **`embed`** - Embeds commit history imported by an object dereference into the
+  surrounding filtered tree.
+
+  This option is experimental and requires `JOSH_EXPERIMENTAL_FEATURES=1`.
+
+  By default, the synthetic history parent added for a `:#path` gitlink update contains only
+  the dereferenced tree at `path`. With this flag, Josh uses the current filtered tree as the
+  baseline when unapplying every imported revision, so each revision retains the surrounding
+  files from the pointer-update commit. Parent relationships remain unchanged: later pointer
+  updates extend the existing splice instead of introducing another disconnected root.
+
+  **Example:**
+  ```
+  :~(history="embed")[:#libs]
+  ```
+
 ### Gpgsig option
 
 The `gpgsig` option controls how PGP/GPG signature headers (`gpgsig`) in commit objects are

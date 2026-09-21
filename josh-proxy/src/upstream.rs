@@ -430,6 +430,7 @@ pub fn process_repo_update(repo_update: RepoUpdate) -> anyhow::Result<String> {
                     josh_core::history::OrphansMode::Fail
                 },
                 reparent_orphans,
+                None,
             )?;
 
             tracing::debug!(
