@@ -26,16 +26,34 @@
 + export GIT_COMMITTER_DATE
 + export 'EMPTY_TREE=4b825dc642cb6eb9a060e54bf8d69288fbee4904'
 + mktemp
-+ CONFIG_FILE=/tmp/tmp.RYjU5rUE6S
++ CONFIG_FILE=/tmp/tmp.7yoyjD583F
 + trap 'rm ${CONFIG_FILE}' EXIT
-+ export 'GIT_CONFIG_GLOBAL=/tmp/tmp.RYjU5rUE6S'
++ export 'GIT_CONFIG_GLOBAL=/tmp/tmp.7yoyjD583F'
 + git config --global init.defaultBranch master
 + export 'RUST_BACKTRACE=1'
-+ find devtools/tests -name '*.t'
++ find tests -name '*.t'
 + sort
-+ TESTS=devtools/tests/git-tree-pretty.t
-+ '[' -z devtools/tests/git-tree-pretty.t ]
++ TESTS='tests/experimental/blob_replace.t
+tests/experimental/downstack_filter.t
+tests/experimental/indexer.t
+tests/experimental/object_deref_submodule.t
+tests/experimental/starlark_basic.t
+tests/experimental/starlark_subfilter.t
+tests/experimental/treeblob.t'
++ '[' -z 'tests/experimental/blob_replace.t
+tests/experimental/downstack_filter.t
+tests/experimental/indexer.t
+tests/experimental/object_deref_submodule.t
+tests/experimental/starlark_basic.t
+tests/experimental/starlark_subfilter.t
+tests/experimental/treeblob.t' ]
 + FAILED=0
-+ scrut test --cram-compat devtools/tests/git-tree-pretty.t
++ scrut test --cram-compat tests/experimental/blob_replace.t
++ scrut test --cram-compat tests/experimental/downstack_filter.t
++ scrut test --cram-compat tests/experimental/indexer.t
++ scrut test --cram-compat tests/experimental/object_deref_submodule.t
++ scrut test --cram-compat tests/experimental/starlark_basic.t
++ scrut test --cram-compat tests/experimental/starlark_subfilter.t
++ scrut test --cram-compat tests/experimental/treeblob.t
 + exit 0
-+ rm /tmp/tmp.RYjU5rUE6S
++ rm /tmp/tmp.7yoyjD583F

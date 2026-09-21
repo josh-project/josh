@@ -1,20 +1,24 @@
 {
   "stats": {
-    "compile_requests": 161,
+    "compile_requests": 1150,
     "requests_unsupported_compiler": 0,
-    "requests_not_compile": 2,
-    "requests_not_cacheable": 26,
-    "requests_executed": 133,
+    "requests_not_compile": 5,
+    "requests_not_cacheable": 185,
+    "requests_executed": 960,
     "cache_errors": {
       "counts": {},
       "adv_counts": {}
     },
     "cache_hits": {
       "counts": {
-        "Rust": 130
+        "Rust": 583,
+        "Assembler": 115,
+        "C/C++": 258
       },
       "adv_counts": {
-        "rust": 130
+        "assemblerToPreprocess [gcc]": 115,
+        "c [gcc]": 258,
+        "rust": 583
       }
     },
     "cache_misses": {
@@ -32,22 +36,23 @@
       "nanos": 0
     },
     "cache_read_hit_duration": {
-      "secs": 11,
-      "nanos": 21665961
+      "secs": 76,
+      "nanos": 623777788
     },
     "compilations": 0,
     "compiler_write_duration": {
       "secs": 0,
       "nanos": 0
     },
-    "compile_fails": 3,
+    "compile_fails": 4,
     "not_cached": {
-      "-": 1,
-      "crate-type": 18,
+      "incremental": 17,
+      "-": 4,
       "-o": 3,
-      "missing input": 2,
       "missing emit": 1,
-      "incremental": 1
+      "missing input": 7,
+      "crate-type": 152,
+      "-E": 1
     },
     "dist_compiles": {},
     "dist_errors": 0
