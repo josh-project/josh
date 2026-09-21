@@ -131,9 +131,11 @@ def grouped_chart(
     data["elapsed_human"] = data["elapsed_s"].map(format_duration)
     group_order = list(dict.fromkeys(data["group"]))
 
+    minimum = max(data.loc[data["elapsed_s"] > 0, "elapsed_s"].min(), 1e-9)
+    floor = min(LOG_FLOOR, 10 ** math.floor(math.log10(minimum)))
     ceil = 10 ** math.ceil(math.log10(max(data["elapsed_s"].max(), 1.0)))
-    scale = alt.Scale(type="log", domain=[LOG_FLOOR, ceil])
-    ticks = _decade_ticks(LOG_FLOOR, ceil)
+    scale = alt.Scale(type="log", domain=[floor, ceil])
+    ticks = _decade_ticks(floor, ceil)
 
     x = alt.X("group:N", sort=group_order, title=None)
     offset = alt.XOffset("series:N", sort=series_order)
@@ -151,10 +153,10 @@ def grouped_chart(
                 title="Elapsed time (log scale)",
             ),
         ),
-        y2=alt.Y2(datum=LOG_FLOOR),
+        y2=alt.Y2(datum=floor),
         color=alt.Color("series:N", sort=series_order, title=None),
         tooltip=[
-            alt.Tooltip("group:N", title="Subtree"),
+            alt.Tooltip("group:N", title="Group"),
             alt.Tooltip("series:N", title="Series"),
             alt.Tooltip("elapsed_human:N", title="Elapsed"),
         ],
@@ -166,7 +168,7 @@ def grouped_chart(
         text=alt.Text("elapsed_human:N"),
     )
     return alt.layer(
-        _minor_grid(scale, LOG_FLOOR, ceil),
+        _minor_grid(scale, floor, ceil),
         bars,
         labels,
     ).resolve_scale(x="independent", y="independent").properties(
