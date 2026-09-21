@@ -280,6 +280,7 @@ fn unapply_extend(c: &mut Criterion) {
             tip,
             OrphansMode::Fail,
             None,
+            None,
         )
         .expect("unapply");
         let refiltered =
@@ -320,6 +321,7 @@ fn unapply_extend(c: &mut Criterion) {
                         tip,
                         OrphansMode::Fail,
                         None,
+                        None,
                     )
                     .expect("unapply filter");
                     (transaction, iter_span)
@@ -351,6 +353,7 @@ fn unapply_new_branch(c: &mut Criterion) {
             case.filtered_mid,
             OrphansMode::Fail,
             None,
+            None,
         )
         .expect("unapply");
         let refiltered =
@@ -380,6 +383,7 @@ fn unapply_new_branch(c: &mut Criterion) {
                         gix_hash::ObjectId::null(gix_hash::Kind::Sha1),
                         case.filtered_mid,
                         OrphansMode::Fail,
+                        None,
                         None,
                     )
                     .expect("unapply filter");

@@ -109,6 +109,8 @@ pub(super) fn append_parents(
     let Some(references) = object_reference_tree(transaction, filter, commit.tree_id()?)? else {
         return Ok(true);
     };
+    let base_tree = history::history_flag(filter.get_meta("history").as_deref(), "embed")
+        .then_some(filtered_tree);
     let parent_references = commit
         .first_parent_id()
         .zip(parent_filter)
@@ -162,6 +164,7 @@ pub(super) fn append_parents(
             new_oid,
             history::OrphansMode::Keep,
             None,
+            base_tree,
         )?;
         if referenced_history != gix_hash::ObjectId::null(gix_hash::Kind::Sha1) {
             filtered_parents.push(referenced_history);

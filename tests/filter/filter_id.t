@@ -586,6 +586,17 @@ Test :INDEX (the filter is experimental; parsing it needs the opt-in)
   .
   └── index
 
+Test history=embed (the option is experimental; parsing it needs the opt-in)
+  $ josh-filter -i ':~(history="embed")[:/sub1]' 2>&1 | head -1
+  ERROR: history=embed option requires JOSH_EXPERIMENTAL_FEATURES=1
+  $ FILTER_HASH=$(JOSH_EXPERIMENTAL_FEATURES=1 josh-filter -i ':~(history="embed")[:/sub1]')
+  $ josh-filter -p ${FILTER_HASH}
+  :~(
+      history="embed"
+  )[
+      :/sub1
+  ]
+
 Test :INVERT
   $ FILTER_HASH=$(josh-filter -i ':INVERT')
   $ josh-filter -p ${FILTER_HASH}

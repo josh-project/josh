@@ -183,6 +183,7 @@ fn prepare_push(
         local_commit,
         josh_core::history::OrphansMode::Keep,
         base.map(|_| original_target),
+        None,
     )
     .context("Failed to unapply filter")?;
 

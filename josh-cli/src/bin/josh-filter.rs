@@ -591,6 +591,7 @@ fn run_filter(args: Vec<String>) -> anyhow::Result<i32> {
             new,
             josh_core::history::OrphansMode::Keep,
             None,
+            None,
         ) {
             Ok(rewritten) => {
                 // Concurrent commits on the input reference that are not
