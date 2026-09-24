@@ -1,5 +1,5 @@
    Compiling git-tree-pretty v0.1.0 (/worktree/devtools/git-tree-pretty)
-    Finished `dev` profile [unoptimized + debuginfo] target(s) in 5.33s
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 4.30s
    Compiling git-tree-pretty v0.1.0 (/worktree/devtools/git-tree-pretty)
-    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.66s
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.52s
      Running unittests src/main.rs (/opt/build/cargo-build/debug/deps/git_tree_pretty-99721a7906194be2)
