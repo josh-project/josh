@@ -26,9 +26,9 @@
 + export GIT_COMMITTER_DATE
 + export 'EMPTY_TREE=4b825dc642cb6eb9a060e54bf8d69288fbee4904'
 + mktemp
-+ CONFIG_FILE=/tmp/tmp.bPeUPjTZx6
++ CONFIG_FILE=/tmp/tmp.4sLOhbfjkr
 + trap 'rm ${CONFIG_FILE}' EXIT
-+ export 'GIT_CONFIG_GLOBAL=/tmp/tmp.bPeUPjTZx6'
++ export 'GIT_CONFIG_GLOBAL=/tmp/tmp.4sLOhbfjkr'
 + git config --global init.defaultBranch master
 + export 'RUST_BACKTRACE=1'
 + find tests -name '*.t'
@@ -140,4 +140,4 @@ tests/cli/remote-refspecs.t' ]
 + scrut test --cram-compat tests/cli/remote-migration.t
 + scrut test --cram-compat tests/cli/remote-refspecs.t
 + exit 0
-+ rm /tmp/tmp.bPeUPjTZx6
++ rm /tmp/tmp.4sLOhbfjkr
