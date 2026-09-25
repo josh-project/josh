@@ -143,7 +143,7 @@ pub enum RemoteCommand {
     Add(RemoteAddArgs),
 }
 
-#[derive(Debug, clap::Parser)]
+#[derive(Debug, Clone, clap::Parser)]
 pub struct RemoteAddArgs {
     /// Remote name
     #[arg()]
@@ -154,8 +154,12 @@ pub struct RemoteAddArgs {
     pub url: String,
 
     /// Workspace/projection identifier or path to spec
-    #[arg()]
-    pub filter: String,
+    #[arg(required_unless_present = "submodules", conflicts_with = "submodules")]
+    pub filter: Option<String>,
+
+    /// Derive a combined gitlink view and links from HEAD's .gitmodules
+    #[arg(long = "submodules")]
+    pub submodules: bool,
 
     /// Separate push destination (a fork) for `josh changes publish`.
     ///
@@ -368,12 +372,13 @@ fn clone_repo(args: &CloneArgs) -> anyhow::Result<std::path::PathBuf> {
     let remote_add_args = RemoteAddArgs {
         name: "origin".to_string(),
         url: to_absolute_remote_url(&args.url)?,
-        filter: args.filter.clone(),
+        filter: Some(args.filter.clone()),
         push_url: args.push_url.clone(),
         forge_args: args.forge_args.clone(),
+        submodules: false,
     };
 
-    handle_remote_add_repo(&remote_add_args, &output_dir)?;
+    handle_remote_add_repo(&remote_add_args, &output_dir, &args.filter)?;
 
     Ok(output_dir)
 }
@@ -456,20 +461,40 @@ fn handle_remote(
     match &args.command {
         RemoteCommand::Add(add_args) => {
             let repo_path = normalize_repo_path(transaction.path());
-            handle_remote_add_repo(add_args, &repo_path)
+            let filter = if add_args.submodules {
+                josh_core::filter::check_experimental_features_enabled(
+                    "josh remote add --submodules",
+                )?;
+                if transaction
+                    .config_string(&format!("remote.{}.url", add_args.name))?
+                    .is_some()
+                {
+                    anyhow::bail!("Remote '{}' already exists", add_args.name);
+                }
+                let filter =
+                    josh_cli::commands::link::add_submodule_links(transaction, &add_args.url)?;
+                josh_core::filter::spec(filter)
+            } else {
+                add_args
+                    .filter
+                    .clone()
+                    .context("filter is required unless --submodules is used")?
+            };
+            handle_remote_add_repo(add_args, &repo_path, &filter)
         }
     }
 }
 
-fn handle_remote_add_repo(args: &RemoteAddArgs, repo_path: &std::path::Path) -> anyhow::Result<()> {
+fn handle_remote_add_repo(
+    args: &RemoteAddArgs,
+    repo_path: &std::path::Path,
+    filter_to_store: &str,
+) -> anyhow::Result<()> {
     let repo = gix::open(repo_path).context("Failed to open repository")?;
     let workdir = repo.workdir().unwrap_or_else(|| repo.git_dir()).to_owned();
 
     // Store the remote information in .git/josh/remotes/<name>.josh file
     let remote_url = to_absolute_remote_url(&args.url)?;
-
-    // Store the filter in git config per remote
-    let filter_to_store = args.filter.clone();
 
     // Store refspec (for unfiltered refs)
     let refspec = format!("+refs/heads/*:refs/josh/remotes/{}/*", args.name);
@@ -494,7 +519,7 @@ fn handle_remote_add_repo(args: &RemoteAddArgs, repo_path: &std::path::Path) -> 
         repo_path,
         &args.name,
         &remote_url,
-        &filter_to_store,
+        filter_to_store,
         &refspec,
         forge,
         push_url.as_deref(),

@@ -4,6 +4,24 @@ Experimental features are opt-in and must be enabled at runtime by setting the
 environment variable `JOSH_EXPERIMENTAL_FEATURES=1`. Their behaviour or syntax
 may change in future releases.
 
+## Submodule links
+
+`josh remote add NAME URL --submodules` reads every submodule configured in
+the current commit's `.gitmodules`, creates the links, and adds a combined Josh
+remote in one operation. Run it while the submodule paths are still gitlinks.
+The command:
+
+- derives an embedded `:#path` filter for every configured submodule;
+- resolves relative submodule URLs against the superproject `URL`;
+- fetches each pinned submodule commit into the superproject object database
+  and retains it under `refs/josh/submodules/`;
+- creates a link whose filter is `:/path:export`.
+
+When `josh changes publish` runs from a combined history, the export link
+removes the synthetic superproject merge and publishes a change ref that
+descends from the original submodule history. Updating the superproject's
+gitlink remains a separate change.
+
 ## Filters
 
 ### Object reference **`:&path`**
