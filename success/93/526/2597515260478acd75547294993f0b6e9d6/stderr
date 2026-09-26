@@ -26,9 +26,9 @@
 + export GIT_COMMITTER_DATE
 + export 'EMPTY_TREE=4b825dc642cb6eb9a060e54bf8d69288fbee4904'
 + mktemp
-+ CONFIG_FILE=/tmp/tmp.dc6BunctRp
++ CONFIG_FILE=/tmp/tmp.L8X1OOeMko
 + trap 'rm ${CONFIG_FILE}' EXIT
-+ export 'GIT_CONFIG_GLOBAL=/tmp/tmp.dc6BunctRp'
++ export 'GIT_CONFIG_GLOBAL=/tmp/tmp.L8X1OOeMko'
 + git config --global init.defaultBranch master
 + export 'RUST_BACKTRACE=1'
 + find tests -name '*.t'
@@ -38,4 +38,4 @@
 + FAILED=0
 + scrut test --cram-compat tests/cq/help.t
 + exit 0
-+ rm /tmp/tmp.dc6BunctRp
++ rm /tmp/tmp.L8X1OOeMko
