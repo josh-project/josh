@@ -26,9 +26,9 @@
 + export GIT_COMMITTER_DATE
 + export 'EMPTY_TREE=4b825dc642cb6eb9a060e54bf8d69288fbee4904'
 + mktemp
-+ CONFIG_FILE=/tmp/tmp.vpqjnZgL3g
++ CONFIG_FILE=/tmp/tmp.6WvSS3V6E1
 + trap 'rm ${CONFIG_FILE}' EXIT
-+ export 'GIT_CONFIG_GLOBAL=/tmp/tmp.vpqjnZgL3g'
++ export 'GIT_CONFIG_GLOBAL=/tmp/tmp.6WvSS3V6E1'
 + git config --global init.defaultBranch master
 + export 'RUST_BACKTRACE=1'
 + find tests -name '*.t'
@@ -284,4 +284,4 @@ tests/filter/workspace_unique.t' ]
 + scrut test --cram-compat tests/filter/workspace_trailing_slash.t
 + scrut test --cram-compat tests/filter/workspace_unique.t
 + exit 0
-+ rm /tmp/tmp.vpqjnZgL3g
++ rm /tmp/tmp.6WvSS3V6E1

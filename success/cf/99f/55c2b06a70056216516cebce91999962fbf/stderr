@@ -26,9 +26,9 @@
 + export GIT_COMMITTER_DATE
 + export 'EMPTY_TREE=4b825dc642cb6eb9a060e54bf8d69288fbee4904'
 + mktemp
-+ CONFIG_FILE=/tmp/tmp.N2e8AGVwNe
++ CONFIG_FILE=/tmp/tmp.OyfjtHLB7L
 + trap 'rm ${CONFIG_FILE}' EXIT
-+ export 'GIT_CONFIG_GLOBAL=/tmp/tmp.N2e8AGVwNe'
++ export 'GIT_CONFIG_GLOBAL=/tmp/tmp.OyfjtHLB7L'
 + git config --global init.defaultBranch master
 + export 'RUST_BACKTRACE=1'
 + find tests -name '*.t'
@@ -233,4 +233,4 @@ tests/proxy/workspace_tags.t' ]
 + scrut test --cram-compat tests/proxy/workspace_publish.t
 + scrut test --cram-compat tests/proxy/workspace_tags.t
 + exit 0
-+ rm /tmp/tmp.N2e8AGVwNe
++ rm /tmp/tmp.OyfjtHLB7L
