@@ -26,9 +26,9 @@
 + export GIT_COMMITTER_DATE
 + export 'EMPTY_TREE=4b825dc642cb6eb9a060e54bf8d69288fbee4904'
 + mktemp
-+ CONFIG_FILE=/tmp/tmp.ypYRo6WdKb
++ CONFIG_FILE=/tmp/tmp.ngqO18K68H
 + trap 'rm ${CONFIG_FILE}' EXIT
-+ export 'GIT_CONFIG_GLOBAL=/tmp/tmp.ypYRo6WdKb'
++ export 'GIT_CONFIG_GLOBAL=/tmp/tmp.ngqO18K68H'
 + git config --global init.defaultBranch master
 + export 'RUST_BACKTRACE=1'
 + find tests -name '*.t'
@@ -56,4 +56,4 @@ tests/experimental/treeblob.t' ]
 + scrut test --cram-compat tests/experimental/starlark_subfilter.t
 + scrut test --cram-compat tests/experimental/treeblob.t
 + exit 0
-+ rm /tmp/tmp.ypYRo6WdKb
++ rm /tmp/tmp.ngqO18K68H
