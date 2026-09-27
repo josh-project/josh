@@ -180,8 +180,8 @@ pub fn handle_show(
 
     if let Ok(Some(pr)) = josh_github_changes::read_pr_data(transaction, &args.change_id, &scope) {
         print!("PR:        {} [{}]", pr.title, pr.state);
-        if !pr.url.is_empty() {
-            print!(" {}", pr.url);
+        if let Some(url) = &pr.url {
+            print!(" {url}");
         }
         println!();
 

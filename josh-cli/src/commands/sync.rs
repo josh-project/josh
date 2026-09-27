@@ -1,3 +1,5 @@
+use anyhow::Context as _;
+
 use crate::commands::scope::ScopeArgs;
 
 /// Arguments for `josh changes sync`.
@@ -35,6 +37,27 @@ pub fn handle_sync(
         no_cache: args.no_cache,
         cache_ttl: args.cache_ttl,
     };
+
+    // The test forge has its own sync path (git-only, no API); everything
+    // else goes to the GitHub sync, which re-checks the forge itself.
+    if let josh_changes::ChangesRef::Remote { remote, .. } = &scope {
+        let repo_path = josh_core::git::normalize_repo_path(transaction.path());
+        let config = josh_changes::remote_config::read_remote_config(&repo_path, remote)
+            .with_context(|| format!("Failed to read remote config for '{remote}'"))?;
+        if config.forge == Some(crate::forge::Forge::Test) {
+            // The test forge has no fingerprint cache yet: --no-cache and
+            // --cache-ttl are accepted but have no effect.
+            return josh_test_changes::sync::sync(
+                transaction,
+                remote,
+                &config.url,
+                josh_test_changes::sync::SyncOptions {
+                    clean: opts.clean,
+                    push: opts.push,
+                },
+            );
+        }
+    }
 
     let rt = tokio::runtime::Runtime::new()?;
     rt.block_on(josh_github_changes::sync::sync(transaction, &scope, opts))?;
