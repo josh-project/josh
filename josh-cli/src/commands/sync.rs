@@ -1,3 +1,5 @@
+use anyhow::Context as _;
+
 use crate::commands::scope::ScopeArgs;
 
 /// Arguments for `josh changes sync`.
@@ -36,8 +38,40 @@ pub fn handle_sync(
         cache_ttl: args.cache_ttl,
     };
 
-    let rt = tokio::runtime::Runtime::new()?;
-    rt.block_on(josh_github_changes::sync::sync(transaction, &scope, opts))?;
+    // Remote scopes dispatch on the configured forge; each forge owns its
+    // sync path. The test forge has no fingerprint cache yet: --no-cache
+    // and --cache-ttl are accepted but have no effect there.
+    if let josh_changes::ChangesRef::Remote { remote, .. } = &scope {
+        let repo_path = josh_core::git::normalize_repo_path(transaction.path());
+        let config = josh_changes::remote_config::read_remote_config(&repo_path, remote)
+            .with_context(|| format!("Failed to read remote config for '{remote}'"))?;
+        return match config.forge {
+            Some(crate::forge::Forge::Github) => sync_github(transaction, &scope, opts),
+            Some(crate::forge::Forge::Test) => josh_test_changes::sync::sync(
+                transaction,
+                remote,
+                &config.url,
+                josh_test_changes::sync::SyncOptions {
+                    clean: opts.clean,
+                    push: opts.push,
+                },
+            ),
+            Some(crate::forge::Forge::Gerrit) | None => {
+                Err(anyhow::anyhow!("sync is only supported for GitHub remotes"))
+            }
+        };
+    }
 
+    // Local scope has no forge to dispatch on.
+    sync_github(transaction, &scope, opts)
+}
+
+fn sync_github(
+    transaction: &josh_core::cache::Transaction,
+    scope: &josh_changes::ChangesRef,
+    opts: josh_github_changes::sync::SyncOptions,
+) -> anyhow::Result<()> {
+    let rt = tokio::runtime::Runtime::new()?;
+    rt.block_on(josh_github_changes::sync::sync(transaction, scope, opts))?;
     Ok(())
 }

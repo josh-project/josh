@@ -3,8 +3,8 @@
 
 use std::collections::HashMap;
 
+use josh_changes::ChangeData;
 use josh_github_graphql::connection::GithubApiConnection;
-use josh_github_graphql::operations::pull_request::PrData;
 
 use crate::display::pr_link;
 use crate::layout::{GithubChangesRefData, GITHUB_PR_DATA_PATH};
@@ -14,7 +14,7 @@ use crate::layout::{GithubChangesRefData, GITHUB_PR_DATA_PATH};
 pub fn store_pr_data(
     transaction: &josh_core::cache::Transaction,
     change_id: &str,
-    data: &PrData,
+    data: &ChangeData,
     scope: &josh_changes::ChangesRef,
 ) -> anyhow::Result<()> {
     let sparse = GithubChangesRefData {
@@ -38,7 +38,7 @@ pub fn read_pr_data(
     transaction: &josh_core::cache::Transaction,
     change_id: &str,
     scope: &josh_changes::ChangesRef,
-) -> anyhow::Result<Option<PrData>> {
+) -> anyhow::Result<Option<ChangeData>> {
     let Some(mut data) = josh_changes::read_filtered::<GithubChangesRefData>(
         transaction,
         scope,
