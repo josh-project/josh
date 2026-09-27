@@ -1,0 +1,54 @@
+{
+  "stats": {
+    "compile_requests": 42,
+    "requests_unsupported_compiler": 0,
+    "requests_not_compile": 0,
+    "requests_not_cacheable": 42,
+    "requests_executed": 0,
+    "cache_errors": {
+      "counts": {},
+      "adv_counts": {}
+    },
+    "cache_hits": {
+      "counts": {},
+      "adv_counts": {}
+    },
+    "cache_misses": {
+      "counts": {},
+      "adv_counts": {}
+    },
+    "cache_timeouts": 0,
+    "cache_read_errors": 0,
+    "non_cacheable_compilations": 0,
+    "forced_recaches": 0,
+    "cache_write_errors": 0,
+    "cache_writes": 0,
+    "cache_write_duration": {
+      "secs": 0,
+      "nanos": 0
+    },
+    "cache_read_hit_duration": {
+      "secs": 0,
+      "nanos": 0
+    },
+    "compilations": 0,
+    "compiler_write_duration": {
+      "secs": 0,
+      "nanos": 0
+    },
+    "compile_fails": 0,
+    "not_cached": {
+      "crate-type": 9,
+      "incremental": 33
+    },
+    "dist_compiles": {},
+    "dist_errors": 0
+  },
+  "cache_location": "s3, name: josh-project-cache, prefix: /",
+  "cache_size": null,
+  "max_cache_size": null,
+  "use_preprocessor_cache_mode": false,
+  "version": "0.14.0",
+  "basedirs": []
+}
+sccache: confirmed S3-backed cache
