@@ -51,7 +51,7 @@ pub fn handle_list(
 
     let known = known_change_ids(&changes);
 
-    let admission = josh_github_changes::read_admission_data(transaction, &scope)
+    let admission = read_forge_admission_data(transaction, &scope)
         .ok()
         .flatten();
 
@@ -99,14 +99,14 @@ pub fn handle_list(
         let mergeable = change
             .id()
             .and_then(|cid| {
-                josh_github_changes::read_pr_data(transaction, cid, &scope)
+                read_forge_change_data(transaction, &scope, cid)
                     .ok()
                     .flatten()
             })
             .and_then(|pr| {
                 admission
                     .as_ref()
-                    .map(|data| josh_github_changes::evaluate(&pr, data).admissible)
+                    .map(|data| josh_changes::evaluate(&pr, data).admissible)
             })
             .map(|admissible| if admissible { "yes" } else { "no" })
             .unwrap_or("-")
@@ -178,16 +178,16 @@ pub fn handle_show(
         println!("Series:    {}", series);
     }
 
-    if let Ok(Some(pr)) = josh_github_changes::read_pr_data(transaction, &args.change_id, &scope) {
+    if let Ok(Some(pr)) = read_forge_change_data(transaction, &scope, &args.change_id) {
         print!("PR:        {} [{}]", pr.title, pr.state);
         if let Some(url) = &pr.url {
             print!(" {url}");
         }
         println!();
 
-        match josh_github_changes::read_admission_data(transaction, &scope) {
+        match read_forge_admission_data(transaction, &scope) {
             Ok(Some(data)) => {
-                let status = josh_github_changes::evaluate(&pr, &data);
+                let status = josh_changes::evaluate(&pr, &data);
                 println!(
                     "Admission: {}",
                     if status.admissible {
@@ -314,6 +314,52 @@ fn scope_label(scope: &josh_changes::ChangesRef) -> String {
         josh_changes::ChangesRef::Remote { remote, branch } => {
             format!("remote '{}' [{}]", remote, branch)
         }
+    }
+}
+
+/// The forge of a Remote scope's remote, read from its config. Local scopes
+/// and unreadable configs get `None`, which selects the GitHub layout below
+/// (absent in practice, preserving the previous behavior).
+fn scope_forge(
+    transaction: &josh_core::cache::Transaction,
+    scope: &josh_changes::ChangesRef,
+) -> Option<crate::forge::Forge> {
+    let josh_changes::ChangesRef::Remote { remote, .. } = scope else {
+        return None;
+    };
+    let repo_path = josh_core::git::normalize_repo_path(transaction.path());
+    josh_changes::remote_config::read_remote_config(&repo_path, remote)
+        .ok()
+        .and_then(|config| config.forge)
+}
+
+/// The stored per-change data for `change_id`, from the namespace of the
+/// scope's forge: GitHub sync stores `gh/`, test-forge sync stores `test/`.
+fn read_forge_change_data(
+    transaction: &josh_core::cache::Transaction,
+    scope: &josh_changes::ChangesRef,
+    change_id: &str,
+) -> anyhow::Result<Option<josh_changes::ChangeData>> {
+    match scope_forge(transaction, scope) {
+        Some(crate::forge::Forge::Test) => {
+            josh_test_changes::layout::read_change_data(transaction, change_id, scope)
+        }
+        _ => josh_github_changes::read_pr_data(transaction, change_id, scope),
+    }
+}
+
+/// The branch's stored admission data, from the namespace of the scope's
+/// forge (`gh_admission/` vs `test_admission/`). Both feed the same
+/// `josh_changes::evaluate`.
+fn read_forge_admission_data(
+    transaction: &josh_core::cache::Transaction,
+    scope: &josh_changes::ChangesRef,
+) -> anyhow::Result<Option<josh_changes::AdmissionData>> {
+    match scope_forge(transaction, scope) {
+        Some(crate::forge::Forge::Test) => {
+            josh_test_changes::layout::read_admission_data(transaction, scope)
+        }
+        _ => josh_github_changes::read_admission_data(transaction, scope),
     }
 }
 
