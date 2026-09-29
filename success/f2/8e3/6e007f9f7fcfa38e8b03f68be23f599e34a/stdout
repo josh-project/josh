@@ -38,8 +38,8 @@
     },
     "compile_fails": 0,
     "not_cached": {
-      "crate-type": 4,
-      "incremental": 80
+      "incremental": 80,
+      "crate-type": 4
     },
     "dist_compiles": {},
     "dist_errors": 0
