@@ -24,13 +24,13 @@
    Compiling josh-gerrit-changes v26.8.28 (/worktree/forges/josh-gerrit-changes)
    Compiling josh-github-changes v26.8.28 (/worktree/forges/josh-github-changes)
    Compiling josh-test-changes v26.8.28 (/worktree/forges/josh-test-changes)
+   Compiling josh-compose v26.8.28 (/worktree/josh-compose)
    Compiling josh-compose-docker v26.8.28 (/worktree/josh-compose-docker)
    Compiling josh-compose-podman v26.8.28 (/worktree/josh-compose-podman)
-   Compiling josh-compose v26.8.28 (/worktree/josh-compose)
    Compiling josh-cq v26.8.28 (/worktree/cq/josh-cq)
    Compiling josh-templates v26.8.28 (/worktree/josh-templates)
    Compiling axum-cgi-server v26.8.28 (/worktree/axum-cgi-server)
    Compiling josh-cli v26.8.28 (/worktree/josh-cli)
    Compiling josh-proxy v26.8.28 (/worktree/josh-proxy)
    Compiling josh-cq-test-components v26.8.28 (/worktree/cq/josh-cq-test-components)
-    Finished `dev` profile [unoptimized + debuginfo] target(s) in 1m 37s
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 1m 07s
