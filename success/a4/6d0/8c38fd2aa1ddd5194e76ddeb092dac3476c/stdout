@@ -43,8 +43,8 @@ test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
     },
     "compile_fails": 0,
     "not_cached": {
-      "incremental": 1,
-      "crate-type": 1
+      "crate-type": 1,
+      "incremental": 1
     },
     "dist_compiles": {},
     "dist_errors": 0

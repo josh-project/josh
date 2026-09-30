@@ -20,9 +20,9 @@
         "Rust": 503
       },
       "adv_counts": {
-        "rust": 503,
+        "c [gcc]": 257,
         "assemblerToPreprocess [gcc]": 115,
-        "c [gcc]": 257
+        "rust": 503
       }
     },
     "cache_misses": {
@@ -40,8 +40,8 @@
       "nanos": 0
     },
     "cache_read_hit_duration": {
-      "secs": 132,
-      "nanos": 893102785
+      "secs": 60,
+      "nanos": 694290759
     },
     "compilations": 0,
     "compiler_write_duration": {
@@ -50,10 +50,10 @@
     },
     "compile_fails": 4,
     "not_cached": {
-      "-o": 3,
       "incremental": 88,
-      "missing input": 4,
       "-": 4,
+      "-o": 3,
+      "missing input": 4,
       "missing emit": 1,
       "crate-type": 107
     },
