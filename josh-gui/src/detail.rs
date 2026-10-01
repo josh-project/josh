@@ -324,7 +324,7 @@ pub fn load_detail(sha: &str, scope: &josh_changes::ChangesRef) -> anyhow::Resul
             .map(|v| {
                 let review_decision = v.review_decision_rollup().unwrap_or_default();
                 PrInfo {
-                    url: v.url,
+                    url: v.url.unwrap_or_default(),
                     title: v.title,
                     state: v.state,
                     review_decision,

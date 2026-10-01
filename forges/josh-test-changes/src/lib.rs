@@ -6,9 +6,9 @@
 //! hidden `josh forge` command writes it; `josh changes sync` pulls it like
 //! GitHub data.
 //!
-//! State strings are the serde representations of the shared GitHub types
-//! ([`CheckState`], [`PullRequestReviewState`]), so data synced from this
-//! tree is interchangeable with what GitHub sync stores.
+//! State strings are the serde representations of the forge-neutral types
+//! ([`CheckState`], [`ReviewState`]), so data synced from this tree is
+//! interchangeable with what GitHub sync stores.
 
 use std::collections::BTreeMap;
 
@@ -16,8 +16,10 @@ use josh_core::cache::{Expected, Transaction};
 use josh_core::objects;
 use serde::{Deserialize, Serialize};
 
-pub use josh_github_graphql::operations::get_commit_check_runs::CheckState;
-pub use josh_github_webhooks::webhook_types::PullRequestReviewState;
+pub use josh_changes::{CheckState, ReviewState};
+
+pub mod layout;
+pub mod sync;
 
 /// Ref in the remote repository holding the test forge's state tree.
 pub const TEST_FORGE_REF: &str = "refs/josh/forges/test";
@@ -30,7 +32,7 @@ pub struct TestForgeState {
     pub checks: BTreeMap<String, BTreeMap<String, CheckState>>,
     /// change-id -> user -> state.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
-    pub reviews: BTreeMap<String, BTreeMap<String, PullRequestReviewState>>,
+    pub reviews: BTreeMap<String, BTreeMap<String, ReviewState>>,
     /// Unit values: the git-tree format has no sequences, so this is a set of
     /// entries (same shape as `AdmissionData.maintainers`).
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
@@ -55,7 +57,14 @@ pub struct BranchAdmission {
 /// The state tree at [`TEST_FORGE_REF`], or the default when the ref does not
 /// exist yet.
 pub fn read_state(transaction: &Transaction) -> anyhow::Result<TestForgeState> {
-    let Some(tip) = transaction.resolve_ref(TEST_FORGE_REF)? else {
+    read_state_at(transaction, TEST_FORGE_REF)
+}
+
+/// The state tree at `ref_name`, or the default when the ref does not exist.
+/// Sync reads the fetched copy under the remote's namespace rather than
+/// [`TEST_FORGE_REF`] directly.
+pub fn read_state_at(transaction: &Transaction, ref_name: &str) -> anyhow::Result<TestForgeState> {
+    let Some(tip) = transaction.resolve_ref(ref_name)? else {
         return Ok(TestForgeState::default());
     };
     let tree = objects::CommitData::read(transaction.odb(), tip)?.tree_id()?;
@@ -120,7 +129,7 @@ pub fn set_review(
     transaction: &Transaction,
     change_id: &str,
     user: &str,
-    state: PullRequestReviewState,
+    state: ReviewState,
 ) -> anyhow::Result<()> {
     update_state(transaction, "josh forge review\n", |s| {
         s.reviews
@@ -208,7 +217,7 @@ mod tests {
 
         set_check(&t, oid, "build", CheckState::Pending).unwrap();
         set_check(&t, oid, "build", CheckState::Success).unwrap();
-        set_review(&t, "change/1", "alice", PullRequestReviewState::Approved).unwrap();
+        set_review(&t, "change/1", "alice", ReviewState::Approved).unwrap();
         add_maintainer(&t, "alice").unwrap();
         add_maintainer(&t, "bob").unwrap();
         remove_maintainer(&t, "bob").unwrap();
@@ -216,10 +225,7 @@ mod tests {
 
         let state = read_state(&t).unwrap();
         assert_eq!(state.checks[&oid.to_string()]["build"], CheckState::Success);
-        assert_eq!(
-            state.reviews["change/1"]["alice"],
-            PullRequestReviewState::Approved
-        );
+        assert_eq!(state.reviews["change/1"]["alice"], ReviewState::Approved);
         assert!(state.maintainers.contains_key("alice"));
         assert!(!state.maintainers.contains_key("bob"));
         let admission = &state.admission["master"];

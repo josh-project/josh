@@ -8,7 +8,10 @@ use josh_github_codegen_graphql::{
     },
     GetBranchProtectionRules, GetDefaultBranch, GetRepositoryRulesets, GetRulesetRequiredChecks,
 };
-use serde::{Deserialize, Serialize};
+
+/// A required status check from a ruleset. The type itself is forge-neutral
+/// and lives in josh-changes; re-exported here for the GitHub-side code.
+pub use josh_changes::RequiredStatusCheck;
 
 /// A repository ruleset with its branch conditions.
 #[derive(Debug)]
@@ -19,13 +22,6 @@ pub struct RepositoryRuleset {
     pub target: Option<RepositoryRulesetTarget>,
     pub include_refs: Vec<String>,
     pub exclude_refs: Vec<String>,
-}
-
-/// A required status check from a ruleset.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
-pub struct RequiredStatusCheck {
-    pub context: String,
-    pub integration_id: Option<i64>,
 }
 
 /// A classic branch protection rule.
