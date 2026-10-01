@@ -52,7 +52,7 @@ jobs:
           fi
         done
     - name: Setup BuildX
-      uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4.3.0
+      uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
     - name: Checkout
       uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       with:
@@ -64,7 +64,7 @@ jobs:
       shell: bash
       run: .github/workflows/scripts/install-podman.sh
     - name: Install Rust toolchain
-      uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772 # stable
+      uses: dtolnay/rust-toolchain@02cb101ec7c40f2c49e1d9714d64511d8e1b74de # stable
       with:
         toolchain: stable
     - name: Bootstrap josh binary
@@ -152,7 +152,7 @@ jobs:
         git fetch --no-tags --depth=1 origin "refs/heads/${DEFAULT_BRANCH}"
         git checkout --detach FETCH_HEAD
     - name: Install Rust toolchain
-      uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772 # stable
+      uses: dtolnay/rust-toolchain@02cb101ec7c40f2c49e1d9714d64511d8e1b74de # stable
       with:
         toolchain: stable
     - name: Bootstrap josh binary
