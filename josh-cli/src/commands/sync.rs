@@ -40,7 +40,7 @@ pub fn handle_sync(
 
     // The test forge has its own sync path (git-only, no API); everything
     // else goes to the GitHub sync, which re-checks the forge itself.
-    if let josh_changes::ChangesRef::Remote { remote, .. } = &scope {
+    if let josh_changes::ChangesRef::Remote { remote, branch } = &scope {
         let repo_path = josh_core::git::normalize_repo_path(transaction.path());
         let config = josh_changes::remote_config::read_remote_config(&repo_path, remote)
             .with_context(|| format!("Failed to read remote config for '{remote}'"))?;
@@ -50,6 +50,7 @@ pub fn handle_sync(
             return josh_test_changes::sync::sync(
                 transaction,
                 remote,
+                branch,
                 &config.url,
                 josh_test_changes::sync::SyncOptions {
                     clean: opts.clean,

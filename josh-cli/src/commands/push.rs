@@ -211,28 +211,46 @@ fn prepare_push(
 
     log::debug!("unfiltered_oid: {:?}", unfiltered_oid);
 
-    // Gerrit publishing pushes to the magic ref `refs/for/<branch>` instead of
-    // josh's `@changes`/`@base` ref pairs, and needs no PR API call. The mode
-    // decides the mapping: `independent` (default) pushes only dependency-free
-    // changes as separate reviews; `stack` pushes the whole history as one
-    // relation chain.
-    let to_push = match (forge, push_mode) {
-        (Some(Forge::Gerrit), PushMode::Publish(_)) => match gerrit_mode {
-            GerritMode::Independent => josh_gerrit_changes::build_gerrit_independent_push(
-                transaction,
-                remote_ref,
-                unfiltered_oid,
-                original_target,
-            )
-            .context("Failed to build Gerrit push")?,
-            GerritMode::Stack => josh_gerrit_changes::build_gerrit_push(
-                transaction,
-                remote_ref,
-                unfiltered_oid,
-                original_target,
-            )
-            .context("Failed to build Gerrit push")?,
-        },
+    // The forge's publish mode decides the ref mapping. Branch-based forges
+    // split the stack into per-change refs (build_to_push's Publish arm).
+    // Push-based forges never split: Gerrit publishing pushes to the magic
+    // ref `refs/for/<branch>` (independent mode pushes only dependency-free
+    // changes as separate reviews; stack mode pushes the whole history as
+    // one relation chain), and any other push-based forge (the test forge)
+    // publishes as a plain branch push -- the whole stack lives on the
+    // branch, and there are no @changes/@base/@heads refs and no PRs.
+    let to_push = match (
+        josh_changes::PublishMode::for_forge(*forge),
+        push_mode,
+        forge,
+    ) {
+        (josh_changes::PublishMode::PushBased, PushMode::Publish(_), Some(Forge::Gerrit)) => {
+            match gerrit_mode {
+                GerritMode::Independent => josh_gerrit_changes::build_gerrit_independent_push(
+                    transaction,
+                    remote_ref,
+                    unfiltered_oid,
+                    original_target,
+                )
+                .context("Failed to build Gerrit push")?,
+                GerritMode::Stack => josh_gerrit_changes::build_gerrit_push(
+                    transaction,
+                    remote_ref,
+                    unfiltered_oid,
+                    original_target,
+                )
+                .context("Failed to build Gerrit push")?,
+            }
+        }
+        (josh_changes::PublishMode::PushBased, PushMode::Publish(_), _) => build_to_push(
+            transaction,
+            &PushMode::Normal,
+            remote_ref,
+            remote_ref,
+            unfiltered_oid,
+            original_target,
+        )
+        .context("Failed to build to push")?,
         _ => build_to_push(
             transaction,
             push_mode,
