@@ -30,5 +30,5 @@
 - [Testing](./contributing/testing.md)
 - [Development tools](./contributing/dev-tools.md)
 - [Windows](./contributing/windows.md)
-- [josh run](./contributing/josh-run.md)
+- [josh compose](./contributing/josh-compose.md)
 - [Tracing]()

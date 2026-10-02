@@ -51,12 +51,12 @@ Abbreviated commit SHAs must select the same compose input.
   $ git cat-file -e "${workspace}" 2>/dev/null
   [1]
 
-Compose run status lines use the image label rather than its content hash.
+Compose build status lines use the image label rather than its content hash.
 
   $ mkdir bin
   $ printf '%s\n' '#!/bin/sh' 'if [ "$1" = image ]; then exit 1; fi' 'if [ "$1" = build ]; then cat >/dev/null; fi' 'exit 0' > bin/docker
   $ chmod +x bin/docker
-  $ PATH="${PWD}/bin:${PATH}" josh compose run --backend docker HEAD 2>&1 | sed -E 's/[0-9a-f]{40}/OID/g'
+  $ PATH="${PWD}/bin:${PATH}" josh compose build --backend docker HEAD 2>&1 | sed -E 's/[0-9a-f]{40}/OID/g'
   [ephemeral-workspace] Running (OID)
   [image:friendly image] Building...
   [image:friendly image] Built successfully
@@ -103,7 +103,7 @@ Cached stdout is replayed only for the requested workspace, not its dependencies
   > exit 0
   > EOF
   $ chmod +x bin/docker
-  $ PATH="${PWD}/bin:${PATH}" josh compose run --backend docker HEAD 2>&1 | sed -E 's/[0-9a-f]{40}/OID/g'
+  $ PATH="${PWD}/bin:${PATH}" josh compose build --backend docker HEAD 2>&1 | sed -E 's/[0-9a-f]{40}/OID/g'
   [dependency] Running (OID)
   [image:cache output] Building...
   [image:cache output] Built successfully
@@ -113,14 +113,41 @@ Cached stdout is replayed only for the requested workspace, not its dependencies
   [image:cache output] Already built
   requested stdout
   [requested] SUCCESS
+  $ PATH="${PWD}/bin:${PATH}" josh compose build --backend docker HEAD 2>&1 | sed -E 's/[0-9a-f]{40}/OID/g'
+  [requested] Using cached output (OID)
+  requested stdout
+
+Compose run always executes the selected workspace while retaining dependency caches.
+
   $ PATH="${PWD}/bin:${PATH}" josh compose run --backend docker HEAD 2>&1 | sed -E 's/[0-9a-f]{40}/OID/g'
+  [dependency] Using cached output (OID)
+  [requested] Running (OID)
+  [image:cache output] Already built
+  requested stdout
+  [requested] SUCCESS
+
+Command overrides and shells are ephemeral and do not replace the configured cached result.
+
+  $ PATH="${PWD}/bin:${PATH}" josh compose run --backend docker HEAD -- echo 'override stdout' 2>&1 | sed -E 's/[0-9a-f]{40}/OID/g'
+  [dependency] Using cached output (OID)
+  [requested] Running (OID)
+  [image:cache output] Already built
+  override stdout
+  [requested] SUCCESS
+  $ PATH="${PWD}/bin:${PATH}" josh compose shell --backend docker HEAD -- echo 'shell stdout' 2>&1 | sed -E 's/[0-9a-f]{40}/OID/g'
+  [dependency] Using cached output (OID)
+  [requested] Running (OID)
+  [image:cache output] Already built
+  shell stdout
+  [requested] SUCCESS
+  $ PATH="${PWD}/bin:${PATH}" josh compose build --backend docker HEAD 2>&1 | sed -E 's/[0-9a-f]{40}/OID/g'
   [requested] Using cached output (OID)
   requested stdout
   $ sed 's/requested stdout/updated requested stdout/' compose.josh > compose.josh.new
   $ mv compose.josh.new compose.josh
   $ git add compose.josh
   $ git commit -q -m "update requested workspace"
-  $ PATH="${PWD}/bin:${PATH}" josh compose run --backend docker HEAD 2>&1 | sed -E 's/[0-9a-f]{40}/OID/g'
+  $ PATH="${PWD}/bin:${PATH}" josh compose build --backend docker HEAD 2>&1 | sed -E 's/[0-9a-f]{40}/OID/g'
   [dependency] Using cached output (OID)
   [requested] Running (OID)
   [image:cache output] Already built
@@ -166,11 +193,11 @@ Revision object expressions resolve across every compose planning command.
   $ mkdir bin
   $ printf '%s\n' '#!/bin/sh' 'if [ "$1" = image ]; then exit 1; fi' 'if [ "$1" = build ]; then cat >/dev/null; fi' 'exit 0' > bin/docker
   $ chmod +x bin/docker
-  $ PATH="${PWD}/bin:${PATH}" josh compose run --backend docker "${current}" "${filter}" >/dev/null
+  $ PATH="${PWD}/bin:${PATH}" josh compose build --backend docker "${current}" "${filter}" >/dev/null
   [revision job] Running (aa92c051291e109700d69ab90869ccadfd476f6c)
   [revision job] Done (orchestrator)
 
-  $ PATH="${PWD}/bin:${PATH}" josh compose run --backend docker --arg baseline="${explicit}" "${current}" "${filter}" >/dev/null
+  $ PATH="${PWD}/bin:${PATH}" josh compose build --backend docker --arg baseline="${explicit}" "${current}" "${filter}" >/dev/null
   [revision job] Running (972881bf274d3c5b76e9db11bb692ef996b88299)
   [revision job] Done (orchestrator)
 

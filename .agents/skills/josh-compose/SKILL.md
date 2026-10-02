@@ -24,7 +24,7 @@ Test files live under `tests/` and are organized by subsystem:
 - `tests/cli/` — CLI tests
 - `tests/experimental/` — excluded from release tests
 
-## Running tests via `josh compose run`
+## Running tests via `josh compose build`
 
 Tests run inside an isolated podman container. Step results are cached; the cache key is the SHA of
 the filtered workspace tree, so the cache is automatically invalidated when source files change.
@@ -32,13 +32,13 @@ the filtered workspace tree, so the cache is automatically invalidated when sour
 ### Running all tests
 
 ```
-josh compose run
+josh compose build
 ```
 
 To test a specific commit instead of the working tree, pass it as the first argument:
 
 ```
-josh compose run HEAD
+josh compose build HEAD
 ```
 
 Other values you can pass include:
@@ -49,7 +49,7 @@ Other values you can pass include:
 
 ### Inspecting test output
 
-Each test file prints a result line in the `josh compose run` output:
+Each test file prints a result line in the `josh compose build` output:
 ```
 Result: 1 document(s) with N testcase(s): N succeeded, 0 failed and 0 skipped
 ```
@@ -62,10 +62,11 @@ directory, so you can inspect them directly.
 ### Iterating on a failing test
 
 1. Edit the `.t` test file or the relevant source code.
-2. Re-run `josh compose run` — the changed working tree produces a new SHA, so the cache is bypassed automatically.
+2. Re-run `josh compose build` — the changed working tree produces a new SHA, so the cache is bypassed automatically.
 
-### Do not use --clean or --clean-all
+### Do not use compose clean
 
-Never pass `--clean` or `--clean-all` to `josh compose run`. The cache is reliable; clearing it just forces
-a full rebuild and wastes time. If something seems wrong that you believe a cache wipe would fix,
-stop and ask the user to run the clean in a separate terminal — do not run it yourself, ever.
+Never run `josh compose clean` or `josh compose clean --all`. The cache is reliable; clearing it
+just forces a full rebuild and wastes time. If something seems wrong that you believe a cache wipe
+would fix, stop and ask the user to run the clean in a separate terminal — do not run it yourself,
+ever.

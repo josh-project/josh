@@ -144,11 +144,17 @@ pub(super) fn extract_artifact(name: &str, dest: &std::path::Path) -> anyhow::Re
         .map_err(|e| anyhow::anyhow!("failed to extract artifact {name}: {e}"))
 }
 
-fn create_scratch_artifact(tar: &[u8]) -> anyhow::Result<String> {
+fn create_scratch_artifact(tar: Option<&[u8]>) -> anyhow::Result<String> {
     let bytes: [u8; 4] = rand::random();
     let name = format!("josh-scratch-{}", hex::encode(bytes));
     create_artifact(&name)?;
-    if let Err(error) = import_artifact(&name, tar).and_then(|_| align_artifact(&name)) {
+    let initialize = || {
+        if let Some(tar) = tar {
+            import_artifact(&name, tar)?;
+        }
+        align_artifact(&name)
+    };
+    if let Err(error) = initialize() {
         if let Err(cleanup_error) = remove_artifact(&name, true) {
             return Err(error.context(format!(
                 "failed to remove scratch artifact {name} after initialization failed: \
@@ -210,7 +216,7 @@ impl ArtifactBackend for PodmanRuntime {
         storage_status().map(Some)
     }
 
-    fn create_scratch_artifact(&self, tar: &[u8]) -> anyhow::Result<String> {
+    fn create_scratch_artifact(&self, tar: Option<&[u8]>) -> anyhow::Result<String> {
         create_scratch_artifact(tar)
     }
 

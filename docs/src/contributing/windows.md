@@ -37,8 +37,8 @@ cargo build --release -p josh-proxy -p josh-cli
 ## Limitations
 
 * SSH is not supported on Windows.
-* `josh compose run` is not supported on Windows, so the repository's own test suite does not
-  run there.
+* `josh compose` is not supported on Windows, so the repository's own test suite does not run
+  there.
 * An upstream whose path contains a reserved Windows device name (`aux`, `con`, `nul`,
   `com1`..`com9`, `lpt1`..`lpt9`) cannot be mirrored: the namespace becomes a path, and Windows
   has no such filename.
