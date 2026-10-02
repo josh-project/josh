@@ -116,6 +116,24 @@ Cached stdout is replayed only for the requested workspace, not its dependencies
   $ PATH="${PWD}/bin:${PATH}" josh compose run --backend docker HEAD 2>&1 | sed -E 's/[0-9a-f]{40}/OID/g'
   [requested] Using cached output (OID)
   requested stdout
+
+Command overrides and shells are ephemeral and do not replace the configured cached result.
+
+  $ PATH="${PWD}/bin:${PATH}" josh compose run --backend docker HEAD -- echo 'override stdout' 2>&1 | sed -E 's/[0-9a-f]{40}/OID/g'
+  [dependency] Using cached output (OID)
+  [requested] Running (OID)
+  [image:cache output] Already built
+  override stdout
+  [requested] SUCCESS
+  $ PATH="${PWD}/bin:${PATH}" josh compose shell --backend docker HEAD -- echo 'shell stdout' 2>&1 | sed -E 's/[0-9a-f]{40}/OID/g'
+  [dependency] Using cached output (OID)
+  [requested] Running (OID)
+  [image:cache output] Already built
+  shell stdout
+  [requested] SUCCESS
+  $ PATH="${PWD}/bin:${PATH}" josh compose run --backend docker HEAD 2>&1 | sed -E 's/[0-9a-f]{40}/OID/g'
+  [requested] Using cached output (OID)
+  requested stdout
   $ sed 's/requested stdout/updated requested stdout/' compose.josh > compose.josh.new
   $ mv compose.josh.new compose.josh
   $ git add compose.josh

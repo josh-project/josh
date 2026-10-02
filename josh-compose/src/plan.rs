@@ -1,10 +1,8 @@
 //! Plan listings computed over the loaded build [`Graph`].
 //! The graph loader ([`josh_compose_graph::load_graph`]) resolves the full
-//! dependency closure; the functions here only filter it by cache state. A
-//! workspace is skipped when its run is already cached successful AND its output
-//! volume is still present — mirroring the executor's cache check in
-//! `executor::run_job`, so a stale marker without its volume self-heals by being
-//! planned (and later run) again.
+//! dependency closure; the functions here filter it by job and image cache
+//! state. A cached workspace prunes its inputs. A stale result marker without
+//! its output artifact self-heals by remaining in the plan.
 
 use std::collections::HashSet;
 
@@ -19,12 +17,12 @@ use crate::naming;
 /// Collect every image build-tree OID a run would touch: the images of all
 /// runnable jobs (including sidecar images) and their transitive bases,
 /// ordered bases-first and deduplicated. This is the order in which images
-/// would need to be pulled/built for a run to succeed.
+/// would need to be pulled or built.
 ///
-/// When `ignore_cache` is false (the default), workspaces whose run is already
+/// When `ignore_cache` is false (the default), workspaces whose result is already
 /// cached successful are pruned — along with their dependency subtrees — so
-/// only images a run would actually build are reported. When `ignore_cache` is
-/// true, every image a fresh-cache run would build is reported.
+/// only images a run would actually create are reported. When `ignore_cache` is
+/// true, every image a fresh run would create is reported.
 pub fn collect_image_oids(
     transaction: &cache::Transaction,
     odb: &memodb::Odb,
@@ -37,7 +35,9 @@ pub fn collect_image_oids(
 
     let mut wanted: HashSet<gix_hash::ObjectId> = HashSet::new();
     for job in graph.jobs() {
-        if !runnable.contains(&job.ws_tree) {
+        if !runnable.contains(&job.ws_tree)
+            || (!ignore_cache && workspace_is_skippable(transaction, job, runtime)?)
+        {
             continue;
         }
         if let Some(image_oid) = job.meta.image {
@@ -90,7 +90,7 @@ pub(crate) fn collect_workspace_image_oids(
 ///
 /// Cache semantics mirror `collect_image_oids`: when `ignore_cache` is false,
 /// cached-successful workspaces are pruned with their dependency subtrees; when
-/// true, every job a fresh-cache run would touch is reported.
+/// true, every job a fresh run would touch is reported.
 pub fn collect_job_hashes(
     transaction: &cache::Transaction,
     odb: &memodb::Odb,
@@ -109,7 +109,7 @@ pub fn collect_job_hashes(
         .collect())
 }
 
-/// Compute the set of jobs a run would execute. Cached jobs prune ordinary
+/// Compute the set of jobs a run would touch. Cached jobs prune ordinary
 /// inputs; cached images prune artifact-producing image inputs.
 fn runnable_jobs(
     transaction: &cache::Transaction,
@@ -129,10 +129,11 @@ fn runnable_jobs(
         let job = graph
             .job(ws_tree)
             .expect("job dependencies are present in the graph");
-        if !ignore_cache && workspace_is_skippable(transaction, job, runtime)? {
-            if log_skips {
-                eprintln!("[{}] Using cached output ({})", job.meta.label, ws_tree);
-            }
+        let skippable = !ignore_cache && workspace_is_skippable(transaction, job, runtime)?;
+        if skippable && log_skips {
+            eprintln!("[{}] Using cached output ({})", job.meta.label, ws_tree);
+        }
+        if skippable {
             continue;
         }
         runnable.insert(ws_tree);
@@ -184,9 +185,6 @@ fn collect_image_input_jobs(
     Ok(())
 }
 
-/// Mirror the executor's cache check: a job is skippable when a previous
-/// successful run is recorded AND its output volume still exists (when one is
-/// expected).
 pub(crate) fn workspace_is_skippable<R: ArtifactBackend + ?Sized>(
     transaction: &cache::Transaction,
     job: &Job,

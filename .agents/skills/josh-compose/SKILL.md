@@ -64,8 +64,9 @@ directory, so you can inspect them directly.
 1. Edit the `.t` test file or the relevant source code.
 2. Re-run `josh compose run` — the changed working tree produces a new SHA, so the cache is bypassed automatically.
 
-### Do not use --clean or --clean-all
+### Do not use compose clean
 
-Never pass `--clean` or `--clean-all` to `josh compose run`. The cache is reliable; clearing it just forces
-a full rebuild and wastes time. If something seems wrong that you believe a cache wipe would fix,
-stop and ask the user to run the clean in a separate terminal — do not run it yourself, ever.
+Never run `josh compose clean` or `josh compose clean --all`. The cache is reliable; clearing it
+just forces a full rebuild and wastes time. If something seems wrong that you believe a cache wipe
+would fix, stop and ask the user to run the clean in a separate terminal — do not run it yourself,
+ever.

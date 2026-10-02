@@ -1,4 +1,4 @@
-use josh_compose::{ArgumentBinding, CleanMode, RunOptions};
+use josh_compose::{ArgumentBinding, CleanMode, WorkspaceOptions};
 use josh_compose_backend::Runtime;
 use josh_compose_docker::DockerRuntime;
 use josh_compose_podman::PodmanRuntime;
@@ -49,8 +49,12 @@ pub struct ComposeArgs {
 
 #[derive(Debug, clap::Subcommand)]
 pub enum ComposeCommand {
-    /// Run a workspace in a container
+    /// Run a workspace according to its cache policy, or execute an override command
     Run(RunArgs),
+    /// Open an interactive shell in a prepared workspace
+    Shell(ShellArgs),
+    /// Remove compose results and runtime artifacts
+    Clean(CleanArgs),
     /// Print the workspace graph as D2 source
     Graph(GraphArgs),
     /// List every image (as `josh_ws_image_<oid>`) a `run` with the same args would need
@@ -76,6 +80,8 @@ pub fn handle_compose(
     #[cfg(not(windows))]
     match &args.command {
         ComposeCommand::Run(run_args) => handle_run(run_args, transaction),
+        ComposeCommand::Shell(shell_args) => handle_shell(shell_args, transaction),
+        ComposeCommand::Clean(clean_args) => handle_clean(clean_args, transaction),
         ComposeCommand::Graph(graph_args) => handle_graph(graph_args, transaction),
         ComposeCommand::ListImages(list_args) => handle_list_images(list_args, transaction),
         ComposeCommand::ListJobs(list_args) => handle_list_jobs(list_args, transaction),
@@ -96,23 +102,16 @@ pub struct TransferArgs {
 }
 
 #[derive(Debug, clap::Parser)]
-pub struct RunArgs {
-    /// Remove cached images and output volumes
-    #[arg(long = "clean")]
-    pub clean: bool,
-
-    /// Remove cached images, output volumes, and persistent cache volumes
-    #[arg(long = "clean-all")]
-    pub clean_all: bool,
-
-    /// Container backend to run the workspace in [default: podman, or docker on macOS when OrbStack is running]
+pub struct TargetArgs {
+    /// Container backend [default: podman, or docker on macOS when OrbStack is running]
     #[arg(long, value_enum, env = "JOSH_COMPOSE_BACKEND")]
     pub backend: Option<Backend>,
+
     /// Bind a named compose argument (currently a Git revision)
     #[arg(long = "arg", value_name = "NAME=VALUE")]
     pub arguments: Vec<ArgumentBinding>,
 
-    /// Git revision to use as input: "." (working tree), "+" (index), or any rev (e.g. "HEAD", "HEAD~1", "main")
+    /// Git revision to use as input: "." (working tree), "+" (index), or any rev
     #[arg(default_value = ".")]
     pub reference: String,
 
@@ -121,29 +120,94 @@ pub struct RunArgs {
     pub filter: String,
 }
 
+impl TargetArgs {
+    fn options(&self) -> WorkspaceOptions {
+        WorkspaceOptions {
+            filter_spec: self.filter.clone(),
+            input_ref: self.reference.clone(),
+            arguments: self.arguments.clone(),
+        }
+    }
+
+    fn runtime(&self) -> Box<dyn Runtime> {
+        self.backend.unwrap_or_else(default_backend).runtime()
+    }
+}
+
+#[derive(Debug, clap::Parser)]
+pub struct RunArgs {
+    #[command(flatten)]
+    pub target: TargetArgs,
+
+    /// Replace the configured command without updating its cached result
+    #[arg(last = true, value_name = "COMMAND")]
+    pub command: Vec<String>,
+}
+
+#[derive(Debug, clap::Parser)]
+pub struct ShellArgs {
+    #[command(flatten)]
+    pub target: TargetArgs,
+
+    /// Interactive command to execute [default: /bin/sh]
+    #[arg(last = true, value_name = "COMMAND")]
+    pub command: Vec<String>,
+}
+
+#[derive(Debug, clap::Parser)]
+pub struct CleanArgs {
+    /// Also remove persistent cache volumes
+    #[arg(long = "all")]
+    pub all: bool,
+
+    /// Container backend [default: podman, or docker on macOS when OrbStack is running]
+    #[arg(long, value_enum, env = "JOSH_COMPOSE_BACKEND")]
+    pub backend: Option<Backend>,
+}
+
 pub fn handle_run(
     args: &RunArgs,
     transaction: &josh_core::cache::Transaction,
 ) -> anyhow::Result<()> {
-    let clean = if args.clean_all {
-        CleanMode::CleanAll
-    } else if args.clean {
-        CleanMode::Clean
-    } else {
-        CleanMode::None
-    };
-
-    let runtime = args.backend.unwrap_or_else(default_backend).runtime();
+    let runtime = args.target.runtime();
+    let command = (!args.command.is_empty()).then(|| args.command.clone());
     josh_compose::run(
         transaction,
-        RunOptions {
-            filter_spec: args.filter.clone(),
-            input_ref: args.reference.clone(),
-            arguments: args.arguments.clone(),
-            clean,
-        },
+        args.target.options(),
+        command,
         runtime.as_ref(),
     )
+}
+
+pub fn handle_shell(
+    args: &ShellArgs,
+    transaction: &josh_core::cache::Transaction,
+) -> anyhow::Result<()> {
+    let runtime = args.target.runtime();
+    let command = if args.command.is_empty() {
+        vec!["/bin/sh".to_string()]
+    } else {
+        args.command.clone()
+    };
+    josh_compose::shell(
+        transaction,
+        args.target.options(),
+        command,
+        runtime.as_ref(),
+    )
+}
+
+pub fn handle_clean(
+    args: &CleanArgs,
+    transaction: &josh_core::cache::Transaction,
+) -> anyhow::Result<()> {
+    let runtime = args.backend.unwrap_or_else(default_backend).runtime();
+    let mode = if args.all {
+        CleanMode::CleanAll
+    } else {
+        CleanMode::Clean
+    };
+    josh_compose::clean::clean(transaction, mode, runtime.as_ref())
 }
 
 #[derive(Debug, clap::Parser)]
@@ -173,7 +237,7 @@ pub fn handle_graph(
 
 #[derive(Debug, clap::Parser)]
 pub struct ListImagesArgs {
-    /// Ignore the local job cache and list every image a fresh run would build
+    /// Ignore the local job cache and list every image a fresh run would create
     #[arg(long = "all")]
     pub all: bool,
 
@@ -200,11 +264,10 @@ pub fn handle_list_images(
     let runtime = args.backend.unwrap_or_else(default_backend).runtime();
     let oids = josh_compose::plan_images(
         transaction,
-        RunOptions {
+        WorkspaceOptions {
             filter_spec: args.filter.clone(),
             input_ref: args.reference.clone(),
             arguments: args.arguments.clone(),
-            clean: CleanMode::None,
         },
         args.all,
         runtime.as_ref(),
@@ -245,11 +308,10 @@ pub fn handle_list_jobs(
     let runtime = args.backend.unwrap_or_else(default_backend).runtime();
     let oids = josh_compose::plan_jobs(
         transaction,
-        RunOptions {
+        WorkspaceOptions {
             filter_spec: args.filter.clone(),
             input_ref: args.reference.clone(),
             arguments: args.arguments.clone(),
-            clean: CleanMode::None,
         },
         args.all,
         runtime.as_ref(),

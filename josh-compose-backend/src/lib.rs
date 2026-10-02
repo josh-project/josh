@@ -44,6 +44,15 @@ pub struct Mount {
     pub read_only: bool,
 }
 
+/// Terminal attachment policy for a container step.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum StdioMode {
+    /// Stream stdout/stderr while retaining them for result caching.
+    Capture,
+    /// Attach the invoking terminal directly, including stdin and a TTY when available.
+    Interactive,
+}
+
 /// Arguments for running a step.
 pub struct RunArgs {
     /// Environment key (e.g. an image tag) to run the step in.
@@ -62,6 +71,7 @@ pub struct RunArgs {
     /// Working directory inside the environment. When `None`, the backend uses its
     /// default (typically the environment's own `WORKDIR`).
     pub working_dir: Option<String>,
+    pub stdio: StdioMode,
 }
 
 /// Captured result of running a step.
@@ -152,10 +162,10 @@ pub trait ArtifactBackend: Send + Sync {
     fn storage_status(&self) -> anyhow::Result<Option<StorageStatus>> {
         Ok(None)
     }
-    /// Create a uniquely-named ephemeral artifact seeded with `tar` and return its
-    /// opaque name. The caller mounts it and removes it when done. The backend
-    /// fixes ownership for the invoking user as needed.
-    fn create_scratch_artifact(&self, tar: &[u8]) -> anyhow::Result<String>;
+    /// Create a uniquely-named ephemeral artifact, optionally seeded with a tar
+    /// archive, and return its opaque name. The caller mounts it and removes it
+    /// when done. The backend fixes ownership for the invoking user as needed.
+    fn create_scratch_artifact(&self, tar: Option<&[u8]>) -> anyhow::Result<String>;
 
     /// Ensure an artifact exists, creating it if missing.
     fn ensure_artifact(&self, name: &str) -> anyhow::Result<()> {
@@ -206,10 +216,18 @@ pub trait Runtime: EnvironmentBackend + ArtifactBackend + ExecutionBackend {}
 
 impl<T> Runtime for T where T: EnvironmentBackend + ArtifactBackend + ExecutionBackend {}
 
+/// Ephemeral command used instead of the explicitly selected job's configured command.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SelectedJobOverride {
+    pub command: Vec<String>,
+    pub stdio: StdioMode,
+}
+
 /// Options shared by executors.
 pub struct ExecOpts {
     /// Extract `OutputMode::Workdir` artifacts into the host working directory.
     pub extract_to_workdir: bool,
+    pub selected_job_override: Option<SelectedJobOverride>,
 }
 
 /// An execution strategy for a loaded build [`Graph`].
