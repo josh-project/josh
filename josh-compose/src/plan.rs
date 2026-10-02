@@ -16,15 +16,15 @@ use josh_core::memodb;
 use crate::job_cache;
 use crate::naming;
 
-/// Collect every image build-tree OID a run would touch: the images of all
+/// Collect every image build-tree OID a build would touch: the images of all
 /// runnable jobs (including sidecar images) and their transitive bases,
 /// ordered bases-first and deduplicated. This is the order in which images
-/// would need to be pulled/built for a run to succeed.
+/// would need to be pulled or built.
 ///
-/// When `ignore_cache` is false (the default), workspaces whose run is already
+/// When `ignore_cache` is false (the default), workspaces whose result is already
 /// cached successful are pruned — along with their dependency subtrees — so
-/// only images a run would actually build are reported. When `ignore_cache` is
-/// true, every image a fresh-cache run would build is reported.
+/// only images a build would actually create are reported. When `ignore_cache` is
+/// true, every image a fresh build would create is reported.
 pub fn collect_image_oids(
     transaction: &cache::Transaction,
     odb: &memodb::Odb,
@@ -90,7 +90,7 @@ pub(crate) fn collect_workspace_image_oids(
 ///
 /// Cache semantics mirror `collect_image_oids`: when `ignore_cache` is false,
 /// cached-successful workspaces are pruned with their dependency subtrees; when
-/// true, every job a fresh-cache run would touch is reported.
+/// true, every job a fresh build would touch is reported.
 pub fn collect_job_hashes(
     transaction: &cache::Transaction,
     odb: &memodb::Odb,

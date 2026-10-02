@@ -44,6 +44,15 @@ pub struct Mount {
     pub read_only: bool,
 }
 
+/// Terminal attachment policy for a container step.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum StdioMode {
+    /// Stream stdout/stderr while retaining them for result caching.
+    Capture,
+    /// Attach the invoking terminal directly, including stdin and a TTY when available.
+    Interactive,
+}
+
 /// Arguments for running a step.
 pub struct RunArgs {
     /// Environment key (e.g. an image tag) to run the step in.
@@ -62,6 +71,7 @@ pub struct RunArgs {
     /// Working directory inside the environment. When `None`, the backend uses its
     /// default (typically the environment's own `WORKDIR`).
     pub working_dir: Option<String>,
+    pub stdio: StdioMode,
 }
 
 /// Captured result of running a step.
@@ -152,10 +162,10 @@ pub trait ArtifactBackend: Send + Sync {
     fn storage_status(&self) -> anyhow::Result<Option<StorageStatus>> {
         Ok(None)
     }
-    /// Create a uniquely-named ephemeral artifact seeded with `tar` and return its
-    /// opaque name. The caller mounts it and removes it when done. The backend
-    /// fixes ownership for the invoking user as needed.
-    fn create_scratch_artifact(&self, tar: &[u8]) -> anyhow::Result<String>;
+    /// Create a uniquely-named ephemeral artifact, optionally seeded with a tar
+    /// archive, and return its opaque name. The caller mounts it and removes it
+    /// when done. The backend fixes ownership for the invoking user as needed.
+    fn create_scratch_artifact(&self, tar: Option<&[u8]>) -> anyhow::Result<String>;
 
     /// Ensure an artifact exists, creating it if missing.
     fn ensure_artifact(&self, name: &str) -> anyhow::Result<()> {
@@ -206,10 +216,50 @@ pub trait Runtime: EnvironmentBackend + ArtifactBackend + ExecutionBackend {}
 
 impl<T> Runtime for T where T: EnvironmentBackend + ArtifactBackend + ExecutionBackend {}
 
+/// How the explicitly selected graph root is handled.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum RootExecution {
+    /// Reuse a cached successful root result when available.
+    Build,
+    /// Execute the root even when its configured result is cached. A command
+    /// override is ephemeral and does not replace the configured result.
+    Run { command: Option<Vec<String>> },
+    /// Execute an ephemeral command with the invoking terminal attached.
+    Interactive { command: Vec<String> },
+}
+
+impl RootExecution {
+    pub fn bypasses_cache(&self) -> bool {
+        !matches!(self, Self::Build)
+    }
+
+    pub fn command_override(&self) -> Option<&[String]> {
+        match self {
+            Self::Build | Self::Run { command: None } => None,
+            Self::Run {
+                command: Some(command),
+            }
+            | Self::Interactive { command } => Some(command),
+        }
+    }
+
+    pub fn is_ephemeral(&self) -> bool {
+        self.command_override().is_some()
+    }
+
+    pub fn stdio(&self) -> StdioMode {
+        match self {
+            Self::Interactive { .. } => StdioMode::Interactive,
+            Self::Build | Self::Run { .. } => StdioMode::Capture,
+        }
+    }
+}
+
 /// Options shared by executors.
 pub struct ExecOpts {
     /// Extract `OutputMode::Workdir` artifacts into the host working directory.
     pub extract_to_workdir: bool,
+    pub root_execution: RootExecution,
 }
 
 /// An execution strategy for a loaded build [`Graph`].

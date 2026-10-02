@@ -1,11 +1,11 @@
-use anyhow::Context;
-use std::process::{Command, Stdio};
-
 use super::{DockerRuntime, SIDECAR_NETWORK, align_artifact, host_identity, sidecars};
+use anyhow::Context;
 use josh_compose_backend::{
-    ExecutionBackend, Mount, RunArgs, RunOutput, SidecarArgs, SidecarHandle,
+    ExecutionBackend, Mount, RunArgs, RunOutput, SidecarArgs, SidecarHandle, StdioMode,
 };
 use josh_compose_graph::NetworkPolicy;
+use std::io::IsTerminal;
+use std::process::{Command, Stdio};
 
 fn run(args: RunArgs) -> anyhow::Result<RunOutput> {
     // Defensively fix ownership of read-only mounts — pre-existing artifacts such
@@ -19,6 +19,12 @@ fn run(args: RunArgs) -> anyhow::Result<RunOutput> {
 
     let mut cmd = Command::new("docker");
     cmd.args(["run", "--rm"]);
+    if args.stdio == StdioMode::Interactive {
+        cmd.arg("--interactive");
+        if std::io::stdin().is_terminal() && std::io::stdout().is_terminal() {
+            cmd.arg("--tty");
+        }
+    }
 
     // Run as the invoking user so files land with the right ownership.
     let identity = host_identity();
@@ -62,61 +68,78 @@ fn run(args: RunArgs) -> anyhow::Result<RunOutput> {
         }
     }
 
-    cmd.stdout(Stdio::piped());
-    cmd.stderr(Stdio::piped());
+    match args.stdio {
+        StdioMode::Capture => {
+            cmd.stdout(Stdio::piped());
+            cmd.stderr(Stdio::piped());
 
-    let mut child = cmd.spawn().context("failed to run docker container")?;
+            let mut child = cmd.spawn().context("failed to run docker container")?;
 
-    let child_stdout = child.stdout.take().expect("stdout piped");
-    let child_stderr = child.stderr.take().expect("stderr piped");
+            let child_stdout = child.stdout.take().expect("stdout piped");
+            let child_stderr = child.stderr.take().expect("stderr piped");
 
-    let stdout_thread = std::thread::spawn(move || {
-        use std::io::Read;
-        let mut reader = child_stdout;
-        let mut buf = Vec::new();
-        let mut chunk = [0u8; 4096];
-        loop {
-            match reader.read(&mut chunk) {
-                Ok(0) => break,
-                Ok(n) => {
-                    let _ = std::io::Write::write_all(&mut std::io::stdout(), &chunk[..n]);
-                    buf.extend_from_slice(&chunk[..n]);
+            let stdout_thread = std::thread::spawn(move || {
+                use std::io::Read;
+                let mut reader = child_stdout;
+                let mut buf = Vec::new();
+                let mut chunk = [0u8; 4096];
+                loop {
+                    match reader.read(&mut chunk) {
+                        Ok(0) => break,
+                        Ok(n) => {
+                            let _ = std::io::Write::write_all(&mut std::io::stdout(), &chunk[..n]);
+                            buf.extend_from_slice(&chunk[..n]);
+                        }
+                        Err(_) => break,
+                    }
                 }
-                Err(_) => break,
-            }
-        }
-        buf
-    });
+                buf
+            });
 
-    let stderr_thread = std::thread::spawn(move || {
-        use std::io::Read;
-        let mut reader = child_stderr;
-        let mut buf = Vec::new();
-        let mut chunk = [0u8; 4096];
-        loop {
-            match reader.read(&mut chunk) {
-                Ok(0) => break,
-                Ok(n) => {
-                    let _ = std::io::Write::write_all(&mut std::io::stderr(), &chunk[..n]);
-                    buf.extend_from_slice(&chunk[..n]);
+            let stderr_thread = std::thread::spawn(move || {
+                use std::io::Read;
+                let mut reader = child_stderr;
+                let mut buf = Vec::new();
+                let mut chunk = [0u8; 4096];
+                loop {
+                    match reader.read(&mut chunk) {
+                        Ok(0) => break,
+                        Ok(n) => {
+                            let _ = std::io::Write::write_all(&mut std::io::stderr(), &chunk[..n]);
+                            buf.extend_from_slice(&chunk[..n]);
+                        }
+                        Err(_) => break,
+                    }
                 }
-                Err(_) => break,
-            }
+                buf
+            });
+
+            let status = child
+                .wait()
+                .context("failed to wait for docker container")?;
+            let stdout = stdout_thread.join().unwrap_or_default();
+            let stderr = stderr_thread.join().unwrap_or_default();
+
+            Ok(RunOutput {
+                exit_code: status.code().unwrap_or(1),
+                stdout,
+                stderr,
+            })
         }
-        buf
-    });
-
-    let status = child
-        .wait()
-        .context("failed to wait for docker container")?;
-    let stdout = stdout_thread.join().unwrap_or_default();
-    let stderr = stderr_thread.join().unwrap_or_default();
-
-    Ok(RunOutput {
-        exit_code: status.code().unwrap_or(1),
-        stdout,
-        stderr,
-    })
+        StdioMode::Interactive => {
+            let status = cmd
+                .stdin(Stdio::inherit())
+                .stdout(Stdio::inherit())
+                .stderr(Stdio::inherit())
+                .status()
+                .context("failed to run interactive docker container")?;
+            Ok(RunOutput {
+                exit_code: status.code().unwrap_or(1),
+                stdout: Vec::new(),
+                stderr: Vec::new(),
+            })
+        }
+    }
 }
 
 fn mount_spec(mount: &Mount) -> String {
