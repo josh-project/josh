@@ -2,7 +2,7 @@
 set -euo pipefail
 
 # Provide the CI bootstrap `josh` binary at target/release/josh, used by the
-# workflow to drive `josh compose run`, sync its Git result ref, and transfer
+# workflow to drive `josh compose build`, sync its Git result ref, and transfer
 # cached volumes and images through R2.
 #
 # Strategy:
