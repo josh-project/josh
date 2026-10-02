@@ -14,12 +14,12 @@ permissions:
 env:
   CARGO_TERM_COLOR: always
   JOSH_EXPERIMENTAL_FEATURES: "1"
-  # Bootstrap the `josh` binary used by CI to drive `josh compose run`, sync the
+  # Bootstrap the `josh` binary used by CI to drive `josh compose build`, sync the
   # compose result ref through Git, and pull/push volumes and images from R2.
   # Keep this pinned so every branch reuses one known-good binary from R2. Bump
   # it only when an incompatible compose metadata or transport change requires
   # a newer bootstrap.
-  JOSH_BOOTSTRAP_SHA: 5f5e41b3199a4653e3af8e008a573571d48bee89
+  JOSH_BOOTSTRAP_SHA: 34f4fedb0481581aecfd49557025b69cec7ec98f
 
 jobs:
   test:
@@ -95,12 +95,12 @@ jobs:
         AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
       run: |
         set -o pipefail
-        target/release/josh compose run HEAD \
+        target/release/josh compose build HEAD \
           "$COMPOSE_FILTER" 2>&1 \
-          | tee /tmp/compose-run.log
+          | tee /tmp/compose-build.log
         # Secretless runs (forks, dependabot) have no sidecar-provided remote
         # cache, so the local fallback is expected; only enforce it otherwise.
-        if [ "$SECRETLESS" != "true" ] && grep -q SCCACHE_REMOTE_CACHE_MISSING /tmp/compose-run.log; then
+        if [ "$SECRETLESS" != "true" ] && grep -q SCCACHE_REMOTE_CACHE_MISSING /tmp/compose-build.log; then
           echo "::error::sccache remote cache was not used during the build"
           exit 1
         fi

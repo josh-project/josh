@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Pre-warm podman's local image store from R2 so `josh compose run` skips builds.
+# Pre-warm podman's local image store from R2 so `josh compose build` skips builds.
 # Best-effort: a missing object or transport error just falls through to a local
 # build later — never fails the script.
 #
