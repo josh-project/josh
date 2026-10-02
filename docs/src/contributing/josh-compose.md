@@ -1,63 +1,106 @@
-# josh compose run
+# josh compose
 
-`josh compose run` is an experimental `josh` CLI subcommand that runs workspaces in isolated,
-automatically-cached containers. It is used to build the josh binaries and run the integration
-test suite.
+`josh compose` is an experimental workspace builder and runner. It filters a repository to the
+files declared by a workspace, prepares an isolated container environment, and executes workspace
+graphs with content-addressed caching.
 
-> **Note:** `josh compose run` is experimental and requires `JOSH_EXPERIMENTAL_FEATURES=1` to be set
-> in the environment.
+> **Note:** `josh compose` requires `JOSH_EXPERIMENTAL_FEATURES=1`.
 
 ## Motivation
 
-A common problem with monorepo builds is that the container context contains the entire repository — thousands of files most builds don't need. This has two consequences:
+A common problem with monorepo builds is that the container context contains the entire repository
+even when a build needs only a small subset. This has two consequences:
 
-1. **Fragile caching.** Docker and podman derive cache tags from the context contents. Any file touched anywhere in the repo can break the cache even if the build doesn't use that file.
-2. **Hidden dependencies.** If a build silently reads a file that "happens to be there", it works locally but may break in a clean environment or for another team member.
+1. **Fragile caching.** Unrelated repository changes invalidate broad container contexts.
+2. **Hidden dependencies.** Builds can accidentally read undeclared files that happen to exist
+   locally.
 
-`josh compose run` addresses both problems by filtering the repository to exactly the files a given workspace needs before any container is involved:
+`josh compose` filters the repository before starting a container:
 
-- The filtered tree's git SHA becomes the cache key. Only changes to files actually included in the workspace invalidate the cache.
-- The container sees only what the workspace definition explicitly includes — files outside the workspace are structurally impossible to access.
-- The host working tree is never modified. Artifacts produced by the container are stored in a podman volume and exported back when the run completes.
+- The filtered tree's Git SHA becomes the result-cache key.
+- The container sees only files explicitly included by the workspace.
+- Container outputs are stored in runtime artifacts and optionally extracted into the working tree.
 
 ## Prerequisites
 
-- **podman** installed and on `$PATH`
-- **josh** installed and on `$PATH`:
-- `JOSH_EXPERIMENTAL_FEATURES=1` set in your environment
+- **podman** or **docker** installed and on `$PATH`
+- **josh** installed and on `$PATH`
+- `JOSH_EXPERIMENTAL_FEATURES=1` set in the environment
 
   ```sh
   cargo install josh-cli --locked --git https://github.com/josh-project/josh.git
   ```
 
+## Command model
+
+The selected workspace is the graph root. Its dependencies are always built with normal cache
+behavior.
+
+| Command | Selected workspace | Dependencies | Result |
+|---|---|---|---|
+| `build` | Uses a cached successful result when available | Cached | Publishes the configured result and output |
+| `run` | Always executes | Cached | Publishes the configured result and output |
+| `run -- COMMAND...` | Executes the override command | Cached | Ephemeral; does not replace the configured result |
+| `shell` | Starts an interactive command | Cached | Ephemeral; does not replace the configured result |
+
+Images and persistent `josh_cache_*` volumes remain cached in every mode. `run` forces only the
+selected workspace command; it does not rebuild the selected workspace's image.
+
 ## Quick start
 
-All commands are run from the root of the josh repository.
+All commands are run from the repository root.
 
-### Run all tests
+### Build the default workspace
 
 ```sh
-josh compose run
+josh compose build
 ```
 
-With no arguments, `josh compose run` looks for a `compose.josh` file in the repository root and uses it as the filter. In this repo, `compose.josh` points to `ws/test.josh`, so `josh compose run` runs the full test suite.
+With no positional arguments, compose uses the working tree and the `:+compose` filter. In this
+repository, `compose.josh` selects `ws/test.josh`, so this command builds the binaries and runs the
+integration test graph while reusing successful cached jobs.
 
-### Run a specific workspace
+### Build a specific workspace
 
 ```sh
-josh compose run . :+ws/build-rust
+josh compose build . :+ws/build-rust
 ```
 
-### Use the staged index instead of the working tree
+### Execute a side-effecting target
 
 ```sh
-josh compose run + :+ws/test
+josh compose run . :+ws/flash
 ```
 
-### Build from the last commit (ignoring local changes)
+The selected `flash` workspace always executes. Its firmware-building dependencies remain cached.
+
+### Override the configured command
 
 ```sh
-josh compose run HEAD :+ws/test
+josh compose run . :+ws/build-rust -- objdump -h /build/josh
+```
+
+The override gets the same worktree, dependency mounts, environment, persistent cache, network, and
+sidecars as the workspace. Its output and exit status are not stored as the configured workspace
+result.
+
+### Enter an interactive shell
+
+```sh
+josh compose shell . :+ws/build-rust
+```
+
+The default command is `/bin/sh`. A command after `--` replaces it. The shell gets a fresh scratch
+`/out` mount, so interactive changes cannot mutate the workspace's content-addressed output.
+
+### Select a different Git input
+
+```sh
+# Staged index
+josh compose build + :+ws/test
+
+# Last commit, ignoring local changes
+josh compose build HEAD :+ws/test
 ```
 
 ### Inspect the execution plan
@@ -66,52 +109,43 @@ josh compose run HEAD :+ws/test
 josh compose graph HEAD :+ws/test
 ```
 
-`josh compose graph` accepts the same reference and filter arguments as `run` and prints D2 source
-to standard output. The graph includes workspace inputs, images, image bases, image artifact inputs,
-and sidecars; dependency edges point toward the steps that consume them. Pipe the output to a `.d2`
-file or a D2 renderer if rendered output is needed.
+`josh compose graph` prints D2 source for the complete workspace and image graph without executing
+it.
 
 ## Syntax
 
-```
-josh compose run [OPTIONS] [REFERENCE] [FILTER]
+```text
+josh compose build [OPTIONS] [REFERENCE] [FILTER]
+josh compose run [OPTIONS] [REFERENCE] [FILTER] [-- COMMAND...]
+josh compose shell [OPTIONS] [REFERENCE] [FILTER] [-- COMMAND...]
+josh compose clean [--all] [--backend BACKEND]
 ```
 
 | Argument | Description |
 |---|---|
-| `[REFERENCE]` | Git ref to build from. Defaults to `.` (working tree). |
-| `[FILTER]` | Josh filter selecting the workspace to run. Defaults to `:+compose` (reads `compose.josh`). |
-
-### `[REFERENCE]` values
-
-| Value | Meaning |
-|---|---|
-| `.` (default) | Working tree, including uncommitted changes |
-| `+` | Staged files only (git index). Useful to test exactly what you have `git add`ed. |
-| `HEAD` | Last commit, ignoring any local changes. Useful for clean builds or before/after comparisons. |
-| Any git ref or SHA | Build from that specific commit. |
+| `[REFERENCE]` | Git input. Defaults to `.` (working tree); `+` selects the index. |
+| `[FILTER]` | Filter selecting the workspace. Defaults to `:+compose`. |
+| `COMMAND...` | Command argv executed instead of the configured command. |
 
 ### Options
 
-| Flag | Description |
-|---|---|
-| `--clean` | Remove cached images and output volumes |
-| `--clean-all` | Remove cached images, output volumes, and persistent cache volumes |
-| `--arg NAME=VALUE` | Bind a named compose argument. Values are currently Git revision expressions; additional value types may be added later. Repeatable on `run`, `graph`, `list-images`, and `list-jobs`. |
+| Flag | Commands | Description |
+|---|---|---|
+| `--backend BACKEND` | `build`, `run`, `shell`, `clean` | Select `podman` or `docker`. |
+| `--arg NAME=VALUE` | `build`, `run`, `shell`, `graph`, `list-images`, `list-jobs` | Bind a named revision argument. Repeatable. |
+| `--all` | `clean` | Also remove persistent cache volumes. |
 
 ### Revision object expressions
 
-> **Experimental:** revision object expression syntax requires `JOSH_EXPERIMENTAL_FEATURES=1`.
-
-Compose filters can select the input commit, a named `--arg` binding, or a
-fallback when an argument is absent:
+Compose filters can select the input commit, a named `--arg` binding, or a fallback when an
+argument is absent:
 
 ```sh
 # Use the input commit's first parent
-josh compose run . :+ws/size-delta/s32k148-gcc
+josh compose build . :+ws/size-delta/s32k148-gcc
 
 # Use an explicit, possibly unrelated baseline
-josh compose run --arg baseline=origin/main . :+ws/size-delta/s32k148-gcc
+josh compose build --arg baseline=origin/main . :+ws/size-delta/s32k148-gcc
 ```
 
 The workspace can make that selection in an object-valued filter position:
@@ -165,20 +199,21 @@ compose object expressions.
 
 ## Inspecting test results
 
-Near the start of the output, `josh compose run` prints the `WS_TREE` SHA:
+Near the start of the output, `josh compose build` prints the `WS_TREE` SHA:
 
 ```
 WS_TREE: abc123def456...
 ```
 
-The scrut-updated `.t` test files (rewritten with the actual output for any failures) are stored in the podman volume `out_<WS_TREE>` under `tests/`, not in the working directory.
+The scrut-updated `.t` files are stored in the `josh_out_<WS_TREE>` artifact under `tests/`, not in
+the working directory.
 
 ```sh
 # List all test result files
-podman volume export out_<WS_TREE> | tar -tvf - tests/
+podman volume export josh_out_<WS_TREE> | tar -tvf - tests/
 
 # Print a specific test file to stdout
-podman volume export out_<WS_TREE> | tar -xOf - tests/filter/foo.t
+podman volume export josh_out_<WS_TREE> | tar -xOf - tests/filter/foo.t
 ```
 
 For failing tests the scrut diff format shows: the shell expression that failed, the expected output (preceded by `-`), and the actual output (preceded by `+`).
@@ -198,7 +233,7 @@ FAILED: <safe-name>
 
 ## Cache behavior
 
-Each run produces a podman volume named `out_<WS_TREE>`. Successful and failed result metadata is stored on `refs/josh/compose`, under `success/<AA>/<BBB>/<REST>` and `failed/<AA>/<BBB>/<REST>` respectively, where `<WS_TREE>` is split into the two-character `<AA>`, three-character `<BBB>`, and remaining `<REST>` components. A cached result is reused only when its successful result entry is present and, for workspaces that keep output, the matching `out_<WS_TREE>` volume still exists. The cache key is the git SHA of the filtered workspace tree, so:
+Each configured workspace execution can produce a runtime artifact named `josh_out_<WS_TREE>`. Successful and failed result metadata is stored on `refs/josh/compose`, under `success/<AA>/<BBB>/<REST>` and `failed/<AA>/<BBB>/<REST>` respectively, where `<WS_TREE>` is split into the two-character `<AA>`, three-character `<BBB>`, and remaining `<REST>` components. A cached result is reused only when its successful result entry is present and, for workspaces that keep output, the matching output artifact still exists. Command overrides and interactive shells use scratch output and do not update result metadata. The cache key is the Git SHA of the filtered workspace tree, so:
 
 - Changing any file included in the workspace automatically produces a new SHA and bypasses the cache.
 - Changing unrelated files has no effect on the cache.
@@ -215,32 +250,38 @@ josh compose push --remote origin
 
 Both commands default to `origin`. Pull merges remote results with local results. Push retries when another writer advances the remote ref, merging both result trees before retrying. The commands transfer only Git metadata; output volumes use their runtime-specific transport separately.
 
-Each `josh compose run` invocation batches all result updates and cache-hit touches into at most one commit on the result ref.
+Each `build` or `run` invocation batches its result updates and cache-hit touches into at most one
+commit on the result ref.
 
 ### Local disk reclamation
 
-Before execution and before each uncached workspace, `josh compose run` checks the filesystem usage reported by podman for its graph root. When usage reaches 90%, josh removes local `josh_ws_image_*` images and `josh_out_*` output volumes in least-recently-used order until usage is at most 80%. Images and outputs required by the pending run are protected.
+Before execution and before each uncached workspace, `build`, `run`, and `shell` check the runtime
+storage usage. At 90% usage, compose removes local `josh_ws_image_*` images and `josh_out_*` output
+artifacts in least-recently-used order until usage is at most 80%. Resources required by the pending
+graph are protected.
 
-The usage order comes from update and cache-hit commits on `refs/josh/compose`. Automatic reclamation does not remove persistent `josh_cache_*` volumes, result metadata, or any R2 objects. The explicit `--clean` and `--clean-all` options retain their destructive behavior.
+The usage order comes from update and cache-hit commits on `refs/josh/compose`. Automatic
+reclamation does not remove persistent `josh_cache_*` volumes, result metadata, or remote objects.
 
-### Forcing a re-run
+### Executing a cached target again
 
-To re-run without changing source files, remove the output volume manually:
+Use `run` when the selected workspace must execute now:
 
 ```sh
-# Find the relevant volume
-podman volume ls | grep out_
-
-# Remove it
-podman volume rm out_<sha>
+josh compose run . :+ws/flash
 ```
 
-Alternatively, use `josh compose run --clean` to remove all cached images, output volumes, and the compose result ref, or `--clean-all` to also remove persistent cache volumes (e.g. the Cargo registry cache).
+Only the selected graph root bypasses its result cache. Dependencies, images, and persistent cache
+volumes retain normal cache behavior.
 
-### Clearing all output volumes
+### Clearing compose state
 
 ```sh
-podman volume ls -q | grep '^out_' | xargs podman volume rm
+# Remove output artifacts, images, and result metadata
+josh compose clean
+
+# Also remove persistent cache volumes
+josh compose clean --all
 ```
 
 ## Workspace definitions
@@ -255,10 +296,10 @@ A workspace is defined by a `.josh` file, typically under `ws/`. The file uses j
 | `:$label="..."` | Human-readable label shown in output |
 | `:$cmd="..."` | Command to run inside the container |
 | `:$cache="name"` | Persistent podman volume mounted at `/opt/cache` (e.g. for Cargo's registry) |
-| `:$output="none"` | Disable output volume (run produces no extracted artifacts) |
+| `:$output="none"` | Disable the workspace output artifact |
 | `:$network="host"` | Container network mode |
 | `worktree = :[...]` | Files placed in the container's working directory |
-| `inputs = :[...]` | Dependency workspaces; each named entry is run first and its output is mounted inside the container |
+| `inputs = :[...]` | Dependency workspaces; each is built first and mounted inside the container |
 | `env = :[...]` | Environment variables injected into the container |
 
 The reference-bearing entries created with `:#` (`image`, named `inputs`, image `bases`, and
@@ -319,9 +360,8 @@ This workspace:
 
 ## Image definitions
 
-An image definition accepts `:$label="..."`. The label identifies the image in
-`josh compose run` status lines and `josh compose graph` nodes; without one,
-these outputs fall back to the image tree OID.
+An image definition accepts `:$label="..."`. The label identifies the image in compose status lines
+and `josh compose graph` nodes; without one, these outputs fall back to the image tree OID.
 
 ### Using job outputs in image builds
 
@@ -356,10 +396,13 @@ image does not require their output artifacts to remain locally available.
 
 2. **Write the entrypoint** either as a `run.sh` in the worktree or via `:$cmd="..."`. Place any outputs you want extracted under `/out` inside the container (unless `:$output="none"`).
 
-3. **Run it:**
+3. **Build it:**
 
    ```sh
-   josh compose run . :+ws/my-workspace
+   josh compose build . :+ws/my-workspace
    ```
 
-4. **Add dependencies** via `inputs = :[...]` if your workspace needs the output of another workspace. Each named entry in `inputs` is run first and its output volume is mounted at `/<name>` inside the container.
+   Use `josh compose run` instead when the selected workspace must execute for its side effects.
+
+4. **Add dependencies** via `inputs = :[...]` if your workspace needs another workspace's output.
+   Each dependency is built first and its output artifact is mounted at `/<name>`.

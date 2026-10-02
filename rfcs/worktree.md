@@ -307,7 +307,7 @@ turns them into a store with a single worktree at the old filter's level.
   rust as "origin is rust through `:=miri`"). A reverse view sidesteps the spelling in the
   common case: when the projection carries its own provenance, adding either repo second needs
   no filter argument at all.
-- What `josh compose run` uses as its workspace root in a multi-worktree store.
+- What `josh compose build`, `run`, and `shell` use as their workspace root in a multi-worktree store.
 
 ## Future work (explicitly out of scope for v1)
 
