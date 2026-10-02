@@ -11,48 +11,56 @@
     },
     "cache_hits": {
       "counts": {
-        "Assembler": 115,
-        "C/C++": 258,
-        "Rust": 583
+        "Rust": 263,
+        "C/C++": 11,
+        "Assembler": 2
       },
       "adv_counts": {
-        "assemblerToPreprocess [gcc]": 115,
-        "rust": 583,
-        "c [gcc]": 258
+        "rust": 263,
+        "c [gcc]": 11,
+        "assemblerToPreprocess [gcc]": 2
       }
     },
     "cache_misses": {
-      "counts": {},
-      "adv_counts": {}
+      "counts": {
+        "Rust": 320,
+        "C/C++": 247,
+        "Assembler": 113
+      },
+      "adv_counts": {
+        "rust": 320,
+        "c [gcc]": 247,
+        "assemblerToPreprocess [gcc]": 113
+      }
     },
     "cache_timeouts": 0,
     "cache_read_errors": 0,
     "non_cacheable_compilations": 0,
     "forced_recaches": 0,
     "cache_write_errors": 0,
-    "cache_writes": 0,
+    "cache_writes": 680,
     "cache_write_duration": {
-      "secs": 0,
-      "nanos": 0
+      "secs": 255,
+      "nanos": 245690910
     },
     "cache_read_hit_duration": {
-      "secs": 75,
-      "nanos": 489789455
+      "secs": 48,
+      "nanos": 105059367
     },
-    "compilations": 0,
+    "compilations": 680,
     "compiler_write_duration": {
-      "secs": 0,
-      "nanos": 0
+      "secs": 586,
+      "nanos": 957836037
     },
     "compile_fails": 4,
     "not_cached": {
-      "-": 4,
-      "-o": 3,
-      "missing input": 7,
       "missing emit": 1,
-      "-E": 1,
+      "-": 4,
+      "incremental": 17,
+      "missing input": 7,
       "crate-type": 152,
-      "incremental": 17
+      "-E": 1,
+      "-o": 3
     },
     "dist_compiles": {},
     "dist_errors": 0
