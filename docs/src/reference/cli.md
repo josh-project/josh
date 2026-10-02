@@ -299,54 +299,70 @@ josh cache fetch
 
 ---
 
-## josh compose run
+## josh compose
 
 > **Experimental:** requires `JOSH_EXPERIMENTAL_FEATURES=1`.
 
-Run a workspace in an isolated, automatically-cached container. See
-[josh compose run](../contributing/josh-run.md) for full documentation.
+Compose prepares filtered workspaces in isolated containers. See
+[josh compose](../contributing/josh-compose.md) for workspace definitions and cache behavior.
 
+### josh compose run
+
+Run the selected graph, reusing successful configured results. A command after `--` always executes
+in the selected workspace without replacing its configured result or output artifact.
+
+```text
+josh compose run [OPTIONS] [REFERENCE] [FILTER] [-- COMMAND...]
 ```
-josh compose run [OPTIONS] [REFERENCE] [FILTER]
+
+### josh compose shell
+
+Prepare the selected workspace and open an interactive `/bin/sh`. A command after `--` replaces the
+shell. Interactive execution uses scratch output and does not update the configured result.
+
+```text
+josh compose shell [OPTIONS] [REFERENCE] [FILTER] [-- COMMAND...]
 ```
 
-| Argument | Description |
-|----------|-------------|
-| `[REFERENCE]` | Git ref to build from: `.` (working tree), `+` (index), `HEAD`, or any ref (default: `.`) |
-| `[FILTER]` | Filter selecting the workspace to run (default: `:+compose`, reads `compose.josh` in the repo root) |
+`REFERENCE` defaults to `.` (the working tree); `+` selects the index. `FILTER` defaults to
+`:+compose`.
 
-**Options:**
+Common options:
 
 | Flag | Description |
 |------|-------------|
-| `--clean` | Remove cached images and output volumes |
-| `--clean-all` | Remove cached images, output volumes, and persistent cache volumes |
-
-**Examples:**
+| `--backend BACKEND` | Select `podman` or `docker` |
+| `--arg NAME=VALUE` | Bind a named revision argument; repeatable |
 
 ```shell
-# Run the default workspace defined in compose.josh
+# Run the default workspace defined by compose.josh
 josh compose run
 
-# Run the test workspace against the working tree
-josh compose run . :+ws/test
+# Execute a side-effecting command without replacing the configured result
+josh compose run . :+ws/action -- ./perform-action
 
-# Run using only staged changes
-josh compose run + :+ws/test
+# Inspect the prepared environment interactively
+josh compose shell . :+ws/build-rust
 ```
 
-## josh compose graph
+### josh compose clean
 
-> **Experimental:** requires `JOSH_EXPERIMENTAL_FEATURES=1`.
+Remove cached output artifacts, images, and result metadata. `--all` also removes persistent cache
+volumes.
 
-Print the complete workspace plan as D2 source. The command does not run containers or render the
-diagram.
-
+```text
+josh compose clean [--all] [--backend BACKEND]
 ```
+
+### josh compose graph
+
+Print the complete workspace plan as D2 source without executing containers.
+
+```text
 josh compose graph [REFERENCE] [FILTER]
 ```
 
-`REFERENCE` and `FILTER` have the same meaning and defaults as `josh compose run`.
+`REFERENCE` and `FILTER` have the same meaning and defaults as the execution commands.
 
 ```shell
 josh compose graph HEAD :+ws/test > graph.d2

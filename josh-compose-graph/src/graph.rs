@@ -17,8 +17,8 @@ use josh_core::memodb;
 
 use crate::meta::{self, WorkspaceMeta};
 
-/// A fully-resolved build graph: every workspace a run would touch and every
-/// image it would build.
+/// A fully-resolved build graph: every workspace an execution may touch and
+/// every image it may build.
 pub struct Graph {
     /// Workspaces in dependency order (a workspace always appears after its
     /// inputs), deduplicated. The last job is the run's root.

@@ -110,7 +110,7 @@ fn commit_ref_tree(
     )
 }
 
-/// Commit every result update and cache hit from one compose run as a single ref update.
+/// Commit every result update and cache hit from one compose invocation as a single ref update.
 pub(crate) fn commit_results(
     transaction: &Transaction,
     pending: PendingResults,

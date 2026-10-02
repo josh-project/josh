@@ -272,7 +272,7 @@ mod tests {
             Ok(Some(*self.status.lock()))
         }
 
-        fn create_scratch_artifact(&self, _tar: &[u8]) -> anyhow::Result<String> {
+        fn create_scratch_artifact(&self, _tar: Option<&[u8]>) -> anyhow::Result<String> {
             Ok(String::new())
         }
     }

@@ -7,7 +7,7 @@ use std::io::Write;
 use std::path::Path;
 
 use josh_compose_backend::{
-    ExecOpts, Executor, Mount, RunArgs, Runtime, SidecarArgs, SidecarHandle,
+    ExecOpts, Executor, Mount, RunArgs, Runtime, SidecarArgs, SidecarHandle, StdioMode,
 };
 use josh_compose_graph::{Graph, Job, OutputMode, SidecarSpec};
 use josh_core::cache;
@@ -36,7 +36,12 @@ impl Executor for SequentialExecutor {
         opts: &ExecOpts,
     ) -> anyhow::Result<()> {
         let odb = transaction.odb();
-        let scheduled = scheduled_jobs(transaction, graph, runtime)?;
+        let scheduled = scheduled_jobs(
+            transaction,
+            graph,
+            runtime,
+            opts.selected_job_override.is_some(),
+        )?;
         let mut failed: HashMap<gix_hash::ObjectId, String> = HashMap::new();
         let mut pending = job_cache::PendingResults::default();
         for job in graph.jobs() {
@@ -80,6 +85,7 @@ fn scheduled_jobs(
     transaction: &cache::Transaction,
     graph: &Graph,
     runtime: &dyn Runtime,
+    prepare_selected_job: bool,
 ) -> anyhow::Result<HashSet<gix_hash::ObjectId>> {
     let mut scheduled = HashSet::new();
     let mut visited_images = HashSet::new();
@@ -92,7 +98,11 @@ fn scheduled_jobs(
         let job = graph
             .job(ws_tree)
             .expect("scheduled jobs are present in the graph");
-        if plan::workspace_is_skippable(transaction, job, runtime)? {
+        // An ephemeral override cannot reuse the selected job's configured result:
+        // traverse its dependencies and images even when that result is cached.
+        let skippable = !(prepare_selected_job && ws_tree == graph.root().ws_tree)
+            && plan::workspace_is_skippable(transaction, job, runtime)?;
+        if skippable {
             continue;
         }
 
@@ -206,6 +216,27 @@ fn run_job(
     opts: &ExecOpts,
 ) -> anyhow::Result<()> {
     let workspace_meta = &job.meta;
+    let selected_override = if job.ws_tree == graph.root().ws_tree {
+        opts.selected_job_override.as_ref()
+    } else {
+        None
+    };
+    let ephemeral = selected_override.is_some();
+    let command_override = selected_override.map(|execution| execution.command.as_slice());
+    let stdio = selected_override.map_or(StdioMode::Capture, |execution| execution.stdio);
+
+    let failed_dependencies = job
+        .inputs
+        .iter()
+        .filter_map(|(name, ws_tree)| {
+            failed
+                .get(ws_tree)
+                .map(|error| format!("dependency {name} failed: {error}"))
+        })
+        .collect::<Vec<_>>();
+    if !failed_dependencies.is_empty() {
+        anyhow::bail!("{}", failed_dependencies.join("\n"));
+    }
 
     // Cache check: skip only if a previous successful run is recorded AND its
     // output volume is still present (when one is expected). A stale marker
@@ -213,7 +244,8 @@ fn run_job(
     // marker pull succeeded — self-heals by re-running rather than failing
     // downstream dep-mounts.
     let out_vol = naming::output(job.ws_tree);
-    if job_cache::is_cached_success(transaction, job.ws_tree)?
+    if !ephemeral
+        && job_cache::is_cached_success(transaction, job.ws_tree)?
         && (workspace_meta.output == OutputMode::None || runtime.artifact_exists(&out_vol)?)
     {
         let cached_stdout = if job.ws_tree == graph.root().ws_tree {
@@ -248,10 +280,6 @@ fn run_job(
     let mut dep_volumes: Vec<(String, String, bool)> = vec![];
     let mut dep_errors: Vec<String> = vec![];
     for (dep_name, dep_tree) in &job.inputs {
-        if let Some(e) = failed.get(dep_tree) {
-            dep_errors.push(format!("dependency {dep_name} failed: {e}"));
-            continue;
-        }
         let dep_meta = &graph
             .job(*dep_tree)
             .expect("job inputs reference jobs in the graph")
@@ -272,11 +300,23 @@ fn run_job(
 
     // If there's no image, this is an orchestrator workspace — deps are all we run.
     let Some(image_oid) = workspace_meta.image else {
+        if command_override.is_some() {
+            anyhow::bail!(
+                "[{}] cannot execute a command without an image",
+                workspace_meta.label
+            );
+        }
         pending.record(job.ws_tree, true, Vec::new(), Vec::new());
         eprintln!("[{}] Done (orchestrator)", workspace_meta.label);
         return Ok(());
     };
     let Some(worktree_oid) = workspace_meta.worktree else {
+        if command_override.is_some() {
+            anyhow::bail!(
+                "[{}] cannot execute a command without a worktree",
+                workspace_meta.label
+            );
+        }
         pending.record(job.ws_tree, true, Vec::new(), Vec::new());
         eprintln!("[{}] Done (no worktree)", workspace_meta.label);
         return Ok(());
@@ -334,7 +374,7 @@ fn run_job(
     // Create an ephemeral scratch artifact seeded with the worktree contents. The
     // runtime owns its naming and ownership; we just hold the opaque name.
     let worktree_tar = crate::archive::tree_to_tar(transaction, odb, worktree_oid)?;
-    let snapshot_vol = runtime.create_scratch_artifact(&worktree_tar)?;
+    let snapshot_vol = runtime.create_scratch_artifact(Some(&worktree_tar))?;
 
     let snapshot_vol_clone = snapshot_vol.clone();
     let _cleanup = defer::defer(move || {
@@ -349,10 +389,27 @@ fn run_job(
         read_only: false,
     });
 
+    let ephemeral_output = if workspace_meta.output != OutputMode::None && ephemeral {
+        Some(runtime.create_scratch_artifact(None)?)
+    } else {
+        None
+    };
+    let ephemeral_output_for_cleanup = ephemeral_output.clone();
+    let _output_cleanup = defer::defer(move || {
+        if let Some(output) = &ephemeral_output_for_cleanup {
+            let _ = runtime.remove_artifact(output, false);
+        }
+    });
+
     if workspace_meta.output != OutputMode::None {
-        runtime.recreate_artifact(&out_vol)?;
+        let output = if let Some(output) = &ephemeral_output {
+            output
+        } else {
+            runtime.recreate_artifact(&out_vol)?;
+            &out_vol
+        };
         mounts.push(Mount {
-            artifact: out_vol.clone(),
+            artifact: output.clone(),
             path: "/out".to_string(),
             read_only: false,
         });
@@ -374,25 +431,34 @@ fn run_job(
         });
     }
 
+    let command = command_override.map_or_else(
+        || {
+            vec![
+                "sh".to_string(),
+                "-c".to_string(),
+                workspace_meta.cmd.clone(),
+            ]
+        },
+        <[String]>::to_vec,
+    );
     let output = runtime.run(RunArgs {
         env: image_name,
-        command: vec![
-            "sh".to_string(),
-            "-c".to_string(),
-            workspace_meta.cmd.clone(),
-        ],
+        command,
         mounts,
         env_vars,
         network: workspace_meta.network.clone(),
         sidecars: started_sidecars,
         working_dir: Some(workdir.to_string()),
+        stdio,
     })?;
 
     let exit_code = output.exit_code;
     let success = exit_code == 0;
-    pending.record(job.ws_tree, success, output.stdout, output.stderr);
+    if !ephemeral {
+        pending.record(job.ws_tree, success, output.stdout, output.stderr);
+    }
 
-    if workspace_meta.output == OutputMode::Workdir && opts.extract_to_workdir {
+    if !ephemeral && workspace_meta.output == OutputMode::Workdir && opts.extract_to_workdir {
         runtime.extract_artifact(&out_vol, Path::new("."))?;
     }
 
@@ -407,13 +473,13 @@ fn run_job(
     eprintln!("[{}] SUCCESS", workspace_meta.label);
     Ok(())
 }
-
 #[cfg(test)]
 mod tests {
     use std::sync::Arc;
 
     use josh_compose_backend::{
-        ArtifactBackend, EnvRecipe, EnvironmentBackend, ExecutionBackend, RunOutput, StorageStatus,
+        ArtifactBackend, EnvRecipe, EnvironmentBackend, ExecutionBackend, RunOutput,
+        SelectedJobOverride, StorageStatus,
     };
     use josh_core::filter::tree;
     use parking_lot::Mutex;
@@ -426,6 +492,7 @@ mod tests {
         envs: Mutex<HashSet<String>>,
         builds: Mutex<Vec<(String, EnvRecipe)>>,
         runs: Mutex<usize>,
+        run_invocations: Mutex<Vec<(Vec<String>, StdioMode)>>,
         storage_status: Mutex<Option<StorageStatus>>,
         artifact_bytes: Mutex<HashMap<String, u64>>,
         run_growth_bytes: Mutex<u64>,
@@ -505,7 +572,7 @@ mod tests {
             Ok(*self.storage_status.lock())
         }
 
-        fn create_scratch_artifact(&self, _tar: &[u8]) -> anyhow::Result<String> {
+        fn create_scratch_artifact(&self, _tar: Option<&[u8]>) -> anyhow::Result<String> {
             let name = format!("scratch-{}", self.artifacts.lock().len());
             self.artifacts.lock().insert(name.clone());
             Ok(name)
@@ -515,6 +582,9 @@ mod tests {
     impl ExecutionBackend for FakeRuntime {
         fn run(&self, args: RunArgs) -> anyhow::Result<RunOutput> {
             *self.runs.lock() += 1;
+            self.run_invocations
+                .lock()
+                .push((args.command.clone(), args.stdio));
             if let Some(status) = self.storage_status.lock().as_mut() {
                 status.used_bytes += *self.run_growth_bytes.lock();
             }
@@ -622,6 +692,7 @@ mod tests {
                 &runtime,
                 &ExecOpts {
                     extract_to_workdir: false,
+                    selected_job_override: None,
                 },
             )
             .unwrap();
@@ -655,6 +726,7 @@ mod tests {
                 &runtime,
                 &ExecOpts {
                     extract_to_workdir: false,
+                    selected_job_override: None,
                 },
             )
             .unwrap();
@@ -690,11 +762,73 @@ mod tests {
                 &runtime,
                 &ExecOpts {
                     extract_to_workdir: false,
+                    selected_job_override: None,
                 },
             )
             .unwrap();
 
         assert!(!runtime.artifacts.lock().contains(&stale));
         assert_eq!(runtime.storage_status.lock().unwrap().used_bytes, 850);
+    }
+    #[test]
+    fn interactive_root_uses_scratch_output_and_preserves_cached_result() {
+        let dir = tempfile::tempdir().unwrap();
+        gix::init_bare(dir.path()).unwrap();
+        let context =
+            cache::TransactionContext::new(dir.path(), Arc::new(cache::CacheStack::new()));
+        let transaction = context.open().unwrap();
+        let odb = transaction.odb();
+        let root = job(odb, b"interactive", image(odb, b"FROM scratch\n"));
+        let graph = josh_compose_graph::load_graph(&transaction, odb, root).unwrap();
+        let runtime = FakeRuntime::default();
+
+        SequentialExecutor
+            .execute(
+                &transaction,
+                &graph,
+                &runtime,
+                &ExecOpts {
+                    extract_to_workdir: false,
+                    selected_job_override: None,
+                },
+            )
+            .unwrap();
+        let cached_output = naming::output(root);
+        assert!(runtime.artifacts.lock().contains(&cached_output));
+
+        SequentialExecutor
+            .execute(
+                &transaction,
+                &graph,
+                &runtime,
+                &ExecOpts {
+                    extract_to_workdir: false,
+                    selected_job_override: Some(SelectedJobOverride {
+                        command: vec!["/bin/sh".to_string()],
+                        stdio: StdioMode::Interactive,
+                    }),
+                },
+            )
+            .unwrap();
+
+        assert!(runtime.artifacts.lock().contains(&cached_output));
+        assert_eq!(*runtime.runs.lock(), 2);
+        assert_eq!(
+            runtime.run_invocations.lock().last(),
+            Some(&(vec!["/bin/sh".to_string()], StdioMode::Interactive))
+        );
+
+        SequentialExecutor
+            .execute(
+                &transaction,
+                &graph,
+                &runtime,
+                &ExecOpts {
+                    extract_to_workdir: false,
+                    selected_job_override: None,
+                },
+            )
+            .unwrap();
+        assert_eq!(*runtime.runs.lock(), 2);
     }
 }
