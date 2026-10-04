@@ -26,16 +26,16 @@
 + export GIT_COMMITTER_DATE
 + export 'EMPTY_TREE=4b825dc642cb6eb9a060e54bf8d69288fbee4904'
 + mktemp
-+ CONFIG_FILE=/tmp/tmp.1HhGcDm6vF
++ CONFIG_FILE=/tmp/tmp.ht9eqWctw4
 + trap 'rm ${CONFIG_FILE}' EXIT
-+ export 'GIT_CONFIG_GLOBAL=/tmp/tmp.1HhGcDm6vF'
++ export 'GIT_CONFIG_GLOBAL=/tmp/tmp.ht9eqWctw4'
 + git config --global init.defaultBranch master
 + export 'RUST_BACKTRACE=1'
-+ find devtools/tests -name '*.t'
++ find tests -name '*.t'
 + sort
-+ TESTS=devtools/tests/git-tree-pretty.t
-+ '[' -z devtools/tests/git-tree-pretty.t ]
++ TESTS=tests/cq/help.t
++ '[' -z tests/cq/help.t ]
 + FAILED=0
-+ scrut test --cram-compat devtools/tests/git-tree-pretty.t
++ scrut test --cram-compat tests/cq/help.t
 + exit 0
-+ rm /tmp/tmp.1HhGcDm6vF
++ rm /tmp/tmp.ht9eqWctw4

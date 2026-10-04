@@ -1,14 +1,9 @@
-
-running 0 tests
-
-test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
-
 {
   "stats": {
-    "compile_requests": 2,
+    "compile_requests": 46,
     "requests_unsupported_compiler": 0,
     "requests_not_compile": 0,
-    "requests_not_cacheable": 2,
+    "requests_not_cacheable": 46,
     "requests_executed": 0,
     "cache_errors": {
       "counts": {},
@@ -43,8 +38,10 @@ test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
     },
     "compile_fails": 0,
     "not_cached": {
-      "incremental": 1,
-      "crate-type": 1
+      "incremental": 34,
+      "missing input": 2,
+      "crate-type": 9,
+      "-": 1
     },
     "dist_compiles": {},
     "dist_errors": 0
