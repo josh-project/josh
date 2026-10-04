@@ -5,7 +5,7 @@ set -euo pipefail
 # Best-effort: a missing object or transport error just falls through to a local
 # build later — never fails the script.
 #
-# Usage: pull-images.sh [REFERENCE] [FILTER]
+# Usage with the pinned bootstrap CLI: pull-images.sh [REFERENCE] [FILTER]
 # Extra args are forwarded to `josh compose list-images`.
 
 BUCKET="josh-project-cache"

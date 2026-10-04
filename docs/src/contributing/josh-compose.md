@@ -55,14 +55,14 @@ All commands are run from the repository root.
 josh compose run
 ```
 
-With no positional arguments, compose uses the working tree and the `:+compose` filter. In this
+With no arguments, compose uses the working tree and the `:+compose` filter. In this
 repository, `compose.josh` selects `ws/test.josh`, so this command builds the binaries and runs the
 integration test graph while reusing successful cached jobs.
 
 ### Run a specific workspace
 
 ```sh
-josh compose run . :+ws/build-rust
+josh compose run :+ws/build-rust
 ```
 
 ### Execute a side-effecting command
@@ -70,7 +70,7 @@ josh compose run . :+ws/build-rust
 Pass the command after `--`:
 
 ```sh
-josh compose run . :+ws/action -- ./perform-action
+josh compose run :+ws/action -- ./perform-action
 ```
 
 The override always executes while the workspace's dependencies retain their cached results. It gets
@@ -79,7 +79,7 @@ the configured mounts, environment, persistent cache, network, and sidecars.
 ### Override the configured command
 
 ```sh
-josh compose run . :+ws/build-rust -- objdump -h /build/josh
+josh compose run :+ws/build-rust -- objdump -h /build/josh
 ```
 
 The override gets the same worktree, dependency mounts, environment, persistent cache, network, and
@@ -89,7 +89,7 @@ result.
 ### Enter an interactive shell
 
 ```sh
-josh compose shell . :+ws/build-rust
+josh compose shell :+ws/build-rust
 ```
 
 The default command is `/bin/sh`. A command after `--` replaces it. The shell gets a fresh scratch
@@ -99,16 +99,16 @@ The default command is `/bin/sh`. A command after `--` replaces it. The shell ge
 
 ```sh
 # Staged index
-josh compose run + :+ws/test
+josh compose run --revision + :+ws/test
 
-# Last commit, ignoring local changes
-josh compose run HEAD :+ws/test
+# Last commit, ignoring local changes (short form)
+josh compose run -r HEAD :+ws/test
 ```
 
 ### Inspect the execution plan
 
 ```sh
-josh compose graph HEAD :+ws/test
+josh compose graph --revision HEAD :+ws/test
 ```
 
 `josh compose graph` prints D2 source for the complete workspace and image graph without executing
@@ -117,14 +117,13 @@ it.
 ## Syntax
 
 ```text
-josh compose run [OPTIONS] [REFERENCE] [FILTER] [-- COMMAND...]
-josh compose shell [OPTIONS] [REFERENCE] [FILTER] [-- COMMAND...]
+josh compose run [OPTIONS] [FILTER] [-- COMMAND...]
+josh compose shell [OPTIONS] [FILTER] [-- COMMAND...]
 josh compose clean [--all] [--backend BACKEND]
 ```
 
 | Argument | Description |
 |---|---|
-| `[REFERENCE]` | Git input. Defaults to `.` (working tree); `+` selects the index. |
 | `[FILTER]` | Filter selecting the workspace. Defaults to `:+compose`. |
 | `COMMAND...` | Command argv executed instead of the configured command. |
 
@@ -133,6 +132,7 @@ josh compose clean [--all] [--backend BACKEND]
 | Flag | Commands | Description |
 |---|---|---|
 | `--backend BACKEND` | `run`, `shell`, `clean` | Select `podman` or `docker`. |
+| `-r, --revision REVISION` | `run`, `shell`, `graph`, `list-images`, `list-jobs` | Git input. Defaults to `.` (working tree); `+` selects the index. |
 | `--arg NAME=VALUE` | `run`, `shell`, `graph`, `list-images`, `list-jobs` | Bind a named revision argument. Repeatable. |
 | `--all` | `clean` | Also remove persistent cache volumes. |
 
@@ -143,10 +143,10 @@ argument is absent:
 
 ```sh
 # Use the input commit's first parent
-josh compose run . :+ws/size-delta/s32k148-gcc
+josh compose run :+ws/size-delta/s32k148-gcc
 
 # Use an explicit, possibly unrelated baseline
-josh compose run --arg baseline=origin/main . :+ws/size-delta/s32k148-gcc
+josh compose run --arg baseline=origin/main :+ws/size-delta/s32k148-gcc
 ```
 
 The workspace can make that selection in an object-valued filter position:
@@ -389,7 +389,7 @@ image does not require their output artifacts to remain locally available.
 3. **Run it:**
 
    ```sh
-   josh compose run . :+ws/my-workspace
+   josh compose run :+ws/my-workspace
    ```
 
    Pass `-- COMMAND...` to execute a one-off or side-effecting command without replacing this result.

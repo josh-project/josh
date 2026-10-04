@@ -36,13 +36,13 @@ Compose graphing must discard objects created while applying the workspace filte
   $ echo 'worktree = :/image-context' >> compose.josh
   $ git add compose.josh image-context images
   $ git commit -q -m "add compose workspace"
-  $ workspace=$(josh compose list-jobs --all HEAD)
+  $ workspace=$(josh compose list-jobs --all --revision HEAD)
 
 Abbreviated commit SHAs must select the same compose input.
 
   $ short=$(git rev-parse --short HEAD)
-  $ test "$(josh compose list-jobs --all "${short}")" = "${workspace}"
-  $ josh compose graph HEAD | sed -E 's/[0-9a-f]{40}/OID/g'
+  $ test "$(josh compose list-jobs --all -r "${short}")" = "${workspace}"
+  $ josh compose graph -r HEAD | sed -E 's/[0-9a-f]{40}/OID/g'
   direction: down
   image_OID: "image friendly image"
   job_OID: "ephemeral-workspace"
@@ -56,7 +56,7 @@ Compose run status lines use the image label rather than its content hash.
   $ mkdir bin
   $ printf '%s\n' '#!/bin/sh' 'if [ "$1" = image ]; then exit 1; fi' 'if [ "$1" = build ]; then cat >/dev/null; fi' 'exit 0' > bin/docker
   $ chmod +x bin/docker
-  $ PATH="${PWD}/bin:${PATH}" josh compose run --backend docker HEAD 2>&1 | sed -E 's/[0-9a-f]{40}/OID/g'
+  $ PATH="${PWD}/bin:${PATH}" josh compose run --backend docker -r HEAD 2>&1 | sed -E 's/[0-9a-f]{40}/OID/g'
   [ephemeral-workspace] Running (OID)
   [image:friendly image] Building...
   [image:friendly image] Built successfully
@@ -103,7 +103,7 @@ Cached stdout is replayed only for the requested workspace, not its dependencies
   > exit 0
   > EOF
   $ chmod +x bin/docker
-  $ PATH="${PWD}/bin:${PATH}" josh compose run --backend docker HEAD 2>&1 | sed -E 's/[0-9a-f]{40}/OID/g'
+  $ PATH="${PWD}/bin:${PATH}" josh compose run --backend docker -r HEAD 2>&1 | sed -E 's/[0-9a-f]{40}/OID/g'
   [dependency] Running (OID)
   [image:cache output] Building...
   [image:cache output] Built successfully
@@ -113,39 +113,40 @@ Cached stdout is replayed only for the requested workspace, not its dependencies
   [image:cache output] Already built
   requested stdout
   [requested] SUCCESS
-  $ PATH="${PWD}/bin:${PATH}" josh compose run --backend docker HEAD 2>&1 | sed -E 's/[0-9a-f]{40}/OID/g'
+  $ PATH="${PWD}/bin:${PATH}" josh compose run --backend docker -r HEAD 2>&1 | sed -E 's/[0-9a-f]{40}/OID/g'
   [requested] Using cached output (OID)
   requested stdout
 
 Command overrides and shells are ephemeral and do not replace the configured cached result.
 
-  $ PATH="${PWD}/bin:${PATH}" josh compose run --backend docker HEAD -- echo 'override stdout' 2>&1 | sed -E 's/[0-9a-f]{40}/OID/g'
+  $ PATH="${PWD}/bin:${PATH}" josh compose run --backend docker :+compose -r HEAD -- echo 'override stdout' 2>&1 | sed -E 's/[0-9a-f]{40}/OID/g'
   [dependency] Using cached output (OID)
   [requested] Running (OID)
   [image:cache output] Already built
   override stdout
   [requested] SUCCESS
-  $ PATH="${PWD}/bin:${PATH}" josh compose shell --backend docker HEAD -- echo 'shell stdout' 2>&1 | sed -E 's/[0-9a-f]{40}/OID/g'
+  $ PATH="${PWD}/bin:${PATH}" josh compose shell --backend docker :+compose -r HEAD -- echo 'shell stdout' 2>&1 | sed -E 's/[0-9a-f]{40}/OID/g'
   [dependency] Using cached output (OID)
   [requested] Running (OID)
   [image:cache output] Already built
   shell stdout
   [requested] SUCCESS
-  $ PATH="${PWD}/bin:${PATH}" josh compose run --backend docker HEAD 2>&1 | sed -E 's/[0-9a-f]{40}/OID/g'
+  $ PATH="${PWD}/bin:${PATH}" josh compose run --backend docker -r HEAD 2>&1 | sed -E 's/[0-9a-f]{40}/OID/g'
   [requested] Using cached output (OID)
   requested stdout
   $ sed 's/requested stdout/updated requested stdout/' compose.josh > compose.josh.new
   $ mv compose.josh.new compose.josh
   $ git add compose.josh
   $ git commit -q -m "update requested workspace"
-  $ PATH="${PWD}/bin:${PATH}" josh compose run --backend docker HEAD 2>&1 | sed -E 's/[0-9a-f]{40}/OID/g'
+  $ PATH="${PWD}/bin:${PATH}" josh compose run --backend docker -r HEAD 2>&1 | sed -E 's/[0-9a-f]{40}/OID/g'
   [dependency] Using cached output (OID)
   [requested] Running (OID)
   [image:cache output] Already built
   updated requested stdout
   [requested] SUCCESS
 
-Revision object expressions resolve across every compose planning command.
+Revision object expressions resolve across every compose planning command. Named revision options can
+follow the positional filter.
 
   $ git init -q ${TESTTMP}/revisions
   $ cd ${TESTTMP}/revisions
@@ -170,37 +171,37 @@ Revision object expressions resolve across every compose planning command.
   $ explicit=$(git rev-parse HEAD)
   $ git checkout -q master
   $ filter=:+ws/context
-  $ default_job=$(josh compose list-jobs --all "${current}" "${filter}")
-  $ explicit_job=$(josh compose list-jobs --all --arg baseline="${explicit}" "${current}" "${filter}")
+  $ default_job=$(josh compose list-jobs --all "${filter}" --revision "${current}")
+  $ explicit_job=$(josh compose list-jobs --all --arg baseline="${explicit}" --revision "${current}" "${filter}")
   $ test -n "${default_job}"
   $ test -n "${explicit_job}"
   $ test "${default_job}" != "${explicit_job}"
-  $ default_graph=$(josh compose graph "${current}" "${filter}")
-  $ explicit_graph=$(josh compose graph --arg baseline="${explicit}" "${current}" "${filter}")
+  $ default_graph=$(josh compose graph "${filter}" --revision "${current}")
+  $ explicit_graph=$(josh compose graph --arg baseline="${explicit}" --revision "${current}" "${filter}")
   $ case "${default_graph}" in *"job_${default_job}"*) true;; *) false;; esac
   $ case "${explicit_graph}" in *"job_${explicit_job}"*) true;; *) false;; esac
-  $ test -z "$(josh compose list-images --all "${current}" "${filter}")"
-  $ test -z "$(josh compose list-images --all --arg baseline="${explicit}" "${current}" "${filter}")"
+  $ test -z "$(josh compose list-images --all "${filter}" --revision "${current}")"
+  $ test -z "$(josh compose list-images --all --arg baseline="${explicit}" --revision "${current}" "${filter}")"
   $ mkdir bin
   $ printf '%s\n' '#!/bin/sh' 'if [ "$1" = image ]; then exit 1; fi' 'if [ "$1" = build ]; then cat >/dev/null; fi' 'exit 0' > bin/docker
   $ chmod +x bin/docker
-  $ PATH="${PWD}/bin:${PATH}" josh compose run --backend docker "${current}" "${filter}" >/dev/null
+  $ PATH="${PWD}/bin:${PATH}" josh compose run --backend docker --revision "${current}" "${filter}" >/dev/null
   [revision job] Running (aa92c051291e109700d69ab90869ccadfd476f6c)
   [revision job] Done (orchestrator)
 
-  $ PATH="${PWD}/bin:${PATH}" josh compose run --backend docker --arg baseline="${explicit}" "${current}" "${filter}" >/dev/null
+  $ PATH="${PWD}/bin:${PATH}" josh compose run --backend docker --arg baseline="${explicit}" --revision "${current}" "${filter}" >/dev/null
   [revision job] Running (972881bf274d3c5b76e9db11bb692ef996b88299)
   [revision job] Done (orchestrator)
 
 the synthetic snapshot commit exists only in the transaction object store.
 
   $ echo working > selected
-  $ working_default=$(josh compose list-jobs --all . "${filter}")
-  $ working_explicit=$(josh compose list-jobs --all --arg baseline=HEAD . "${filter}")
+  $ working_default=$(josh compose list-jobs --all --revision . "${filter}")
+  $ working_explicit=$(josh compose list-jobs --all --arg baseline=HEAD --revision . "${filter}")
   $ test "${working_default}" = "${working_explicit}"
   $ git add selected
-  $ index_default=$(josh compose list-jobs --all + "${filter}")
-  $ index_explicit=$(josh compose list-jobs --all --arg baseline=HEAD + "${filter}")
+  $ index_default=$(josh compose list-jobs --all --revision + "${filter}")
+  $ index_explicit=$(josh compose list-jobs --all --arg baseline=HEAD --revision + "${filter}")
   $ test "${index_default}" = "${index_explicit}"
   $ git reset -q --hard
 
@@ -208,30 +209,30 @@ the parent fallback.
 
   $ git merge -q --no-ff -s ours explicit -m "merge"
   $ merge=$(git rev-parse HEAD)
-  $ merge_default=$(josh compose list-jobs --all "${merge}" "${filter}")
-  $ merge_explicit=$(josh compose list-jobs --all --arg baseline="${current}" "${merge}" "${filter}")
+  $ merge_default=$(josh compose list-jobs --all --revision "${merge}" "${filter}")
+  $ merge_explicit=$(josh compose list-jobs --all --arg baseline="${current}" --revision "${merge}" "${filter}")
   $ test "${merge_default}" = "${merge_explicit}"
   $ root=$(printf 'root\n' | git commit-tree "${parent}^{tree}")
-  $ josh compose list-jobs --all "${root}" "${filter}" >/dev/null 2>&1
+  $ josh compose list-jobs --all --revision "${root}" "${filter}" >/dev/null 2>&1
   [1]
 
-  $ josh compose list-jobs --all --arg baseline="${explicit}" "${root}" "${filter}" >/dev/null
+  $ josh compose list-jobs --all --arg baseline="${explicit}" --revision "${root}" "${filter}" >/dev/null
 
 workspace identity between invocations.
 
   $ git branch -f moving "${parent}"
-  $ moving_parent=$(josh compose list-jobs --all --arg baseline=moving "${merge}" "${filter}")
+  $ moving_parent=$(josh compose list-jobs --all --arg baseline=moving --revision "${merge}" "${filter}")
   $ git branch -f moving "${explicit}"
-  $ moving_explicit=$(josh compose list-jobs --all --arg baseline=moving "${merge}" "${filter}")
+  $ moving_explicit=$(josh compose list-jobs --all --arg baseline=moving --revision "${merge}" "${filter}")
   $ test "${moving_parent}" != "${moving_explicit}"
-  $ josh compose list-jobs --all --arg baseline=missing "${merge}" "${filter}" >/dev/null 2>&1
+  $ josh compose list-jobs --all --arg baseline=missing --revision "${merge}" "${filter}" >/dev/null 2>&1
   [1]
 
-  $ josh compose list-jobs --all --arg baseline="${parent}..${merge}" "${merge}" "${filter}" >/dev/null 2>&1
+  $ josh compose list-jobs --all --arg baseline="${parent}..${merge}" --revision "${merge}" "${filter}" >/dev/null 2>&1
   [1]
 
-  $ josh compose list-jobs --all --arg baseline="${parent}" --arg baseline="${explicit}" "${merge}" "${filter}" >/dev/null 2>&1
+  $ josh compose list-jobs --all --arg baseline="${parent}" --arg baseline="${explicit}" --revision "${merge}" "${filter}" >/dev/null 2>&1
   [1]
 
-  $ josh compose list-jobs --all --arg input=HEAD "${merge}" "${filter}" >/dev/null 2>&1
+  $ josh compose list-jobs --all --arg input=HEAD --revision "${merge}" "${filter}" >/dev/null 2>&1
   [2]

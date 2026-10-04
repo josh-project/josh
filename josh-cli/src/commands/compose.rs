@@ -112,7 +112,12 @@ pub struct TargetArgs {
     pub arguments: Vec<ArgumentBinding>,
 
     /// Git revision to use as input: "." (working tree), "+" (index), or any rev
-    #[arg(default_value = ".")]
+    #[arg(
+        short = 'r',
+        long = "revision",
+        value_name = "REVISION",
+        default_value = "."
+    )]
     pub reference: String,
 
     /// Filter spec to apply, e.g. ":+ws/test" (defaults to ":+compose")
@@ -217,7 +222,12 @@ pub struct GraphArgs {
     pub arguments: Vec<ArgumentBinding>,
 
     /// Git revision to use as input: "." (working tree), "+" (index), or any rev (e.g. "HEAD", "HEAD~1", "main")
-    #[arg(default_value = ".")]
+    #[arg(
+        short = 'r',
+        long = "revision",
+        value_name = "REVISION",
+        default_value = "."
+    )]
     pub reference: String,
 
     /// Filter spec to apply, e.g. ":+ws/test" (defaults to ":+compose")
@@ -249,7 +259,12 @@ pub struct ListImagesArgs {
     pub arguments: Vec<ArgumentBinding>,
 
     /// Git revision to use as input: "." (working tree), "+" (index), or any rev (e.g. "HEAD", "HEAD~1", "main")
-    #[arg(default_value = ".")]
+    #[arg(
+        short = 'r',
+        long = "revision",
+        value_name = "REVISION",
+        default_value = "."
+    )]
     pub reference: String,
 
     /// Filter spec to apply, e.g. ":+ws/test" (defaults to ":+compose")
@@ -293,7 +308,12 @@ pub struct ListJobsArgs {
     pub arguments: Vec<ArgumentBinding>,
 
     /// Git revision to use as input: "." (working tree), "+" (index), or any rev (e.g. "HEAD", "HEAD~1", "main")
-    #[arg(default_value = ".")]
+    #[arg(
+        short = 'r',
+        long = "revision",
+        value_name = "REVISION",
+        default_value = "."
+    )]
     pub reference: String,
 
     /// Filter spec to apply, e.g. ":+ws/test" (defaults to ":+compose")

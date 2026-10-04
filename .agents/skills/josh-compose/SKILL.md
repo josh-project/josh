@@ -35,10 +35,10 @@ the filtered workspace tree, so the cache is automatically invalidated when sour
 josh compose run
 ```
 
-To test a specific commit instead of the working tree, pass it as the first argument:
+To test a specific commit instead of the working tree, pass `--revision` (or `-r`):
 
 ```
-josh compose run HEAD
+josh compose run --revision HEAD
 ```
 
 Other values you can pass include:

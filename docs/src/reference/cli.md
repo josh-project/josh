@@ -312,7 +312,7 @@ Run the selected graph, reusing successful configured results. A command after `
 in the selected workspace without replacing its configured result or output artifact.
 
 ```text
-josh compose run [OPTIONS] [REFERENCE] [FILTER] [-- COMMAND...]
+josh compose run [OPTIONS] [FILTER] [-- COMMAND...]
 ```
 
 ### josh compose shell
@@ -321,17 +321,18 @@ Prepare the selected workspace and open an interactive `/bin/sh`. A command afte
 shell. Interactive execution uses scratch output and does not update the configured result.
 
 ```text
-josh compose shell [OPTIONS] [REFERENCE] [FILTER] [-- COMMAND...]
+josh compose shell [OPTIONS] [FILTER] [-- COMMAND...]
 ```
 
-`REFERENCE` defaults to `.` (the working tree); `+` selects the index. `FILTER` defaults to
-`:+compose`.
+`-r REVISION`/`--revision REVISION` selects the Git input and defaults to `.` (the working tree);
+`+` selects the index. `FILTER` defaults to `:+compose`.
 
 Common options:
 
 | Flag | Description |
 |------|-------------|
 | `--backend BACKEND` | Select `podman` or `docker` |
+| `-r, --revision REVISION` | Select the Git input; defaults to `.` |
 | `--arg NAME=VALUE` | Bind a named revision argument; repeatable |
 
 ```shell
@@ -339,10 +340,10 @@ Common options:
 josh compose run
 
 # Execute a side-effecting command without replacing the configured result
-josh compose run . :+ws/action -- ./perform-action
+josh compose run :+ws/action -- ./perform-action
 
 # Inspect the prepared environment interactively
-josh compose shell . :+ws/build-rust
+josh compose shell :+ws/build-rust
 ```
 
 ### josh compose clean
@@ -359,13 +360,13 @@ josh compose clean [--all] [--backend BACKEND]
 Print the complete workspace plan as D2 source without executing containers.
 
 ```text
-josh compose graph [REFERENCE] [FILTER]
+josh compose graph [OPTIONS] [FILTER]
 ```
 
-`REFERENCE` and `FILTER` have the same meaning and defaults as the execution commands.
+`--revision` and `FILTER` have the same meaning and defaults as the execution commands.
 
 ```shell
-josh compose graph HEAD :+ws/test > graph.d2
+josh compose graph -r HEAD :+ws/test > graph.d2
 ```
 
 ---
