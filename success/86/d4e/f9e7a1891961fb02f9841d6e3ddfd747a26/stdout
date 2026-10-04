@@ -1,9 +1,9 @@
 {
   "stats": {
-    "compile_requests": 89,
+    "compile_requests": 86,
     "requests_unsupported_compiler": 0,
     "requests_not_compile": 0,
-    "requests_not_cacheable": 89,
+    "requests_not_cacheable": 86,
     "requests_executed": 0,
     "cache_errors": {
       "counts": {},
@@ -38,10 +38,8 @@
     },
     "compile_fails": 0,
     "not_cached": {
-      "-": 1,
-      "incremental": 82,
       "crate-type": 4,
-      "missing input": 2
+      "incremental": 82
     },
     "dist_compiles": {},
     "dist_errors": 0
