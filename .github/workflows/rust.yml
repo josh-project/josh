@@ -19,7 +19,7 @@ env:
   # Keep this pinned so every branch reuses one known-good binary from R2. Bump
   # it only when an incompatible compose metadata or transport change requires
   # a newer bootstrap.
-  JOSH_BOOTSTRAP_SHA: 5f5e41b3199a4653e3af8e008a573571d48bee89
+  JOSH_BOOTSTRAP_SHA: 49825cfd690005005b9ef334828e53dfde54a359
 
 jobs:
   test:
@@ -79,7 +79,7 @@ jobs:
       run: |
         export PATH="$(pwd)/target/release:$PATH"
         export JOSH_EXPERIMENTAL_FEATURES=1
-        .github/workflows/scripts/pull-jobs.sh HEAD "$COMPOSE_FILTER"
+        .github/workflows/scripts/pull-jobs.sh --revision HEAD "$COMPOSE_FILTER"
     - name: Pull cached images from R2
       if: env.SECRETLESS != 'true'
       env:
@@ -88,14 +88,14 @@ jobs:
       run: |
         export PATH="$(pwd)/target/release:$PATH"
         export JOSH_EXPERIMENTAL_FEATURES=1
-        .github/workflows/scripts/pull-images.sh HEAD "$COMPOSE_FILTER"
+        .github/workflows/scripts/pull-images.sh --revision HEAD "$COMPOSE_FILTER"
     - name: Run tests
       env:
         AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
         AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
       run: |
         set -o pipefail
-        target/release/josh compose run HEAD \
+        target/release/josh compose run --revision HEAD \
           "$COMPOSE_FILTER" 2>&1 \
           | tee /tmp/compose-run.log
         # Secretless runs (forks, dependabot) have no sidecar-provided remote
@@ -112,7 +112,7 @@ jobs:
       run: |
         export PATH="$(pwd)/target/release:$PATH"
         export JOSH_EXPERIMENTAL_FEATURES=1
-        .github/workflows/scripts/push-volumes.sh HEAD "$COMPOSE_FILTER"
+        .github/workflows/scripts/push-volumes.sh --revision HEAD "$COMPOSE_FILTER"
     - name: Bundle compose results
       if: success() && env.SECRETLESS != 'true'
       run: git bundle create "$RUNNER_TEMP/compose-results.bundle" refs/josh/compose
@@ -132,7 +132,7 @@ jobs:
       run: |
         export PATH="$(pwd)/target/release:$PATH"
         export JOSH_EXPERIMENTAL_FEATURES=1
-        .github/workflows/scripts/push-images.sh HEAD "$COMPOSE_FILTER"
+        .github/workflows/scripts/push-images.sh --revision HEAD "$COMPOSE_FILTER"
 
   publish-compose-results:
     runs-on: ubuntu-latest
