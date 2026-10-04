@@ -4,7 +4,7 @@ set -euo pipefail
 # Pull compose results through `josh compose pull`, then pre-warm their
 # josh_out_<hash> volumes from R2. R2 stores only output volume tarballs.
 #
-# Usage with the pinned bootstrap CLI: pull-jobs.sh [REFERENCE] [FILTER]
+# Usage: pull-jobs.sh [OPTIONS] [FILTER]
 # Extra args are forwarded to `josh compose list-jobs`.
 
 BUCKET="josh-project-cache"
