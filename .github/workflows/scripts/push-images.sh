@@ -4,7 +4,7 @@ set -euo pipefail
 # Upload any podman images a run needed to R2, so future runs can pull instead of
 # build. Idempotent: existing objects are detected via head-object and skipped.
 #
-# Usage: push-images.sh [REFERENCE] [FILTER]
+# Usage with the pinned bootstrap CLI: push-images.sh [REFERENCE] [FILTER]
 # Extra args are forwarded to `josh compose list-images`.
 
 BUCKET="josh-project-cache"

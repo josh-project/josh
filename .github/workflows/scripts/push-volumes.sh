@@ -4,7 +4,7 @@ set -euo pipefail
 # Upload josh_out_<hash> output volumes to R2. Compose result metadata is
 # published separately, from a job with repository write permission.
 #
-# Usage: push-volumes.sh [REFERENCE] [FILTER]
+# Usage with the pinned bootstrap CLI: push-volumes.sh [REFERENCE] [FILTER]
 # Extra args are forwarded to `josh compose list-jobs`.
 
 BUCKET="josh-project-cache"
