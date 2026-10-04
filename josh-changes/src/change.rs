@@ -194,6 +194,43 @@ pub fn get_changes(
     Ok(changes)
 }
 
+/// Discover the head commit of every change on `tip`'s first-parent history
+/// (down to `base`, exclusive; null = full history), walking newest first:
+/// the first commit carrying a given change-id wins, so each change appears
+/// once, at its tip. Unlike [`get_changes`], order is preserved (newest
+/// first) and duplicate change-ids are collapsed instead of keyed by commit.
+pub fn get_change_tips(
+    transaction: &josh_core::cache::Transaction,
+    tip: gix_hash::ObjectId,
+    base: gix_hash::ObjectId,
+) -> anyhow::Result<Vec<Change>> {
+    let odb = transaction.odb();
+    let mut walk = objects::RevWalk::new(odb);
+    walk.simplify_first_parent();
+    walk.push(tip)?;
+    let oids = walk.into_topo_vec(|oid| {
+        base != gix_hash::ObjectId::null(gix_hash::Kind::Sha1) && oid == base
+    })?;
+
+    let mut seen = std::collections::HashSet::new();
+    let mut changes = Vec::new();
+    for rev in oids {
+        if rev == base {
+            continue;
+        }
+        let commit = objects::CommitData::read(odb, rev)?;
+        let change = Change::from_commit(&commit);
+        let Some(id) = &change.id else {
+            continue;
+        };
+        if seen.insert(id.clone()) {
+            changes.push(change);
+        }
+    }
+
+    Ok(changes)
+}
+
 pub fn sync_changes(
     transaction: &josh_core::cache::Transaction,
     tip: gix_hash::ObjectId,
