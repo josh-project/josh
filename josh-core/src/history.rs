@@ -436,7 +436,7 @@ pub fn unapply_filter(
 
         let mut filtered_parent_ids: Vec<_> = module_commit.parent_ids().collect();
         let has_new_orphan = filtered_parent_ids.len() > 1
-            && objects::merge_base_octopus(odb, &filtered_parent_ids)?.is_none();
+            && !cache::parents_share_root(transaction, &filtered_parent_ids)?;
 
         if has_new_orphan {
             match orphans_mode {
