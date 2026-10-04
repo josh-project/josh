@@ -7,12 +7,12 @@
 
 use std::collections::HashMap;
 
+use josh_changes::ChangeData;
 use josh_changes::VoteData;
-use josh_github_graphql::operations::pull_request::PrData;
 use serde::{Deserialize, Serialize};
 
-use crate::admission::AdmissionData;
 use crate::SyncFingerprint;
+use josh_changes::AdmissionData;
 
 pub const GITHUB_COMMENT_NODE_IDS_PATH: &str = "gh_comment_node_ids";
 pub const GITHUB_VOTE_NODE_IDS_PATH: &str = "gh_vote_node_ids";
@@ -39,7 +39,7 @@ pub type VoteNodeIds = HashMap<String, VoteData>;
 pub type VoteNodeIdsByChange = HashMap<String, VoteNodeIds>;
 
 /// change id → cached PR metadata (`gh/`).
-pub type PrDataByChange = HashMap<String, PrData>;
+pub type ChangeDataByChange = HashMap<String, ChangeData>;
 
 /// change id → sync cache (`gh_cache/`).
 pub type CacheByChange = HashMap<String, SyncCache>;
@@ -58,7 +58,7 @@ pub struct GithubChangesRefData {
     #[serde(default)]
     pub gh_vote_node_ids: VoteNodeIdsByChange,
     #[serde(default)]
-    pub gh: PrDataByChange,
+    pub gh: ChangeDataByChange,
     #[serde(default)]
     pub gh_cache: CacheByChange,
     #[serde(default)]

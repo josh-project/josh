@@ -1,10 +1,8 @@
 use crate::connection::GithubApiConnection;
 use anyhow::anyhow;
-use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
-use super::get_commit_check_runs::CheckState;
-use josh_github_webhooks::webhook_types::PullRequestReviewState;
+use josh_changes::{ChangeComment, ChangeData, ChangeLabel, ReviewState};
 
 use josh_github_codegen_graphql::{
     add_comment, add_pull_request_review, add_pull_request_review_thread,
@@ -15,111 +13,6 @@ use josh_github_codegen_graphql::{
     ClosePullRequest, ConvertPullRequestToDraft, CreatePullRequest, GetPrByHead, GetPrComments,
     GetPrReviews, GetPrsBySha, ListOpenPRs, MarkPullRequestReadyForReview, UpdatePullRequest,
 };
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct PrLabel {
-    pub name: String,
-    pub color: String,
-}
-
-#[derive(Debug, Clone)]
-pub struct PrComment {
-    pub id: String,
-    pub author: String,
-    pub body: String,
-    pub timestamp: String,
-    pub path: Option<String>,
-    pub line: Option<i64>,
-    pub reply_to: Option<String>,
-    pub commit_oid: Option<String>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct PrData {
-    pub title: String,
-    pub body: Option<String>,
-    pub number: i64,
-    pub url: String,
-    pub state: String,
-    pub is_draft: bool,
-    pub author: String,
-    pub created_at: String,
-    pub updated_at: String,
-    pub merged: bool,
-    pub merged_at: Option<String>,
-    pub merged_by: Option<String>,
-    pub additions: i64,
-    pub deletions: i64,
-    pub changed_files: i64,
-    pub base_ref_name: String,
-    pub head_ref_name: String,
-    /// Latest review state per reviewer login.
-    #[serde(default)]
-    pub reviews: BTreeMap<String, PullRequestReviewState>,
-    /// Latest state per check-run name on the head commit.
-    #[serde(default)]
-    pub checks: BTreeMap<String, CheckState>,
-    // Sequences are unsupported by the git-tree format; labels are fetch-time
-    // only and never persisted.
-    #[serde(skip)]
-    pub labels: Vec<PrLabel>,
-    #[serde(skip)]
-    pub comments: Vec<PrComment>,
-}
-
-impl PrData {
-    /// Coarse review summary in the same shape as the old stored
-    /// `review_decision` rollup ("Approved" / "ChangesRequested" /
-    /// "ReviewRequired"), derived from the per-reviewer map. Dismissed
-    /// reviews are ignored.
-    pub fn review_decision_rollup(&self) -> Option<String> {
-        let states = self
-            .reviews
-            .values()
-            .filter(|s| !matches!(s, PullRequestReviewState::Dismissed));
-        let mut saw_review = false;
-        let mut saw_approved = false;
-        for state in states {
-            saw_review = true;
-            match state {
-                PullRequestReviewState::ChangesRequested => {
-                    return Some("ChangesRequested".to_string());
-                }
-                PullRequestReviewState::Approved => saw_approved = true,
-                _ => {}
-            }
-        }
-        if saw_approved {
-            Some("Approved".to_string())
-        } else if saw_review {
-            Some("ReviewRequired".to_string())
-        } else {
-            None
-        }
-    }
-
-    /// Coarse check summary in the same shape as the old stored
-    /// `check_status` rollup ("Success" / "Failure" / "Pending"), derived
-    /// from the per-check map.
-    pub fn check_status_rollup(&self) -> Option<String> {
-        if self.checks.is_empty() {
-            return None;
-        }
-        let mut saw_pending = false;
-        for state in self.checks.values() {
-            match state {
-                CheckState::Pending => saw_pending = true,
-                CheckState::Success | CheckState::Neutral | CheckState::Skipped => {}
-                _ => return Some("Failure".to_string()),
-            }
-        }
-        if saw_pending {
-            Some("Pending".to_string())
-        } else {
-            Some("Success".to_string())
-        }
-    }
-}
 
 #[derive(Debug)]
 pub struct PrSummary {
@@ -408,7 +301,7 @@ impl GithubApiConnection {
         owner: &str,
         name: &str,
         number: i64,
-    ) -> anyhow::Result<PrData> {
+    ) -> anyhow::Result<ChangeData> {
         let variables = get_pr_comments::Variables {
             owner: owner.to_string(),
             name: name.to_string(),
@@ -422,7 +315,7 @@ impl GithubApiConnection {
 
         let mut comments = Vec::new();
         for node in pr.comments.nodes.unwrap_or_default().into_iter().flatten() {
-            comments.push(PrComment {
+            comments.push(ChangeComment {
                 id: node.id.clone(),
                 author: node.author.map(|a| a.login).unwrap_or_default(),
                 body: node.body,
@@ -443,7 +336,7 @@ impl GithubApiConnection {
         {
             let review_commit = review.commit.as_ref().map(|c| c.oid.clone());
             if !review.body.is_empty() {
-                comments.push(PrComment {
+                comments.push(ChangeComment {
                     id: review.id.clone(),
                     author: review
                         .author
@@ -466,7 +359,7 @@ impl GithubApiConnection {
                 .flatten()
             {
                 let node_commit = node.commit.as_ref().map(|c| c.oid.clone());
-                comments.push(PrComment {
+                comments.push(ChangeComment {
                     id: node.id.clone(),
                     author: node.author.map(|a| a.login).unwrap_or_default(),
                     body: node.body,
@@ -479,29 +372,29 @@ impl GithubApiConnection {
             }
         }
 
-        let labels: Vec<PrLabel> = pr
+        let labels: Vec<ChangeLabel> = pr
             .labels
             .and_then(|l| l.nodes)
             .unwrap_or_default()
             .into_iter()
             .flatten()
-            .map(|n| PrLabel {
+            .map(|n| ChangeLabel {
                 name: n.name,
                 color: n.color,
             })
             .collect();
 
-        Ok(PrData {
+        Ok(ChangeData {
             title: pr.title,
             body: Some(pr.body),
-            number: pr.number,
-            url: pr.url.to_string(),
+            number: Some(pr.number),
+            url: Some(pr.url.to_string()),
             state: format!("{:?}", pr.state),
-            is_draft: pr.is_draft,
+            is_draft: Some(pr.is_draft),
             author: pr.author.map(|a| a.login).unwrap_or_default(),
             created_at: format!("{}", pr.created_at),
             updated_at: format!("{}", pr.updated_at),
-            merged: pr.merged,
+            merged: Some(pr.merged),
             merged_at: pr.merged_at.map(|t| format!("{}", t)),
             merged_by: pr.merged_by.map(|a| a.login),
             additions: pr.additions,
@@ -636,16 +529,9 @@ impl GithubApiConnection {
         owner: &str,
         name: &str,
         pr_number: i64,
-    ) -> anyhow::Result<
-        Vec<(
-            String,
-            josh_github_webhooks::webhook_types::PullRequestReviewState,
-        )>,
-    > {
-        let mut reviews: std::collections::HashMap<
-            String,
-            josh_github_webhooks::webhook_types::PullRequestReviewState,
-        > = std::collections::HashMap::new();
+    ) -> anyhow::Result<Vec<(String, ReviewState)>> {
+        let mut reviews: std::collections::HashMap<String, ReviewState> =
+            std::collections::HashMap::new();
         let mut cursor: Option<String> = None;
 
         loop {
@@ -679,18 +565,12 @@ impl GithubApiConnection {
                         .map(|a| a.login)
                         .unwrap_or_else(|| "unknown".to_string());
                     let state = match node.state {
-                        get_pr_reviews::PullRequestReviewState::Approved => {
-                            josh_github_webhooks::webhook_types::PullRequestReviewState::Approved
-                        }
+                        get_pr_reviews::PullRequestReviewState::Approved => ReviewState::Approved,
                         get_pr_reviews::PullRequestReviewState::ChangesRequested => {
-                            josh_github_webhooks::webhook_types::PullRequestReviewState::ChangesRequested
+                            ReviewState::ChangesRequested
                         }
-                        get_pr_reviews::PullRequestReviewState::Commented => {
-                            josh_github_webhooks::webhook_types::PullRequestReviewState::Commented
-                        }
-                        get_pr_reviews::PullRequestReviewState::Dismissed => {
-                            josh_github_webhooks::webhook_types::PullRequestReviewState::Dismissed
-                        }
+                        get_pr_reviews::PullRequestReviewState::Commented => ReviewState::Commented,
+                        get_pr_reviews::PullRequestReviewState::Dismissed => ReviewState::Dismissed,
                         _ => continue,
                     };
                     reviews.insert(login, state);
