@@ -242,15 +242,40 @@ fn prepare_push(
                 .context("Failed to build Gerrit push")?,
             }
         }
-        (josh_changes::PublishMode::PushBased, PushMode::Publish(_), _) => build_to_push(
-            transaction,
-            &PushMode::Normal,
-            remote_ref,
-            remote_ref,
-            unfiltered_oid,
-            original_target,
-        )
-        .context("Failed to build to push")?,
+        (josh_changes::PublishMode::PushBased, PushMode::Publish(_), _) => {
+            // A plain branch publish must also move the branch BACKWARDS
+            // (re-publish after dropping a change via reset/rebase).
+            // unapply_filter only maps new commits on top of the original
+            // target, so for a rewound branch it returns the original
+            // target unchanged and the push would no-op. Detect that case
+            // and resolve the local tip's upstream image directly.
+            let unfiltered_oid =
+                if unfiltered_oid == original_target && local_commit != old_filtered_oid {
+                    let resolved = josh_core::history::find_original(
+                        transaction,
+                        filter,
+                        original_target,
+                        local_commit,
+                        false,
+                    )?;
+                    if resolved != gix_hash::ObjectId::null(gix_hash::Kind::Sha1) {
+                        resolved
+                    } else {
+                        unfiltered_oid
+                    }
+                } else {
+                    unfiltered_oid
+                };
+            build_to_push(
+                transaction,
+                &PushMode::Normal,
+                remote_ref,
+                remote_ref,
+                unfiltered_oid,
+                original_target,
+            )
+            .context("Failed to build to push")?
+        }
         _ => build_to_push(
             transaction,
             push_mode,
