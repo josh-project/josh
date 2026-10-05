@@ -34,4 +34,4 @@
    Compiling josh-cli v26.8.28 (/worktree/josh-cli)
    Compiling josh-proxy v26.8.28 (/worktree/josh-proxy)
    Compiling axum-cgi-server v26.8.28 (/worktree/axum-cgi-server)
-    Finished `test` profile [unoptimized + debuginfo] target(s) in 2m 56s
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 2m 26s
