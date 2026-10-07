@@ -97,7 +97,12 @@ pub fn handle_compose(
 #[derive(Debug, clap::Parser)]
 pub struct TransferArgs {
     /// Remote name or URL
-    #[arg(short = 'r', long = "remote", default_value = "origin")]
+    #[arg(
+        short = 'r',
+        long = "remote",
+        default_value = "origin",
+        add = crate::completion::remote()
+    )]
     pub remote: String,
 }
 
@@ -108,7 +113,11 @@ pub struct TargetArgs {
     pub backend: Option<Backend>,
 
     /// Bind a named compose argument (currently a Git revision)
-    #[arg(long = "arg", value_name = "NAME=VALUE")]
+    #[arg(
+        long = "arg",
+        value_name = "NAME=VALUE",
+        add = crate::completion::revision_binding()
+    )]
     pub arguments: Vec<ArgumentBinding>,
 
     /// Git revision to use as input: "." (working tree), "+" (index), or any rev
@@ -116,12 +125,13 @@ pub struct TargetArgs {
         short = 'r',
         long = "revision",
         value_name = "REVISION",
-        default_value = "."
+        default_value = ".",
+        add = crate::completion::revision()
     )]
     pub reference: String,
 
     /// Filter spec to apply, e.g. ":+ws/test" (defaults to ":+compose")
-    #[arg(default_value = ":+compose")]
+    #[arg(default_value = ":+compose", add = crate::completion::filter_worktree())]
     pub filter: String,
 }
 
@@ -218,7 +228,11 @@ pub fn handle_clean(
 #[derive(Debug, clap::Parser)]
 pub struct GraphArgs {
     /// Bind a named compose argument (currently a Git revision)
-    #[arg(long = "arg", value_name = "NAME=VALUE")]
+    #[arg(
+        long = "arg",
+        value_name = "NAME=VALUE",
+        add = crate::completion::revision_binding()
+    )]
     pub arguments: Vec<ArgumentBinding>,
 
     /// Git revision to use as input: "." (working tree), "+" (index), or any rev (e.g. "HEAD", "HEAD~1", "main")
@@ -226,12 +240,13 @@ pub struct GraphArgs {
         short = 'r',
         long = "revision",
         value_name = "REVISION",
-        default_value = "."
+        default_value = ".",
+        add = crate::completion::revision()
     )]
     pub reference: String,
 
     /// Filter spec to apply, e.g. ":+ws/test" (defaults to ":+compose")
-    #[arg(default_value = ":+compose")]
+    #[arg(default_value = ":+compose", add = crate::completion::filter_worktree())]
     pub filter: String,
 }
 
@@ -255,7 +270,11 @@ pub struct ListImagesArgs {
     #[arg(long, value_enum, env = "JOSH_COMPOSE_BACKEND")]
     pub backend: Option<Backend>,
     /// Bind a named compose argument (currently a Git revision)
-    #[arg(long = "arg", value_name = "NAME=VALUE")]
+    #[arg(
+        long = "arg",
+        value_name = "NAME=VALUE",
+        add = crate::completion::revision_binding()
+    )]
     pub arguments: Vec<ArgumentBinding>,
 
     /// Git revision to use as input: "." (working tree), "+" (index), or any rev (e.g. "HEAD", "HEAD~1", "main")
@@ -263,12 +282,13 @@ pub struct ListImagesArgs {
         short = 'r',
         long = "revision",
         value_name = "REVISION",
-        default_value = "."
+        default_value = ".",
+        add = crate::completion::revision()
     )]
     pub reference: String,
 
     /// Filter spec to apply, e.g. ":+ws/test" (defaults to ":+compose")
-    #[arg(default_value = ":+compose")]
+    #[arg(default_value = ":+compose", add = crate::completion::filter_worktree())]
     pub filter: String,
 }
 
@@ -304,7 +324,11 @@ pub struct ListJobsArgs {
     #[arg(long, value_enum, env = "JOSH_COMPOSE_BACKEND")]
     pub backend: Option<Backend>,
     /// Bind a named compose argument (currently a Git revision)
-    #[arg(long = "arg", value_name = "NAME=VALUE")]
+    #[arg(
+        long = "arg",
+        value_name = "NAME=VALUE",
+        add = crate::completion::revision_binding()
+    )]
     pub arguments: Vec<ArgumentBinding>,
 
     /// Git revision to use as input: "." (working tree), "+" (index), or any rev (e.g. "HEAD", "HEAD~1", "main")
@@ -312,12 +336,13 @@ pub struct ListJobsArgs {
         short = 'r',
         long = "revision",
         value_name = "REVISION",
-        default_value = "."
+        default_value = ".",
+        add = crate::completion::revision()
     )]
     pub reference: String,
 
     /// Filter spec to apply, e.g. ":+ws/test" (defaults to ":+compose")
-    #[arg(default_value = ":+compose")]
+    #[arg(default_value = ":+compose", add = crate::completion::filter_worktree())]
     pub filter: String,
 }
 

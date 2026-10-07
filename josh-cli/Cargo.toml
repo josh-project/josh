@@ -17,9 +17,10 @@ log.workspace = true
 serde_json.workspace = true
 defer.workspace = true
 clap.workspace = true
+clap_complete.workspace = true
 dunce.workspace = true
 juniper.workspace = true
-gix.workspace = true
+gix = { workspace = true, features = ["status"] }
 gix-hash.workspace = true
 tokio = { workspace = true, features = ["rt-multi-thread", "macros"] }
 serde.workspace = true

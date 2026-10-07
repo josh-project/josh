@@ -13,14 +13,14 @@ pub struct PushArgs {
     ///
     /// Must match a remote configured in `.git/config` with a josh filter
     /// (e.g. `josh-remote = origin`). Does not support bare URLs.
-    #[arg()]
+    #[arg(add = crate::completion::remote())]
     pub remote: Option<String>,
 
     /// One or more refspecs to push (e.g. main, HEAD:refs/heads/main)
     ///
     /// These are positional arguments following the optional remote, matching
     /// `git push [<repository> [<refspec>...]]` syntax.
-    #[arg()]
+    #[arg(add = crate::completion::refspec())]
     pub refspecs: Vec<String>,
 
     /// Force update (non-fast-forward)
@@ -40,7 +40,7 @@ pub struct PushArgs {
     /// By default the destination branch is used. Pass --base to base
     /// the push on a different branch — typically when pushing a new
     /// branch that does not yet exist on the remote.
-    #[arg(long = "base")]
+    #[arg(long = "base", add = crate::completion::branch())]
     pub base: Option<String>,
 
     /// Wrap the reverse-filtered commit in a merge commit on top of the
@@ -60,11 +60,11 @@ pub struct PublishArgs {
     ///
     /// Must match a remote configured in `.git/config` with a josh filter
     /// (e.g. `josh-remote = origin`). Does not support bare URLs.
-    #[arg()]
+    #[arg(add = crate::completion::remote())]
     pub remote: Option<String>,
 
     /// One or more refspecs to push (e.g. main, HEAD:refs/heads/main)
-    #[arg()]
+    #[arg(add = crate::completion::refspec())]
     pub refspecs: Vec<String>,
 
     /// Force update (non-fast-forward)
@@ -82,7 +82,7 @@ pub struct PublishArgs {
     /// Remote branch to use as the base for reverse filtering
     ///
     /// See `josh push --base` for details.
-    #[arg(long = "base")]
+    #[arg(long = "base", add = crate::completion::branch())]
     pub base: Option<String>,
 
     /// Wrap the reverse-filtered commit in a merge commit on top of the
