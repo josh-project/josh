@@ -62,11 +62,13 @@ fn make_app() -> clap::Command {
     app
         .arg(
             clap::Arg::new("filter")
+                .add(josh_cli::completion::filter_or_file())
                 .help("Filter to apply")
                 .default_value(":/"),
         )
         .arg(
             clap::Arg::new("input")
+                .add(josh_cli::completion::revision())
                 .help("Ref or SHA to apply filter to, '.' for the working tree, or '+' for the index (staged changes)")
                 .default_value("HEAD"),
         )
@@ -74,6 +76,7 @@ fn make_app() -> clap::Command {
             clap::Arg::new("revspec")
                 .long("revspec")
                 .value_name("SOURCE:DESTINATION")
+                .add(josh_cli::completion::refspec())
                 .action(clap::ArgAction::Append)
                 .conflicts_with_all([
                     "input",
@@ -97,22 +100,26 @@ fn make_app() -> clap::Command {
         )
         .arg(
             clap::Arg::new("file")
+                .value_hint(clap::ValueHint::FilePath)
                 .long("file")
                 .help("Read filter spec from file"),
         )
         .arg(
             clap::Arg::new("update")
+                .add(josh_cli::completion::writable_ref())
                 .long("update")
                 .help("reference to update with the result")
                 .default_value("FILTERED_HEAD"),
         )
         .arg(
             clap::Arg::new("squash-pattern")
+                .add(josh_cli::completion::full_ref())
                 .help("Produce a history that contains only commits pointed to by references matching the given pattern")
                 .long("squash-pattern")
         )
         .arg(
             clap::Arg::new("squash-file")
+                .value_hint(clap::ValueHint::FilePath)
                 .help("Produce a history that contains only commits listed in the given file")
                 .long("squash-file")
         )
@@ -699,6 +706,7 @@ fn run_filter(args: Vec<String>) -> anyhow::Result<i32> {
 }
 
 fn main() -> std::process::ExitCode {
+    josh_cli::completion::complete(make_app);
     let _flush_guard = josh_core::memodb::FlushGuard::new();
     env_logger::init();
     let args = {
