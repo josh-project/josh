@@ -43,6 +43,21 @@ impl CacheStack {
         Ok(())
     }
 
+    /// Persist a requested commit in every cache backend.
+    pub fn write_forced_all(
+        &self,
+        filter: filter::Filter,
+        from: gix_hash::ObjectId,
+        to: gix_hash::ObjectId,
+        hint: HistoryGraphHint,
+        tree_keyed: bool,
+    ) -> anyhow::Result<()> {
+        for backend in &self.backends {
+            backend.write_forced(filter, from, to, hint, tree_keyed)?;
+        }
+        Ok(())
+    }
+
     /// Register the start of a transaction across all backends (see [`CacheBackend::begin`]).
     pub fn begin(&self) {
         for backend in &self.backends {
