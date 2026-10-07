@@ -4,7 +4,7 @@ use crate::commands::scope::ScopeArgs;
 #[derive(Debug, clap::Parser)]
 pub struct CommentArgs {
     /// Change to comment on (Change-Id, ref, or SHA).
-    #[arg()]
+    #[arg(add = crate::completion::git_ref())]
     pub change: String,
 
     /// Comment message.
@@ -12,7 +12,7 @@ pub struct CommentArgs {
     pub message: String,
 
     /// File path the comment relates to.
-    #[arg(long = "file")]
+    #[arg(long = "file", value_hint = clap::ValueHint::FilePath)]
     pub file: Option<String>,
 
     /// Location as path:line (shortcut for --location-path PATH --location-start-line N ...).
@@ -20,7 +20,7 @@ pub struct CommentArgs {
     pub location: Option<String>,
 
     /// Location path (file or directory).
-    #[arg(long = "location-path")]
+    #[arg(long = "location-path", value_hint = clap::ValueHint::AnyPath)]
     pub location_path: Option<String>,
 
     /// Location start line (1-based).

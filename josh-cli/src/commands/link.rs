@@ -26,7 +26,7 @@ pub struct LinkAddArgs {
     pub url: String,
 
     /// Filter defining the view (e.g. :/subfolder)
-    #[arg()]
+    #[arg(add = crate::completion::filter_syntax())]
     pub filter: String,
 
     /// Link id (defaults to the repository name derived from the URL)

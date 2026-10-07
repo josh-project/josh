@@ -9,11 +9,21 @@ use crate::remote_ops;
 #[derive(Debug, clap::Parser)]
 pub struct FetchArgs {
     /// Remote name (or URL) to fetch from
-    #[arg(short = 'r', long = "remote", default_value = "origin")]
+    #[arg(
+        short = 'r',
+        long = "remote",
+        default_value = "origin",
+        add = crate::completion::remote()
+    )]
     pub remote: String,
 
     /// Ref to fetch (branch, tag, or commit-ish)
-    #[arg(short = 'R', long = "ref", default_value = "HEAD")]
+    #[arg(
+        short = 'R',
+        long = "ref",
+        default_value = "HEAD",
+        add = crate::completion::git_ref()
+    )]
     pub rref: String,
 }
 
