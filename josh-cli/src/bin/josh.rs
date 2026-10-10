@@ -1,5 +1,5 @@
 use anyhow::Context;
-use clap::Parser;
+use clap::{CommandFactory, Parser};
 
 use josh_cli::commands::auth::AuthArgs;
 use josh_cli::commands::cache::CacheArgs;
@@ -89,7 +89,7 @@ pub struct CloneArgs {
     pub url: String,
 
     /// Workspace/projection identifier or path to spec
-    #[arg()]
+    #[arg(add = josh_cli::completion::filter_syntax())]
     pub filter: String,
 
     /// Checkout directory
@@ -97,7 +97,12 @@ pub struct CloneArgs {
     pub out: std::path::PathBuf,
 
     /// Branch or ref to clone
-    #[arg(short = 'b', long = "branch", default_value = "HEAD")]
+    #[arg(
+        short = 'b',
+        long = "branch",
+        default_value = "HEAD",
+        add = josh_cli::completion::git_ref()
+    )]
     pub branch: String,
 
     /// Separate push destination (a fork) for `josh changes publish`.
@@ -158,7 +163,11 @@ pub struct RemoteAddArgs {
     pub url: String,
 
     /// Workspace/projection identifier or path to spec
-    #[arg(required_unless_present = "submodules", conflicts_with = "submodules")]
+    #[arg(
+        required_unless_present = "submodules",
+        conflicts_with = "submodules",
+        add = josh_cli::completion::filter_syntax()
+    )]
     pub filter: Option<String>,
 
     /// Derive a combined gitlink view and links from HEAD's .gitmodules
@@ -198,11 +207,12 @@ pub struct ForgeArgs {
 #[derive(Debug, clap::Parser)]
 pub struct FilterArgs {
     /// Remote name to apply filtering to
-    #[arg()]
+    #[arg(add = josh_cli::completion::remote())]
     pub remote: String,
 }
 
 fn main() -> std::process::ExitCode {
+    josh_cli::completion::complete(Cli::command);
     let _flush_guard = josh_core::memodb::FlushGuard::new();
     env_logger::init();
     let cli = Cli::parse();

@@ -1,4 +1,5 @@
 pub mod commands;
+pub mod completion;
 pub mod config;
 pub mod forge;
 pub mod porcelain;

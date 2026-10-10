@@ -9,11 +9,21 @@ use crate::porcelain::RefUpdate;
 #[derive(Debug, clap::Parser)]
 pub struct PullArgs {
     /// Remote name (or URL) to pull from
-    #[arg(short = 'r', long = "remote", default_value = "origin")]
+    #[arg(
+        short = 'r',
+        long = "remote",
+        default_value = "origin",
+        add = crate::completion::remote()
+    )]
     pub remote: String,
 
     /// Ref to pull (branch, tag, or commit-ish)
-    #[arg(short = 'R', long = "ref", default_value = "HEAD")]
+    #[arg(
+        short = 'R',
+        long = "ref",
+        default_value = "HEAD",
+        add = crate::completion::git_ref()
+    )]
     pub rref: String,
 }
 

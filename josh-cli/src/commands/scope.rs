@@ -6,11 +6,11 @@
 #[derive(Debug, Clone, clap::Args)]
 pub struct ScopeArgs {
     /// Target branch (default: HEAD's branch).
-    #[arg(short = 'b', long = "branch")]
+    #[arg(short = 'b', long = "branch", add = crate::completion::branch())]
     pub branch: Option<String>,
 
     /// Operate on the changes ref for this remote instead of the Local one.
-    #[arg(long = "remote")]
+    #[arg(long = "remote", add = crate::completion::remote())]
     pub remote: Option<String>,
 }
 

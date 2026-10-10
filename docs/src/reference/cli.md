@@ -9,6 +9,46 @@ It provides projection-aware equivalents of the common git operations.
 cargo install josh-cli --locked --git https://github.com/josh-project/josh.git
 ```
 
+## Shell completion
+
+`josh` and `josh-filter` provide dynamic completion for commands, options, filter
+expressions, repository paths, and Git refs. Register both binaries in the shell's
+startup file.
+
+For Zsh:
+
+```zsh
+source <(COMPLETE=zsh josh)
+source <(COMPLETE=zsh josh-filter)
+```
+
+Zsh treats `!` as history expansion. When entering a Starlark filter prefix
+manually, escape it as `:\!`; completion preserves the escape while matching
+repository `.star` files.
+
+For Bash, use the same commands with `bash` in place of `zsh`. For Fish:
+
+```fish
+COMPLETE=fish josh | source
+COMPLETE=fish josh-filter | source
+```
+
+For Elvish:
+
+```elvish
+eval (E:COMPLETE=elvish josh | slurp)
+eval (E:COMPLETE=elvish josh-filter | slurp)
+```
+
+For PowerShell:
+
+```powershell
+$env:COMPLETE = "powershell"; josh | Out-String | Invoke-Expression; Remove-Item Env:\COMPLETE
+$env:COMPLETE = "powershell"; josh-filter | Out-String | Invoke-Expression; Remove-Item Env:\COMPLETE
+```
+
+Repository-aware completion reads local refs and trees. It does not contact remotes.
+
 ---
 
 ## josh clone

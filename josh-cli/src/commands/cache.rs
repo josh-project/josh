@@ -31,21 +31,21 @@ pub enum CacheCommand {
 #[derive(Debug, clap::Parser)]
 pub struct CacheBuildArgs {
     /// Remote name (defaults to "origin")
-    #[arg(default_value = "origin")]
+    #[arg(default_value = "origin", add = crate::completion::remote())]
     pub remote: String,
 }
 
 #[derive(Debug, clap::Parser)]
 pub struct CachePushArgs {
     /// Remote name (defaults to "origin")
-    #[arg(default_value = "origin")]
+    #[arg(default_value = "origin", add = crate::completion::remote())]
     pub remote: String,
 }
 
 #[derive(Debug, clap::Parser)]
 pub struct CacheFetchArgs {
     /// Remote name (defaults to "origin")
-    #[arg(default_value = "origin")]
+    #[arg(default_value = "origin", add = crate::completion::remote())]
     pub remote: String,
 }
 
