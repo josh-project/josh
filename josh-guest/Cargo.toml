@@ -1,6 +1,10 @@
 [workspace]
 resolver = "2"
-members = ["josh-filter-guest", "examples/subdirs-prefixed"]
+members = [
+    "josh-filter-guest",
+    "josh-starlark-guest",
+    "examples/subdirs-prefixed",
+]
 
 # Guest modules are committed as blobs into user repositories and loaded on
 # every proxy evaluation, so release builds are tuned for size, not speed.

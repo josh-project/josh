@@ -10,13 +10,14 @@
 //! ```ignore
 //! #![no_std]
 //!
-//! use josh_filter_guest::{Filter, Tree, compose, josh_filter_entry, nop};
+//! use josh_filter_guest::{Filter, Tree, compose, josh_filter_entry, josh_guest_rt, nop};
 //!
 //! fn run(tree: Tree) -> Filter {
 //!     compose(tree.dirs("").into_iter().map(|d| nop().subdir(&d).prefix(&d)))
 //! }
 //!
 //! josh_filter_entry!(run);
+//! josh_guest_rt!(); // no_std runtime: bump allocator + aborting panic handler
 //! ```
 //!
 //! # ABI (v1)
@@ -43,6 +44,12 @@
 //! `josh_run` returns, so everything — `josh_alloc` buffers and the `rt`
 //! feature's bump allocator alike — simply leaks into instance memory that
 //! dies with the evaluation.
+//!
+//! Pure-`no_std` guests install the runtime (global allocator + panic
+//! handler) by invoking [`josh_guest_rt!`] once; guests that link `std`
+//! must not, and should depend on this crate with `default-features =
+//! false` (the lang items live in the guest crate, not this rlib, so one
+//! workspace can build both kinds side by side).
 //!
 //! # Determinism
 //!
@@ -71,7 +78,7 @@ pub mod abi;
 mod args;
 mod filter;
 #[cfg(all(feature = "rt", target_arch = "wasm32"))]
-mod rt;
+pub mod rt;
 mod tree;
 
 pub use args::args;
