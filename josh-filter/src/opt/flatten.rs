@@ -105,7 +105,7 @@ fn flatten_impl(filter: Filter, full: bool) -> Filter {
         Op::Exclude(b) => Op::Exclude(flatten_impl(*b, full)),
         Op::Select(b) => Op::Select(flatten_impl(*b, full)),
         Op::Pin(b) => Op::Pin(flatten_impl(*b, full)),
-        Op::Starlark(path, sub) => Op::Starlark(path.clone(), flatten_impl(*sub, full)),
+        Op::Wasm(path, args, sub) => Op::Wasm(path.clone(), args.clone(), flatten_impl(*sub, full)),
         Op::TreeId(path, sub) => Op::TreeId(path.clone(), flatten_impl(*sub, full)),
         Op::ObjectDeref(_) => to_op(filter),
         Op::ObjectRef(_) => to_op(filter),
