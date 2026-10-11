@@ -78,7 +78,7 @@ available in stable releases. Those include:
 
 * Merge queue with support for filtering and PR stacks
 * Code review UI for stacked changes
-* Filters written in Starlark syntax
+* Scripted filters as sandboxed wasm modules (Starlark still supported via an interpreter module)
 * `josh compose` – containerized build orchestrator built on top of the concept of filters
 
 <hr/>

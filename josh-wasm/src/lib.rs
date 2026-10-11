@@ -82,28 +82,31 @@ fn limits() -> Limits {
 }
 
 fn load_module(
-    repo: &git2::Repository,
-    module_oid: git2::Oid,
+    odb: &josh_memodb::Odb,
+    module_oid: gix_hash::ObjectId,
     limits: &Limits,
 ) -> anyhow::Result<Arc<dyn engine::CompiledModule>> {
-    if let Some(module) = cache::module_cache().lock().unwrap().get(&module_oid) {
+    if let Some(module) = cache::module_cache().lock().get(&module_oid) {
         return Ok(module);
     }
-    let blob = repo.find_blob(module_oid)?;
-    let content = blob.content();
-    if content.len() > limits.module_size {
+    let (kind, size) = odb.read_header(module_oid)?;
+    if kind != gix_object::Kind::Blob {
+        anyhow::bail!("wasm module {} is not a blob", module_oid);
+    }
+    if size > limits.module_size as u64 {
         anyhow::bail!(
             "wasm module {} exceeds size limit: {} > {}",
             module_oid,
-            content.len(),
+            size,
             limits.module_size
         );
     }
+    let (_, content) = odb.read(module_oid)?;
     // A blob without the wasm magic that is valid UTF-8 is treated as WAT text.
     let bytes = if content.starts_with(b"\0asm") {
-        std::borrow::Cow::Borrowed(content)
+        std::borrow::Cow::Borrowed(&*content)
     } else {
-        let text = std::str::from_utf8(content).map_err(|_| {
+        let text = std::str::from_utf8(&content).map_err(|_| {
             anyhow::anyhow!(
                 "wasm module {} is neither a wasm binary nor UTF-8 WAT text",
                 module_oid
@@ -115,35 +118,34 @@ fn load_module(
     tracing::trace!("compiled wasm module {}", module_oid);
     cache::module_cache()
         .lock()
-        .unwrap()
         .insert(module_oid, module.clone());
     Ok(module)
 }
 
 /// Evaluate the wasm filter module stored in blob `module_oid`, giving it
-/// read-only access to the (context-filtered) tree `tree_oid` and the
-/// invocation `args`, and return the filter it constructs.
+/// read-only access to the (context-filtered) tree `tree_oid` through `odb`
+/// and the invocation `args`, and return the filter it constructs.
 pub fn evaluate(
-    repo: &git2::Repository,
-    module_oid: git2::Oid,
+    odb: &josh_memodb::Odb,
+    module_oid: gix_hash::ObjectId,
     args: &[String],
-    tree_oid: git2::Oid,
+    tree_oid: gix_hash::ObjectId,
 ) -> anyhow::Result<josh_filter::Filter> {
     let key = (module_oid, args.to_vec(), tree_oid);
-    if let Some(filter) = cache::eval_memo().lock().unwrap().get(&key) {
+    if let Some(filter) = cache::eval_memo().lock().get(&key) {
         return Ok(*filter);
     }
     let limits = limits();
-    let module = load_module(repo, module_oid, &limits)?;
+    let module = load_module(odb, module_oid, &limits)?;
     let filter = module.evaluate(
         EvalContext {
-            repo,
+            odb,
             tree_oid,
             args,
         },
         &limits,
     )?;
-    cache::eval_memo().lock().unwrap().insert(key, filter);
+    cache::eval_memo().lock().insert(key, filter);
     Ok(filter)
 }
 
