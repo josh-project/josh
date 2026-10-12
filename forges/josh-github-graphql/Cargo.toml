@@ -23,6 +23,7 @@ url.workspace = true
 async-trait.workspace = true
 graphql_client.workspace = true
 
+josh-changes.workspace = true
 josh-github-auth.workspace = true
 josh-github-codegen-graphql.workspace = true
 josh-github-webhooks.workspace = true

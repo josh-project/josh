@@ -106,7 +106,7 @@ pub fn handle_list(
             .and_then(|pr| {
                 admission
                     .as_ref()
-                    .map(|data| josh_github_changes::evaluate(&pr, data).admissible)
+                    .map(|data| josh_changes::evaluate(&pr, data).admissible)
             })
             .map(|admissible| if admissible { "yes" } else { "no" })
             .unwrap_or("-")
@@ -180,14 +180,14 @@ pub fn handle_show(
 
     if let Ok(Some(pr)) = josh_github_changes::read_pr_data(transaction, &args.change_id, &scope) {
         print!("PR:        {} [{}]", pr.title, pr.state);
-        if !pr.url.is_empty() {
-            print!(" {}", pr.url);
+        if let Some(url) = &pr.url {
+            print!(" {url}");
         }
         println!();
 
         match josh_github_changes::read_admission_data(transaction, &scope) {
             Ok(Some(data)) => {
-                let status = josh_github_changes::evaluate(&pr, &data);
+                let status = josh_changes::evaluate(&pr, &data);
                 println!(
                     "Admission: {}",
                     if status.admissible {
