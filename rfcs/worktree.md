@@ -77,16 +77,16 @@ primitives are instead:
 
 ```
 josh init [<dir>]
-josh remote add <name> <url> <path-filter>
+josh remote add <path> <url>
 ```
 
-`josh init` creates `<dir>` containing a checkout-less repository (the *shared repo*): the josh
-cache and no history yet. `josh remote add` records a remote (URL, forge config), fetches its
-history, and mounts its native root below `<path-filter>`. The filter is required, must be a
-non-root path-only filter such as `:/rust`, and must not overlap another remote mount. There is
-no implicit `origin`: remotes have explicit names, as befits peers.
+`josh init` creates `<dir>/.josh`, a bare repository holding the shared objects, refs, and cache,
+with no remote history yet. `josh remote add` records a remote (URL, forge config), fetches
+its history, and mounts its native root below `<path>`. The path is required, normalized,
+relative, and must not overlap another remote mount. It is also the remote's identity, so a
+separate name would be redundant.
 
-This directory — shared repo plus the worktrees created inside it by default — is called the
+The directory containing `.josh` and the worktrees created inside it by default is called the
 **store**: the place all history is stored, and that worktrees check out from and push back
 into. The word extends git's own vocabulary (the object store) rather than importing anyone
 else's. Names rejected: "workspace" is taken by `workspace.josh` and the views RFC; "container"
@@ -95,15 +95,15 @@ vocabulary.
 
 ```
 myrepo/
-  .git/          shared repo: refs and objects of all remotes, josh cache
+  .josh/         bare shared repository: refs, objects, configuration, and cache
   frontend/      worktree, filter :/frontend
   backend/       worktree, filter :/backend
   full/          worktree, unfiltered (:/)
 ```
 
 The `GIT_NAMESPACE` mechanism of the current implementation survives in a changed, honest
-role: the store serves each worktree through a namespace per level — see "Worktree isolation"
-below. What is removed is the pretense that the namespace-served remote is the upstream.
+role: the store serves each worktree through a namespace per projection — see "Worktree
+isolation" below. What is removed is the pretense that the namespace-served remote is the upstream.
 
 ### `josh worktree add` creates a filtered checkout
 
@@ -124,10 +124,10 @@ Once the views RFC lands, the filter argument can also be a view reference (`:=f
 `josh worktree add` becomes the primary consumer of views: `josh worktree add ../frontend
 :=frontend`.
 
-### Worktree isolation: levels are namespaces
+### Worktree isolation: projections are namespaces
 
-A worktree must see only the refs of its own level. Refs of other levels are not merely noise
-in `git branch -a`, `git log --all`, and shell completion — they are traps: another level's
+A worktree must see only the refs of its own projection. Refs of other projections are not merely
+noise in `git branch -a`, `git log --all`, and shell completion — they are traps: another projection's
 branch names an unrelated history, and checking it out would produce garbage. This rules out
 implementing josh worktrees as `git worktree`s, which share the entire ref store by design (the
 per-worktree `refs/worktree/*` space cannot hold branches, and `GIT_NAMESPACE` has no effect on
@@ -138,8 +138,8 @@ repository — own refs, own config, objects shared with the store via alternate
 remotes invoke a Josh-owned upload/receive adapter:
 
 ```
-josh serve-worktree --namespace <worktree-level>/<remote> upload-pack
-josh serve-worktree --namespace <worktree-level>/<remote> receive-pack
+josh serve-worktree --namespace <projection>/<remote> upload-pack
+josh serve-worktree --namespace <projection>/<remote> receive-pack
 ```
 
 The command is the stable boundary between plain Git in the worktree and Josh's store model.
@@ -157,23 +157,23 @@ UX do not change across that cutover.
 Everything follows from this arrangement:
 
 - **Plain `git fetch` and `git push` are correct.** They exchange refs with the store — always
-  local, never touching the network. "The store's current state of this level" is precisely
+  local, never touching the network. "The store's current state of this projection" is precisely
   what they should exchange; a `git push` parks a branch in the store's namespace, and nothing
   leaves the machine until a josh command relays it.
-- **Upstreams render naturally.** Level refs arrive as ordinary remote-tracking refs:
+- **Upstreams render naturally.** Projection refs arrive as ordinary remote-tracking refs:
   `git status`, `@{upstream}`, and `git rebase` show `rust/main` and `miri/master`, not
   `refs/josh/filtered/<hash>/…`.
 - **Branches are per-worktree.** Each worktree owns its `refs/heads/*`: two agents can both
   have a `fix` branch without colliding, and a branch cannot accidentally travel to a worktree
-  at a different level. The mismatch detection a shared ref store would need has no counterpart
+  using a different projection. The mismatch detection a shared ref store would need has no counterpart
   here.
 - **The protocol adapter is evolvable.** V1 delegates protocol correctness, pack negotiation,
   quarantine, and atomic ref updates to Git through `GIT_NAMESPACE`. Future versions can serve
   the same worktree-facing refs virtually from `refs/josh/super` without changing any worktree
   repository.
 
-Two worktrees at the same level attach to the same namespace and thus share its refs;
-refiltering happens once per level, not once per worktree. Each worktree reads the store ODB
+Two worktrees using the same projection attach to the same namespace and thus share its refs;
+refiltering happens once per projection, not once per worktree. Each worktree reads the store ODB
 through an alternate but writes new objects to its own ODB. Parking a branch transfers the
 needed objects into the store; duplicate local copies may remain and are intentionally
 tolerated until explicit Josh maintenance.
@@ -199,16 +199,16 @@ path in the store:
 
 ```
 josh init projects
-josh remote add rust https://github.com/rust-lang/rust :/rust
-josh remote add miri https://github.com/rust-lang/miri :/miri
+josh remote add rust https://github.com/rust-lang/rust
+josh remote add miri https://github.com/rust-lang/miri
 josh worktree add rust-work :/rust
 josh worktree add miri-work :/miri
 josh worktree add all
 ```
 
 The composed tree has `rust/` and `miri/`. A `:/rust` worktree sees rust at its native root;
-the identity worktree sees both mounts. Mount filters deliberately support only a single path.
-`:/` is invalid for a remote because a full remote would overlap every peer. Equal paths and
+the identity worktree sees both mounts. Mounts deliberately support only a single plain path.
+The root is invalid because a full remote would overlap every peer. Equal paths and
 ancestor/descendant paths are rejected for the same reason.
 
 Native refs are mounted by applying a prefix filter before any worktree filter. On push, Josh
@@ -249,14 +249,14 @@ history.
 
 ### Change state: shared through the synthetic superhistory
 
-Canonical change metadata lives in the hidden `.josh/changes/` tree of `refs/josh/super`,
+Canonical change metadata lives in the `changes/` tree of the private `refs/josh/super` ref,
 alongside declarative configuration and the gitlinks recording remote-ref state. A separate,
 per-remote-branch changes ref exists only to retain the Git objects referenced by that metadata.
 Published review commits remain ordinary refs in each actual upstream:
 
 | Location | Scope | Purpose |
 | --- | --- | --- |
-| `.josh/changes/<change-id>/...` in `refs/josh/super` | store-wide logical change | canonical projections, comments, votes, outbox, targets, publication and landing status |
+| `changes/<change-id>/...` in `refs/josh/super` | store-wide logical change | canonical projections, comments, votes, outbox, targets, publication and landing status |
 | `refs/josh/remotes/<remote>/changes/<branch>` | one native remote branch | keep every evolving projected revision reachable across amends |
 | `refs/heads/@changes/...` in an upstream | one remote and native destination branch | published Git commits used for review |
 
@@ -294,12 +294,10 @@ superhistory. `josh gc` may compact a retention ref into a fresh snapshot of anc
 still named by canonical metadata, dropping obsolete amended revisions according to retention
 policy.
 
-Keeping change state in the superhistory does not invalidate build caches. `.josh` is
-automatically excluded from every user and Compose projection, and Compose caches by projected
-tree. A comment-only or vote-only superhistory commit therefore produces the same projected tree
-OID and reuses the existing result. Worktree history materialization may revisit such commits,
-but metadata-only commits are normally elided because their visible tree is unchanged; recomputing
-them is cheap enough even when it is required.
+Keeping change state in the superhistory does not invalidate build caches. The private
+`refs/josh/super` tree is not exposed through user or Compose projections, and Compose caches by
+projected tree. A comment-only or vote-only superhistory commit therefore leaves every projected
+tree OID unchanged and reuses the existing result.
 
 Change identity is not scoped by a physical worktree, mapping name, or local branch name.
 Overlapping worktrees must observe and edit the same logical change. A full worktree and a
@@ -309,21 +307,25 @@ commit OIDs differ.
 The canonical record represents a logical change as a set of native remote projections:
 
 ```
-.josh/changes/update-api/
-  meta.json
+changes/update-api/
   projections/
     frontend/refs/heads/main/
-      canonical diff or revision
+      base
+      commit
     backend/refs/heads/master/
-      canonical diff or revision
+      base
+      commit
   publications/
     frontend/refs/heads/main/
-      pushed oid, review id, landed state
+      pushed
+      landed
     backend/refs/heads/master/
-      pushed oid, review id, landed state
-  comments/
-  votes/
-  outbox/
+      pushed
+      landed
+  metadata/
+    comments/
+    votes/
+    outbox/
 ```
 
 A worktree lists a change when at least one projection intersects one of its mappings. Josh
@@ -367,13 +369,13 @@ The `clone` verb is removed immediately; there is no deprecation sugar. The setu
 `josh init` + `josh remote add` + `josh worktree add`, and keeping a clone shorthand around
 would only prolong the mental model this RFC retires. Existing old-style clones (detected by
 the filter-bearing remote config) can be converted in place by a `josh migrate` helper that
-turns them into a store with a single worktree at the old filter's level.
+turns them into a store with a single worktree using the old filter's projection.
 
 ## Implementation order
 
 1. `josh init`, the store layout, native remote namespaces, and disjoint remote mounts.
-2. The linear synthetic superhistory: declarative config plus every tracked remote ref as a
-   gitlink, with named worktree mappings stored in its hidden `.josh` tree.
+2. The linear synthetic superhistory: Git-serialized declarative config plus every tracked remote
+   ref as a gitlink, with named worktree mappings stored directly in the private ref's tree.
 3. `josh worktree add` / `list` / `remove` as linked repositories attached to mapped,
    namespace-scoped `upload-pack` / `receive-pack` endpoints.
 4. `josh fetch` and `pull` updating the superhistory and rematerializing mappings; `josh push`
@@ -384,9 +386,6 @@ turns them into a store with a single worktree at the old filter's level.
 
 ## Open questions
 
-- Exact store layout: bare repo at `<dir>/.git` with worktrees inside `<dir>` (proposed),
-  vs. the `.bare`-directory convention some tools use, vs. fully bare `<dir>.git` with
-  worktrees as siblings.
 - Stable naming for worktree namespaces (filter-id hash is canonical but unreadable; a declared
   name is readable but needs a rename story), and the exact ref layout within a namespace.
 - Whether `josh fetch` materializes all active worktree filters eagerly (proposed: yes — that is

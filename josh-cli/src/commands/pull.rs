@@ -3,19 +3,13 @@ use anyhow::Context;
 use josh_changes::{StackedChangeRef, StackedRef};
 use josh_core::trailers::commit_change_meta;
 
-use crate::commands::fetch::{self, FetchArgs};
 use crate::porcelain::RefUpdate;
 
 #[derive(Debug, clap::Parser)]
 pub struct PullArgs {
-    /// Remote name (or URL) to pull from
-    #[arg(
-        short = 'r',
-        long = "remote",
-        default_value = "origin",
-        add = crate::completion::remote()
-    )]
-    pub remote: String,
+    /// Mount-derived remote identity; inferred from the branch or sole remote when omitted
+    #[arg(short = 'r', long = "remote", add = crate::completion::remote())]
+    pub remote: Option<String>,
 
     /// Ref to pull (branch, tag, or commit-ish)
     #[arg(
@@ -459,30 +453,13 @@ fn autostash_pop(transaction: &josh_core::cache::Transaction) {
     }
 }
 
-/// Handle the `josh changes pull` command: fetch (with projection filtering),
-/// print a curated summary, then integrate into the current branch.
-///
-/// Integration is always rebase-style; uncommitted changes are stashed before
-/// integrating and re-applied afterwards (autostash).
-pub fn handle_pull(
-    args: &PullArgs,
+pub fn integrate_fetched(
+    remote: &str,
     transaction: &josh_core::cache::Transaction,
-    distributed_cache: bool,
 ) -> anyhow::Result<()> {
-    let fetch_args = FetchArgs {
-        remote: args.remote.clone(),
-        rref: args.rref.clone(),
-    };
-
-    let updates = fetch::handle_fetch(&fetch_args, transaction, distributed_cache)?;
-    for line in render_fetch_summary(&updates, &args.remote, Some(transaction))? {
-        eprintln!("{}", line);
-    }
-
     let stashed = autostash_push(transaction)?;
-    let result = integrate(transaction, &args.remote);
+    let result = integrate(transaction, remote);
     if stashed {
-        // Re-apply even when integrating failed, restoring the pre-pull state.
         autostash_pop(transaction);
     }
 

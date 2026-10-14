@@ -30,23 +30,32 @@ pub enum CacheCommand {
 
 #[derive(Debug, clap::Parser)]
 pub struct CacheBuildArgs {
-    /// Remote name (defaults to "origin")
-    #[arg(default_value = "origin", add = crate::completion::remote())]
+    /// Mount-derived remote identity
+    #[arg(add = crate::completion::remote())]
     pub remote: String,
+    /// Projection to build in addition to discovered projections
+    #[arg(long, add = crate::completion::filter_syntax())]
+    pub filter: Option<String>,
 }
 
 #[derive(Debug, clap::Parser)]
 pub struct CachePushArgs {
-    /// Remote name (defaults to "origin")
-    #[arg(default_value = "origin", add = crate::completion::remote())]
+    /// Mount-derived remote identity
+    #[arg(add = crate::completion::remote())]
     pub remote: String,
+    /// Projection whose materialization refs should be pushed
+    #[arg(long, add = crate::completion::filter_syntax())]
+    pub filter: Option<String>,
 }
 
 #[derive(Debug, clap::Parser)]
 pub struct CacheFetchArgs {
-    /// Remote name (defaults to "origin")
-    #[arg(default_value = "origin", add = crate::completion::remote())]
+    /// Mount-derived remote identity
+    #[arg(add = crate::completion::remote())]
     pub remote: String,
+    /// Projection whose materialization refs should be fetched
+    #[arg(long, add = crate::completion::filter_syntax())]
+    pub filter: Option<String>,
 }
 
 pub fn handle_cache(args: &CacheArgs, transaction: &Transaction) -> anyhow::Result<()> {
@@ -55,6 +64,12 @@ pub fn handle_cache(args: &CacheArgs, transaction: &Transaction) -> anyhow::Resu
         CacheCommand::Push(a) => handle_cache_push(a, transaction),
         CacheCommand::Fetch(a) => handle_cache_fetch(a, transaction),
     }
+}
+fn composed_filter(config: &RemoteConfig, projection: Option<&str>) -> anyhow::Result<Filter> {
+    let mount_path = josh_core::filter::src_path(config.semantic_filter());
+    let mount = josh_core::filter::to_filter(josh_core::filter::Op::Prefix(mount_path));
+    let projection = josh_core::filter::parse(projection.unwrap_or(":/"))?;
+    Ok(mount.chain(projection))
 }
 
 fn handle_cache_build(args: &CacheBuildArgs, transaction: &Transaction) -> anyhow::Result<()> {
@@ -117,9 +132,9 @@ fn handle_cache_build(args: &CacheBuildArgs, transaction: &Transaction) -> anyho
         }
     }
 
-    // Add the config filter as fallback if not already discovered.
+    // Add the requested worktree projection composed with this remote's mount.
     if let Ok(config) = read_remote_config(&repo_path, &args.remote) {
-        let config_filter = config.semantic_filter();
+        let config_filter = composed_filter(&config, args.filter.as_deref())?;
         let config_steps = flatten_chain(config_filter);
         let config_prefix = remote_ops::step_ref_prefix(config_steps.len() - 1, &config_steps);
         if !full_chains.contains(&config_prefix) {
@@ -150,15 +165,15 @@ fn handle_cache_build(args: &CacheBuildArgs, transaction: &Transaction) -> anyho
         .context("Failed to open build transaction")?;
 
     // Resolve the default branch commit from backing refs.
-    let backing_prefix = format!("refs/josh/remotes/{}/", args.remote);
+    let backing_prefix = crate::store::backing_heads_prefix(&args.remote);
     let default_branch_ref = format!("{}{}", backing_prefix, default_branch);
     let default_branch_oid = build_transaction
         .resolve_ref(&default_branch_ref)?
         .ok_or_else(|| {
             anyhow::anyhow!(
-                "Default branch '{}' not found in refs/josh/remotes/{}/",
+                "Default branch '{}' not found in {}",
                 default_branch,
-                args.remote
+                backing_prefix
             )
         })?;
 
@@ -224,7 +239,7 @@ fn handle_cache_push(args: &CachePushArgs, transaction: &Transaction) -> anyhow:
 
     let config = read_remote_config(&repo_path, &args.remote)
         .with_context(|| format!("Failed to read remote config for '{}'", args.remote))?;
-    let filter = config.semantic_filter();
+    let filter = composed_filter(&config, args.filter.as_deref())?;
     let RemoteConfig { url, .. } = config;
     let steps = flatten_chain(filter);
 
@@ -306,7 +321,7 @@ fn handle_cache_fetch(args: &CacheFetchArgs, transaction: &Transaction) -> anyho
 
     let config = read_remote_config(&repo_path, &args.remote)
         .with_context(|| format!("Failed to read remote config for '{}'", args.remote))?;
-    let filter = config.semantic_filter();
+    let filter = composed_filter(&config, args.filter.as_deref())?;
     let RemoteConfig { url, .. } = config;
 
     fetch_remote_cache(transaction, &url, filter)?;

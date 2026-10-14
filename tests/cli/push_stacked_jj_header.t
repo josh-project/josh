@@ -35,7 +35,7 @@ Create a test repository with some content
 
 Clone with josh filter
 
-  $ josh clone ${TESTTMP}/remote :/sub1 filtered > /dev/null 2>&1
+  $ josh-test-clone ${TESTTMP}/remote :/sub1 filtered > /dev/null 2>&1
   $ cd filtered
 
 Set up git config for author (must match GIT_AUTHOR_EMAIL used at commit time)

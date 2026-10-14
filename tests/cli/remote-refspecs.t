@@ -1,63 +1,45 @@
   $ export TESTTMP=${PWD}
 
-  $ cd ${TESTTMP}
-  $ mkdir remote
-  $ cd remote
-  $ git init -q libs 1> /dev/null
-  $ cd libs
 
-  $ mkdir sub1
-  $ echo contents1 > sub1/file1
-  $ git add sub1
-  $ git commit -m "add file1" 1> /dev/null
-
-  $ cd ${TESTTMP}
-
-  $ which git
-  /opt/git-install/bin/git
-
-Test that josh remote add sets up proper refspecs
-
-  $ mkdir test-repo
-  $ cd test-repo
-  $ git init -q
-  $ josh remote add origin ${TESTTMP}/remote/libs :/sub1
-  Added remote 'origin' with filter ':/sub1'
-
-  $ git config --get-all remote.origin.fetch
-  +refs/heads/*:refs/remotes/origin/*
-
-  $ cat .git/josh/remotes/origin.josh | sed "s|file://.*/remote/libs|file://\${TESTTMP}/remote/libs|"
-  :~(
-      fetch="+refs/heads/*:refs/josh/remotes/origin/*"
-      url="file://${TESTTMP}/remote/libs"
-  )[
-      :/sub1
-  ]
-
-  $ cd ..
-
-Test that josh clone also sets up proper refspecs
-
-  $ josh clone ${TESTTMP}/remote/libs :/sub1 cloned-repo
-  Added remote 'origin' with filter ':/sub1'
-  Already on 'master'
-  
-  Cloned repository to: ${TESTTMP}/cloned-repo/
-
-  $ cd cloned-repo
-
-  $ git config --get-all remote.origin.fetch
-  +refs/heads/*:refs/remotes/origin/*
-
-  $ cat .git/josh/remotes/origin.josh | sed "s|file://.*/remote/libs|file://\${TESTTMP}/remote/libs|"
-  :~(
-      fetch="+refs/heads/*:refs/josh/remotes/origin/*"
-      url="file://${TESTTMP}/remote/libs"
-  )[
-      :/sub1
-  ]
-
-  $ cd ..
+  $ git init -q upstream
 
 
+  $ mkdir upstream/sub
+
+
+  $ echo contents > upstream/sub/file
+
+
+  $ git -C upstream add sub
+
+
+  $ git -C upstream commit -q -m initial
+
+
+receive ordinary remote-tracking refs.
+  $ josh init store >/dev/null
+
+
+  $ cd store
+
+
+  $ josh remote add upstream ${TESTTMP}/upstream 2>/dev/null
+
+
+  $ grep fetch .josh/josh/remotes/upstream.josh
+      fetch="+refs/heads/*:refs/namespaces/remote-upstream/refs/namespaces/upstream/refs/heads/*"
+
+
+  $ josh worktree add ../projected :/upstream/sub 2>/dev/null >/dev/null
+
+
+  $ git -C ../projected config --get-all remote.upstream.fetch
+  +refs/heads/*:refs/remotes/upstream/*
+  $ git -C ../projected config remote.upstream.uploadpack | sed 's/--namespace [^ ]*/--namespace NAMESPACE/'
+  josh serve-worktree --namespace NAMESPACE upload-pack
+  $ git -C ../projected config remote.upstream.receivepack | sed 's/--namespace [^ ]*/--namespace NAMESPACE/'
+  josh serve-worktree --namespace NAMESPACE receive-pack
+
+
+  $ git -C ../projected symbolic-ref refs/remotes/upstream/HEAD
+  refs/remotes/upstream/master

@@ -28,7 +28,7 @@ Create a bare remote and seed it with some content
 
 Clone with josh filter
 
-  $ josh clone ${TESTTMP}/remote :/sub1 filtered 2>&1 | tail -2
+  $ josh-test-clone ${TESTTMP}/remote :/sub1 filtered 2>&1 | tail -2
   
   Cloned repository to: ${TESTTMP}/filtered/
   $ cd filtered
@@ -66,7 +66,7 @@ bails out and leaves refs and worktree untouched
   $ cd ${TESTTMP}/filtered
   $ git rev-parse master > ${TESTTMP}/before
   $ josh changes pull
-  updated master (5f2928c..49dc0ec)
+  Fetched from remote: origin
   Error: local branch 'master' contains merge commits; cannot integrate automatically
   local branch 'master' contains merge commits; cannot integrate automatically
   [1]

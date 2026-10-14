@@ -1,19 +1,17 @@
 # Forge Integration
 
 Forge integration is an **optional** feature that connects `josh` to a code hosting
-platform (a "forge") such as GitHub or Gerrit. It is not required for normal git
-operations — cloning, pushing, and pulling all work without it, even with private
-repositories.
+platform (a "forge") such as GitHub or Gerrit. It is not required for ordinary fetch,
+push, or pull operations, including private repositories.
 
 Forge integration shapes how `josh changes publish` turns a stack of commits into
 reviews. On GitHub it manages one pull request per commit; on Gerrit it pushes each
 change to the server's magic `refs/for/<branch>` ref, where the push itself creates or
 updates the review.
 
-The forge is chosen per remote with `--forge <github|gerrit>` on `josh clone` /
-`josh remote add`. GitHub is auto-detected from the URL; Gerrit is not identifiable from
-a URL and must be selected explicitly. It is stored as a `forge` meta key in the remote
-config file (`<git-common-dir>/josh/remotes/<name>.josh`).
+The forge is chosen per store remote with `--forge <github|gerrit>` on
+`josh remote add`. GitHub is auto-detected from the URL; Gerrit must be selected
+explicitly. The setting is stored with the mount-derived remote identity.
 
 ## GitHub
 
@@ -64,10 +62,11 @@ See the [Stacked changes](../guide/stacked-changes.md) guide for a full walkthro
 ### Publishing from a fork
 
 When you do not have push access to the target repository, configure a separate **push
-URL** (your fork) with `--push-url` on `josh remote add` (or `josh clone`):
+URL** (your fork) on the store remote:
 
 ```shell
-josh clone https://github.com/UPSTREAM/repo :/ work --push-url https://github.com/ME/repo
+josh remote add repo https://github.com/UPSTREAM/repo \
+    --push-url https://github.com/ME/repo
 ```
 
 Change branches are then pushed to your fork while the pull requests — including upstack
@@ -87,7 +86,7 @@ and you re-publish.
 Gerrit is selected explicitly, since a Gerrit server cannot be recognized from its URL:
 
 ```shell
-josh clone https://gerrit.example.com/repo :/ work --forge gerrit
+josh remote add repo https://gerrit.example.com/repo --forge gerrit
 ```
 
 ### Authentication
@@ -108,8 +107,8 @@ creates or updates the reviews.
 Because Gerrit keys a change by its `Change-Id` and expects it to appear exactly once
 with a single parent, josh's `downstack` model (where one change can belong to several
 stacks with differing ancestry) cannot be mapped onto Gerrit one-to-one. Two modes
-resolve this, selected per remote with `--gerrit-mode` on `josh clone` /
-`josh remote add` and stored as a `gerrit-mode` meta key:
+resolve this, selected per remote with `--gerrit-mode` on `josh remote add` and stored
+as a `gerrit-mode` meta key:
 
 - **`independent`** (default) — push only the changes that have **no dependencies**:
   those sitting directly on the target base. Each becomes its own independent, separately

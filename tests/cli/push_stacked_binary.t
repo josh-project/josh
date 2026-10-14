@@ -22,7 +22,7 @@ Create a test repository with some content
 
 Clone with josh filter
 
-  $ josh clone ${TESTTMP}/remote :/sub1 filtered
+  $ josh-test-clone ${TESTTMP}/remote :/sub1 filtered
   Added remote 'origin' with filter ':/sub1'
   Already on 'master'
   

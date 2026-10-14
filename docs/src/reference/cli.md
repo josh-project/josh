@@ -1,7 +1,7 @@
 # josh CLI
 
-The `josh` command is the primary tool for working with filtered git repositories.
-It provides projection-aware equivalents of the common git operations.
+The `josh` command manages a shared history store and filtered linked repositories.
+Git handles local worktree operations; Josh fetches from and pushes to upstream repositories.
 
 ## Installation
 
@@ -51,84 +51,108 @@ Repository-aware completion reads local refs and trees. It does not contact remo
 
 ---
 
-## josh clone
+## josh init
 
-Clone a repository, optionally applying a filter projection.
-
-```
-josh clone <url> <filter> <out> [options]
-```
-
-| Argument | Description |
-|----------|-------------|
-| `<url>`  | Remote repository URL (HTTPS, SSH, or local path) |
-| `<filter>` | [Filter spec](./filters.md) to apply (e.g. `:/docs`, `:workspace=workspaces/myproject`) |
-| `<out>`  | Local directory to clone into |
-
-**Options:**
-
-| Flag | Description |
-|------|-------------|
-| `-b`, `--branch <ref>` | Branch or ref to clone (default: `HEAD`) |
-| `--forge <name>` | Forge integration to use (e.g. `github`) |
-| `--no-forge` | Disable forge integration |
-
-**Examples:**
+Create a store containing a bare repository at `.josh`. The store owns upstream configuration,
+fetched history, projection caches, and the namespace refs served to its worktrees.
 
 ```shell
-# Clone only the docs/ subdirectory
-josh clone https://github.com/josh-project/josh.git :/docs ./josh-docs
+josh init [<directory>]
+```
 
-# Clone a workspace projection
-josh clone https://github.com/myorg/monorepo.git :workspace=workspaces/frontend ./frontend
+The directory defaults to the current directory.
 
-# Clone the full repository (no filter)
-josh clone https://github.com/josh-project/josh.git :/ ./josh
+---
+
+## josh worktree
+
+Create, inspect, and remove linked repositories backed by a store:
+
+```shell
+josh worktree add <path> [<filter>] [-b <branch>] [--ref <ref>]
+josh worktree add <path> --submodules --remote <superproject>
+josh worktree list
+josh worktree remove <path> [--force]
+```
+
+`worktree add` defaults to the identity filter (`:/`) over the composed store.
+Each remote's native repository is mounted below its declared path. A worktree filter
+then selects or reshapes that composed tree. Each linked repository has its own branches
+and configuration while sharing the store's objects through a Git alternate. Its Git
+remotes point to namespace-isolated refs in the local store, so ordinary `git fetch`
+and `git push` never contact an upstream.
+
+With experimental features enabled, `--submodules` derives an inlining filter and
+export links from the selected superproject remote. Inlining is worktree state; it
+does not change any remote mount.
+
+```shell
+josh init josh-store
+cd josh-store
+josh remote add josh https://github.com/josh-project/josh.git
+josh worktree add docs :/josh/docs
+josh worktree add full
 ```
 
 ---
 
 ## josh fetch
 
-Fetch from a remote and update the filtered local refs. Equivalent to `git fetch` but
-filter-aware.
+Fetch upstream history into the store, materialize every projection, and refresh
+registered worktrees' remote-tracking refs.
 
+```shell
+josh fetch [--remote <identity>]
 ```
-josh fetch [options]
-```
 
-**Options:**
-
-| Flag | Description |
-|------|-------------|
-| `-r`, `--remote <name>` | Remote name or URL to fetch from (default: `origin`) |
-| `-R`, `--ref <ref>` | Ref to fetch (default: `HEAD`) |
+All upstreams are fetched when `--remote` is omitted.
 
 ---
 
 ## josh push
 
-Push commits back to the upstream repository. Josh reverses the filter and reconstructs
-the correct upstream commits, so your changes land in the right place in the monorepo.
+Relay the current branch (or explicit refspecs) from a worktree through the store to an
+upstream. A push within one projection is unchanged; a push to its parent projection reverses
+the worktree filter.
 
-```
+```shell
 josh push [<remote>] [<refspecs>...] [options]
 ```
 
-| Argument | Description |
-|----------|-------------|
-| `<remote>` | Remote name to push to (default: `origin`) |
-| `<refspecs>` | Refs to push (default: current branch) |
-
-**Options:**
+When the store has one remote it is selected automatically. With multiple remotes, the
+current branch's tracking remote is used unless a remote is explicit.
 
 | Flag | Description |
 |------|-------------|
-| `-f`, `--force` | Force-push (non-fast-forward) |
-| `--atomic` | Atomic push (all-or-nothing) |
-| `--dry-run` | Show what would be pushed without actually pushing |
+| `-f`, `--force` | Force-update the store and upstream branch |
+| `--atomic` | Request an atomic upstream push |
+| `--dry-run` | Park the branch locally, but do not update the upstream |
+| `--base <branch>` | Use another upstream branch as the reverse-filter base |
+| `--merge` | Wrap the reverse-filtered result in a merge commit |
 
 ---
+
+## josh pull
+
+Run `josh fetch` for one upstream, then delegate branch integration to
+`git pull --rebase --autostash` in the current worktree.
+
+```shell
+josh pull --remote <identity> [--ref <ref>]
+```
+
+---
+
+## josh migrate
+
+Convert a clean old-style, filter-bearing clone into a store with one linked worktree.
+Local branches are preserved.
+
+```shell
+josh migrate [<directory>] [--worktree <name>]
+```
+
+The linked worktree name defaults to `worktree`.
 
 ## josh changes publish
 
@@ -149,7 +173,7 @@ josh changes publish [<remote>] [<refspecs>...] [options]
 
 | Argument | Description |
 |----------|-------------|
-| `<remote>` | Remote name to push to (default: `origin`) |
+| `<remote>` | Mount-derived remote identity; inferred from branch tracking or a sole store remote |
 | `<refspecs>` | Refs to push (default: current branch) |
 
 **Options:**
@@ -193,67 +217,42 @@ josh changes pull [options]
 
 | Flag | Description |
 |------|-------------|
-| `-r`, `--remote <name>` | Remote name or URL to pull from (default: `origin`) |
+| `-r`, `--remote <identity>` | Mount-derived identity; inferred from branch tracking or a sole store remote |
 | `-R`, `--ref <ref>` | Ref to pull (default: `HEAD`) |
 
 ---
 
-## josh remote
+## josh remote add
 
-Manage josh-aware remotes.
+Attach an upstream at a path in the current store and fetch it immediately.
 
-> **Note**: `josh remote add` can be used in any existing git repository, not only ones
-> originally cloned with `josh clone`. This is the standard way to add josh filtering to
-> a repository you already have checked out.
-
-### josh remote add
-
-Add a remote with an associated filter projection.
-
-```
-josh remote add <name> <url> <filter> [options]
+```shell
+josh remote add <path> <url> [options]
 ```
 
-| Argument | Description |
-|----------|-------------|
-| `<name>` | Remote name |
-| `<url>`  | Remote repository URL |
-| `<filter>` | [Filter spec](./filters.md) to associate with this remote |
-
-**Options:**
+`<path>` is a non-root normalized relative path such as `rust` or `tools/miri`; it is not a
+Josh filter. Josh mounts the native root of the remote beneath that path in the composed store.
+The mount path is also the remote's identity. Single-component paths remain readable Git remote
+names, while nested paths are percent-encoded where Git requires it. Remote mount paths must be
+pairwise disjoint: equal, ancestor, and descendant paths are rejected.
 
 | Flag | Description |
 |------|-------------|
-| `--forge <name>` | Forge integration (e.g. `github`) |
+| `--submodules` | Also discover configured submodules and add them at `<submodule-name>` |
+| `--push-url <url>` | Separate branch-push destination, usually a fork |
+| `--forge <name>` | Forge integration (for example, `github` or `gerrit`) |
 | `--no-forge` | Disable forge integration |
-
-**Example:**
+| `--gerrit-mode <mode>` | Select independent or stacked Gerrit publication |
 
 ```shell
-# Add a second remote scoped to the backend/ subdirectory
-josh remote add backend https://github.com/myorg/monorepo.git :/services/backend
+josh remote add rust https://github.com/rust-lang/rust
+josh remote add miri https://github.com/rust-lang/miri
+josh worktree add rust-work :/rust
+josh worktree add miri-work :/miri
 ```
 
-The filter may carry semantic meta args, e.g.
-`:~(history="keep-trivial-merges")[:/services/backend]`; they are applied whenever the
-remote's filter is used (fetch, push, cache). The meta keys `url`, `fetch` and `forge` are
-reserved: the remote config stores its transport settings under these keys, so
-`josh remote add` rejects a filter that sets one of them.
-
----
-
-## josh filter
-
-Re-apply the filter for an existing remote to update the local filtered refs. Useful
-after manually modifying the filter configuration without fetching.
-
-```
-josh filter <remote>
-```
-
-| Argument | Description |
-|----------|-------------|
-| `<remote>` | Remote name whose filter should be re-applied |
+A full worktree sees each remote's branches with trees mounted under their respective
+paths. A worktree selecting exactly one mount sees that remote at its native root.
 
 ---
 
@@ -275,63 +274,45 @@ The only currently supported forge is `github`. See
 
 ## josh cache
 
-Manage the distributed filter cache. The distributed cache stores filter results inside
-a ref in the git repository, allowing a warm cache to be shared between machines via
-ordinary git push/fetch.
-
-The cache subcommand requires a josh remote to be configured (see `josh remote add`).
+Manage the store's distributed filter cache. Cache refs can be pushed to an upstream and
+fetched by another store.
 
 ### josh cache build
 
-Apply the configured filter to all already-fetched refs and populate the local distributed
-cache with the results.
+Apply known materialized filters and populate the distributed cache:
 
+```shell
+josh cache build <remote> [--filter <filter>]
 ```
-josh cache build [remote]
-```
 
-| Argument | Description |
-|----------|-------------|
-| `[remote]` | Remote name to build cache for (default: `origin`) |
-
-Run this before `josh cache push` to ensure the cache is up to date.
+`--filter` explicitly selects a worktree projection; otherwise Josh uses
+materialized projections and the remote's mount filter.
 
 ### josh cache push
 
-Push the local distributed cache and the filtered refs to the backing remote, so that
-other machines can fetch them.
+Push cache refs and the materialized refs needed by a projection:
 
+```shell
+josh cache push <remote> [--filter <filter>]
 ```
-josh cache push [remote]
-```
-
-| Argument | Description |
-|----------|-------------|
-| `[remote]` | Remote name to push cache to (default: `origin`) |
 
 ### josh cache fetch
 
-Fetch the distributed cache and filtered refs from the remote, warming the local cache
-without re-computing filters from scratch.
-
-```
-josh cache fetch [remote]
-```
-
-| Argument | Description |
-|----------|-------------|
-| `[remote]` | Remote name to fetch cache from (default: `origin`) |
-
-**Typical workflow:**
+Fetch shared cache and materialization refs:
 
 ```shell
-# On the machine that computes the cache (e.g. CI):
-josh cache build
-josh cache push
+josh cache fetch <remote> [--filter <filter>]
+```
 
-# On another machine (e.g. a developer workstation):
-josh cache fetch
-# subsequent josh fetch / clone operations use the pre-built cache
+Typical cross-machine workflow:
+
+```shell
+josh cache build upstream --filter :/repo/docs
+josh cache push upstream --filter :/repo/docs
+
+# In another store with the same :/repo mount:
+josh cache fetch upstream --filter :/repo/docs
+josh fetch --remote upstream
 ```
 
 > **Note:** The distributed cache is currently only available through the `josh` CLI.

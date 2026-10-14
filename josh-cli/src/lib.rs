@@ -4,6 +4,7 @@ pub mod config;
 pub mod forge;
 pub mod porcelain;
 pub mod remote_ops;
+pub mod store;
 
 /// Default cap (128 MiB) on a transaction's in-memory object buffer; exceeding it flushes a
 /// packfile.

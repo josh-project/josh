@@ -21,7 +21,7 @@ A dry-run is used so the plain bare repo does not need to accept the magic ref.
 Clone with the Gerrit forge. No --gerrit-mode is given, so the default
 (independent) applies.
 
-  $ josh clone ${TESTTMP}/upstream :/sub1 filtered --forge gerrit > /dev/null 2>&1
+  $ josh-test-clone ${TESTTMP}/upstream :/sub1 filtered --forge gerrit > /dev/null 2>&1
   $ cd filtered
   $ git config user.email "josh@example.com"
   $ git config user.name "Josh Test"
@@ -56,9 +56,9 @@ own push. gamma depends on alpha, so it is skipped this round.
 Each pushed change is a single commit sitting directly on the target base (an
 independent review), with a generated Gerrit Change-Id and its subject.
 
-  $ git log --pretty="%s | %(trailers:key=Change-Id,valueonly,separator=%x20)" e042bde9d87ed49a86e729ab6c936aa349a610bc ^refs/josh/remotes/origin/master
+  $ git --git-dir=../filtered.store/.josh log --pretty="%s | %(trailers:key=Change-Id,valueonly,separator=%x20)" e042bde9d87ed49a86e729ab6c936aa349a610bc ^refs/josh/remotes/origin/heads/master
   Add fileA | I7e74e68b2a782a3aead46d987a63ca1c91091c13
-  $ git log --pretty="%s | %(trailers:key=Change-Id,valueonly,separator=%x20)" 18954accacea27a2fe6bd457cca353b9e3b0897e ^refs/josh/remotes/origin/master
+  $ git --git-dir=../filtered.store/.josh log --pretty="%s | %(trailers:key=Change-Id,valueonly,separator=%x20)" 18954accacea27a2fe6bd457cca353b9e3b0897e ^refs/josh/remotes/origin/heads/master
   Add fileB | Ie1d65540f4fdf72431ec47e001282cc7e8ed7c0c
 
 The upstream repo received nothing (dry-run) and no @changes/@base refs exist.

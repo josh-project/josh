@@ -43,11 +43,18 @@ impl RemoteConfig {
     }
 }
 
-/// Use the common Git directory so linked worktrees share remote configuration.
+/// Resolve remote configuration through a linked repository to its josh store.
 fn remotes_dir(repo_path: &std::path::Path) -> anyhow::Result<std::path::PathBuf> {
     let repo = gix::open(repo_path)
         .with_context(|| format!("Failed to open repository at {}", repo_path.display()))?;
-
+    if let Some(store) = repo.config_snapshot().string("josh.store") {
+        let store = String::from_utf8_lossy(store.as_ref());
+        if store != "true" {
+            let store_repo = gix::open(store.as_ref())
+                .with_context(|| format!("Failed to open josh store at {store}"))?;
+            return Ok(store_repo.common_dir().join("josh").join("remotes"));
+        }
+    }
     Ok(repo.common_dir().join("josh").join("remotes"))
 }
 

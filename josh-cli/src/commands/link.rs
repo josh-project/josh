@@ -214,19 +214,42 @@ fn resolve_submodule_url(superproject_url: &str, url: &str) -> String {
 
     format!("{}/{}", superproject_url.trim_end_matches('/'), url)
 }
+#[derive(Debug)]
+pub struct SubmoduleRemote {
+    pub name: String,
+    pub url: String,
+}
+
+pub fn submodule_remotes(
+    transaction: &josh_core::cache::Transaction,
+    commit: gix_hash::ObjectId,
+    superproject_url: &str,
+) -> anyhow::Result<Vec<SubmoduleRemote>> {
+    let commit = josh_core::objects::CommitData::read(transaction.odb(), commit)?;
+    let modules = configured_submodules(transaction, commit.tree_id()?)?;
+    modules
+        .into_iter()
+        .map(|module| {
+            josh_view::validate_link_id(&module.name)
+                .with_context(|| format!("Invalid submodule name '{}'", module.name))?;
+            Ok(SubmoduleRemote {
+                name: module.name,
+                url: resolve_submodule_url(superproject_url, &module.url),
+            })
+        })
+        .collect()
+}
 
 fn submodule_tracked_ref(
     transaction: &josh_core::cache::Transaction,
     name: &str,
     branch: Option<&str>,
+    inherited_branch: Option<&str>,
     url: &str,
 ) -> anyhow::Result<String> {
     let branch = match branch {
-        Some(".") => transaction
-            .head()
-            .context("Failed to get HEAD")?
-            .short_branch()
-            .with_context(|| format!("Submodule '{name}' inherits the branch of a detached HEAD"))?
+        Some(".") => inherited_branch
+            .with_context(|| format!("Submodule '{name}' inherits an unknown branch"))?
             .to_string(),
         Some(branch) => branch.to_string(),
         None => crate::remote_ops::get_head_branch(url, transaction.path(), name)
@@ -257,11 +280,26 @@ pub fn add_submodule_links(
     superproject_url: &str,
 ) -> anyhow::Result<josh_core::filter::Filter> {
     let head = transaction.head().context("Failed to get HEAD")?;
-    let commit = josh_core::objects::CommitData::read(transaction.odb(), head.commit)?;
+    let inherited_branch = head.short_branch().map(str::to_owned);
+    add_submodule_links_at_commit(
+        transaction,
+        superproject_url,
+        head.commit,
+        inherited_branch.as_deref(),
+    )
+}
+
+pub fn add_submodule_links_at_commit(
+    transaction: &josh_core::cache::Transaction,
+    superproject_url: &str,
+    commit: gix_hash::ObjectId,
+    inherited_branch: Option<&str>,
+) -> anyhow::Result<josh_core::filter::Filter> {
+    let commit = josh_core::objects::CommitData::read(transaction.odb(), commit)?;
     let tree = commit.tree_id()?;
     let modules = configured_submodules(transaction, tree)?;
     if modules.is_empty() {
-        return Err(anyhow!("HEAD has no configured submodules"));
+        return Err(anyhow!("Commit has no configured submodules"));
     }
 
     struct Prepared {
@@ -297,8 +335,13 @@ pub fn add_submodule_links(
         }
 
         let url = resolve_submodule_url(superproject_url, &module.url);
-        let tracked_ref =
-            submodule_tracked_ref(transaction, &module.name, module.branch.as_deref(), &url)?;
+        let tracked_ref = submodule_tracked_ref(
+            transaction,
+            &module.name,
+            module.branch.as_deref(),
+            inherited_branch,
+            &url,
+        )?;
         let deref_filter =
             josh_core::filter::to_filter(josh_core::filter::Op::ObjectDeref(module.path.clone()));
         let filter = josh_core::filter::to_filter(josh_core::filter::Op::Chain(vec![

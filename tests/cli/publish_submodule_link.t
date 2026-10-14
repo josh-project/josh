@@ -23,33 +23,42 @@ commit is deliberately absent from the superproject object database.
   $ git submodule add -q --name lib ../lib modules/lib
   $ git commit -q -m "add lib submodule"
   $ git push -q origin master
-  $ git cat-file -e ${LIB_BASE}^{commit}
-  fatal: Not a valid object name 2aff4866cd849a18c15ca873bdf9602a5a0a30c4^{commit}
+  $ git cat-file -e ${LIB_BASE}^{commit} 2>/dev/null
   [128]
 
-Adding a combined remote imports configured submodules as export links, fetches
-the pointed-to commits, and derives the dereference filter from `.gitmodules`.
-Relative submodule URLs are resolved from the superproject URL.
+Remote discovery adds the superproject and its configured submodule as separate
+store remotes. Inlining and export-link creation happen only when the combined
+worktree is created.
 
-  $ josh remote add combined ../super-remote --submodules --no-forge
-  Added submodule link 'lib': ../super-remote/../lib refs/heads/master :/modules/lib:export
-  Added remote 'combined' with filter ':~(history="embed")[:[:exclude[:#modules/lib],:#modules/lib]]'
+  $ cd ${TESTTMP}
+  $ josh init store >/dev/null
+  $ cd store
+  $ josh remote add super ../super-remote --submodules --no-forge 2>/dev/null
+  $ (cd .josh && git-tree-pretty refs/josh/super:remotes)
+  .
+  ├── lib/
+  │   ├── HEAD ⇒ [commit *, tree *] (glob)
+  │   └── refs/
+  │       └── heads/
+  │           └── master ⇒ [commit *, tree *] (glob)
+  └── super/
+      ├── HEAD ⇒ [commit *, tree *] (glob)
+      └── refs/
+          └── heads/
+              └── master ⇒ [commit *, tree *] (glob)
+  $ josh worktree add combined --submodules --remote super 2>/dev/null | sed "s|file://${TESTTMP}|\${TESTTMP}|g; s|${TESTTMP}|\${TESTTMP}|g"
+  Added submodule link 'lib': ${TESTTMP}/super-remote/../lib refs/heads/master :/modules/lib:export
+  Added worktree at ${TESTTMP}/store/combined
+  $ cd combined
+  $ git remote
+  lib
+  super
   $ git cat-file -t ${LIB_BASE}
   commit
-  $ git rev-parse refs/josh/submodules/lib
-  2aff4866cd849a18c15ca873bdf9602a5a0a30c4
-  $ josh link list
-  lib\t../super-remote/../lib\trefs/heads/master\t\t:/modules/lib:export (escaped)
-
-The imported submodule objects make the gitlink dereference possible, and the
-resulting combined history contains the original submodule history as its
-second parent.
-
-  $ josh fetch --remote combined
-  new branch master
-  Fetched from remote: combined
-  $ git submodule deinit -q -f --all
-  $ git checkout -q -b combined combined/master
+  $ test "$(git rev-parse refs/josh/submodules/lib)" = "${LIB_BASE}" && echo pinned
+  pinned
+  $ josh link list | sed "s|file://${TESTTMP}|\${TESTTMP}|g"
+  lib\t${TESTTMP}/super-remote/../lib\trefs/heads/master\t\t:/modules/lib:export (escaped)
   $ git show -s --format=%s HEAD^2
   lib initial
 
@@ -62,12 +71,12 @@ superproject history.
   $ echo "lib v2" > modules/lib/lib.txt
   $ git add modules/lib/lib.txt
   $ git commit -q -m "lib v2" -m "Change-Id: lib2"
-  $ josh changes publish combined
+  $ josh changes publish super 2>&1 | sed "s|file://${TESTTMP}|\${TESTTMP}|g"
   published 1 change (1 new)
-  Publishing to link 'lib' (../super-remote/../lib):
+  Publishing to link 'lib' (${TESTTMP}/super-remote/../lib):
   published 1 change (1 new)
 
-  $ git -C ../lib rev-parse refs/heads/@changes/master/josh@example.com/lib2^
-  2aff4866cd849a18c15ca873bdf9602a5a0a30c4
-  $ git -C ../lib show refs/heads/@changes/master/josh@example.com/lib2:lib.txt
+  $ test "$(git -C ${TESTTMP}/lib rev-parse refs/heads/@changes/master/josh@example.com/lib2^)" = "${LIB_BASE}" && echo based-on-pinned
+  based-on-pinned
+  $ git -C ${TESTTMP}/lib show refs/heads/@changes/master/josh@example.com/lib2:lib.txt
   lib v2

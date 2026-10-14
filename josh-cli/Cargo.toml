@@ -22,6 +22,7 @@ dunce.workspace = true
 juniper.workspace = true
 gix = { workspace = true, features = ["status"] }
 gix-hash.workspace = true
+gix-config.workspace = true
 tokio = { workspace = true, features = ["rt-multi-thread", "macros"] }
 serde.workspace = true
 chrono = { workspace = true, features = ["clock"] }
@@ -34,6 +35,7 @@ arboard = { version = "^3.6", default-features = false }
 
 josh-changes.workspace = true
 josh-core.workspace = true
+josh-git-serde.workspace = true
 josh-compose.workspace = true
 josh-compose-backend.workspace = true
 josh-compose-podman.workspace = true

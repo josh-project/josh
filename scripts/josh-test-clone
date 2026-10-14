@@ -1,0 +1,47 @@
+#!/bin/sh
+set -eu
+
+url=$1
+filter=$2
+out=$3
+shift 3
+case "$url" in
+    http://*|https://*|ssh://*|file://*) ;;
+    /*) ;;
+    *) url=$PWD/$url ;;
+esac
+
+
+case "$out" in
+    /*) worktree=$out ;;
+    *) worktree=$PWD/$out ;;
+esac
+store="${worktree}.store"
+
+josh init "$store" >/dev/null
+(
+    cd "$store"
+    if ! output=$(josh remote add origin "$url" "$@" 2>&1); then
+        printf '%s\n' "$output" >&2
+        exit 1
+    fi
+    if ! output=$(josh worktree add "$worktree" ":/origin${filter}" 2>&1); then
+        printf '%s\n' "$output" >&2
+        exit 1
+    fi
+)
+
+branch=$(git -C "$worktree" symbolic-ref --short HEAD)
+printf "Added remote 'origin' with filter '%s'\n" "$filter"
+if [ "$branch" = master ]; then
+    printf "Already on 'master'\n"
+else
+    printf "Switched to a new branch '%s'\n" "$branch"
+fi
+display=$worktree
+if [ -n "${TESTTMP:-}" ]; then
+    case "$worktree" in
+        "$TESTTMP"/*) display="\${TESTTMP}/${worktree#"$TESTTMP"/}" ;;
+    esac
+fi
+printf "\nCloned repository to: %s/\n" "$display"
