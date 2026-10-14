@@ -4,32 +4,25 @@ from a URL.
 
   $ export TESTTMP=${PWD}
 
-Set up a remote repository and a work repo.
+Set up a remote repository, store, and filtered worktree.
 
   $ git init -q remote
-  $ cd remote
-  $ mkdir sub1
-  $ echo contents1 > sub1/file1
-  $ git add sub1
-  $ git commit -q -m "add file1"
-  $ cd ${TESTTMP}
+  $ mkdir remote/sub1
+  $ echo contents1 > remote/sub1/file1
+  $ git -C remote add sub1
+  $ git -C remote commit -q -m "add file1"
 
-  $ git init -q work
+  $ josh --store store init >/dev/null
+  $ cd store
+  $ josh remote add origin ${TESTTMP}/remote --forge test 2>/dev/null
+  $ josh worktree add work :/origin/sub1 2>/dev/null >/dev/null
   $ cd work
 
-A remote records the test forge as a meta key in its config file.
+A remote records the test forge in the authoritative store config.
 
-  $ josh remote add origin ${TESTTMP}/remote :/sub1 --forge test
-  Added remote 'origin' with filter ':/sub1'
-
-  $ cat .git/josh/remotes/origin.josh | sed "s|file://.*/remote|file://\${TESTTMP}/remote|"
-  :~(
-      fetch="+refs/heads/*:refs/josh/remotes/origin/*"
-      forge="test"
-      url="file://${TESTTMP}/remote"
-  )[
-      :/sub1
-  ]
+  $ git --git-dir=../.josh show refs/josh/super:store/remotes/origin/forge
+  test (no-eol)
+  $ test ! -e ../.josh/josh/remotes
 
 A link records the test forge the same way (links are experimental).
 
@@ -55,8 +48,7 @@ the remote repository.
 
 Only test-forge remotes are accepted.
 
-  $ josh remote add plain ${TESTTMP}/remote :/sub1
-  Added remote 'plain' with filter ':/sub1'
+  $ josh remote add plain ${TESTTMP}/remote 2>/dev/null
   $ oid=$(git -C ${TESTTMP}/remote rev-parse master)
   $ josh forge --remote plain check set $oid build success
   Error: remote 'plain' is not a test-forge remote (forge: none)

@@ -1,6 +1,8 @@
   $ export JOSH_TEST_SSH=1
   $ . ${TESTDIR}/../proxy/setup_test_env.sh
   $ export RUST_LOG=error
+  $ export JOSH_STORE=${TESTTMP}/store
+
 
   $ export GIT_SSH_COMMAND="ssh -o LogLevel=ERROR -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no -o PreferredAuthentications=publickey -o ForwardAgent=no"
 
@@ -27,11 +29,9 @@ Create a test repo and push it to bare repo on filesystem
 
 Test josh clone via SSH (no filter)
 
-  $ josh clone ssh://git@127.0.0.1:9001/$(pwd)/repo1-bare.git :/ repo1-clone-josh
-  Added remote 'origin' with filter ':/'
-  Already on 'master'
-  
-  Cloned repository to: ${TESTTMP}/repo1-clone-josh/
+  $ josh clone ssh://git@127.0.0.1:9001/$(pwd)/repo1-bare.git repo1-clone-josh 2>&1 | sed "s|${TESTTMP}|\${TESTTMP}|g"
+  Added remote 'repo1-bare' at 'repo1-bare'
+  Cloned worktree to ${TESTTMP}/repo1-clone-josh
 
   $ cd repo1-clone-josh
   $ ls
@@ -45,11 +45,8 @@ Test josh clone via SSH (no filter)
 
 Test josh clone via SSH (with filter)
 
-  $ josh clone ssh://git@127.0.0.1:9001/$(pwd)/repo1-bare.git :/subdir repo1-clone-josh-filtered
-  Added remote 'origin' with filter ':/subdir'
-  Already on 'master'
-  
-  Cloned repository to: ${TESTTMP}/repo1-clone-josh-filtered/
+  $ josh clone ssh://git@127.0.0.1:9001/$(pwd)/repo1-bare.git repo1-clone-josh-filtered --filter :/subdir 2>&1 | sed "s|${TESTTMP}|\${TESTTMP}|g"
+  Cloned worktree to ${TESTTMP}/repo1-clone-josh-filtered
 
   $ cd repo1-clone-josh-filtered
   $ ls
@@ -58,13 +55,11 @@ Test josh clone via SSH (with filter)
   test
   $ cd ..
 
-Test josh clone via SSH (with explicit filter argument)
+Test josh clone via SSH (with an explicit mount)
 
-  $ josh clone ssh://git@127.0.0.1:9001/$(pwd)/repo1-bare.git :/subdir repo1-clone-josh-explicit
-  Added remote 'origin' with filter ':/subdir'
-  Already on 'master'
-  
-  Cloned repository to: ${TESTTMP}/repo1-clone-josh-explicit/
+  $ josh clone ssh://git@127.0.0.1:9001/$(pwd)/repo1-bare.git repo1-clone-josh-explicit --filter :/subdir --mount mirror/repo1 2>&1 | sed "s|${TESTTMP}|\${TESTTMP}|g"
+  Added remote 'mirror%2Frepo1' at 'mirror/repo1'
+  Cloned worktree to ${TESTTMP}/repo1-clone-josh-explicit
 
   $ cd repo1-clone-josh-explicit
   $ ls

@@ -22,11 +22,9 @@ Create an empty bare fork to receive the pushed change branches
 
 Clone with a filter and a separate push-url pointing at the fork
 
-  $ josh clone ${TESTTMP}/upstream :/sub1 filtered --push-url ${TESTTMP}/fork
-  Added remote 'origin' with filter ':/sub1'
-  Already on 'master'
-  
-  Cloned repository to: ${TESTTMP}/filtered/
+  $ josh --store filtered.store clone ${TESTTMP}/upstream filtered --mount origin --filter :/sub1 --push-url ${TESTTMP}/fork | sed "s|${TESTTMP}|\${TESTTMP}|g"
+  Added remote 'origin' at 'origin'
+  Cloned worktree to ${TESTTMP}/filtered
   $ cd filtered
 
 Make two stacked changes

@@ -101,13 +101,11 @@
   $ which git
   /opt/git-install/bin/git
 
-Test josh clone with filter that results in empty tree for some branches
+Test `josh clone` with a filter that produces an empty tree on some branches.
 
-  $ josh clone remote.git :/sub1 filtered-repo
-  Added remote 'origin' with filter ':/sub1'
-  Already on 'master'
-  
-  Cloned repository to: ${TESTTMP}/filtered-repo/
+  $ josh --store filtered-repo.store clone remote.git filtered-repo --mount origin --filter :/sub1 | sed "s|${TESTTMP}|\${TESTTMP}|g"
+  Added remote 'origin' at 'origin'
+  Cloned worktree to ${TESTTMP}/filtered-repo
 
   $ cd filtered-repo
 
@@ -153,25 +151,6 @@ Test josh clone with filter that results in empty tree for some branches
   |   |-- content-branch
   |   |-- master
   |   `-- mixed-branch
-  |-- josh
-  |   |-- filtered
-  |   |   `-- bf567e0faf634a663d6cef48145a035e1974ab1d
-  |   |       `-- heads
-  |   |           `-- master
-  |   `-- remotes
-  |       `-- origin
-  |           |-- content-branch
-  |           |-- master
-  |           |-- mixed-branch
-  |           `-- truly-empty-branch
-  |-- namespaces
-  |   `-- josh-origin
-  |       |-- HEAD
-  |       `-- refs
-  |           `-- heads
-  |               |-- content-branch
-  |               |-- master
-  |               `-- mixed-branch
   |-- remotes
   |   `-- origin
   |       |-- HEAD
@@ -180,6 +159,6 @@ Test josh clone with filter that results in empty tree for some branches
   |       `-- mixed-branch
   `-- tags
   
-  15 directories, 16 files
+  5 directories, 7 files
 
   $ cd ..

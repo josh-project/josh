@@ -1,4 +1,5 @@
 use anyhow::Context;
+use josh_changes::JoshRef;
 
 use josh_core::filter::{self, Filter, flatten_chain};
 
@@ -67,16 +68,16 @@ pub fn resolve_default_branch(
         })
 }
 
-/// Return raw `(refname, oid)` pairs for all refs under
-/// `refs/josh/remotes/{remote_name}/*`, suitable as input to
-/// `josh_core::filter_refs`.  Errors if no refs are found.
+/// Return raw `(refname, oid)` pairs for all upstream branch refs under the
+/// remote's backing `heads/` namespace, suitable as input to
+/// `josh_core::filter_refs`. Errors if no refs are found.
 pub fn get_backing_refs(
     transaction: &josh_core::cache::Transaction,
     remote_name: &str,
 ) -> anyhow::Result<Vec<(String, gix_hash::ObjectId)>> {
     let mut input_refs = Vec::new();
     transaction.for_each_ref_prefixed(
-        &format!("refs/josh/remotes/{}/", remote_name),
+        &crate::store::backing_heads_prefix(remote_name),
         |name, oid| {
             input_refs.push((name.to_string(), oid));
             Ok(())
@@ -109,7 +110,7 @@ pub fn step_ref_prefix(step_idx: usize, steps: &[Filter]) -> String {
         .join("/")
 }
 
-/// Apply a josh filter to all refs under `refs/josh/remotes/{remote_name}/*` and write
+/// Apply a josh filter to all upstream backing branches for `remote_name` and write
 /// the filtered commits to `refs/namespaces/josh-{remote_name}/refs/heads/*`.
 /// Also writes `refs/josh/filtered/` refs for the default branch and persists filter tree objects.
 /// Then runs `git fetch --porcelain {remote_name}` to expose them through the configured
@@ -120,7 +121,7 @@ pub fn apply_josh_filtering(
     remote_name: &str,
     default_branch: &str,
 ) -> anyhow::Result<Vec<RefUpdate>> {
-    let prefix = format!("refs/josh/remotes/{}/", remote_name);
+    let prefix = crate::store::backing_heads_prefix(remote_name);
 
     let steps = flatten_chain(filter);
 
@@ -159,8 +160,7 @@ pub fn apply_josh_filtering(
 
             // Write refs/josh/filtered/ ref only for the default branch
             if branch_name == default_branch {
-                let filtered_ref =
-                    format!("refs/josh/filtered/{}/heads/{}", prefix_path, branch_name);
+                let filtered_ref = JoshRef::filtered_head(&prefix_path, branch_name).ref_name();
                 transaction
                     .update_ref(
                         &filtered_ref,

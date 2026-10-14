@@ -8,7 +8,8 @@ as individual repositories.
 
 Using the `josh` CLI:
 ```
-$ josh clone https://git.example.com/monorepo.git :/path/to/library ./library
+$ josh clone https://git.example.com/monorepo.git library \
+    --filter :/path/to/library
 ```
 
 Or via a shared [josh-proxy](./reference/proxy.md):
@@ -75,7 +76,8 @@ Workspaces act as normal git repos.
 
 Using the `josh` CLI:
 ```
-$ josh clone https://git.example.com/central.git :workspace=workspaces/project1 ./project1
+$ josh clone https://git.example.com/central.git project1 \
+    --filter :workspace=workspaces/project1
 ```
 
 Or via a shared [josh-proxy](./reference/proxy.md):

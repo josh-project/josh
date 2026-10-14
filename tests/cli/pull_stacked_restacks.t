@@ -22,9 +22,9 @@ Create a bare remote and seed it with some content
 
 Clone with josh filter
 
-  $ josh clone ${TESTTMP}/remote :/sub1 filtered 2>&1 | tail -2
-  
-  Cloned repository to: ${TESTTMP}/filtered/
+  $ josh --store filtered.store clone ${TESTTMP}/remote filtered --mount origin --filter :/sub1 2>&1 | tail -2 | sed "s|${TESTTMP}|\${TESTTMP}|g"
+  Added remote 'origin' at 'origin'
+  Cloned worktree to ${TESTTMP}/filtered
   $ cd filtered
   $ git config user.email "josh@example.com"
   $ git config user.name "Josh Test"
@@ -61,7 +61,7 @@ Pull: applied changes are skipped, the remaining change is restacked
 
   $ cd ${TESTTMP}/filtered
   $ josh changes pull
-  updated master (5f2928c..e19e334)
+  Fetched from remote: origin
   Skipping 2 already applied changes: 1111, 2222
   Restacked master: kept 1 change
   $ git log --graph --pretty="%s"
@@ -83,6 +83,7 @@ Pull: applied changes are skipped, the remaining change is restacked
 Pull again: no-op
 
   $ josh changes pull
+  Fetched from remote: origin
   Already up to date.
 
 Restack a diverged local commit that has no Change-Id: it cannot be matched
@@ -98,7 +99,7 @@ against the upstream stack, so it is simply kept and cherry-picked on top.
   $ git push -q origin master
   $ cd ${TESTTMP}/filtered
   $ josh changes pull
-  updated master (e19e334..649a1fa)
+  Fetched from remote: origin
   Restacked master: kept 2 changes
   $ git log --graph --pretty="%s"
   * no change id

@@ -12,9 +12,9 @@ Autostash: uncommitted changes survive a pull that touches the same file
   $ git commit -m "add file1" 1> /dev/null
   $ cd ${TESTTMP}
 
-  $ josh clone ${TESTTMP}/remote/libs :/sub1 libs 2>&1 | tail -2
-  
-  Cloned repository to: ${TESTTMP}/libs/
+  $ josh --store libs.store clone ${TESTTMP}/remote/libs libs --mount origin --filter :/sub1 2>&1 | tail -2 | sed "s|${TESTTMP}|\${TESTTMP}|g"
+  Added remote 'origin' at 'origin'
+  Cloned worktree to ${TESTTMP}/libs
 
 Upstream changes the first line of file1
 
@@ -33,7 +33,7 @@ Local uncommitted edit of the last line of the same file
 Pull: the edit is stashed, the branch fast-forwards, the edit is re-applied
 
   $ josh changes pull 2>&1
-  updated master (68edcdd..2b3204b)
+  Fetched from remote: origin
   Stashed uncommitted changes
   Re-applied stashed changes
   Fast-forwarded master

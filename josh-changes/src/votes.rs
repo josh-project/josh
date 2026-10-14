@@ -15,7 +15,7 @@ pub struct VoteData {
 /// Which votes namespace a write targets.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum VoteNamespace {
-    /// The canonical `votes` tree.
+    /// The primary `votes` tree.
     Default,
     /// The `outbox/votes` queue of a `Remote` ref: pending posts to the
     /// remote, cleaned up on the next fetch that observes them coming back.

@@ -141,15 +141,10 @@ pub struct MaintainerUserArgs {
     pub user: String,
 }
 
-pub fn handle_forge(
-    args: &ForgeArgs,
-    transaction: &josh_core::cache::Transaction,
-) -> anyhow::Result<()> {
+pub fn handle_forge(args: &ForgeArgs, store: &crate::store::Store) -> anyhow::Result<()> {
     josh_core::filter::check_experimental_features_enabled("josh forge")?;
 
-    let repo_path = josh_core::git::normalize_repo_path(transaction.path());
-    let config = josh_changes::remote_config::read_remote_config(&repo_path, &args.remote)
-        .with_context(|| format!("Failed to read remote config for '{}'", args.remote))?;
+    let config = store.remote_config(&args.remote)?;
     anyhow::ensure!(
         config.forge == Some(crate::forge::Forge::Test),
         "remote '{}' is not a test-forge remote (forge: {})",

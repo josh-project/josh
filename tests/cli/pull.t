@@ -28,11 +28,9 @@
   $ which git
   /opt/git-install/bin/git
 
-  $ josh clone ${TESTTMP}/remote/libs :/sub1 libs
-  Added remote 'origin' with filter ':/sub1'
-  Already on 'master'
-  
-  Cloned repository to: ${TESTTMP}/libs/
+  $ josh --store libs.store clone ${TESTTMP}/remote/libs libs --mount origin --filter :/sub1 | sed "s|${TESTTMP}|\${TESTTMP}|g"
+  Added remote 'origin' at 'origin'
+  Cloned worktree to ${TESTTMP}/libs
 
   $ cd libs
 
@@ -52,7 +50,7 @@
   $ cd ${TESTTMP}/libs
 
   $ josh changes pull
-  updated master (d8388f5..0974639)
+  Fetched from remote: origin
   Fast-forwarded master
 
   $ git-tree-pretty .

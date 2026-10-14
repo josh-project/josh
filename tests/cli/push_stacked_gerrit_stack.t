@@ -17,12 +17,12 @@ so the plain bare repo does not need to accept the magic ref.
   $ cd ..
 
 Clone selecting the Gerrit forge and the `stack` publish mode. The mode is
-stored per-remote in the remote config.
+stored per remote in the authoritative superhistory.
 
-  $ josh clone ${TESTTMP}/upstream :/sub1 filtered --forge gerrit --gerrit-mode stack > /dev/null 2>&1
+  $ josh --store filtered.store clone ${TESTTMP}/upstream filtered --mount origin --filter :/sub1 --forge gerrit --gerrit-mode stack > /dev/null 2>&1
   $ cd filtered
-  $ grep gerrit-mode "$(git rev-parse --git-common-dir)/josh/remotes/origin.josh"
-      gerrit-mode="stack"
+  $ git --git-dir=../filtered.store/.josh show refs/josh/super:store/remotes/origin/gerrit_mode
+  stack (no-eol)
   $ git config user.email "josh@example.com"
   $ git config user.name "Josh Test"
 
@@ -48,7 +48,7 @@ Publish: the entire stack goes to refs/for/master in a single push.
 The pushed tip is one relation chain over the target branch: every change
 appears exactly once with a single parent, each carrying a Gerrit Change-Id.
 
-  $ git log --pretty="%s | %(trailers:key=Change-Id,valueonly,separator=%x20)" 4b0fa539289928ceea5f36fa8d7c5b7688b4b0eb ^refs/josh/remotes/origin/master
+  $ git --git-dir=../filtered.store/.josh log --pretty="%s | %(trailers:key=Change-Id,valueonly,separator=%x20)" 4b0fa539289928ceea5f36fa8d7c5b7688b4b0eb ^refs/josh/remotes/origin/heads/master
   Add fileC | If6ce3c605d8e619e80eb03eb65fc984a940abde7
   Add fileB | Ie1d65540f4fdf72431ec47e001282cc7e8ed7c0c
   Add fileA | I7e74e68b2a782a3aead46d987a63ca1c91091c13
