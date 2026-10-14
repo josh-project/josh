@@ -1,4 +1,6 @@
   $ export TESTTMP=${PWD}
+  $ export JOSH_STORE=${TESTTMP}/store
+
 
 # Create a test repository with "main" as the default branch
   $ mkdir -p remote
@@ -50,45 +52,43 @@ Test josh clone with main branch as default
   ref: refs/heads/main\tHEAD (esc)
   c8050c5d4fc5f431e684ca501a7ff3db5aa47103\tHEAD (esc)
 
-  $ josh clone remote.git :/sub1 filtered-repo
-  Added remote 'origin' with filter ':/sub1'
-  Switched to a new branch 'main'
-  
-  Cloned repository to: ${TESTTMP}/filtered-repo/
+  $ josh clone remote.git filtered-repo --filter :/sub1 2>&1 | sed "s|${TESTTMP}|\${TESTTMP}|g"
+  Added remote 'remote' at 'remote'
+  Cloned worktree to ${TESTTMP}/filtered-repo
 
   $ cat filtered-repo/.git/HEAD
   ref: refs/heads/main
-  $ cat filtered-repo/.git/refs/remotes/origin/HEAD
-  ref: refs/remotes/origin/main
+  $ cat filtered-repo/.git/refs/remotes/remote/HEAD
+  ref: refs/remotes/remote/main
 
   $ cd filtered-repo
   $ find .git | grep HEAD | sort
   .git/FETCH_HEAD
   .git/HEAD
   .git/logs/HEAD
-  .git/refs/namespaces/josh-origin/HEAD
-  .git/refs/remotes/origin/HEAD
-  $ git symbolic-ref refs/remotes/origin/HEAD
-  refs/remotes/origin/main
+  .git/logs/refs/remotes/remote/HEAD
+  .git/refs/remotes/remote/HEAD
+  $ git symbolic-ref refs/remotes/remote/HEAD
+  refs/remotes/remote/main
 
 # Check that we have the main branch with filtered content
   $ git branch -a
   * main
-    remotes/origin/HEAD -> origin/main
-    remotes/origin/feature-branch
-    remotes/origin/main
+    remotes/remote/HEAD -> remote/main
+    remotes/remote/feature-branch
+    remotes/remote/main
 
 # Check that main branch has filtered content
   $ git checkout main
   Already on 'main'
-  Your branch is up to date with 'origin/main'.
+  Your branch is up to date with 'remote/main'.
   $ ls
   file1
   file2
 
 # Check that feature-branch has filtered content
   $ git checkout feature-branch
-  branch 'feature-branch' set up to track 'origin/feature-branch'.
+  branch 'feature-branch' set up to track 'remote/feature-branch'.
   Switched to a new branch 'feature-branch'
   $ ls
   feature.txt
@@ -101,29 +101,13 @@ Test josh clone with main branch as default
   |-- heads
   |   |-- feature-branch
   |   `-- main
-  |-- josh
-  |   |-- filtered
-  |   |   `-- bf567e0faf634a663d6cef48145a035e1974ab1d
-  |   |       `-- heads
-  |   |           `-- main
-  |   `-- remotes
-  |       `-- origin
-  |           |-- feature-branch
-  |           `-- main
-  |-- namespaces
-  |   `-- josh-origin
-  |       |-- HEAD
-  |       `-- refs
-  |           `-- heads
-  |               |-- feature-branch
-  |               `-- main
   |-- remotes
-  |   `-- origin
+  |   `-- remote
   |       |-- HEAD
   |       |-- feature-branch
   |       `-- main
   `-- tags
   
-  15 directories, 11 files
+  5 directories, 5 files
 
   $ cd ..

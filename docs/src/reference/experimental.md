@@ -6,21 +6,28 @@ may change in future releases.
 
 ## Submodule links
 
-`josh remote add NAME URL --submodules` reads every submodule configured in
-the current commit's `.gitmodules`, creates the links, and adds a combined Josh
-remote in one operation. Run it while the submodule paths are still gitlinks.
-The command:
+Submodule remote discovery and checkout inlining are separate operations.
 
-- derives an embedded `:#path` filter for every configured submodule;
-- resolves relative submodule URLs against the superproject `URL`;
-- fetches each pinned submodule commit into the superproject object database
-  and retains it under `refs/josh/submodules/`;
-- creates a link whose filter is `:/path:export`.
+`josh remote add MOUNT URL --submodules` mounts the superproject,
+reads `.gitmodules` from its fetched default branch, and adds each configured
+submodule as a separate store remote at `<submodule-name>`. Those automatic
+mounts need not match the submodule's path inside the superproject.
+Normal non-overlap validation still applies. Relative submodule URLs are resolved
+against `URL`.
 
-When `josh changes publish` runs from a combined history, the export link
-removes the synthetic superproject merge and publishes a change ref that
-descends from the original submodule history. Updating the superproject's
-gitlink remains a separate change.
+`josh worktree add PATH --submodules --remote IDENTITY` creates the inlined checkout.
+It:
+
+- reads the superproject's configured gitlinks;
+- fetches pinned submodule commits that are not already in the store;
+- derives the embedded `:#path` worktree filter;
+- records each pinned commit under `refs/josh/submodules/`;
+- creates an export link with filter `:/path:export`.
+
+The worktree therefore owns the inlining decision. Remote mounts stay independent
+and non-overlapping. `josh changes publish` uses the generated export links to
+publish submodule changes against their upstream repositories.
+
 
 ## Filters
 

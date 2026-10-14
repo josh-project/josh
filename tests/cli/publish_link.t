@@ -24,11 +24,9 @@ Create the monorepo upstream and a linked remote.
 
 Clone the monorepo and link the lib/ view to its own remote.
 
-  $ josh clone ${TESTTMP}/upstream :/ mono | sed "s|${TESTTMP}|\${TESTTMP}|g"
-  Added remote 'origin' with filter ':/'
-  Already on 'master'
-  
-  Cloned repository to: ${TESTTMP}/mono/
+  $ josh --store mono.store clone ${TESTTMP}/upstream mono --mount origin --filter :/ | sed "s|${TESTTMP}|\${TESTTMP}|g"
+  Added remote 'origin' at 'origin'
+  Cloned worktree to ${TESTTMP}/mono
   $ cd mono
 
   $ josh link add ${TESTTMP}/lib-repo :/lib --id lib | sed "s|${TESTTMP}|\${TESTTMP}|g"

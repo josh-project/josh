@@ -10,9 +10,10 @@ Set up a remote repository to link to.
   $ git commit -m "add file1" 1> /dev/null
   $ cd ${TESTTMP}
 
-  $ git init -q work
+  $ josh --store store init >/dev/null
+  $ josh --store store remote add upstream ${TESTTMP}/remote >/dev/null 2>&1
+  $ josh --store store worktree add work :/upstream >/dev/null 2>&1
   $ cd work
-
 The link feature is experimental.
 
   $ josh link list
@@ -34,6 +35,8 @@ The link is versioned in its own ref, holding only link.josh.
 
   $ git log --format='%s' refs/josh/links/remote
   josh link add remote
+  $ test "$(git rev-parse refs/josh/links/remote)" = "$(git --git-dir=../store/.josh rev-parse refs/josh/super:links/remote)" && echo authoritative
+  authoritative
 
   $ git show refs/josh/links/remote:link.josh | sed "s|${TESTTMP}|\${TESTTMP}|g"
   :~(
@@ -74,6 +77,8 @@ Remove links.
 
   $ git rev-parse --verify -q refs/josh/links/remote
   [1]
+  $ git --git-dir=../store/.josh ls-tree refs/josh/super:links | grep -c remote || true
+  0
 
 A forge can be recorded explicitly; for a non-GitHub URL the guess is empty.
 

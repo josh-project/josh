@@ -5,7 +5,6 @@
 use anyhow::{anyhow, Context};
 use std::str::FromStr;
 
-use josh_core::git::normalize_repo_path;
 use josh_github_graphql::connection::GithubApiConnection;
 use josh_github_graphql::operations::pull_request::{PrData, PrSummary};
 
@@ -51,6 +50,7 @@ pub struct SyncReport {
 pub async fn sync(
     transaction: &josh_core::cache::Transaction,
     scope: &josh_changes::ChangesRef,
+    remote_config: Option<&josh_changes::remote_config::RemoteConfig>,
     opts: SyncOptions,
 ) -> anyhow::Result<SyncReport> {
     match scope {
@@ -73,9 +73,8 @@ pub async fn sync(
             })
         }
         josh_changes::ChangesRef::Remote { remote, branch } => {
-            let repo_path = normalize_repo_path(transaction.path());
-            let remote_config = josh_changes::remote_config::read_remote_config(&repo_path, remote)
-                .with_context(|| format!("Failed to read remote config for '{}'", remote))?;
+            let remote_config = remote_config
+                .with_context(|| format!("Missing configuration for remote '{remote}'"))?;
             match remote_config.forge {
                 Some(josh_changes::remote_config::Forge::Github) => {
                     sync_from_github(transaction, remote, branch, &remote_config.url, opts).await

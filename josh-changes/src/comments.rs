@@ -29,7 +29,7 @@ pub struct CommentMeta {
 /// Which comments namespace a write targets.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CommentNamespace {
-    /// The canonical `comments` tree.
+    /// The primary `comments` tree.
     Default,
     /// The `outbox/comments` queue of a `Remote` ref: pending posts to the
     /// remote, cleaned up on the next fetch that observes them coming back.

@@ -46,7 +46,7 @@ pub fn encode_key(key: &str) -> String {
 /// to exactly its input. Plain percent-decoding accepts any `%XX`, so distinct
 /// filenames could collapse into one key. Re-encoding instead of hand-checking
 /// escapes keeps the encoder's set as the single source of truth.
-pub(crate) fn decode_key(encoded_key: &str) -> Result<String, SerdeGitError> {
+pub fn decode_key(encoded_key: &str) -> Result<String, SerdeGitError> {
     let err = || SerdeGitError("invalid key encoding".to_string());
     let decoded = percent_decode_str(encoded_key)
         .decode_utf8()

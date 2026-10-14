@@ -1,6 +1,8 @@
   $ . ${TESTDIR}/../proxy/setup_test_env.sh
   $ export RUST_LOG=error
   $ cd ${TESTTMP}
+  $ export JOSH_STORE=${TESTTMP}/store
+
 
 Create a test repo and push it to the existing real_repo.git
 
@@ -17,11 +19,9 @@ Create a test repo and push it to the existing real_repo.git
 
 Test josh clone via HTTP (no filter)
 
-  $ josh clone http://127.0.0.1:8001/real_repo.git :/ repo1-clone-josh
-  Added remote 'origin' with filter ':/'
-  Already on 'master'
-  
-  Cloned repository to: ${TESTTMP}/repo1-clone-josh/
+  $ josh clone http://127.0.0.1:8001/real_repo.git repo1-clone-josh 2>&1 | sed "s|${TESTTMP}|\${TESTTMP}|g"
+  Added remote 'real_repo' at 'real_repo'
+  Cloned worktree to ${TESTTMP}/repo1-clone-josh
 
   $ cd repo1-clone-josh
   $ ls
@@ -35,11 +35,8 @@ Test josh clone via HTTP (no filter)
 
 Test josh clone via HTTP (with filter)
 
-  $ josh clone http://127.0.0.1:8001/real_repo.git :/subdir repo1-clone-josh-filtered
-  Added remote 'origin' with filter ':/subdir'
-  Already on 'master'
-  
-  Cloned repository to: ${TESTTMP}/repo1-clone-josh-filtered/
+  $ josh clone http://127.0.0.1:8001/real_repo.git repo1-clone-josh-filtered --filter :/subdir 2>&1 | sed "s|${TESTTMP}|\${TESTTMP}|g"
+  Cloned worktree to ${TESTTMP}/repo1-clone-josh-filtered
 
   $ cd repo1-clone-josh-filtered
   $ ls
@@ -48,13 +45,11 @@ Test josh clone via HTTP (with filter)
   test
   $ cd ..
 
-Test josh clone via HTTP (with explicit filter argument)
+Test josh clone via HTTP (with an explicit mount)
 
-  $ josh clone http://127.0.0.1:8001/real_repo.git :/subdir repo1-clone-josh-explicit
-  Added remote 'origin' with filter ':/subdir'
-  Already on 'master'
-  
-  Cloned repository to: ${TESTTMP}/repo1-clone-josh-explicit/
+  $ josh clone http://127.0.0.1:8001/real_repo.git repo1-clone-josh-explicit --filter :/subdir --mount mirror/real_repo 2>&1 | sed "s|${TESTTMP}|\${TESTTMP}|g"
+  Added remote 'mirror%2Freal_repo' at 'mirror/real_repo'
+  Cloned worktree to ${TESTTMP}/repo1-clone-josh-explicit
 
   $ cd repo1-clone-josh-explicit
   $ ls
