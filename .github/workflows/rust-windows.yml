@@ -44,7 +44,7 @@ jobs:
       uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
     # Keep the toolchain version in sync with rust-toolchain.toml.
     - name: Install Rust toolchain
-      uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772 # stable
+      uses: dtolnay/rust-toolchain@e2a55d2ffb04f378e9626c28d38b36d230d1e12f # stable
       with:
         toolchain: "1.95.0"
     # josh compose (and with it the sccache-proxy sidecar the Linux jobs use)
@@ -180,7 +180,7 @@ jobs:
           github.event.action == 'labeled' &&
           contains(github.event.pull_request.labels.*.name, 'build-release-winget')
         )
-      uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
       with:
         name: winget-package-${{ matrix.arch }}
         path: winget-out/*
@@ -202,7 +202,7 @@ jobs:
     - name: Checkout
       uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
     - name: Download package artifacts
-      uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+      uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
       with:
         pattern: winget-package-*
         merge-multiple: true
@@ -239,7 +239,7 @@ jobs:
         $version = (Get-Content winget-package/version.txt -Raw).Trim()
         winget validate --manifest "manifests/j/JoshProject/Josh/$version"
     - name: Upload manifests
-      uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
       with:
         name: winget-manifests
         path: manifests/
@@ -257,7 +257,7 @@ jobs:
       contents: write
     steps:
     - name: Download package artifacts
-      uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+      uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
       with:
         pattern: winget-package-*
         merge-multiple: true
