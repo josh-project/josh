@@ -33,7 +33,7 @@ Static command completion comes from the josh command tree:
 
 Filter syntax is available even when the filter applies to a remote repository:
 
-  $ env COMPLETE=bash _CLAP_COMPLETE_INDEX=3 _CLAP_COMPLETE_COMP_TYPE=9 _CLAP_COMPLETE_SPACE=false josh -- josh clone example :wor
+  $ env COMPLETE=bash _CLAP_COMPLETE_INDEX=4 _CLAP_COMPLETE_COMP_TYPE=9 _CLAP_COMPLETE_SPACE=false josh -- josh worktree add example :wor
   :workspace= (no-eol)
 
 Local filter completion reads the selected snapshot. Compose defaults to the working tree, while josh-filter defaults to HEAD:
@@ -54,7 +54,7 @@ completion process. Remote filter arguments use the local tree when available:
 
   $ env COMPLETE=bash _CLAP_COMPLETE_INDEX=1 _CLAP_COMPLETE_COMP_TYPE=9 _CLAP_COMPLETE_SPACE=false josh-filter -- josh-filter ':!ws/bu'
   :!ws/build (no-eol)
-  $ env COMPLETE=bash _CLAP_COMPLETE_INDEX=3 _CLAP_COMPLETE_COMP_TYPE=9 _CLAP_COMPLETE_SPACE=false josh -- josh clone example ':!ws/bu'
+  $ env COMPLETE=bash _CLAP_COMPLETE_INDEX=4 _CLAP_COMPLETE_COMP_TYPE=9 _CLAP_COMPLETE_SPACE=false josh -- josh worktree add example ':!ws/bu'
   :!ws/build (no-eol)
   $ env COMPLETE=zsh _CLAP_COMPLETE_INDEX=1 josh-filter -- josh-filter ':\!ws/bu' | cut -f2-
   :\!ws/build

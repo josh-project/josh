@@ -21,7 +21,7 @@
   $ which git
   /opt/git-install/bin/git
 
-  $ josh clone ${TESTTMP}/remote/libs :/sub1 libs
+  $ josh-test-clone ${TESTTMP}/remote/libs :/sub1 libs
   Added remote 'origin' with filter ':/sub1'
   Already on 'master'
   
@@ -48,7 +48,6 @@
   $ cd ${TESTTMP}/libs
 
   $ josh fetch
-  updated master (d8388f5..61e377b)
   Fetched from remote: origin
 
   $ git-tree-pretty .

@@ -25,9 +25,9 @@ Create a test repo and push it to bare repo on filesystem
   $ git push -q origin master
   $ cd ..
 
-Test josh clone via SSH (no filter)
+Test josh-test-clone via SSH (no filter)
 
-  $ josh clone ssh://git@127.0.0.1:9001/$(pwd)/repo1-bare.git :/ repo1-clone-josh
+  $ josh-test-clone ssh://git@127.0.0.1:9001/$(pwd)/repo1-bare.git :/ repo1-clone-josh
   Added remote 'origin' with filter ':/'
   Already on 'master'
   
@@ -43,9 +43,9 @@ Test josh clone via SSH (no filter)
   test
   $ cd ..
 
-Test josh clone via SSH (with filter)
+Test josh-test-clone via SSH (with filter)
 
-  $ josh clone ssh://git@127.0.0.1:9001/$(pwd)/repo1-bare.git :/subdir repo1-clone-josh-filtered
+  $ josh-test-clone ssh://git@127.0.0.1:9001/$(pwd)/repo1-bare.git :/subdir repo1-clone-josh-filtered
   Added remote 'origin' with filter ':/subdir'
   Already on 'master'
   
@@ -58,9 +58,9 @@ Test josh clone via SSH (with filter)
   test
   $ cd ..
 
-Test josh clone via SSH (with explicit filter argument)
+Test josh-test-clone via SSH (with explicit filter argument)
 
-  $ josh clone ssh://git@127.0.0.1:9001/$(pwd)/repo1-bare.git :/subdir repo1-clone-josh-explicit
+  $ josh-test-clone ssh://git@127.0.0.1:9001/$(pwd)/repo1-bare.git :/subdir repo1-clone-josh-explicit
   Added remote 'origin' with filter ':/subdir'
   Already on 'master'
   

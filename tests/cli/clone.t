@@ -28,7 +28,7 @@
   $ which git
   /opt/git-install/bin/git
 
-  $ josh clone remote/libs :/sub1 libs
+  $ josh-test-clone remote/libs :/sub1 libs
   Added remote 'origin' with filter ':/sub1'
   Already on 'master'
   
@@ -41,22 +41,6 @@
   .git/refs
   |-- heads
   |   `-- master
-  |-- josh
-  |   |-- filtered
-  |   |   `-- bf567e0faf634a663d6cef48145a035e1974ab1d
-  |   |       `-- heads
-  |   |           `-- master
-  |   `-- remotes
-  |       `-- origin
-  |           |-- feature
-  |           `-- master
-  |-- namespaces
-  |   `-- josh-origin
-  |       |-- HEAD
-  |       `-- refs
-  |           `-- heads
-  |               |-- feature
-  |               `-- master
   |-- remotes
   |   `-- origin
   |       |-- HEAD
@@ -64,7 +48,7 @@
   |       `-- master
   `-- tags
   
-  15 directories, 10 files
+  5 directories, 4 files
 
   $ git-tree-pretty .
   .

@@ -25,7 +25,7 @@ Create a test repository with some content
 
 Clone with josh filter
 
-  $ josh clone ${TESTTMP}/remote :/sub1 filtered
+  $ josh-test-clone ${TESTTMP}/remote :/sub1 filtered
   Added remote 'origin' with filter ':/sub1'
   Already on 'master'
   
@@ -94,7 +94,7 @@ reverse filtering. Without --base the unfiltered base would be zero;
 
   $ cd ${TESTTMP}/filtered
   $ josh push origin HEAD:refs/heads/other --base=does-not-exist
-  Error: Failed to resolve --base ref (looked up 'refs/josh/remotes/origin/does-not-exist')
-  Failed to resolve --base ref (looked up 'refs/josh/remotes/origin/does-not-exist')
+  Error: Failed to resolve --base ref (looked up 'refs/josh/remotes/origin/heads/does-not-exist')
+  Failed to resolve --base ref (looked up 'refs/josh/remotes/origin/heads/does-not-exist')
   * (glob)
   [1]

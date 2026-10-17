@@ -24,7 +24,7 @@ Create the monorepo upstream and a linked remote.
 
 Clone the monorepo and link the lib/ view to its own remote.
 
-  $ josh clone ${TESTTMP}/upstream :/ mono | sed "s|${TESTTMP}|\${TESTTMP}|g"
+  $ josh-test-clone ${TESTTMP}/upstream :/ mono | sed "s|${TESTTMP}|\${TESTTMP}|g"
   Added remote 'origin' with filter ':/'
   Already on 'master'
   

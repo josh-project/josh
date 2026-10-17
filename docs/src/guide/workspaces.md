@@ -28,14 +28,18 @@ each application only want to see the code that's relevant to them.
 
 ## Creating a workspace
 
-Clone the monorepo scoped to `application1` using the `:workspace=` filter:
+Create a store, attach the monorepo, and add an `application1` worktree with the
+`:workspace=` filter:
 
 ```shell
-josh clone https://github.com/myorg/monorepo.git :workspace=application1 ./application1
+josh init development
+cd development
+josh remote add monorepo https://github.com/myorg/monorepo.git
+josh worktree add application1 :/monorepo:workspace=application1
 cd application1
 ```
 
-The cloned repository contains only the files and history relevant to `application1`:
+The worktree contains only the files and history relevant to `application1`:
 
 ```
 app.c
@@ -107,7 +111,7 @@ Let's create a workspace for `application2`, which depends on both libraries:
 
 ```shell
 cd ..
-josh clone https://github.com/myorg/monorepo.git :workspace=application2 ./application2
+josh worktree add application2 :/monorepo:workspace=application2
 cd application2
 ```
 

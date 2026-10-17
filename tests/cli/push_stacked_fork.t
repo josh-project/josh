@@ -22,7 +22,7 @@ Create an empty bare fork to receive the pushed change branches
 
 Clone with a filter and a separate push-url pointing at the fork
 
-  $ josh clone ${TESTTMP}/upstream :/sub1 filtered --push-url ${TESTTMP}/fork
+  $ josh-test-clone ${TESTTMP}/upstream :/sub1 filtered --push-url ${TESTTMP}/fork
   Added remote 'origin' with filter ':/sub1'
   Already on 'master'
   

@@ -11,9 +11,7 @@ use josh_cli::commands::link::LinkArgs;
 use josh_cli::commands::pull::PullArgs;
 use josh_cli::commands::push::{PublishArgs, PushArgs};
 use josh_cli::commands::sync::SyncArgs;
-use josh_cli::config::{read_remote_config, write_remote_config};
 use josh_cli::forge::{Forge, GerritMode};
-use josh_core::git::{GitCommand, normalize_repo_path};
 
 #[derive(Debug, clap::Parser)]
 #[command(
@@ -43,23 +41,23 @@ pub enum Command {
 /// Commands that require a git repository and transaction context
 #[derive(Debug, clap::Subcommand)]
 pub enum RepoCommand {
-    /// Clone a repository with optional projection/filtering
-    Clone(CloneArgs),
-
-    /// Fetch from a remote (like `git fetch`) with projection-aware options
+    /// Fetch upstream history into the store and refresh its worktrees
     Fetch(FetchArgs),
 
-    /// Push refs to a remote (like `git push`) with projection-aware options
+    /// Relay refs from a worktree projection to an upstream
     Push(PushArgs),
+
+    /// Fetch from the store and integrate the current branch
+    Pull(PullArgs),
 
     /// Manage stacked changes (publish, etc.)
     Changes(ChangesArgs),
 
-    /// Add a remote with optional projection/filtering (like `git remote add`)
+    /// Manage store upstreams
     Remote(RemoteArgs),
 
-    /// Apply filtering to existing refs (like `josh fetch` but without fetching)
-    Filter(FilterArgs),
+    /// Manage filtered worktrees
+    Worktree(WorktreeArgs),
 
     /// Manage links: named views of the repository bound to external remotes
     Link(LinkArgs),
@@ -78,41 +76,108 @@ pub enum RepoCommand {
 /// Commands that don't require a git repository
 #[derive(Debug, clap::Subcommand)]
 pub enum StandaloneCommand {
+    /// Create a checkout-less josh store
+    Init(InitArgs),
+
+    /// Convert an old filter-bearing clone into a store
+    Migrate(MigrateArgs),
+
     /// Manage forge authentication
     Auth(AuthArgs),
+
+    /// Serve a worktree's local Git remote
+    #[command(hide = true)]
+    ServeWorktree(ServeWorktreeArgs),
 }
 
 #[derive(Debug, clap::Parser)]
-pub struct CloneArgs {
-    /// Remote repository URL
-    #[arg()]
-    pub url: String,
+pub struct InitArgs {
+    /// Store directory
+    #[arg(default_value = ".")]
+    pub directory: std::path::PathBuf,
+}
+#[derive(Debug, clap::Parser)]
+pub struct MigrateArgs {
+    /// Repository to migrate
+    #[arg(default_value = ".")]
+    pub directory: std::path::PathBuf,
 
-    /// Workspace/projection identifier or path to spec
-    #[arg(add = josh_cli::completion::filter_syntax())]
-    pub filter: String,
+    /// Name of the linked worktree created inside the store
+    #[arg(long, default_value = "worktree")]
+    pub worktree: String,
+}
 
-    /// Checkout directory
-    #[arg()]
-    pub out: std::path::PathBuf,
+#[derive(Debug, Clone, Copy, clap::ValueEnum)]
+pub enum GitService {
+    UploadPack,
+    ReceivePack,
+}
 
-    /// Branch or ref to clone
-    #[arg(
-        short = 'b',
-        long = "branch",
-        default_value = "HEAD",
-        add = josh_cli::completion::git_ref()
-    )]
-    pub branch: String,
+#[derive(Debug, clap::Parser)]
+pub struct ServeWorktreeArgs {
+    /// Store namespace backing this virtual remote
+    #[arg(long)]
+    pub namespace: String,
 
-    /// Separate push destination (a fork) for `josh changes publish`.
-    ///
-    /// See `josh remote add --push-url`.
-    #[arg(long = "push-url")]
-    pub push_url: Option<String>,
+    /// Git wire-protocol service
+    #[arg(value_enum)]
+    pub service: GitService,
 
-    #[command(flatten)]
-    pub forge_args: ForgeArgs,
+    /// Store repository path appended by Git
+    pub repository: std::path::PathBuf,
+}
+
+#[derive(Debug, clap::Parser)]
+pub struct WorktreeArgs {
+    /// Worktree subcommand
+    #[command(subcommand)]
+    pub command: WorktreeCommand,
+}
+
+#[derive(Debug, clap::Subcommand)]
+pub enum WorktreeCommand {
+    /// Create a linked repository at a projection
+    Add(WorktreeAddArgs),
+    /// List the store's registered worktrees
+    List,
+    /// Remove a registered worktree
+    Remove(WorktreeRemoveArgs),
+}
+
+#[derive(Debug, clap::Parser)]
+pub struct WorktreeAddArgs {
+    /// Checkout path
+    pub path: std::path::PathBuf,
+
+    /// Projection filter; omit for the full repository
+    #[arg(conflicts_with = "submodules", add = josh_cli::completion::filter_syntax())]
+    pub filter: Option<String>,
+
+    /// Inline configured submodules and create their export links
+    #[arg(long)]
+    pub submodules: bool,
+
+    /// Superproject remote used by --submodules
+    #[arg(long, requires = "submodules", add = josh_cli::completion::remote())]
+    pub remote: Option<String>,
+
+    /// Local branch to create
+    #[arg(short = 'b', long = "branch")]
+    pub branch: Option<String>,
+
+    /// Store ref to check out
+    #[arg(long = "ref", default_value = "HEAD", add = josh_cli::completion::git_ref())]
+    pub rref: String,
+}
+
+#[derive(Debug, clap::Parser)]
+pub struct WorktreeRemoveArgs {
+    /// Registered worktree path
+    pub path: std::path::PathBuf,
+
+    /// Remove a worktree with uncommitted changes
+    #[arg(long)]
+    pub force: bool,
 }
 
 #[derive(Debug, clap::Parser)]
@@ -148,30 +213,22 @@ pub struct RemoteArgs {
 
 #[derive(Debug, clap::Subcommand)]
 pub enum RemoteCommand {
-    /// Add a remote with optional projection/filtering
+    /// Add a remote mounted at a path
     Add(RemoteAddArgs),
 }
 
 #[derive(Debug, Clone, clap::Parser)]
 pub struct RemoteAddArgs {
-    /// Remote name
+    /// Non-root relative mount path; also determines the local remote identity
     #[arg()]
-    pub name: String,
+    pub path: std::path::PathBuf,
 
     /// Remote repository URL
     #[arg()]
     pub url: String,
 
-    /// Workspace/projection identifier or path to spec
-    #[arg(
-        required_unless_present = "submodules",
-        conflicts_with = "submodules",
-        add = josh_cli::completion::filter_syntax()
-    )]
-    pub filter: Option<String>,
-
-    /// Derive a combined gitlink view and links from HEAD's .gitmodules
-    #[arg(long = "submodules")]
+    /// Also discover and mount the configured submodule remotes
+    #[arg(long)]
     pub submodules: bool,
 
     /// Separate push destination (a fork) for `josh changes publish`.
@@ -204,13 +261,6 @@ pub struct ForgeArgs {
     pub gerrit_mode: Option<GerritMode>,
 }
 
-#[derive(Debug, clap::Parser)]
-pub struct FilterArgs {
-    /// Remote name to apply filtering to
-    #[arg(add = josh_cli::completion::remote())]
-    pub remote: String,
-}
-
 fn main() -> std::process::ExitCode {
     josh_cli::completion::complete(Cli::command);
     let _flush_guard = josh_core::memodb::FlushGuard::new();
@@ -218,7 +268,7 @@ fn main() -> std::process::ExitCode {
     let cli = Cli::parse();
 
     let result = match &cli.command {
-        Command::Standalone(cmd) => run_standalone(cmd),
+        Command::Standalone(cmd) => run_standalone(cmd, cli.distributed_cache),
         Command::Repo(cmd) => run_repo(cmd, cli.distributed_cache),
     };
 
@@ -234,20 +284,73 @@ fn main() -> std::process::ExitCode {
     }
 }
 
-fn run_standalone(cmd: &StandaloneCommand) -> anyhow::Result<()> {
+fn run_standalone(cmd: &StandaloneCommand, distributed_cache: bool) -> anyhow::Result<()> {
     match cmd {
+        StandaloneCommand::Init(args) => {
+            let store = josh_cli::store::Store::init(&args.directory)?;
+            println!("Initialized josh store at {}", store.root.display());
+            Ok(())
+        }
+        StandaloneCommand::Migrate(args) => {
+            let worktree =
+                josh_cli::store::migrate(&args.directory, &args.worktree, distributed_cache)?;
+            println!("Migrated worktree to {}", worktree.display());
+            Ok(())
+        }
+        StandaloneCommand::ServeWorktree(args) => serve_worktree(args),
         StandaloneCommand::Auth(args) => josh_cli::commands::auth::handle_auth(args),
     }
 }
 
+fn serve_worktree(args: &ServeWorktreeArgs) -> anyhow::Result<()> {
+    let repository = josh_cli::store::validate_worktree_service(&args.repository, &args.namespace)?;
+
+    let service = match args.service {
+        GitService::UploadPack => "upload-pack",
+        GitService::ReceivePack => "receive-pack",
+    };
+    let mut command = std::process::Command::new("git");
+    command
+        .arg(service)
+        .arg(&repository)
+        .env("GIT_NAMESPACE", &args.namespace);
+
+    #[cfg(unix)]
+    {
+        use std::os::unix::process::CommandExt;
+        return Err(command.exec()).context("Failed to execute Git service");
+    }
+
+    #[cfg(not(unix))]
+    {
+        let status = command.status().context("Failed to execute Git service")?;
+        if !status.success() {
+            std::process::exit(status.code().unwrap_or(1));
+        }
+        Ok(())
+    }
+}
 fn run_repo(cmd: &RepoCommand, distributed_cache: bool) -> anyhow::Result<()> {
-    let (repo_path, git_common_dir) = if let RepoCommand::Clone(args) = cmd {
-        // For clone, we're not in a git repo initially, so clone first.
-        let repo = gix::open(clone_repo(args)?)?;
-        (
-            repo.workdir().unwrap_or_else(|| repo.git_dir()).to_owned(),
-            repo.common_dir().to_owned(),
-        )
+    let store_command = matches!(
+        cmd,
+        RepoCommand::Fetch(_)
+            | RepoCommand::Push(_)
+            | RepoCommand::Pull(_)
+            | RepoCommand::Remote(_)
+            | RepoCommand::Worktree(_)
+            | RepoCommand::Changes(ChangesArgs {
+                command: ChangesCommand::Publish(_) | ChangesCommand::Pull(_),
+            })
+            | RepoCommand::Cache(_)
+            | RepoCommand::Forge(_)
+    );
+    let mut store = if store_command {
+        Some(josh_cli::store::Store::discover(&std::env::current_dir()?)?)
+    } else {
+        None
+    };
+    let (repo_path, git_common_dir) = if let Some(store) = &store {
+        (store.git_dir(), store.git_dir())
     } else {
         let paths =
             josh_core::git::discover_repository_paths().context("Not in a git repository")?;
@@ -268,8 +371,6 @@ fn run_repo(cmd: &RepoCommand, distributed_cache: bool) -> anyhow::Result<()> {
     };
 
     let mut cache_stack = josh_core::cache::CacheStack::new();
-    // Compose does one-shot, throwaway filtering and then hands off to container execution; the
-    // on-disk sled cache would only take a lock we would have to release again, so skip it.
     if !is_compose {
         cache_stack =
             cache_stack.with_backend(josh_core::cache::SledCacheBackend::new(&git_common_dir));
@@ -282,52 +383,65 @@ fn run_repo(cmd: &RepoCommand, distributed_cache: bool) -> anyhow::Result<()> {
     }
     let cache = std::sync::Arc::new(cache_stack);
 
-    let mut ctx = josh_core::cache::TransactionContext::new(&repo_path, cache.clone());
+    let mut ctx = josh_core::cache::TransactionContext::new(&repo_path, cache);
     if ephemeral_compose {
         ctx = ctx.ephemeral();
     } else {
         ctx = ctx.with_mem_odb_limit(josh_cli::MAX_MEM_PACK_SIZE);
     }
-
     let transaction = ctx.open().context("Failed TransactionContext::open")?;
 
     match cmd {
-        RepoCommand::Clone(args) => handle_clone(args, &transaction, distributed_cache),
-        RepoCommand::Fetch(args) => {
-            let remote = args.remote.clone();
-            let updates =
-                josh_cli::commands::fetch::handle_fetch(args, &transaction, distributed_cache)?;
-            for line in josh_cli::commands::pull::render_fetch_summary(
-                &updates,
-                &remote,
-                Some(&transaction),
-            )? {
-                eprintln!("{}", line);
-            }
-            eprintln!("Fetched from remote: {}", remote);
-            Ok(())
-        }
-        RepoCommand::Push(args) => josh_cli::commands::push::handle_push(args, &transaction),
-        RepoCommand::Changes(args) => match &args.command {
-            ChangesCommand::Publish(publish_args) => {
-                josh_cli::commands::push::handle_publish(publish_args, &transaction)?;
-                let remote = publish_args.remote.as_deref().unwrap_or("origin");
-                josh_cli::commands::fetch::handle_fetch(
-                    &FetchArgs {
-                        remote: remote.to_string(),
-                        rref: "HEAD".to_string(),
-                    },
+        RepoCommand::Fetch(args) => josh_cli::store::fetch(
+            store.as_ref().expect("store command has store"),
+            &transaction,
+            args.remote.as_deref(),
+            distributed_cache,
+        ),
+        RepoCommand::Push(args) => {
+            let store = store.as_ref().expect("store command has store");
+            josh_cli::store::push(store, args, &transaction)?;
+            if args.dry_run {
+                Ok(())
+            } else {
+                josh_cli::store::fetch_quiet(
+                    store,
                     &transaction,
+                    args.remote.as_deref(),
                     distributed_cache,
                 )
-                .map(|_| ())
+            }
+        }
+        RepoCommand::Pull(args) => josh_cli::store::pull(
+            store.as_ref().expect("store command has store"),
+            args,
+            &transaction,
+            distributed_cache,
+        ),
+        RepoCommand::Changes(args) => match &args.command {
+            ChangesCommand::Publish(publish_args) => {
+                let store = store.as_ref().expect("store command has store");
+                josh_cli::store::publish(store, publish_args, &transaction)?;
+                if publish_args.dry_run {
+                    Ok(())
+                } else {
+                    josh_cli::store::fetch_quiet(
+                        store,
+                        &transaction,
+                        publish_args.remote.as_deref(),
+                        distributed_cache,
+                    )
+                }
             }
             ChangesCommand::List(list_args) => {
                 josh_cli::commands::changes::handle_list(list_args, &transaction)
             }
-            ChangesCommand::Pull(pull_args) => {
-                josh_cli::commands::pull::handle_pull(pull_args, &transaction, distributed_cache)
-            }
+            ChangesCommand::Pull(pull_args) => josh_cli::store::pull_changes(
+                store.as_ref().expect("store command has store"),
+                pull_args,
+                &transaction,
+                distributed_cache,
+            ),
             ChangesCommand::Show(show_args) => {
                 josh_cli::commands::changes::handle_show(show_args, &transaction)
             }
@@ -335,14 +449,33 @@ fn run_repo(cmd: &RepoCommand, distributed_cache: bool) -> anyhow::Result<()> {
                 josh_cli::commands::changes::handle_deps(deps_args, &transaction)
             }
             ChangesCommand::Comment(comment_args) => {
-                josh_cli::commands::comment::handle_comment(comment_args, &transaction)
+                josh_cli::commands::comment::handle_comment(comment_args, &transaction)?;
+                transaction.flush_mem_odb()?;
+                if let Ok(store) = josh_cli::store::Store::discover(&std::env::current_dir()?) {
+                    josh_cli::store::sync_worktree_change_metadata(&store, distributed_cache)?;
+                }
+                Ok(())
             }
             ChangesCommand::Sync(sync_args) => {
-                josh_cli::commands::sync::handle_sync(sync_args, &transaction)
+                josh_cli::commands::sync::handle_sync(sync_args, &transaction)?;
+                transaction.flush_mem_odb()?;
+                if let Ok(store) = josh_cli::store::Store::discover(&std::env::current_dir()?) {
+                    josh_cli::store::sync_worktree_change_metadata(&store, distributed_cache)?;
+                }
+                Ok(())
             }
         },
-        RepoCommand::Remote(args) => handle_remote(args, &transaction),
-        RepoCommand::Filter(args) => handle_filter(args, &transaction),
+        RepoCommand::Remote(args) => handle_remote(
+            args,
+            store.as_mut().expect("store command has store"),
+            &transaction,
+            distributed_cache,
+        ),
+        RepoCommand::Worktree(args) => handle_worktree(
+            args,
+            store.as_mut().expect("store command has store"),
+            &transaction,
+        ),
         RepoCommand::Link(args) => josh_cli::commands::link::handle_link(args, &transaction),
         RepoCommand::Compose(args) => {
             josh_cli::commands::compose::handle_compose(args, &transaction)
@@ -379,233 +512,124 @@ fn to_absolute_remote_url(url: &str) -> anyhow::Result<String> {
     }
 }
 
-/// Initialize a clone and configure its remote.
-fn clone_repo(args: &CloneArgs) -> anyhow::Result<std::path::PathBuf> {
-    let output_dir = args.out.clone();
-
-    std::fs::create_dir_all(&output_dir)?;
-
-    gix::init(&output_dir).context("Failed to initialize git repository")?;
-
-    let remote_add_args = RemoteAddArgs {
-        name: "origin".to_string(),
-        url: to_absolute_remote_url(&args.url)?,
-        filter: Some(args.filter.clone()),
-        push_url: args.push_url.clone(),
-        forge_args: args.forge_args.clone(),
-        submodules: false,
-    };
-
-    handle_remote_add_repo(&remote_add_args, &output_dir, &args.filter)?;
-
-    Ok(output_dir)
-}
-
-fn handle_clone(
-    args: &CloneArgs,
+fn handle_remote(
+    args: &RemoteArgs,
+    store: &mut josh_cli::store::Store,
     transaction: &josh_core::cache::Transaction,
     distributed_cache: bool,
 ) -> anyhow::Result<()> {
-    // Create FetchArgs from CloneArgs
-    let fetch_args = FetchArgs {
-        remote: "origin".to_string(),
-        rref: args.branch.clone(),
-    };
-
-    // Use handle_fetch to do the actual fetching and filtering
-    josh_cli::commands::fetch::handle_fetch(&fetch_args, transaction, distributed_cache)?;
-
-    // Get the default branch name from the remote HEAD symref
-    let default_branch = if args.branch == "HEAD" {
-        // Read the remote HEAD symref to get the default branch
-        let head_ref = "refs/remotes/origin/HEAD".to_string();
-
-        let symref_target = transaction
-            .symref_target(&head_ref)?
-            .with_context(|| format!("{} is missing or not a symbolic reference", head_ref))?;
-
-        // Extract branch name from symref target (e.g., "refs/remotes/origin/master" -> "master")
-        let branch_name = symref_target
-            .strip_prefix("refs/remotes/origin/")
-            .with_context(|| format!("Invalid symref target format: {}", symref_target))?;
-
-        branch_name.to_string()
-    } else {
-        args.branch.clone()
-    };
-
-    transaction
-        .spawn_git(
-            &[
-                "checkout",
-                "-b",
-                &default_branch,
-                &format!("origin/{}", default_branch),
-            ],
-            &[],
-        )
-        .with_context(|| format!("Failed to checkout branch {}", default_branch))?;
-
-    // Set up upstream tracking for the branch
-    transaction
-        .spawn_git(
-            &[
-                "branch",
-                "--set-upstream-to",
-                &format!("origin/{}", default_branch),
-                &default_branch,
-            ],
-            &[],
-        )
-        .with_context(|| format!("Failed to set upstream for branch {}", default_branch))?;
-
-    let output_dir = normalize_repo_path(transaction.path());
-    let output_dir = output_dir.display().to_string();
-
-    let output_dir = if let Ok(testtmp) = std::env::var("TESTTMP") {
-        output_dir.replace(&testtmp, "${TESTTMP}")
-    } else {
-        output_dir.to_string()
-    };
-
-    println!("Cloned repository to: {}", output_dir);
-    Ok(())
-}
-
-fn handle_remote(
-    args: &RemoteArgs,
-    transaction: &josh_core::cache::Transaction,
-) -> anyhow::Result<()> {
     match &args.command {
         RemoteCommand::Add(add_args) => {
-            let repo_path = normalize_repo_path(transaction.path());
-            let filter = if add_args.submodules {
+            let remote_url = to_absolute_remote_url(&add_args.url)?;
+            if add_args.submodules {
                 josh_core::filter::check_experimental_features_enabled(
                     "josh remote add --submodules",
                 )?;
-                if transaction
-                    .config_string(&format!("remote.{}.url", add_args.name))?
-                    .is_some()
-                {
-                    anyhow::bail!("Remote '{}' already exists", add_args.name);
-                }
-                let filter =
-                    josh_cli::commands::link::add_submodule_links(transaction, &add_args.url)?;
-                josh_core::filter::spec(filter)
+            }
+
+            let push_url = add_args
+                .push_url
+                .as_deref()
+                .map(to_absolute_remote_url)
+                .transpose()?;
+            let forge = if add_args.forge_args.no_forge {
+                None
             } else {
                 add_args
-                    .filter
-                    .clone()
-                    .context("filter is required unless --submodules is used")?
+                    .forge_args
+                    .forge
+                    .or_else(|| josh_cli::forge::guess_forge(&remote_url))
             };
-            handle_remote_add_repo(add_args, &repo_path, &filter)
+            let name = josh_cli::store::add_remote(
+                store,
+                &remote_url,
+                &add_args.path,
+                forge,
+                push_url.as_deref(),
+                add_args.forge_args.gerrit_mode,
+            )?;
+            if let Err(error) =
+                josh_cli::store::fetch(store, transaction, Some(&name), distributed_cache)
+            {
+                josh_cli::store::rollback_remote(store, &name, transaction)
+                    .context("Failed to roll back remote after fetch failure")?;
+                return Err(error);
+            }
+            eprintln!("Added remote '{}' at '{}'", name, add_args.path.display());
+            if add_args.submodules {
+                let modules =
+                    josh_cli::store::discover_submodule_remotes(store, &name, transaction)?;
+                for module in modules {
+                    let mount = std::path::Path::new(&module.name);
+                    let forge = josh_cli::forge::guess_forge(&module.url);
+                    let name =
+                        josh_cli::store::add_remote(store, &module.url, mount, forge, None, None)?;
+                    if let Err(error) =
+                        josh_cli::store::fetch(store, transaction, Some(&name), distributed_cache)
+                    {
+                        josh_cli::store::rollback_remote(store, &name, transaction)
+                            .context("Failed to roll back submodule remote after fetch failure")?;
+                        return Err(error);
+                    }
+                    eprintln!(
+                        "Added submodule remote '{}' at '{}': {}",
+                        name,
+                        mount.display(),
+                        module.url
+                    );
+                }
+            }
+            Ok(())
         }
     }
 }
 
-fn handle_remote_add_repo(
-    args: &RemoteAddArgs,
-    repo_path: &std::path::Path,
-    filter_to_store: &str,
-) -> anyhow::Result<()> {
-    let repo = gix::open(repo_path).context("Failed to open repository")?;
-    let workdir = repo.workdir().unwrap_or_else(|| repo.git_dir()).to_owned();
-
-    // Store the remote information in .git/josh/remotes/<name>.josh file
-    let remote_url = to_absolute_remote_url(&args.url)?;
-
-    // Store refspec (for unfiltered refs)
-    let refspec = format!("+refs/heads/*:refs/josh/remotes/{}/*", args.name);
-
-    let forge = if args.forge_args.no_forge {
-        None
-    } else {
-        args.forge_args
-            .forge
-            .clone()
-            .or_else(|| josh_cli::forge::guess_forge(&remote_url))
-    };
-
-    let push_url = args
-        .push_url
-        .as_deref()
-        .map(to_absolute_remote_url)
-        .transpose()?;
-
-    // Write remote config to .git/josh/remotes/<name>.josh
-    write_remote_config(
-        repo_path,
-        &args.name,
-        &remote_url,
-        filter_to_store,
-        &refspec,
-        forge,
-        push_url.as_deref(),
-        args.forge_args.gerrit_mode,
-    )
-    .context("Failed to write remote config file")?;
-
-    // Set up a git remote that points to "." with a refspec to fetch filtered refs
-    // Add remote pointing to current directory
-    let repo_remote = to_absolute_remote_url(&workdir.display().to_string())?;
-    GitCommand::new(
-        repo.git_dir(),
-        ["remote", "add", &args.name, &repo_remote],
-        std::iter::empty::<(&str, &str)>(),
-    )
-    .spawn()
-    .context("Failed to add git remote")?;
-
-    // Set up namespace configuration for the remote
-    let namespace = format!("josh-{}", args.name);
-    let uploadpack_cmd = format!("env GIT_NAMESPACE={} git upload-pack", namespace);
-
-    GitCommand::new(
-        repo.git_dir(),
-        [
-            "config",
-            &format!("remote.{}.uploadpack", args.name),
-            &uploadpack_cmd,
-        ],
-        std::iter::empty::<(&str, &str)>(),
-    )
-    .spawn()
-    .context("Failed to set remote uploadpack")?;
-
-    eprintln!(
-        "Added remote '{}' with filter '{}'",
-        args.name, filter_to_store
-    );
-
-    Ok(())
-}
-
-/// Handle the `josh filter` command - apply filtering to existing refs without fetching
-fn handle_filter(
-    args: &FilterArgs,
+fn handle_worktree(
+    args: &WorktreeArgs,
+    store: &mut josh_cli::store::Store,
     transaction: &josh_core::cache::Transaction,
 ) -> anyhow::Result<()> {
-    let repo_path = normalize_repo_path(transaction.path());
-
-    let config = read_remote_config(&repo_path, &args.remote)
-        .with_context(|| format!("Failed to read remote config for '{}'", args.remote))?;
-
-    let filter = config.semantic_filter();
-    let filter_str = josh_core::filter::spec(filter);
-
-    println!(
-        "Applying filter '{}' to remote '{}'",
-        filter_str, args.remote
-    );
-
-    let default_branch = josh_cli::remote_ops::resolve_default_branch(transaction, &args.remote)?;
-
-    josh_cli::remote_ops::apply_josh_filtering(transaction, filter, &args.remote, &default_branch)?;
-
-    println!(
-        "Applied filter '{}' to remote '{}'",
-        filter_str, args.remote
-    );
-
-    Ok(())
+    match &args.command {
+        WorktreeCommand::Add(args) => {
+            let path = if args.path.is_absolute() {
+                args.path.clone()
+            } else {
+                std::env::current_dir()?.join(&args.path)
+            };
+            let filter = if args.submodules {
+                josh_core::filter::check_experimental_features_enabled(
+                    "josh worktree add --submodules",
+                )?;
+                let remote = match args.remote.as_deref() {
+                    Some(remote) => remote,
+                    None if store.config.remotes.len() == 1 => {
+                        store.config.remotes.keys().next().expect("length checked")
+                    }
+                    None => anyhow::bail!(
+                        "Multiple remotes are configured; --submodules requires --remote"
+                    ),
+                };
+                josh_cli::store::derive_submodule_filter(store, remote, transaction)?
+            } else {
+                args.filter.clone().unwrap_or_else(|| ":/".to_owned())
+            };
+            let path = josh_cli::store::add_worktree(
+                store,
+                &path,
+                &filter,
+                args.branch.as_deref(),
+                &args.rref,
+                transaction,
+            )?;
+            println!("Added worktree at {}", path.display());
+            Ok(())
+        }
+        WorktreeCommand::List => {
+            josh_cli::store::list_worktrees(store);
+            Ok(())
+        }
+        WorktreeCommand::Remove(args) => {
+            josh_cli::store::remove_worktree(store, &args.path, args.force, transaction)
+        }
+    }
 }

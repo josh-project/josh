@@ -15,9 +15,9 @@ Create a test repo and push it to the existing real_repo.git
   $ git push -q
   $ cd ..
 
-Test josh clone via HTTP (no filter)
+Test josh-test-clone via HTTP (no filter)
 
-  $ josh clone http://127.0.0.1:8001/real_repo.git :/ repo1-clone-josh
+  $ josh-test-clone http://127.0.0.1:8001/real_repo.git :/ repo1-clone-josh
   Added remote 'origin' with filter ':/'
   Already on 'master'
   
@@ -33,9 +33,9 @@ Test josh clone via HTTP (no filter)
   test
   $ cd ..
 
-Test josh clone via HTTP (with filter)
+Test josh-test-clone via HTTP (with filter)
 
-  $ josh clone http://127.0.0.1:8001/real_repo.git :/subdir repo1-clone-josh-filtered
+  $ josh-test-clone http://127.0.0.1:8001/real_repo.git :/subdir repo1-clone-josh-filtered
   Added remote 'origin' with filter ':/subdir'
   Already on 'master'
   
@@ -48,9 +48,9 @@ Test josh clone via HTTP (with filter)
   test
   $ cd ..
 
-Test josh clone via HTTP (with explicit filter argument)
+Test josh-test-clone via HTTP (with explicit filter argument)
 
-  $ josh clone http://127.0.0.1:8001/real_repo.git :/subdir repo1-clone-josh-explicit
+  $ josh-test-clone http://127.0.0.1:8001/real_repo.git :/subdir repo1-clone-josh-explicit
   Added remote 'origin' with filter ':/subdir'
   Already on 'master'
   

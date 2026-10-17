@@ -181,11 +181,14 @@ push destination while still opening all pull requests against the target. Confi
 fork when adding the remote:
 
 ```shell
-josh clone https://github.com/UPSTREAM/repo :/ work --push-url https://github.com/ME/repo
+josh init work
+cd work
+josh remote add repo https://github.com/UPSTREAM/repo \
+    --push-url https://github.com/ME/repo
+josh worktree add checkout :/repo
 ```
 
-(or `josh remote add <name> <upstream-url> <filter> --push-url <fork-url>` for an existing
-repository). `josh changes publish` then pushes the `@changes/…` refs to your fork, and
+`josh changes publish upstream` then pushes the `@changes/…` refs to your fork and
 opens each pull request against the upstream repository with a cross-fork head
 (`ME:@changes/…`).
 
@@ -200,7 +203,10 @@ automatically once they merge and you re-publish.
 Select the Gerrit forge when cloning (it cannot be auto-detected from the URL):
 
 ```shell
-josh clone https://gerrit.example.com/repo :/ work --forge gerrit
+josh init work
+cd work
+josh remote add repo https://gerrit.example.com/repo --forge gerrit
+josh worktree add checkout :/repo
 ```
 
 `josh changes publish` then pushes to Gerrit's magic ref `refs/for/<branch>`, where the

@@ -41,7 +41,7 @@
   $ which git
   /opt/git-install/bin/git
 
-Test josh clone with main branch as default
+Test josh-test-clone with main branch as default
 
   $ cat remote.git/HEAD
   ref: refs/heads/main
@@ -50,7 +50,7 @@ Test josh clone with main branch as default
   ref: refs/heads/main\tHEAD (esc)
   c8050c5d4fc5f431e684ca501a7ff3db5aa47103\tHEAD (esc)
 
-  $ josh clone remote.git :/sub1 filtered-repo
+  $ josh-test-clone remote.git :/sub1 filtered-repo
   Added remote 'origin' with filter ':/sub1'
   Switched to a new branch 'main'
   
@@ -66,7 +66,7 @@ Test josh clone with main branch as default
   .git/FETCH_HEAD
   .git/HEAD
   .git/logs/HEAD
-  .git/refs/namespaces/josh-origin/HEAD
+  .git/logs/refs/remotes/origin/HEAD
   .git/refs/remotes/origin/HEAD
   $ git symbolic-ref refs/remotes/origin/HEAD
   refs/remotes/origin/main
@@ -101,22 +101,6 @@ Test josh clone with main branch as default
   |-- heads
   |   |-- feature-branch
   |   `-- main
-  |-- josh
-  |   |-- filtered
-  |   |   `-- bf567e0faf634a663d6cef48145a035e1974ab1d
-  |   |       `-- heads
-  |   |           `-- main
-  |   `-- remotes
-  |       `-- origin
-  |           |-- feature-branch
-  |           `-- main
-  |-- namespaces
-  |   `-- josh-origin
-  |       |-- HEAD
-  |       `-- refs
-  |           `-- heads
-  |               |-- feature-branch
-  |               `-- main
   |-- remotes
   |   `-- origin
   |       |-- HEAD
@@ -124,6 +108,6 @@ Test josh clone with main branch as default
   |       `-- main
   `-- tags
   
-  15 directories, 11 files
+  5 directories, 5 files
 
   $ cd ..

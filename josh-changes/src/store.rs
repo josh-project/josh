@@ -311,6 +311,12 @@ pub struct DiffData {
     pub base: String,
 }
 
+#[derive(Debug, serde::Serialize)]
+struct PublicationData {
+    pushed: String,
+    landed: bool,
+}
+
 /// Merge the change's `diffs/` entry into `scope`'s ref. The commit carries
 /// an anchor parent on the change's tip commit so the ref's history keeps the
 /// change reachable.
@@ -390,6 +396,285 @@ pub fn delete_change(
         .collect();
     delete_filtered(transaction, &paths, scope)?;
     Ok(())
+}
+
+fn imported_metadata_tree(
+    transaction: &Transaction,
+    change_id: &str,
+) -> anyhow::Result<Option<gix_hash::ObjectId>> {
+    let mut tips = Vec::new();
+    transaction.for_each_ref_prefixed("refs/josh/changes/", |_, oid| {
+        tips.push(oid);
+        Ok(())
+    })?;
+
+    let mut merged = crate::layout::ChangesRefData::default();
+    let mut found = false;
+    for tip in tips {
+        let tree = objects::CommitData::read(transaction.odb(), tip)?.tree_id()?;
+        let data: crate::layout::ChangesRefData = deserialize_tree(transaction, tree)?;
+        if let Some(comments) = data.comments.get(change_id) {
+            merged
+                .comments
+                .entry(change_id.to_owned())
+                .or_default()
+                .extend(comments.clone());
+            found = true;
+        }
+        if let Some(votes) = data.votes.get(change_id) {
+            merged
+                .votes
+                .entry(change_id.to_owned())
+                .or_default()
+                .extend(votes.clone());
+            found = true;
+        }
+        if let Some(comments) = data.outbox.comments.get(change_id) {
+            merged
+                .outbox
+                .comments
+                .entry(change_id.to_owned())
+                .or_default()
+                .extend(comments.clone());
+            found = true;
+        }
+        if let Some(votes) = data.outbox.votes.get(change_id) {
+            merged
+                .outbox
+                .votes
+                .entry(change_id.to_owned())
+                .or_default()
+                .extend(votes.clone());
+            found = true;
+        }
+    }
+    if !found {
+        return Ok(None);
+    }
+    let value = josh_git_serde::to_value(&merged)?;
+    Ok(Some(josh_git_serde::to_tree_oid(
+        transaction.odb(),
+        &value,
+    )?))
+}
+
+/// Merge imported worktree comments, votes, and outbox state into canonical
+/// logical changes in the synthetic superhistory.
+pub fn merge_canonical_metadata(transaction: &Transaction) -> anyhow::Result<()> {
+    let mut tips = Vec::new();
+    transaction.for_each_ref_prefixed("refs/josh/changes/", |_, oid| {
+        tips.push(oid);
+        Ok(())
+    })?;
+    let mut change_ids = std::collections::BTreeSet::new();
+    for tip in tips {
+        let tree = objects::CommitData::read(transaction.odb(), tip)?.tree_id()?;
+        let data: crate::layout::ChangesRefData = deserialize_tree(transaction, tree)?;
+        change_ids.extend(data.comments.keys().cloned());
+        change_ids.extend(data.votes.keys().cloned());
+        change_ids.extend(data.outbox.comments.keys().cloned());
+        change_ids.extend(data.outbox.votes.keys().cloned());
+    }
+    if change_ids.is_empty() {
+        return Ok(());
+    }
+
+    let odb = transaction.odb();
+    let super_ref = "refs/josh/super";
+    let previous = transaction.resolve_ref(super_ref)?;
+    let mut tree = match previous {
+        Some(previous) => objects::CommitData::read(odb, previous)?.tree_id()?,
+        None => tree::empty_id(),
+    };
+    let mut changed = false;
+    for change_id in change_ids {
+        let Some(metadata) = imported_metadata_tree(transaction, &change_id)? else {
+            continue;
+        };
+        let path = std::path::Path::new("changes")
+            .join(encode_change_id_path(&change_id))
+            .join("metadata");
+        let unchanged = tree::get_path_entry(transaction, odb, tree, &path)?
+            .is_some_and(|entry| entry.mode.is_tree() && entry.oid == metadata);
+        if !unchanged {
+            tree = tree::insert_oid(odb, tree, &path, metadata, 0o040000)?;
+            changed = true;
+        }
+    }
+    if !changed {
+        return Ok(());
+    }
+
+    let signature = josh_core::git::josh_actor_signature()?;
+    let parents: Vec<_> = previous.into_iter().collect();
+    let commit = objects::write_commit(
+        odb,
+        tree,
+        &parents,
+        &signature,
+        &signature,
+        "Update canonical josh change metadata",
+    )?;
+    transaction.update_ref(
+        super_ref,
+        previous.map_or(Expected::Absent, Expected::At),
+        commit,
+        "josh canonical change metadata",
+    )
+}
+
+/// Persist native change revisions in the store-wide synthetic superhistory.
+///
+/// Canonical metadata advances `refs/josh/super` without making remote
+/// history its parent. A separate per-remote-branch retention history keeps
+/// every projected revision reachable through anchor parents.
+pub fn store_canonical_revisions(
+    transaction: &Transaction,
+    tip: gix_hash::ObjectId,
+    base: gix_hash::ObjectId,
+    remote: &str,
+    branch: &str,
+) -> anyhow::Result<Vec<Change>> {
+    let mut changes = crate::change::split_changes(
+        transaction,
+        crate::change::get_changes(transaction, tip, base)?,
+    )?;
+    changes.sort_by(|left, right| left.id().cmp(&right.id()));
+    if changes.is_empty() {
+        return Ok(changes);
+    }
+
+    let odb = transaction.odb();
+    let super_ref = "refs/josh/super";
+    let previous_super = transaction.resolve_ref(super_ref)?;
+    let mut super_tree = match previous_super {
+        Some(previous) => objects::CommitData::read(odb, previous)?.tree_id()?,
+        None => tree::empty_id(),
+    };
+    let mut anchors = Vec::new();
+    let mut super_changed = false;
+
+    for change in &changes {
+        let change_id = change
+            .id()
+            .ok_or_else(|| anyhow::anyhow!("commit {} has no Change-Id", change.commit()))?;
+        let revision = DiffData {
+            commit: change.commit().to_string(),
+            base: change.base().to_string(),
+        };
+        let value = josh_git_serde::to_value(&revision)?;
+        let revision_tree = josh_git_serde::to_tree_oid(odb, &value)?;
+        let change_path = std::path::Path::new("changes").join(encode_change_id_path(change_id));
+        let projection_path = change_path
+            .join("projections")
+            .join(remote)
+            .join("refs")
+            .join("heads")
+            .join(branch);
+        let publication = PublicationData {
+            pushed: change.commit().to_string(),
+            landed: false,
+        };
+        let publication_tree =
+            josh_git_serde::to_tree_oid(odb, &josh_git_serde::to_value(&publication)?)?;
+        let publication_path = change_path
+            .join("publications")
+            .join(remote)
+            .join("refs")
+            .join("heads")
+            .join(branch);
+        let metadata_tree = imported_metadata_tree(transaction, change_id)?;
+        let metadata_path = change_path.join("metadata");
+        let projection_unchanged =
+            tree::get_path_entry(transaction, odb, super_tree, &projection_path)?
+                .is_some_and(|entry| entry.mode.is_tree() && entry.oid == revision_tree);
+        let publication_unchanged =
+            tree::get_path_entry(transaction, odb, super_tree, &publication_path)?
+                .is_some_and(|entry| entry.mode.is_tree() && entry.oid == publication_tree);
+        let metadata_unchanged = match metadata_tree {
+            Some(metadata_tree) => {
+                tree::get_path_entry(transaction, odb, super_tree, &metadata_path)?
+                    .is_some_and(|entry| entry.mode.is_tree() && entry.oid == metadata_tree)
+            }
+            None => true,
+        };
+        if projection_unchanged && publication_unchanged && metadata_unchanged {
+            continue;
+        }
+        if !projection_unchanged {
+            super_tree =
+                tree::insert_oid(odb, super_tree, &projection_path, revision_tree, 0o040000)?;
+            let signature = josh_core::git::josh_actor_signature()?;
+            let anchor = objects::write_commit(
+                odb,
+                tree::empty_id(),
+                &[change.commit()],
+                &signature,
+                &signature,
+                "Retain josh change revision",
+            )?;
+            anchors.push(anchor);
+        }
+        if !publication_unchanged {
+            super_tree = tree::insert_oid(
+                odb,
+                super_tree,
+                &publication_path,
+                publication_tree,
+                0o040000,
+            )?;
+        }
+        if let Some(metadata_tree) = metadata_tree
+            && !metadata_unchanged
+        {
+            super_tree =
+                tree::insert_oid(odb, super_tree, &metadata_path, metadata_tree, 0o040000)?;
+        }
+        super_changed = true;
+    }
+
+    if !super_changed {
+        return Ok(changes);
+    }
+
+    let signature = josh_core::git::josh_actor_signature()?;
+    if !anchors.is_empty() {
+        let retention_ref = format!("refs/josh/remotes/{remote}/changes/{branch}");
+        let previous_retention = transaction.resolve_ref(&retention_ref)?;
+        let mut retention_parents: Vec<_> = previous_retention.into_iter().collect();
+        retention_parents.extend(anchors);
+        let retention = objects::write_commit(
+            odb,
+            tree::empty_id(),
+            &retention_parents,
+            &signature,
+            &signature,
+            "Retain josh change revisions",
+        )?;
+        transaction.update_ref(
+            &retention_ref,
+            previous_retention.map_or(Expected::Absent, Expected::At),
+            retention,
+            "josh change retention",
+        )?;
+    }
+
+    let super_parents: Vec<_> = previous_super.into_iter().collect();
+    let super_commit = objects::write_commit(
+        odb,
+        super_tree,
+        &super_parents,
+        &signature,
+        &signature,
+        "Update canonical josh changes",
+    )?;
+    transaction.update_ref(
+        super_ref,
+        previous_super.map_or(Expected::Absent, Expected::At),
+        super_commit,
+        "josh canonical changes",
+    )?;
+    Ok(changes)
 }
 
 #[cfg(test)]
@@ -544,5 +829,118 @@ mod tests {
         // Oldest first, carrying the actual change commits.
         assert_eq!(revs[0].diff.commit, change_v1.commit().to_string());
         assert_eq!(revs[1].diff.commit, change_v2.commit().to_string());
+    }
+
+    #[test]
+    fn canonical_revisions_keep_superhistory_linear_and_retain_amends() {
+        let td = tempfile::tempdir().unwrap();
+        let t = open_transaction(&td);
+        let null = gix_hash::ObjectId::null(gix_hash::Kind::Sha1);
+        let v1 = commit_with_change_id(&td, "change/10", "v1");
+
+        store_canonical_revisions(&t, v1, null, "origin", "main").unwrap();
+        let super_v1 = t.resolve_ref("refs/josh/super").unwrap().unwrap();
+        let retention_v1 = t
+            .resolve_ref("refs/josh/remotes/origin/changes/main")
+            .unwrap()
+            .unwrap();
+        let projection = std::path::Path::new("changes")
+            .join("change%2F10")
+            .join("projections/origin/refs/heads/main");
+        let super_tree = objects::CommitData::read(t.odb(), super_v1)
+            .unwrap()
+            .tree_id()
+            .unwrap();
+        let projection_tree = tree::get_path_entry(&t, t.odb(), super_tree, &projection)
+            .unwrap()
+            .unwrap()
+            .oid;
+        let revision: DiffData = deserialize_tree(&t, projection_tree).unwrap();
+        assert_eq!(revision.commit, v1.to_string());
+        assert!(
+            objects::CommitData::read(t.odb(), super_v1)
+                .unwrap()
+                .first_parent_id()
+                .is_none()
+        );
+
+        let retention = objects::CommitData::read(t.odb(), retention_v1).unwrap();
+        let anchor = retention.first_parent_id().unwrap();
+        assert_eq!(
+            objects::CommitData::read(t.odb(), anchor)
+                .unwrap()
+                .first_parent_id(),
+            Some(v1)
+        );
+
+        let v2 = commit_with_change_id(&td, "change/10", "v2");
+        store_canonical_revisions(&t, v2, null, "origin", "main").unwrap();
+        let super_v2 = t.resolve_ref("refs/josh/super").unwrap().unwrap();
+        let retention_v2 = t
+            .resolve_ref("refs/josh/remotes/origin/changes/main")
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            objects::CommitData::read(t.odb(), super_v2)
+                .unwrap()
+                .first_parent_id(),
+            Some(super_v1)
+        );
+        assert_eq!(
+            objects::CommitData::read(t.odb(), retention_v2)
+                .unwrap()
+                .first_parent_id(),
+            Some(retention_v1)
+        );
+
+        let change_v2 = Change::new(&t, v2).unwrap();
+        let local_scope = ChangesRef::Local {
+            branch: "main".to_owned(),
+        };
+        crate::comments::write_comment(
+            &t,
+            &change_v2,
+            &crate::comments::CommentMeta {
+                message: "shared".to_owned(),
+                file: None,
+                location: None,
+                reply_to: None,
+                update_of: None,
+            },
+            None,
+            None,
+            &local_scope,
+            CommentNamespace::Default,
+        )
+        .unwrap();
+        store_canonical_revisions(&t, v2, null, "origin", "main").unwrap();
+        let super_with_metadata = t.resolve_ref("refs/josh/super").unwrap().unwrap();
+        assert_ne!(super_with_metadata, super_v2);
+        assert_eq!(
+            t.resolve_ref("refs/josh/remotes/origin/changes/main")
+                .unwrap(),
+            Some(retention_v2)
+        );
+        let metadata_path = std::path::Path::new("changes/change%2F10/metadata");
+        let metadata_tree = objects::CommitData::read(t.odb(), super_with_metadata)
+            .unwrap()
+            .tree_id()
+            .unwrap();
+        assert!(
+            tree::get_path_entry(&t, t.odb(), metadata_tree, metadata_path)
+                .unwrap()
+                .is_some()
+        );
+
+        store_canonical_revisions(&t, v2, null, "origin", "main").unwrap();
+        assert_eq!(
+            t.resolve_ref("refs/josh/super").unwrap(),
+            Some(super_with_metadata)
+        );
+        assert_eq!(
+            t.resolve_ref("refs/josh/remotes/origin/changes/main")
+                .unwrap(),
+            Some(retention_v2)
+        );
     }
 }
