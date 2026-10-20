@@ -11,9 +11,9 @@
     },
     "cache_hits": {
       "counts": {
-        "C/C++": 258,
+        "Rust": 583,
         "Assembler": 115,
-        "Rust": 583
+        "C/C++": 258
       },
       "adv_counts": {
         "c [gcc]": 258,
@@ -36,8 +36,8 @@
       "nanos": 0
     },
     "cache_read_hit_duration": {
-      "secs": 263,
-      "nanos": 195714745
+      "secs": 212,
+      "nanos": 241672970
     },
     "compilations": 0,
     "compiler_write_duration": {
@@ -46,13 +46,13 @@
     },
     "compile_fails": 4,
     "not_cached": {
-      "-o": 3,
-      "-": 4,
-      "crate-type": 152,
-      "missing emit": 1,
-      "missing input": 7,
       "-E": 1,
-      "incremental": 17
+      "-o": 3,
+      "missing input": 7,
+      "-": 4,
+      "missing emit": 1,
+      "incremental": 17,
+      "crate-type": 152
     },
     "dist_compiles": {},
     "dist_errors": 0
