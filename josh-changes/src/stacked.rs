@@ -19,6 +19,14 @@ pub struct PushRef {
     pub change_id: String,
 }
 
+impl PushRef {
+    pub fn gerrit_branch(&self) -> Option<&str> {
+        self.ref_name
+            .strip_prefix("refs/for/")
+            .filter(|branch| !branch.is_empty())
+    }
+}
+
 pub(crate) fn changes_to_refs(
     transaction: &Transaction,
     baseref: &str,
@@ -179,5 +187,24 @@ pub fn build_to_push(
             oid: oid_to_push,
             change_id: "JOSH_PUSH".to_string(),
         }]),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn recognizes_gerrit_change_destinations() {
+        let mut push_ref = PushRef {
+            ref_name: "refs/for/main".to_owned(),
+            oid: gix_hash::ObjectId::null(gix_hash::Kind::Sha1),
+            change_id: "change".to_owned(),
+        };
+        assert_eq!(push_ref.gerrit_branch(), Some("main"));
+        push_ref.ref_name = "refs/for/".to_owned();
+        assert_eq!(push_ref.gerrit_branch(), None);
+        push_ref.ref_name = "refs/heads/main".to_owned();
+        assert_eq!(push_ref.gerrit_branch(), None);
     }
 }

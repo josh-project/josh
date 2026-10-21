@@ -397,6 +397,10 @@ mod tests {
     use super::*;
     use crate::change::Change;
     use crate::layout::ChangesRefData;
+    use crate::{
+        JoshRef, SUPER_REF, materialize_change_refs_from_superhistory,
+        record_upstream_change_revisions, sync_change_refs_into_superhistory,
+    };
     use josh_core::cache::{CacheStack, SledCacheBackend, TransactionContext};
 
     fn open_transaction(td: &tempfile::TempDir) -> Transaction {
@@ -544,5 +548,140 @@ mod tests {
         // Oldest first, carrying the actual change commits.
         assert_eq!(revs[0].diff.commit, change_v1.commit().to_string());
         assert_eq!(revs[1].diff.commit, change_v2.commit().to_string());
+    }
+
+    #[test]
+    fn upstream_revisions_keep_superhistory_linear_and_retain_amends() {
+        let td = tempfile::tempdir().unwrap();
+        let t = open_transaction(&td);
+        let null = gix_hash::ObjectId::null(gix_hash::Kind::Sha1);
+        let v1 = commit_with_change_id(&td, "change/10", "v1");
+
+        record_upstream_change_revisions(&t, v1, null, "origin", "main").unwrap();
+        let retention_ref = JoshRef::change_retention("origin", "main").ref_name();
+        let super_v1 = t.resolve_ref("refs/josh/super").unwrap().unwrap();
+        let retention_v1 = t.resolve_ref(&retention_ref).unwrap().unwrap();
+        let projection = std::path::Path::new("changes")
+            .join("change%2F10")
+            .join("projections/origin/refs/heads/main");
+        let super_tree = objects::CommitData::read(t.odb(), super_v1)
+            .unwrap()
+            .tree_id()
+            .unwrap();
+        let projection_tree = tree::get_path_entry(&t, t.odb(), super_tree, &projection)
+            .unwrap()
+            .unwrap()
+            .oid;
+        let revision: DiffData = deserialize_tree(&t, projection_tree).unwrap();
+        assert_eq!(revision.commit, v1.to_string());
+        assert!(
+            objects::CommitData::read(t.odb(), super_v1)
+                .unwrap()
+                .first_parent_id()
+                .is_none()
+        );
+
+        let retention = objects::CommitData::read(t.odb(), retention_v1).unwrap();
+        let anchor = retention.first_parent_id().unwrap();
+        assert_eq!(
+            objects::CommitData::read(t.odb(), anchor)
+                .unwrap()
+                .first_parent_id(),
+            Some(v1)
+        );
+
+        let v2 = commit_with_change_id(&td, "change/10", "v2");
+        record_upstream_change_revisions(&t, v2, null, "origin", "main").unwrap();
+        let super_v2 = t.resolve_ref("refs/josh/super").unwrap().unwrap();
+        let retention_v2 = t.resolve_ref(&retention_ref).unwrap().unwrap();
+        assert_eq!(
+            objects::CommitData::read(t.odb(), super_v2)
+                .unwrap()
+                .first_parent_id(),
+            Some(super_v1)
+        );
+        assert_eq!(
+            objects::CommitData::read(t.odb(), retention_v2)
+                .unwrap()
+                .first_parent_id(),
+            Some(retention_v1)
+        );
+
+        let change_v2 = Change::new(&t, v2).unwrap();
+        let local_scope = ChangesRef::Local {
+            branch: "main".to_owned(),
+        };
+        crate::comments::write_comment(
+            &t,
+            &change_v2,
+            &crate::comments::CommentMeta {
+                message: "shared".to_owned(),
+                file: None,
+                location: None,
+                reply_to: None,
+                update_of: None,
+            },
+            None,
+            None,
+            &local_scope,
+            CommentNamespace::Default,
+        )
+        .unwrap();
+        let remote_scope = ChangesRef::Remote {
+            remote: "origin".to_owned(),
+            branch: "main".to_owned(),
+        };
+        crate::comments::write_comment(
+            &t,
+            &change_v2,
+            &crate::comments::CommentMeta {
+                message: "pending".to_owned(),
+                file: None,
+                location: None,
+                reply_to: None,
+                update_of: None,
+            },
+            None,
+            None,
+            &remote_scope,
+            CommentNamespace::Outbox,
+        )
+        .unwrap();
+        let local_oid = t.resolve_ref(&local_scope.ref_name()).unwrap().unwrap();
+        let remote_oid = t.resolve_ref(&remote_scope.ref_name()).unwrap().unwrap();
+        sync_change_refs_into_superhistory(&t).unwrap();
+        let super_with_metadata = t.resolve_ref(SUPER_REF).unwrap().unwrap();
+        assert_ne!(super_with_metadata, super_v2);
+        assert_eq!(t.resolve_ref(&retention_ref).unwrap(), Some(retention_v2));
+
+        t.delete_ref(&local_scope.ref_name(), Expected::Any)
+            .unwrap();
+        t.delete_ref(&remote_scope.ref_name(), Expected::Any)
+            .unwrap();
+        assert!(materialize_change_refs_from_superhistory(&t).unwrap());
+        assert_eq!(
+            t.resolve_ref(&local_scope.ref_name()).unwrap(),
+            Some(local_oid)
+        );
+        assert_eq!(
+            t.resolve_ref(&remote_scope.ref_name()).unwrap(),
+            Some(remote_oid)
+        );
+        assert_eq!(
+            crate::comments::read_comments(&t, change_v2.id().unwrap(), &remote_scope)
+                .unwrap()
+                .len(),
+            1
+        );
+        assert_eq!(
+            crate::comments::read_comments(&t, change_v2.id().unwrap(), &local_scope)
+                .unwrap()
+                .len(),
+            1
+        );
+
+        record_upstream_change_revisions(&t, v2, null, "origin", "main").unwrap();
+        assert_eq!(t.resolve_ref(SUPER_REF).unwrap(), Some(super_with_metadata));
+        assert_eq!(t.resolve_ref(&retention_ref).unwrap(), Some(retention_v2));
     }
 }

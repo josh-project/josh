@@ -27,9 +27,9 @@ Create a bare remote and seed it with some content
 
 Clone with josh filter
 
-  $ josh clone ${TESTTMP}/remote :/sub1 filtered 2>&1 | tail -2
-  
-  Cloned repository to: ${TESTTMP}/filtered/
+  $ josh --store filtered.store clone ${TESTTMP}/remote filtered --mount origin --filter :/sub1 2>&1 | tail -2 | sed "s|${TESTTMP}|\${TESTTMP}|g"
+  Added remote 'origin' at 'origin'
+  Cloned worktree to ${TESTTMP}/filtered
   $ cd filtered
   $ git config user.email "josh@example.com"
   $ git config user.name "Josh Test"
@@ -65,7 +65,7 @@ Pull: B is skipped, C and A are restacked on top of the landed B
 
   $ cd ${TESTTMP}/filtered
   $ josh changes pull
-  updated master (5f2928c..9d75f6f)
+  Fetched from remote: origin
   Skipping 1 already applied change: 2222
   Restacked master: kept 2 changes
   $ git log --graph --pretty="%s"
@@ -87,4 +87,5 @@ Pull: B is skipped, C and A are restacked on top of the landed B
 Pull again: no-op
 
   $ josh changes pull
+  Fetched from remote: origin
   Already up to date.

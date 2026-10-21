@@ -1,18 +1,14 @@
 use anyhow::{Context, anyhow};
 
 use josh_changes::{PushMode, PushRef, StackedChangeRef, StackedRef, build_to_push};
-use josh_core::git::normalize_repo_path;
 
-use crate::config::{RemoteConfig, read_remote_config};
+use crate::config::RemoteConfig;
 use crate::forge::{Forge, GerritMode};
 use crate::porcelain::PushRefUpdate;
 
 #[derive(Debug, clap::Parser)]
 pub struct PushArgs {
-    /// Josh remote name to push to (optional, defaults to "origin")
-    ///
-    /// Must match a remote configured in `.git/config` with a josh filter
-    /// (e.g. `josh-remote = origin`). Does not support bare URLs.
+    /// Mount-derived remote identity; inferred from the branch or sole remote when omitted
     #[arg(add = crate::completion::remote())]
     pub remote: Option<String>,
 
@@ -56,10 +52,7 @@ pub struct PushArgs {
 
 #[derive(Debug, clap::Parser)]
 pub struct PublishArgs {
-    /// Josh remote name to push to (optional, defaults to "origin")
-    ///
-    /// Must match a remote configured in `.git/config` with a josh filter
-    /// (e.g. `josh-remote = origin`). Does not support bare URLs.
+    /// Mount-derived remote identity; inferred from the branch or sole remote when omitted
     #[arg(add = crate::completion::remote())]
     pub remote: Option<String>,
 
@@ -100,6 +93,12 @@ struct PreparedPush {
     local_oid: gix_hash::ObjectId,
     /// The local, filtered commit corresponding to the upstream base.
     local_base_oid: gix_hash::ObjectId,
+    /// Upstream history after reversing the mount and worktree filters.
+    upstream_oid: gix_hash::ObjectId,
+    /// Upstream destination base used to split logical changes.
+    upstream_base_oid: gix_hash::ObjectId,
+    /// Upstream destination branch.
+    remote_ref: String,
 }
 
 fn prepare_push(
@@ -133,7 +132,7 @@ fn prepare_push(
         .resolve_ref(&local_ref_name)?
         .context("Failed to get target of local ref")?;
 
-    let dest_remote_ref = format!("refs/josh/remotes/{}/{}", remote_name, remote_ref);
+    let dest_remote_ref = crate::store::backing_heads_prefix(remote_name) + remote_ref;
     let (dest_oid, old_filtered_oid) =
         if let Some(dest_oid) = transaction.resolve_ref(&dest_remote_ref)? {
             let (filtered_oids, errors) =
@@ -158,7 +157,7 @@ fn prepare_push(
         };
 
     let original_target = if let Some(base) = base {
-        let base_remote_ref = format!("refs/josh/remotes/{}/{}", remote_name, base);
+        let base_remote_ref = crate::store::backing_heads_prefix(remote_name) + base;
         transaction
             .resolve_ref(&base_remote_ref)?
             .ok_or_else(|| anyhow!("no such ref: '{}'", base_remote_ref))
@@ -258,6 +257,9 @@ fn prepare_push(
         pr_infos,
         local_oid: local_commit,
         local_base_oid: old_filtered_oid,
+        upstream_oid: unfiltered_oid,
+        upstream_base_oid: original_target,
+        remote_ref: remote_ref.to_owned(),
     })
 }
 
@@ -499,7 +501,8 @@ fn create_prs(
 }
 
 fn orchestrate_push(
-    remote: Option<&str>,
+    remote_name: &str,
+    config: &RemoteConfig,
     refspecs_arg: &[String],
     base: Option<&str>,
     merge: bool,
@@ -507,22 +510,13 @@ fn orchestrate_push(
     atomic: bool,
     dry_run: bool,
     push_mode: PushMode,
+    filter: josh_core::filter::Filter,
     transaction: &josh_core::cache::Transaction,
 ) -> anyhow::Result<()> {
-    let repo_path = normalize_repo_path(transaction.path());
-
-    let remote_name = remote.unwrap_or("origin");
-
-    let config = read_remote_config(&repo_path, remote_name)
-        .with_context(|| format!("Failed to read remote config for '{}'", remote_name))?;
-    let filter = config.semantic_filter();
-    let RemoteConfig {
-        url,
-        forge,
-        push_url,
-        gerrit_mode,
-        ..
-    } = config;
+    let url = &config.url;
+    let forge = config.forge;
+    let push_url = &config.push_url;
+    let gerrit_mode = config.gerrit_mode;
 
     // Branches go to the fork (push_url) when configured; otherwise to `url`.
     // PRs are always opened against `url`.
@@ -614,6 +608,31 @@ fn orchestrate_push(
 
     execute_link_pushes(transaction, link_pushes, atomic, dry_run)?;
 
+    if matches!(push_mode, PushMode::Publish(_)) && !dry_run {
+        for prepared in &prepared_pushes {
+            let stored = josh_changes::record_upstream_change_revisions(
+                transaction,
+                prepared.upstream_oid,
+                prepared.upstream_base_oid,
+                remote_name,
+                &prepared.remote_ref,
+            )?;
+            if stored.is_empty() && forge == Some(Forge::Gerrit) {
+                let mut seen = std::collections::HashSet::new();
+                for push_ref in &prepared.to_push {
+                    if push_ref.gerrit_branch().is_some() && seen.insert(push_ref.oid) {
+                        josh_changes::record_upstream_change_revisions(
+                            transaction,
+                            push_ref.oid,
+                            prepared.upstream_base_oid,
+                            remote_name,
+                            &prepared.remote_ref,
+                        )?;
+                    }
+                }
+            }
+        }
+    }
     Ok(())
 }
 
@@ -728,38 +747,48 @@ fn execute_link_pushes(
     Ok(())
 }
 
-pub fn handle_push(
+pub fn handle_store_push(
     args: &PushArgs,
+    remote: &str,
+    config: &RemoteConfig,
+    refspecs: &[String],
+    filter: josh_core::filter::Filter,
     transaction: &josh_core::cache::Transaction,
 ) -> anyhow::Result<()> {
     orchestrate_push(
-        args.remote.as_deref(),
-        &args.refspecs,
+        remote,
+        config,
+        refspecs,
         args.base.as_deref(),
         args.merge,
         args.force,
         args.atomic,
         args.dry_run,
         PushMode::Normal,
+        filter,
         transaction,
     )
 }
-
-pub fn handle_publish(
+pub fn handle_store_publish(
     args: &PublishArgs,
+    remote: &str,
+    config: &RemoteConfig,
+    refspecs: &[String],
+    filter: josh_core::filter::Filter,
+    author: &str,
     transaction: &josh_core::cache::Transaction,
 ) -> anyhow::Result<()> {
-    let push_mode = PushMode::Publish(transaction.config_string("user.email")?.unwrap_or_default());
-
     orchestrate_push(
-        args.remote.as_deref(),
-        &args.refspecs,
+        remote,
+        config,
+        refspecs,
         args.base.as_deref(),
         args.merge,
         args.force,
         args.atomic,
         args.dry_run,
-        push_mode,
+        PushMode::Publish(author.to_owned()),
+        filter,
         transaction,
     )
 }

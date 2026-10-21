@@ -1,5 +1,7 @@
   $ export TESTTMP=${PWD}
 
+  $ export JOSH_STORE=${TESTTMP}/store
+
 
   $ cd ${TESTTMP}
   $ mkdir remote
@@ -28,11 +30,9 @@
   $ which git
   /opt/git-install/bin/git
 
-  $ josh clone remote/libs :/sub1 libs
-  Added remote 'origin' with filter ':/sub1'
-  Already on 'master'
-  
-  Cloned repository to: ${TESTTMP}/libs/
+  $ josh clone remote/libs libs --filter :/sub1 2>&1 | sed "s|${TESTTMP}|\${TESTTMP}|g"
+  Added remote 'libs' at 'libs'
+  Cloned worktree to ${TESTTMP}/libs
 
   $ cd libs
 
@@ -41,30 +41,14 @@
   .git/refs
   |-- heads
   |   `-- master
-  |-- josh
-  |   |-- filtered
-  |   |   `-- bf567e0faf634a663d6cef48145a035e1974ab1d
-  |   |       `-- heads
-  |   |           `-- master
-  |   `-- remotes
-  |       `-- origin
-  |           |-- feature
-  |           `-- master
-  |-- namespaces
-  |   `-- josh-origin
-  |       |-- HEAD
-  |       `-- refs
-  |           `-- heads
-  |               |-- feature
-  |               `-- master
   |-- remotes
-  |   `-- origin
+  |   `-- libs
   |       |-- HEAD
   |       |-- feature
   |       `-- master
   `-- tags
   
-  15 directories, 10 files
+  5 directories, 4 files
 
   $ git-tree-pretty .
   .
@@ -74,7 +58,7 @@
       ┆  contents2
 
   $ git checkout feature
-  branch 'feature' set up to track 'origin/feature'.
+  branch 'feature' set up to track 'libs/feature'.
   Switched to a new branch 'feature'
 
   $ git-tree-pretty .
@@ -83,5 +67,30 @@
   │   ┆  contents1
   └── file2
       ┆  contents2
+
+The same stored remote backs another projection without another remote add.
+
+  $ cd ${TESTTMP}
+  $ josh clone remote/libs libs-root 2>&1 | sed "s|${TESTTMP}|\${TESTTMP}|g"
+  Cloned worktree to ${TESTTMP}/libs-root
+  $ (cd libs-root && git-tree-pretty .)
+  .
+  \xe2\x94\x9c\xe2\x94\x80\xe2\x94\x80 sub1/ (escaped)
+  │   ├── file1
+  │   │   ┆  contents1
+  │   └── file2
+  │       ┆  contents2
+  \xe2\x94\x94\xe2\x94\x80\xe2\x94\x80 sub2/ (escaped)
+      └── file3
+          ┆  contents1
+
+Worktree paths are relative to the invocation directory, independently of the store.
+
+  $ mkdir ${TESTTMP}/elsewhere
+  $ cd ${TESTTMP}/elsewhere
+  $ josh worktree add ../external :/libs/sub2 2>&1 | sed "s|${TESTTMP}|\${TESTTMP}|g"
+  Added worktree at ${TESTTMP}/external
+  $ rm -rf ../external
+  $ josh worktree remove ../external
 
 

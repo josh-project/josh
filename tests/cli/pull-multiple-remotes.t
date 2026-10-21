@@ -40,11 +40,9 @@
   $ which git
   /opt/git-install/bin/git
 
-  $ josh clone ${TESTTMP}/remote1/libs :/sub1 libs
-  Added remote 'origin' with filter ':/sub1'
-  Already on 'master'
-  
-  Cloned repository to: ${TESTTMP}/libs/
+  $ josh --store libs.store clone ${TESTTMP}/remote1/libs libs --mount origin --filter :/sub1 | sed "s|${TESTTMP}|\${TESTTMP}|g"
+  Added remote 'origin' at 'origin'
+  Cloned worktree to ${TESTTMP}/libs
 
   $ cd libs
 
@@ -55,11 +53,10 @@
   └── file2
       ┆  contents2
 
-  $ josh remote add remote2 ${TESTTMP}/remote2/libs :/sub2
-  Added remote 'remote2' with filter ':/sub2'
+  $ josh remote add remote2 ${TESTTMP}/remote2/libs 2>/dev/null
 
   $ josh changes pull --remote remote2
-  new branch master
+  Fetched from remote: remote2
   Error: the current branch tracks 'refs/remotes/origin/master', which does not belong to remote 'remote2'
   the current branch tracks 'refs/remotes/origin/master', which does not belong to remote 'remote2'
   [1]
@@ -72,6 +69,7 @@
       ┆  contents2
 
   $ josh changes pull
+  Fetched from remote: origin
   Already up to date.
 
   $ git-tree-pretty .

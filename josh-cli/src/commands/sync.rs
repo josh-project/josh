@@ -1,3 +1,5 @@
+use anyhow::Context;
+
 use crate::commands::scope::ScopeArgs;
 
 /// Arguments for `josh changes sync`.
@@ -25,10 +27,19 @@ pub struct SyncArgs {
 
 pub fn handle_sync(
     args: &SyncArgs,
+    store: Option<&crate::store::Store>,
     transaction: &josh_core::cache::Transaction,
 ) -> anyhow::Result<()> {
     josh_core::filter::check_experimental_features_enabled("josh changes sync")?;
     let scope = args.scope.resolve(transaction)?;
+    let remote_config = match &scope {
+        josh_changes::ChangesRef::Remote { remote, .. } => Some(
+            store
+                .context("A josh store is required for remote synchronization")?
+                .remote_config(remote)?,
+        ),
+        josh_changes::ChangesRef::Local { .. } => None,
+    };
     let opts = josh_github_changes::sync::SyncOptions {
         clean: args.clean,
         push: args.push,
@@ -37,7 +48,12 @@ pub fn handle_sync(
     };
 
     let rt = tokio::runtime::Runtime::new()?;
-    rt.block_on(josh_github_changes::sync::sync(transaction, &scope, opts))?;
+    rt.block_on(josh_github_changes::sync::sync(
+        transaction,
+        &scope,
+        remote_config,
+        opts,
+    ))?;
 
     Ok(())
 }

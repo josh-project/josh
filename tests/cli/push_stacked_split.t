@@ -23,11 +23,9 @@ Create a test repository with some content
 
 Clone with josh filter
 
-  $ josh clone ${TESTTMP}/remote :/sub1 filtered
-  Added remote 'origin' with filter ':/sub1'
-  Already on 'master'
-  
-  Cloned repository to: ${TESTTMP}/filtered/
+  $ josh --store filtered.store clone ${TESTTMP}/remote filtered --mount origin --filter :/sub1 | sed "s|${TESTTMP}|\${TESTTMP}|g"
+  Added remote 'origin' at 'origin'
+  Cloned worktree to ${TESTTMP}/filtered
   $ cd filtered
   $ git-tree-pretty .
   .
@@ -99,16 +97,6 @@ Test that we can fetch the split refs back
   * Change-Id: 1235  (HEAD -> master, origin/@heads/master/josh@example.com) c4069901c8ecd228f53e7b55deae1362905732d3
   * no change id  1c5e60ad475fec663012fe59ebb6a8fec1ff6a92
   * Change: foo7  cadc8f164b24465285d8ec413e0325a6341e4453
-  | * Change-Id: 1235  ef7c3c85ad4c5875f308003d42a6e11d9b14aeb9
-  | | * Change: foo7  955da8395478e58213ad4ae975d9d885f87fdcec
-  | | | * Change-Id: 1235  929b441481dc5e1a946004a5615592d837ad564b
-  | | | * no change id  5a2fe045f285a5d51f8904295ec5dd75ec038ae8
-  | | | * Change: foo7  2a517abd0a36a0b76a734726466d785b9640f1b6
-  | | |/  
-  | |/|   
-  | * | Change-Id: 1234  c61c37f4a3d5eb447f41dde15620eee1a181d60b
-  | |/  
-  | * add file1  6ed6c1ca90cb15fe4edf8d133f0e2e44562aa77d
   | * Change-Id: 1235  (origin/@changes/master/josh@example.com/1235) 96da92a9021ee186e1e9dd82305ddebfd1153ed5
   |/  
   * Change-Id: 1234  (origin/@changes/master/josh@example.com/1234, origin/@base/master/josh@example.com/1235) 43d6fcc9e7a81452d7343c78c0102f76027717fb

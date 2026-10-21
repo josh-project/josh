@@ -23,17 +23,17 @@ Create a bare remote and seed it with some content
 
 Clone twice with the same filter and author (second clone acts as a teammate)
 
-  $ josh clone ${TESTTMP}/remote :/sub1 filtered 2>&1 | tail -2
-  
-  Cloned repository to: ${TESTTMP}/filtered/
+  $ josh --store filtered.store clone ${TESTTMP}/remote filtered --mount origin --filter :/sub1 2>&1 | tail -2 | sed "s|${TESTTMP}|\${TESTTMP}|g"
+  Added remote 'origin' at 'origin'
+  Cloned worktree to ${TESTTMP}/filtered
   $ cd filtered
   $ git config user.email "josh@example.com"
   $ git config user.name "Josh Test"
   $ cd ..
 
-  $ josh clone ${TESTTMP}/remote :/sub1 filtered2 2>&1 | tail -2
-  
-  Cloned repository to: ${TESTTMP}/filtered2/
+  $ josh --store filtered2.store clone ${TESTTMP}/remote filtered2 --mount origin --filter :/sub1 2>&1 | tail -2 | sed "s|${TESTTMP}|\${TESTTMP}|g"
+  Added remote 'origin' at 'origin'
+  Cloned worktree to ${TESTTMP}/filtered2
   $ cd filtered2
   $ git config user.email "josh@example.com"
   $ git config user.name "Josh Test"
@@ -52,7 +52,6 @@ The teammate fetches the published stack and checks out its tip
 
   $ cd ${TESTTMP}/filtered2
   $ josh fetch
-  updated 1 change
   Fetched from remote: origin
   $ git checkout -q -B master refs/remotes/origin/@heads/master/josh@example.com
   $ git branch --set-upstream-to=origin/master master 1>/dev/null
@@ -68,7 +67,7 @@ Pull in the first clone: the amended change is reported
 
   $ cd ${TESTTMP}/filtered
   $ josh changes pull
-  updated 1 change
+  Fetched from remote: origin
   Already up to date.
 
 Upstream advances with an unrelated commit
@@ -83,7 +82,7 @@ The teammate restacks onto it (content unchanged) and republishes
 
   $ cd ${TESTTMP}/filtered2
   $ josh changes pull 2>&1
-  updated master (5f2928c..49dc0ec)
+  Fetched from remote: origin
   Restacked master: kept 1 change
   $ josh changes publish
   published 1 change
@@ -93,7 +92,7 @@ Pull in the first clone: the restacked change has the same patch-id, so no
 
   $ cd ${TESTTMP}/filtered
   $ josh changes pull 2>&1
-  updated master (5f2928c..49dc0ec)
+  Fetched from remote: origin
   Restacked master: kept 1 change
 
   $ git log --pretty="%s"

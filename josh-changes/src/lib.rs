@@ -13,6 +13,7 @@ mod refs;
 mod revisions;
 mod stacked;
 mod store;
+mod super_history;
 mod votes;
 
 pub mod remote_config;
@@ -23,4 +24,5 @@ pub use refs::*;
 pub use revisions::*;
 pub use stacked::*;
 pub use store::*;
+pub use super_history::*;
 pub use votes::*;

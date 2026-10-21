@@ -715,6 +715,19 @@ fn complete_remote(current: &OsStr) -> Vec<CompletionCandidate> {
     let Some(current) = current.to_str() else {
         return Vec::new();
     };
+    if let Ok(store) = crate::store::Store::resolve(
+        &std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from(".")),
+        None,
+        false,
+    ) {
+        return store
+            .config
+            .remotes
+            .keys()
+            .filter(|remote| remote.starts_with(current))
+            .map(|remote| candidate(remote, "Mount-derived remote identity"))
+            .collect();
+    }
     let Some(repo) = discover_repository() else {
         return Vec::new();
     };

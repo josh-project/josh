@@ -22,11 +22,9 @@ Create a test repository with some content
 
 Clone with josh filter
 
-  $ josh clone ${TESTTMP}/remote :/sub1 filtered
-  Added remote 'origin' with filter ':/sub1'
-  Already on 'master'
-  
-  Cloned repository to: ${TESTTMP}/filtered/
+  $ josh --store filtered.store clone ${TESTTMP}/remote filtered --mount origin --filter :/sub1 | sed "s|${TESTTMP}|\${TESTTMP}|g"
+  Added remote 'origin' at 'origin'
+  Cloned worktree to ${TESTTMP}/filtered
 
 
 

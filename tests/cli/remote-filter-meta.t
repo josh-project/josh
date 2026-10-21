@@ -50,11 +50,9 @@ default and kept with history="keep-trivial-merges".
 
 Clone with the meta args: the kept merge must show up in the filtered history
 
-  $ josh clone ${TESTTMP}/remote/libs ':~(history="keep-trivial-merges",gpgsig="norm-lf")[:/sub1]' libs
-  Added remote 'origin' with filter ':~(history="keep-trivial-merges",gpgsig="norm-lf")[:/sub1]'
-  Already on 'master'
-  
-  Cloned repository to: ${TESTTMP}/libs/
+  $ josh --store libs.store clone ${TESTTMP}/remote/libs libs --mount origin --filter ':~(history="keep-trivial-merges",gpgsig="norm-lf")[:/sub1]' | sed "s|${TESTTMP}|\${TESTTMP}|g"
+  Added remote 'origin' at 'origin'
+  Cloned worktree to ${TESTTMP}/libs
 
   $ cd libs
   $ git log --graph --pretty=%s origin/master
@@ -80,11 +78,9 @@ Counter-check: without the meta args the merge is elided (proves the setup
 distinguishes the two and the args do not leak into the plain path)
 
   $ cd ${TESTTMP}
-  $ josh clone ${TESTTMP}/remote/libs ':/sub1' libs-plain
-  Added remote 'origin' with filter ':/sub1'
-  Already on 'master'
-  
-  Cloned repository to: ${TESTTMP}/libs-plain/
+  $ josh --store libs-plain.store clone ${TESTTMP}/remote/libs libs-plain --mount origin --filter ':/sub1' | sed "s|${TESTTMP}|\${TESTTMP}|g"
+  Added remote 'origin' at 'origin'
+  Cloned worktree to ${TESTTMP}/libs-plain
 
   $ cd libs-plain
   $ git log --graph --pretty=%s origin/master
@@ -106,8 +102,6 @@ Incremental fetch: another trivial-under-filter merge upstream must also be kept
 
   $ cd ${TESTTMP}/libs
   $ josh fetch
-  updated master (2fa5077..c2a3e28)
-  new branch branch2
   Fetched from remote: origin
 
   $ git log --graph --pretty=%s origin/master
@@ -120,12 +114,6 @@ Incremental fetch: another trivial-under-filter merge upstream must also be kept
   * | add file2
   |/  
   * add file1
-
-josh filter prints the spec including the semantic args
-
-  $ josh filter origin
-  Applying filter ':~(gpgsig="norm-lf",history="keep-trivial-merges")[:/sub1]' to remote 'origin'
-  Applied filter ':~(gpgsig="norm-lf",history="keep-trivial-merges")[:/sub1]' to remote 'origin'
 
 Push roundtrip: reverse filtering must use the same semantic filter
 
@@ -153,7 +141,6 @@ A fetch after the push is a fast-forward onto the pushed commit
 
   $ cd ${TESTTMP}/libs
   $ josh fetch
-  updated master (c2a3e28..7c8cc20)
   Fetched from remote: origin
   $ git log --pretty=%s -1 origin/master
   add pushed_file
@@ -162,11 +149,9 @@ Chain filter with meta args: stepwise application by the CLI must equal the
 composed application josh-filter performs
 
   $ cd ${TESTTMP}
-  $ josh clone ${TESTTMP}/remote/libs ':~(history="keep-trivial-merges")[:/sub1:prefix=libs]' libs-chain
-  Added remote 'origin' with filter ':~(history="keep-trivial-merges")[:/sub1:prefix=libs]'
-  Already on 'master'
-  
-  Cloned repository to: ${TESTTMP}/libs-chain/
+  $ josh --store libs-chain.store clone ${TESTTMP}/remote/libs libs-chain --mount origin --filter ':~(history="keep-trivial-merges")[:/sub1:prefix=libs]' | sed "s|${TESTTMP}|\${TESTTMP}|g"
+  Added remote 'origin' at 'origin'
+  Cloned worktree to ${TESTTMP}/libs-chain
 
   $ cd ${TESTTMP}/remote/libs
   $ josh-filter -s ':~(history="keep-trivial-merges")[:/sub1:prefix=libs]' master --update refs/heads/expected-chain 1> /dev/null
@@ -180,8 +165,8 @@ composed application josh-filter performs
 Reserved transport keys are rejected in user filters
 
   $ cd ${TESTTMP}
-  $ josh clone ${TESTTMP}/remote/libs ':~(url="ha")[:/sub1]' libs-bad
-  Error: Failed to write remote config file
-  Failed to write remote config file
-  Filter must not set reserved meta key 'url': it is owned by the remote config
+  $ josh --store libs-bad.store clone ${TESTTMP}/remote/libs libs-bad --mount origin --filter ':~(url="ha")[:/sub1]'
+  Added remote 'origin' at 'origin'
+  Error: Filter must not set reserved meta key 'url': it is owned by remote configuration
+  Filter must not set reserved meta key 'url': it is owned by remote configuration
   [1]

@@ -5,7 +5,7 @@
 //! select the populated field. Writes populate a sparse struct and merge it
 //! back through the same filter (see `store::write_filtered`).
 
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 
 use serde::{Deserialize, Serialize};
 
@@ -47,4 +47,56 @@ pub struct ChangesRefData {
     pub comments: CommentsByChange,
     #[serde(default)]
     pub outbox: Outbox,
+}
+
+/// A `refs/heads` namespace in the store-wide change index.
+#[derive(Debug, Default, Serialize, Deserialize)]
+#[serde(bound(serialize = "T: Serialize", deserialize = "T: Deserialize<'de>"))]
+pub struct Heads<T> {
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub heads: BTreeMap<String, T>,
+}
+
+/// The literal `refs/heads` nesting used below projections.
+#[derive(Debug, Default, Serialize, Deserialize)]
+#[serde(bound(serialize = "T: Serialize", deserialize = "T: Deserialize<'de>"))]
+pub struct RefNamespace<T> {
+    pub refs: Heads<T>,
+}
+
+/// One logical change in the store-wide index.
+#[derive(Debug, Default, Serialize, Deserialize)]
+pub struct SuperChangeData {
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub projections: BTreeMap<String, RefNamespace<DiffData>>,
+}
+
+/// Serde view of the store-wide `refs/josh/super:changes` layout.
+#[derive(Debug, Default, Serialize, Deserialize)]
+pub struct SuperRefData {
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub changes: BTreeMap<String, SuperChangeData>,
+}
+
+impl SuperRefData {
+    pub fn projection(change_id: &str, remote: &str, branch: &str, revision: DiffData) -> Self {
+        let mut heads = BTreeMap::new();
+        heads.insert(branch.to_owned(), revision);
+        let mut projections = BTreeMap::new();
+        projections.insert(
+            remote.to_owned(),
+            RefNamespace {
+                refs: Heads { heads },
+            },
+        );
+        let mut changes = BTreeMap::new();
+        changes.insert(
+            change_id.to_owned(),
+            SuperChangeData {
+                projections,
+                ..Default::default()
+            },
+        );
+        Self { changes }
+    }
 }

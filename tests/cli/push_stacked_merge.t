@@ -26,7 +26,7 @@ Bare remote seeded with one file under sub1.
 
 Clone through the :/sub1 filter.
 
-  $ josh clone ${TESTTMP}/remote :/sub1 filtered > /dev/null 2>&1
+  $ josh --store filtered.store clone ${TESTTMP}/remote filtered --mount origin --filter :/sub1 > /dev/null 2>&1
   $ cd filtered
   $ git config user.email "josh@example.com"
   $ git config user.name "Josh Test"

@@ -1,48 +1,21 @@
   $ export TESTTMP=${PWD}
 
-  $ cd ${TESTTMP}
-  $ mkdir remote
-  $ cd remote
-  $ git init -q libs 1> /dev/null
-  $ cd libs
+  $ git init -q upstream
+  $ echo contents > upstream/file
+  $ git -C upstream add file
+  $ git -C upstream commit -q -m initial
+  $ git clone -q upstream legacy
+  $ git -C legacy config josh-remote.origin.url "file://${TESTTMP}/upstream"
+  $ git -C legacy config josh-remote.origin.filter ":/"
+  $ git -C legacy config josh-remote.origin.fetch "+refs/heads/*:refs/josh/remotes/origin/*"
 
-  $ mkdir sub1
-  $ echo contents1 > sub1/file1
-  $ git add sub1
-  $ git commit -m "add files" 1> /dev/null
+Legacy Git-config remotes are accepted by the store migration helper.
 
-  $ cd ${TESTTMP}
-
-  $ which git
-  /opt/git-install/bin/git
-
-Test migration from legacy git config to new file format
-
-  $ mkdir test-repo
-  $ cd test-repo
-  $ git init -q
-
-  $ git config josh-remote.origin.url "file://${TESTTMP}/remote/libs"
-  $ git config josh-remote.origin.filter ":/sub1"
-  $ git config josh-remote.origin.fetch "+refs/heads/*:refs/josh/remotes/origin/*"
-
-  $ git config josh-remote.origin.url | sed "s|file://.*/remote/libs|file://\${TESTTMP}/remote/libs|"
-  file://${TESTTMP}/remote/libs
-  $ git config josh-remote.origin.filter
-  :/sub1
-
-  $ josh filter origin
-  Applying filter ':/sub1' to remote 'origin'
-  Error: Could not resolve default branch from 'refs/remotes/origin/HEAD'. Has the remote been fetched?
-  Could not resolve default branch from 'refs/remotes/origin/HEAD'. Has the remote been fetched?
-  [1]
-
-  $ cat .git/josh/remotes/origin.josh | sed "s|file://.*/remote/libs|file://\${TESTTMP}/remote/libs|"
-  :~(
-      fetch="+refs/heads/*:refs/josh/remotes/origin/*"
-      url="file://${TESTTMP}/remote/libs"
-  )[
-      :/sub1
-  ]
-
-  $ cd ..
+  $ cd legacy
+  $ josh migrate 2>/dev/null | sed "s|${TESTTMP}|\${TESTTMP}|g"
+  Migrated worktree to ${TESTTMP}/legacy/worktree
+  $ git -C worktree show HEAD:file
+  contents
+  $ test ! -e .josh/josh/remotes
+  $ git --git-dir=.josh show refs/josh/super:store/remotes/origin/url | sed "s|${TESTTMP}|\${TESTTMP}|g"
+  file://${TESTTMP}/upstream (no-eol)
