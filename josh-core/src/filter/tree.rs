@@ -894,6 +894,253 @@ fn read_tree_into(src: &impl gix_object::Find, oid: gix_hash::ObjectId, buf: &mu
     )
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct TreeDelta {
+    pub(crate) before: gix_hash::ObjectId,
+    pub(crate) after: gix_hash::ObjectId,
+    pub(crate) content_edits_only: bool,
+}
+
+#[allow(dead_code)]
+impl TreeDelta {
+    fn empty() -> Self {
+        Self {
+            before: empty_id(),
+            after: empty_id(),
+            content_edits_only: true,
+        }
+    }
+}
+
+/// Compute sparse old/new projections containing only changed paths. File/tree transitions are
+/// rejected because their old and new coverage cannot coexist in a single path-based tree delta.
+#[allow(dead_code)]
+pub(crate) fn tree_delta(
+    transaction: &cache::Transaction,
+    old_oid: gix_hash::ObjectId,
+    new_oid: gix_hash::ObjectId,
+) -> anyhow::Result<TreeDelta> {
+    if old_oid == new_oid {
+        return Ok(TreeDelta::empty());
+    }
+
+    let odb = transaction.odb();
+    for oid in [old_oid, new_oid] {
+        if !oid.is_null() && odb.try_kind(oid)? != Some(gix_object::Kind::Tree) {
+            return Err(anyhow!("tree delta root is not a tree: {oid}"));
+        }
+    }
+    tree_delta_inner(transaction, odb, old_oid, new_oid, "")
+}
+
+#[allow(dead_code)]
+fn tree_delta_inner(
+    transaction: &cache::Transaction,
+    odb: &josh_memodb::Odb,
+    old_oid: gix_hash::ObjectId,
+    new_oid: gix_hash::ObjectId,
+    path: &str,
+) -> anyhow::Result<TreeDelta> {
+    if old_oid == new_oid {
+        return Ok(TreeDelta::empty());
+    }
+    if let Some(cached) = transaction.memo().tree_delta.get(&(old_oid, new_oid)) {
+        return Ok(cached);
+    }
+
+    if old_oid.is_null() || new_oid.is_null() {
+        let delta = TreeDelta {
+            before: if old_oid.is_null() {
+                empty_id()
+            } else {
+                old_oid
+            },
+            after: if new_oid.is_null() {
+                empty_id()
+            } else {
+                new_oid
+            },
+            content_edits_only: false,
+        };
+        transaction
+            .memo()
+            .tree_delta
+            .insert((old_oid, new_oid), delta);
+        return Ok(delta);
+    }
+
+    let old_kind = odb.try_kind(old_oid)?;
+    let new_kind = odb.try_kind(new_oid)?;
+    let delta = match (old_kind, new_kind) {
+        (Some(gix_object::Kind::Tree), Some(gix_object::Kind::Tree)) => {
+            let old_bytes = transaction
+                .read_tree_bytes(odb, old_oid)?
+                .ok_or_else(|| anyhow!("tree delta cannot read tree: {old_oid}"))?;
+            let new_bytes = transaction
+                .read_tree_bytes(odb, new_oid)?
+                .ok_or_else(|| anyhow!("tree delta cannot read tree: {new_oid}"))?;
+            let old_tree = ParsedTree::from_bytes(&old_bytes)?;
+            let new_tree = ParsedTree::from_bytes(&new_bytes)?;
+            let mut before = Vec::new();
+            let mut after = Vec::new();
+            let mut content_edits_only = true;
+            let mut old_seen = (!old_tree.sorted).then(std::collections::HashSet::new);
+            let mut new_seen = (!new_tree.sorted).then(std::collections::HashSet::new);
+
+            for old_entry in old_tree.entries() {
+                if old_seen
+                    .as_mut()
+                    .is_some_and(|seen| !seen.insert(&**old_entry.filename))
+                {
+                    continue;
+                }
+                let new_entry = new_tree.entry(old_entry.filename);
+                if new_entry.is_some_and(|new_entry| {
+                    old_entry.oid == new_entry.oid && old_entry.mode == new_entry.mode
+                }) {
+                    continue;
+                }
+                let child_path = delta_child_path(path, old_entry.filename);
+                let (old_delta, new_delta, entry_content_edits_only) =
+                    tree_delta_entry(transaction, odb, Some(*old_entry), new_entry, &child_path)?;
+                content_edits_only &= entry_content_edits_only;
+                if let Some(entry) = old_delta {
+                    before.push(entry);
+                }
+                if let Some(entry) = new_delta {
+                    after.push(entry);
+                }
+            }
+
+            for new_entry in new_tree.entries() {
+                if new_seen
+                    .as_mut()
+                    .is_some_and(|seen| !seen.insert(&**new_entry.filename))
+                {
+                    continue;
+                }
+                if old_tree.entry(new_entry.filename).is_some() {
+                    continue;
+                }
+                let child_path = delta_child_path(path, new_entry.filename);
+                let (old_delta, new_delta, entry_content_edits_only) =
+                    tree_delta_entry(transaction, odb, None, Some(*new_entry), &child_path)?;
+                content_edits_only &= entry_content_edits_only;
+                if let Some(entry) = old_delta {
+                    before.push(entry);
+                }
+                if let Some(entry) = new_delta {
+                    after.push(entry);
+                }
+            }
+
+            before.sort_by(|a, b| {
+                git_tree_entry_cmp(&a.filename, a.mode.is_tree(), &b.filename, b.mode.is_tree())
+            });
+            after.sort_by(|a, b| {
+                git_tree_entry_cmp(&a.filename, a.mode.is_tree(), &b.filename, b.mode.is_tree())
+            });
+            TreeDelta {
+                before: objects::write_tree_now(odb, before)?,
+                after: objects::write_tree_now(odb, after)?,
+                content_edits_only,
+            }
+        }
+        (Some(gix_object::Kind::Tree), _) | (_, Some(gix_object::Kind::Tree)) => {
+            return Err(anyhow!(
+                "file-tree transition at {}",
+                if path.is_empty() { "<root>" } else { path }
+            ));
+        }
+        _ => TreeDelta {
+            before: old_oid,
+            after: new_oid,
+            content_edits_only: true,
+        },
+    };
+
+    transaction
+        .memo()
+        .tree_delta
+        .insert((old_oid, new_oid), delta);
+    Ok(delta)
+}
+
+#[allow(dead_code)]
+fn delta_child_path(parent: &str, name: &gix_object::bstr::BStr) -> String {
+    let name = String::from_utf8_lossy(name);
+    if parent.is_empty() {
+        name.into_owned()
+    } else {
+        format!("{parent}/{name}")
+    }
+}
+
+#[allow(dead_code)]
+fn tree_delta_entry(
+    transaction: &cache::Transaction,
+    odb: &josh_memodb::Odb,
+    old_entry: Option<gix_object::tree::EntryRef<'_>>,
+    new_entry: Option<gix_object::tree::EntryRef<'_>>,
+    path: &str,
+) -> anyhow::Result<(
+    Option<gix_object::tree::Entry>,
+    Option<gix_object::tree::Entry>,
+    bool,
+)> {
+    let (Some(old_entry), Some(new_entry)) = (old_entry, new_entry) else {
+        let old_oid = old_entry
+            .map(|entry| entry.oid.to_owned())
+            .unwrap_or_else(|| gix_hash::ObjectId::null(gix_hash::Kind::Sha1));
+        let new_oid = new_entry
+            .map(|entry| entry.oid.to_owned())
+            .unwrap_or_else(|| gix_hash::ObjectId::null(gix_hash::Kind::Sha1));
+        let delta = tree_delta_inner(transaction, odb, old_oid, new_oid, path)?;
+        let before = old_entry.map(|entry| gix_object::tree::Entry {
+            mode: entry.mode,
+            filename: entry.filename.to_owned(),
+            oid: delta.before,
+        });
+        let after = new_entry.map(|entry| gix_object::tree::Entry {
+            mode: entry.mode,
+            filename: entry.filename.to_owned(),
+            oid: delta.after,
+        });
+        return Ok((before, after, false));
+    };
+
+    if old_entry.oid == new_entry.oid && old_entry.mode == new_entry.mode {
+        return Ok((None, None, true));
+    }
+    if old_entry.mode.is_tree() != new_entry.mode.is_tree() {
+        return Err(anyhow!("file-tree transition at {path}"));
+    }
+    if old_entry.oid == new_entry.oid {
+        return Ok((Some(old_entry.into()), Some(new_entry.into()), false));
+    }
+
+    let delta = tree_delta_inner(
+        transaction,
+        odb,
+        old_entry.oid.to_owned(),
+        new_entry.oid.to_owned(),
+        path,
+    )?;
+    let before = (delta.before != empty_id()).then(|| gix_object::tree::Entry {
+        mode: old_entry.mode,
+        filename: old_entry.filename.to_owned(),
+        oid: delta.before,
+    });
+    let after = (delta.after != empty_id()).then(|| gix_object::tree::Entry {
+        mode: new_entry.mode,
+        filename: new_entry.filename.to_owned(),
+        oid: delta.after,
+    });
+    let stable_entry = old_entry.mode == new_entry.mode
+        && (old_entry.mode.is_tree() || !old_entry.mode.is_commit());
+    Ok((before, after, stable_entry && delta.content_edits_only))
+}
+
 pub fn diff_paths(
     src: &(impl gix_object::Find + gix_object::FindHeader),
     input1: gix_hash::ObjectId,
@@ -1217,12 +1464,33 @@ pub fn populate(
     Ok(result_tree)
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct ComposeBranchMetadata {
+    pub(crate) applied: gix_hash::ObjectId,
+    pub(crate) visible: gix_hash::ObjectId,
+    pub(crate) source_coverage: gix_hash::ObjectId,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct ComposeMetadata {
+    pub(crate) branches: Vec<ComposeBranchMetadata>,
+    pub(crate) tree: gix_hash::ObjectId,
+}
+
 pub fn compose(
     transaction: &cache::Transaction,
     trees: Vec<(&Filter, gix_hash::ObjectId)>,
 ) -> anyhow::Result<gix_hash::ObjectId> {
+    Ok(compose_with_metadata(transaction, trees)?.tree)
+}
+
+pub(crate) fn compose_with_metadata(
+    transaction: &cache::Transaction,
+    trees: Vec<(&Filter, gix_hash::ObjectId)>,
+) -> anyhow::Result<ComposeMetadata> {
     let mut result = empty_id();
     let mut taken = empty_id();
+    let mut branches = Vec::with_capacity(trees.len());
     for (f, applied) in trees {
         let tid = taken;
         // If a filter creates a tree entry that does not exist in the input (Like TreeId and Blob),
@@ -1251,9 +1519,17 @@ pub fn compose(
         transaction.memo().unapply.insert(f.id(), aid, unapplied);
         taken = overlay(transaction, taken, unapplied)?;
         result = overlay(transaction, subtracted, result)?;
+        branches.push(ComposeBranchMetadata {
+            applied,
+            visible: subtracted,
+            source_coverage: unapplied,
+        });
     }
 
-    Ok(result)
+    Ok(ComposeMetadata {
+        branches,
+        tree: result,
+    })
 }
 
 pub fn get_blob(
@@ -1295,6 +1571,17 @@ mod tests {
         let mut builder = repo.edit_tree(empty_id()).unwrap();
         for path in paths {
             let oid = josh_gix_ext::write_blob(&repo.objects, path.as_bytes()).unwrap();
+            builder
+                .upsert(*path, gix::objs::tree::EntryKind::Blob, oid)
+                .unwrap();
+        }
+        builder.write().unwrap().detach()
+    }
+
+    fn make_content_tree(repo: &gix::Repository, files: &[(&str, &str)]) -> gix_hash::ObjectId {
+        let mut builder = repo.edit_tree(empty_id()).unwrap();
+        for (path, content) in files {
+            let oid = josh_gix_ext::write_blob(&repo.objects, content.as_bytes()).unwrap();
             builder
                 .upsert(*path, gix::objs::tree::EntryKind::Blob, oid)
                 .unwrap();
@@ -1986,5 +2273,211 @@ mod tests {
             "collision entries keep input1's raw mode"
         );
         assert_eq!(out_entry(&out_tree, "new.rs").unwrap().oid, theirs);
+    }
+
+    #[test]
+    fn compose_metadata_matches_public_compose_and_uniqueness_steps() {
+        let td = tempfile::tempdir().unwrap();
+        let repo = gix::init_bare(td.path()).unwrap();
+        let t = open_transaction(&td);
+        let input = make_content_tree(
+            &repo,
+            &[("a/file.txt", "a"), ("b/file.txt", "b"), ("top.txt", "top")],
+        );
+        let first = Filter::new().subdir("a");
+        let second = Filter::new();
+        let first_applied = apply(&t, first, Rewrite::from_tree(input))
+            .unwrap()
+            .tree_id();
+        let second_applied = apply(&t, second, Rewrite::from_tree(input))
+            .unwrap()
+            .tree_id();
+        let trees = vec![(&first, first_applied), (&second, second_applied)];
+
+        let metadata = compose_with_metadata(&t, trees.clone()).unwrap();
+        assert_eq!(compose(&t, trees).unwrap(), metadata.tree);
+        assert_eq!(metadata.branches.len(), 2);
+
+        let first_coverage = apply(
+            &t,
+            invert(first).unwrap(),
+            Rewrite::from_tree(first_applied),
+        )
+        .unwrap()
+        .tree_id();
+        let second_visible = subtract(&t, second_applied, first_coverage).unwrap();
+        assert_eq!(metadata.branches[0].applied, first_applied);
+        assert_eq!(metadata.branches[0].visible, first_applied);
+        assert_eq!(metadata.branches[0].source_coverage, first_coverage);
+        assert_eq!(metadata.branches[1].applied, second_applied);
+        assert_eq!(metadata.branches[1].visible, second_visible);
+        assert_eq!(metadata.branches[1].source_coverage, second_applied);
+
+        let expected = overlay(&t, second_visible, first_applied).unwrap();
+        assert_eq!(metadata.tree, expected);
+    }
+
+    #[test]
+    fn tree_delta_unchanged_trees_have_empty_projections() {
+        let td = tempfile::tempdir().unwrap();
+        let repo = gix::init_bare(td.path()).unwrap();
+        let t = open_transaction(&td);
+        let input = make_content_tree(&repo, &[("a/file.txt", "same"), ("b.txt", "same")]);
+
+        let delta = tree_delta(&t, input, input).unwrap();
+        assert_eq!(delta.before, empty_id());
+        assert_eq!(delta.after, empty_id());
+
+        let null = gix_hash::ObjectId::null(gix_hash::Kind::Sha1);
+        assert_eq!(tree_delta(&t, null, null).unwrap(), delta);
+    }
+
+    #[test]
+    fn tree_delta_modification_is_sparse_memoized_and_roundtrips() {
+        let td = tempfile::tempdir().unwrap();
+        let repo = gix::init_bare(td.path()).unwrap();
+        let t = open_transaction(&td);
+        let old = make_content_tree(
+            &repo,
+            &[
+                ("a/file.txt", "old"),
+                ("a/unchanged.txt", "same"),
+                ("b/unchanged.txt", "same"),
+            ],
+        );
+        let new = make_content_tree(
+            &repo,
+            &[
+                ("a/file.txt", "new"),
+                ("a/unchanged.txt", "same"),
+                ("b/unchanged.txt", "same"),
+            ],
+        );
+
+        let delta = tree_delta(&t, old, new).unwrap();
+        assert_eq!(
+            delta.before,
+            make_content_tree(&repo, &[("a/file.txt", "old")])
+        );
+        assert_eq!(
+            delta.after,
+            make_content_tree(&repo, &[("a/file.txt", "new")])
+        );
+        assert_eq!(t.memo().tree_delta.get(&(old, new)), Some(delta));
+        assert_eq!(tree_delta(&t, old, new).unwrap(), delta);
+
+        let unchanged = subtract(&t, old, delta.before).unwrap();
+        assert_eq!(overlay(&t, delta.after, unchanged).unwrap(), new);
+    }
+
+    #[test]
+    fn tree_delta_additions_deletions_and_null_roots() {
+        let td = tempfile::tempdir().unwrap();
+        let repo = gix::init_bare(td.path()).unwrap();
+        let t = open_transaction(&td);
+        let old = make_content_tree(&repo, &[("a/removed.txt", "removed"), ("keep.txt", "keep")]);
+        let new = make_content_tree(&repo, &[("a/added.txt", "added"), ("keep.txt", "keep")]);
+
+        let delta = tree_delta(&t, old, new).unwrap();
+        assert_eq!(
+            delta.before,
+            make_content_tree(&repo, &[("a/removed.txt", "removed")])
+        );
+        assert_eq!(
+            delta.after,
+            make_content_tree(&repo, &[("a/added.txt", "added")])
+        );
+        let unchanged = subtract(&t, old, delta.before).unwrap();
+        assert_eq!(overlay(&t, delta.after, unchanged).unwrap(), new);
+
+        let null = gix_hash::ObjectId::null(gix_hash::Kind::Sha1);
+        let added = tree_delta(&t, null, new).unwrap();
+        assert_eq!(added.before, empty_id());
+        assert_eq!(added.after, new);
+        let deleted = tree_delta(&t, old, null).unwrap();
+        assert_eq!(deleted.before, old);
+        assert_eq!(deleted.after, empty_id());
+        assert_eq!(tree_delta(&t, empty_id(), new).unwrap(), added);
+        assert_eq!(tree_delta(&t, old, empty_id()).unwrap(), deleted);
+    }
+
+    #[test]
+    fn tree_delta_preserves_modes_for_mode_only_changes() {
+        let td = tempfile::tempdir().unwrap();
+        let repo = gix::init_bare(td.path()).unwrap();
+        let t = open_transaction(&td);
+        let blob = josh_gix_ext::write_blob(&repo.objects, b"same").unwrap();
+        let old = write_raw_tree(&repo, &[("100664", "file", blob)]);
+        let new = write_raw_tree(&repo, &[("100755", "file", blob)]);
+
+        let delta = tree_delta(&t, old, new).unwrap();
+        assert_eq!(delta.before, old);
+        assert_eq!(delta.after, new);
+        assert_eq!(
+            out_entry(&out_entries(&t, delta.before), "file")
+                .unwrap()
+                .mode
+                .value(),
+            0o100664
+        );
+        assert_eq!(
+            out_entry(&out_entries(&t, delta.after), "file")
+                .unwrap()
+                .mode
+                .value(),
+            0o100755
+        );
+    }
+
+    #[test]
+    fn tree_delta_handles_noncanonical_trees_and_raw_modes() {
+        let td = tempfile::tempdir().unwrap();
+        let repo = gix::init_bare(td.path()).unwrap();
+        let t = open_transaction(&td);
+        let old_z = josh_gix_ext::write_blob(&repo.objects, b"old z").unwrap();
+        let old_a = josh_gix_ext::write_blob(&repo.objects, b"old a").unwrap();
+        let new_z = josh_gix_ext::write_blob(&repo.objects, b"new z").unwrap();
+        let new_a = josh_gix_ext::write_blob(&repo.objects, b"new a").unwrap();
+        let old = write_raw_tree(&repo, &[("100644", "z", old_z), ("100664", "a", old_a)]);
+        let new = write_raw_tree(&repo, &[("100644", "z", new_z), ("100644", "a", new_a)]);
+
+        let delta = tree_delta(&t, old, new).unwrap();
+        let expected_before =
+            write_raw_tree(&repo, &[("100664", "a", old_a), ("100644", "z", old_z)]);
+        let expected_after =
+            write_raw_tree(&repo, &[("100644", "a", new_a), ("100644", "z", new_z)]);
+        assert_eq!(delta.before, expected_before);
+        assert_eq!(delta.after, expected_after);
+    }
+
+    #[test]
+    fn tree_delta_rejects_file_tree_transitions_and_allows_gitlink_changes() {
+        let td = tempfile::tempdir().unwrap();
+        let repo = gix::init_bare(td.path()).unwrap();
+        let t = open_transaction(&td);
+        let blob = josh_gix_ext::write_blob(&repo.objects, b"file").unwrap();
+        let file = write_raw_tree(&repo, &[("100644", "a", blob)]);
+        let directory = make_content_tree(&repo, &[("a/b", "nested")]);
+
+        for (old, new) in [(file, directory), (directory, file)] {
+            let error = tree_delta(&t, old, new).unwrap_err();
+            assert!(
+                error.to_string().contains("file-tree transition at a"),
+                "unexpected error: {error}"
+            );
+        }
+
+        let gitlink =
+            gix_hash::ObjectId::from_str("0123456789012345678901234567890123456789").unwrap();
+        let linked = write_raw_tree(&repo, &[("160000", "a", gitlink)]);
+        let delta = tree_delta(&t, file, linked).unwrap();
+        assert_eq!(delta.before, file);
+        assert_eq!(delta.after, linked);
+        assert!(
+            out_entry(&out_entries(&t, delta.after), "a")
+                .unwrap()
+                .mode
+                .is_commit()
+        );
     }
 }

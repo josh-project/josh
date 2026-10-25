@@ -71,6 +71,8 @@ impl<P: Eq + Hash, K: Eq + Hash, V: Clone> PartitionedMemoMap<P, K, V> {
 pub(crate) struct TransactionMemo {
     pub(crate) apply: PartitionedMemoMap<ObjectId, ObjectId, ObjectId>,
     pub(crate) subtract: MemoMap<(ObjectId, ObjectId), ObjectId>,
+    #[allow(dead_code)]
+    pub(crate) tree_delta: MemoMap<(ObjectId, ObjectId), crate::filter::tree::TreeDelta>,
     pub(crate) intersect: MemoMap<(ObjectId, ObjectId), ObjectId>,
     pub(crate) overlay: MemoMap<(ObjectId, ObjectId), ObjectId>,
     pub(crate) unapply: PartitionedMemoMap<ObjectId, ObjectId, ObjectId>,
