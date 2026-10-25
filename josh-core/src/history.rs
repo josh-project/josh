@@ -522,14 +522,21 @@ pub fn unapply_filter(
                         Some(tree) => tree,
                         None => commit.tree_id()?,
                     };
+                    let lineage = match module_commit.parent_count() {
+                        0 => filter::ReverseLineage::Orphan,
+                        1 => filter::ReverseLineage::Linear,
+                        _ => filter::ReverseLineage::Merge,
+                    };
                     // Pass the commit context so a `:rev(...)` cutoff in the filter is resolved
                     // per commit (current vs this parent) rather than collapsed uniformly.
-                    filter::unapply(
+                    filter::unapply_with_lineage(
                         transaction,
                         filter,
                         tree,
                         parent_tree,
                         Some((module_commit.id(), commit.id())),
+                        lineage,
+                        base_tree.is_some(),
                     )
                 })
                 .collect()
@@ -568,12 +575,14 @@ pub fn unapply_filter(
                 // rewritten history retains the filtered history's topology. There is still no
                 // `<=SHA` parent context, so a `:rev(...)` cutoff resolves against
                 // `module_commit` on both sides.
-                filter::unapply(
+                filter::unapply_with_lineage(
                     transaction,
                     filter,
                     tree,
                     base_tree.unwrap_or_else(filter::tree::empty_id),
                     Some((module_commit.id(), module_commit.id())),
+                    filter::ReverseLineage::Orphan,
+                    base_tree.is_some(),
                 )?
             }
 
@@ -616,12 +625,14 @@ pub fn unapply_filter(
                     )?;
                     // The base is a merge of both original parents; resolve any `:rev(...)` cutoff
                     // against the first parent (mirrors the descendant-pick preference above).
-                    let tid_ours = filter::unapply(
+                    let tid_ours = filter::unapply_with_lineage(
                         transaction,
                         filter,
                         tree,
                         base_tree,
                         Some((module_commit.id(), original_parents[0].id())),
+                        filter::ReverseLineage::Merge,
+                        true,
                     )?;
 
                     let base_tree = objects::merge_commits(
@@ -630,12 +641,14 @@ pub fn unapply_filter(
                         original_parents[1].id(),
                         Some(objects::merge::Favor::Theirs),
                     )?;
-                    let tid_theirs = filter::unapply(
+                    let tid_theirs = filter::unapply_with_lineage(
                         transaction,
                         filter,
                         tree,
                         base_tree,
                         Some((module_commit.id(), original_parents[0].id())),
+                        filter::ReverseLineage::Merge,
+                        true,
                     )?;
 
                     if tid_ours == tid_theirs {

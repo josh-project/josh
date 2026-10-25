@@ -22,8 +22,12 @@ pub use josh_filter::{Filter, InsertContent, Op, RevMatch};
 pub use josh_filter::{as_file, pretty, spec};
 
 mod object_deref;
+mod reverse;
 pub mod text;
 pub mod tree;
+
+pub use reverse::unapply;
+pub(crate) use reverse::{ReverseLineage, unapply_with_lineage};
 
 pub fn as_tree(
     transaction: &cache::Transaction,
@@ -1343,285 +1347,6 @@ fn apply_impl(
     }
 }
 
-/// Calculate a tree with minimal differences from `parent_tree`
-/// such that `apply(unapply(tree, parent_tree)) == tree`.
-///
-/// `commits` carries the commit being reconstructed and the specific original parent whose tree is
-/// `parent_tree`. It is required to reverse commit-resolved per-commit filters (`:rev` / `:hook`),
-/// whose sub-filter is chosen from commit identity rather than the tree; callers that only ever pass
-/// tree-reversible filters pass `None`.
-pub fn unapply(
-    transaction: &cache::Transaction,
-    filter: Filter,
-    tree: gix_hash::ObjectId,
-    parent_tree: gix_hash::ObjectId,
-    commits: Option<(gix_hash::ObjectId, gix_hash::ObjectId)>,
-) -> anyhow::Result<gix_hash::ObjectId> {
-    // A `:rev(...)` filter has no static inverse (`invert` returns `Err`, like `:workspace` /
-    // `:stored` / `:starlark`), so this generic path is automatically skipped for it and it falls
-    // through to the per-commit handler / chain recursion below.
-    if let Ok(inverted) = invert(filter) {
-        let filtered = apply(
-            transaction,
-            invert(inverted)?,
-            Rewrite::from_tree(parent_tree),
-        )?;
-        let matching = apply(transaction, inverted, filtered)?;
-        let stripped = tree::subtract(transaction, parent_tree, matching.tree_id())?;
-        let x = apply(transaction, inverted, Rewrite::from_tree(tree))?;
-
-        return tree::overlay(transaction, x.tree_id(), stripped);
-    }
-
-    // `peel_op` (not `to_op`) so a `:~(...)[...]` meta wrapper around e.g. `:rev(...)` is seen
-    // through: the meta options (history flags) only affect the forward direction, and the
-    // per-commit reverse handler needs the wrapped operator.
-    if let Some(ws) =
-        unapply_per_rev_filter(transaction, &peel_op(filter), tree, parent_tree, commits)?
-    {
-        return Ok(ws);
-    }
-
-    if let Op::Chain(filters) = peel_op(filter) {
-        // Split into first and rest, unapply recursively
-        let (first, rest) = match filters.split_first() {
-            Some((first, rest)) => (first, rest),
-            None => return Ok(tree),
-        };
-
-        if rest.is_empty() {
-            return unapply(transaction, *first, tree, parent_tree, commits);
-        }
-
-        let rest_chain = to_filter(Op::Chain(rest.to_vec()));
-
-        // Compute filtered_parent_tree for the first filter. `:rev`/`:hook` select their sub-filter
-        // from commit identity rather than the tree, so they cannot be applied at tree level:
-        // resolve the parent's concrete sub-filter and apply that instead. Without commit context
-        // (tree-only callers) it is unresolvable, so this is an error rather than a silent identity.
-        let first_op = peel_op(*first);
-        let filtered_parent_tree = if is_commit_resolved_filter(&first_op) {
-            let (_, parent) = commits.ok_or_else(|| {
-                anyhow!(
-                    "cannot reverse a per-commit filter (`:rev`/`:hook`) without commit context"
-                )
-            })?;
-            let parent_filter = resolve_commit_filter(transaction, &first_op, parent)?;
-            apply(transaction, parent_filter, Rewrite::from_tree(parent_tree))?.tree_id()
-        } else {
-            let first_normalized = if let Ok(first_inverted) = invert(*first) {
-                invert(first_inverted)?
-            } else {
-                *first
-            };
-            apply(
-                transaction,
-                first_normalized,
-                Rewrite::from_tree(parent_tree),
-            )?
-            .tree_id()
-        };
-
-        // Recursively unapply: first unapply the rest, then unapply first
-        return unapply(
-            transaction,
-            *first,
-            unapply(transaction, rest_chain, tree, filtered_parent_tree, commits)?,
-            parent_tree,
-            commits,
-        );
-    }
-
-    Err(anyhow!("filter cannot be unapplied"))
-}
-
-/// Reverse a per-commit filter (`:workspace` / `:stored` / `:starlark` / `:rev` / `:hook`), whose
-/// concrete sub-filter differs between the commit being reconstructed and its parent. `filter` is
-/// the sub-filter resolved for the commit, `original_filter` the one resolved for the specific
-/// parent whose tree is `parent_tree`. The reconstruction reproduces the out-of-filter content of
-/// `parent_tree` (strip) and overlays the reconstructed in-filter content of `tree`.
-fn reverse_strip_overlay(
-    transaction: &cache::Transaction,
-    filter: Filter,
-    original_filter: Filter,
-    tree: gix_hash::ObjectId,
-    parent_tree: gix_hash::ObjectId,
-) -> anyhow::Result<gix_hash::ObjectId> {
-    let filtered = apply(
-        transaction,
-        original_filter,
-        Rewrite::from_tree(parent_tree),
-    )?;
-    let matching = apply(transaction, invert(original_filter)?, filtered)?;
-    let stripped = tree::subtract(transaction, parent_tree, matching.tree_id())?;
-    let x = apply(transaction, invert(filter)?, Rewrite::from_tree(tree))?;
-
-    tree::overlay(transaction, x.tree_id(), stripped)
-}
-
-/// Resolve the concrete sub-filter of a per-commit filter whose selector lives in *commit identity*
-/// rather than the tree: `:rev(...)` (commit ancestry) and `:hook` (hook lookup). These mirror the
-/// forward `Op::Rev`/`Op::Hook` paths and, unlike `:workspace`/`:stored`/`:starlark`, cannot be
-/// resolved from a tree. Returns `Err` for any other op (callers only reach it for rev/hook).
-fn resolve_commit_filter(
-    transaction: &cache::Transaction,
-    op: &Op,
-    commit: gix_hash::ObjectId,
-) -> anyhow::Result<Filter> {
-    match op {
-        Op::Rev(revs) => get_rev_filter(transaction, commit, revs),
-        Op::Hook(hook) => transaction.lookup_filter_hook(hook, commit),
-        _ => Err(anyhow!("not a per-commit (rev/hook) filter")),
-    }
-}
-
-/// Whether `op` is a per-commit filter whose selector lives in commit identity (`:rev` / `:hook`),
-/// so reversing it requires commit context and it cannot be applied at tree level.
-fn is_commit_resolved_filter(op: &Op) -> bool {
-    matches!(op, Op::Rev(_) | Op::Hook(_))
-}
-
-fn unapply_per_rev_filter(
-    transaction: &cache::Transaction,
-    op: &Op,
-    tree: gix_hash::ObjectId,
-    parent_tree: gix_hash::ObjectId,
-    commits: Option<(gix_hash::ObjectId, gix_hash::ObjectId)>,
-) -> anyhow::Result<Option<gix_hash::ObjectId>> {
-    if is_commit_resolved_filter(op) {
-        // `:rev`/`:hook` select their sub-filter from commit identity (mirroring the forward
-        // `Op::Rev`/`Op::Hook` paths): resolve it for the commit being reconstructed and for the
-        // specific parent whose tree is `parent_tree`. Unlike the tree-resolved per-commit filters
-        // below, this cannot be read from a tree, so without commit context it is an error rather
-        // than a silent identity.
-        let (commit, parent) = commits.ok_or_else(|| {
-            anyhow!("cannot reverse a per-commit filter (`:rev`/`:hook`) without commit context")
-        })?;
-        let filter = resolve_commit_filter(transaction, op, commit)?;
-        let original_filter = resolve_commit_filter(transaction, op, parent)?;
-        return Ok(Some(reverse_strip_overlay(
-            transaction,
-            filter,
-            original_filter,
-            tree,
-            parent_tree,
-        )?));
-    }
-
-    match op {
-        Op::Workspace(path) => {
-            let odb = transaction.odb();
-            let tree = pre_process_tree(transaction, tree)?;
-            let tree_reader = tree::read_tree(transaction, odb, tree)?;
-            let parent_reader = tree::read_tree(transaction, odb, parent_tree)?;
-            let workspace = get_filter(
-                transaction,
-                odb,
-                tree,
-                &tree_reader,
-                Path::new("workspace.josh"),
-            );
-            let original_workspace = get_filter(
-                transaction,
-                odb,
-                parent_tree,
-                &parent_reader,
-                &path.join("workspace.josh"),
-            );
-
-            let root = to_filter(Op::Subdir(path.to_owned()));
-            let wsj_file = to_filter(Op::File(
-                Path::new("workspace.josh").to_owned(),
-                Path::new("workspace.josh").to_owned(),
-            ));
-            let wsj_file = root.chain(wsj_file);
-            let filter = compose(&[wsj_file, compose(&[workspace, root])]);
-            let original_filter = compose(&[wsj_file, compose(&[original_workspace, root])]);
-            Ok(Some(reverse_strip_overlay(
-                transaction,
-                filter,
-                original_filter,
-                tree,
-                parent_tree,
-            )?))
-        }
-        Op::Stored(path) => {
-            let odb = transaction.odb();
-            let stored_path = path.with_added_extension("josh");
-            let tree_reader = tree::read_tree(transaction, odb, tree)?;
-            let parent_reader = tree::read_tree(transaction, odb, parent_tree)?;
-            let stored = get_filter(transaction, odb, tree, &tree_reader, &stored_path);
-            let original_stored =
-                get_filter(transaction, odb, parent_tree, &parent_reader, &stored_path);
-
-            let sj_file = Filter::new().file(stored_path.clone());
-            let filter = compose(&[sj_file, stored]);
-            let original_filter = compose(&[sj_file, original_stored]);
-            Ok(Some(reverse_strip_overlay(
-                transaction,
-                filter,
-                original_filter,
-                tree,
-                parent_tree,
-            )?))
-        }
-        Op::Starlark(path, subfilter) => {
-            let odb = transaction.odb();
-            let tree_reader = tree::read_tree(transaction, odb, tree)?;
-            let parent_reader = tree::read_tree(transaction, odb, parent_tree)?;
-            let filter = get_starlark(transaction, odb, tree, &tree_reader, path, *subfilter);
-            let original_filter = get_starlark(
-                transaction,
-                odb,
-                parent_tree,
-                &parent_reader,
-                path,
-                *subfilter,
-            );
-            Ok(Some(reverse_strip_overlay(
-                transaction,
-                filter,
-                original_filter,
-                tree,
-                parent_tree,
-            )?))
-        }
-        _ => Ok(None),
-    }
-}
-
-fn pre_process_tree(
-    transaction: &cache::Transaction,
-    tree: gix_hash::ObjectId,
-) -> anyhow::Result<gix_hash::ObjectId> {
-    let odb = transaction.odb();
-    let path = Path::new("workspace.josh");
-    let ws_file = tree::get_blob(transaction, odb, tree, path);
-    let parsed = filter::parse(&ws_file)?;
-
-    if invert(parsed).is_err() {
-        return Err(anyhow!("Invalid workspace: not reversible"));
-    }
-
-    let mut blob = String::new();
-    if let Ok(c) = get_comments(&ws_file)
-        && !c.is_empty()
-    {
-        blob = c;
-    }
-    let blob = &format!("{}{}\n", &blob, pretty(parsed, 0));
-
-    let tree = tree::insert_oid(
-        odb,
-        tree,
-        path,
-        odb.write(gix_object::Kind::Blob, blob.as_bytes()),
-        0o100644, // Should this handle filemode?
-    )?;
-
-    Ok(tree)
-}
-
 /// Compute the warnings (filters not matching anything) for the filter applied to the tree
 pub fn compute_warnings(
     transaction: &cache::Transaction,
@@ -2287,6 +2012,17 @@ mod tests {
         builder.write().unwrap().detach()
     }
 
+    fn replace_blob(
+        repo: &gix::Repository,
+        transaction: &cache::Transaction,
+        tree: gix_hash::ObjectId,
+        path: &str,
+        content: &str,
+    ) -> gix_hash::ObjectId {
+        let oid = josh_gix_ext::write_blob(&repo.objects, content.as_bytes()).unwrap();
+        tree::insert_oid(transaction.odb(), tree, Path::new(path), oid, 0o100644).unwrap()
+    }
+
     fn write_commit(
         repo: &gix::Repository,
         tree: gix_hash::ObjectId,
@@ -2763,6 +2499,562 @@ mod tests {
             "sibling subtree must survive"
         );
     }
+    #[test]
+    fn unapply_disjoint_compose_edits_and_additions() {
+        let td = tempfile::tempdir().unwrap();
+        let repo = gix::init_bare(td.path()).unwrap();
+        let transaction = test_transaction(&repo);
+        let filter = parse(":[:/src/a:prefix=dest/a,:/src/b:prefix=dest/b]").unwrap();
+        let parent = build_tree(
+            &repo,
+            &[
+                ("outside.txt", "keep"),
+                ("src/a/existing.txt", "old a"),
+                ("src/a/untouched.txt", "same a"),
+                ("src/b/existing.txt", "old b"),
+                ("src/b/untouched.txt", "same b"),
+            ],
+        );
+        let filtered = build_tree(
+            &repo,
+            &[
+                ("dest/a/existing.txt", "new a"),
+                ("dest/a/untouched.txt", "same a"),
+                ("dest/a/added.txt", "added a"),
+                ("dest/b/existing.txt", "new b"),
+                ("dest/b/untouched.txt", "same b"),
+                ("dest/b/added.txt", "added b"),
+            ],
+        );
+
+        let unapplied = unapply(&transaction, filter, filtered, parent, None).unwrap();
+
+        let expected = build_tree(
+            &repo,
+            &[
+                ("outside.txt", "keep"),
+                ("src/a/existing.txt", "new a"),
+                ("src/a/untouched.txt", "same a"),
+                ("src/a/added.txt", "added a"),
+                ("src/b/existing.txt", "new b"),
+                ("src/b/untouched.txt", "same b"),
+                ("src/b/added.txt", "added b"),
+            ],
+        );
+        assert_eq!(unapplied, expected);
+        assert_eq!(
+            apply(&transaction, filter, Rewrite::from_tree(unapplied))
+                .unwrap()
+                .tree_id(),
+            filtered
+        );
+    }
+
+    #[test]
+    fn unapply_disjoint_compose_unchanged_tree_is_parent_identity() {
+        let td = tempfile::tempdir().unwrap();
+        let repo = gix::init_bare(td.path()).unwrap();
+        let transaction = test_transaction(&repo);
+        let filter = parse(":[:/src/a:prefix=dest/a,:/src/b:prefix=dest/b]").unwrap();
+        let parent = build_tree(
+            &repo,
+            &[
+                ("outside.txt", "keep"),
+                ("src/a/file.txt", "a"),
+                ("src/b/file.txt", "b"),
+            ],
+        );
+        let filtered = apply(&transaction, filter, Rewrite::from_tree(parent))
+            .unwrap()
+            .tree_id();
+
+        assert_eq!(
+            unapply(&transaction, filter, filtered, parent, None).unwrap(),
+            parent
+        );
+    }
+
+    fn ownership_filter() -> Filter {
+        parse(":[:/source:prefix=dest,:/overlay:prefix=dest]").unwrap()
+    }
+
+    fn unapply_linear(
+        transaction: &cache::Transaction,
+        filter: Filter,
+        tree: gix_hash::ObjectId,
+        parent: gix_hash::ObjectId,
+    ) -> anyhow::Result<gix_hash::ObjectId> {
+        unapply_with_lineage(
+            transaction,
+            filter,
+            tree,
+            parent,
+            None,
+            ReverseLineage::Linear,
+            false,
+        )
+    }
+
+    #[test]
+    fn ownership_overlay_edit_preserves_fallback_and_outside_content() {
+        let td = tempfile::tempdir().unwrap();
+        let repo = gix::init_bare(td.path()).unwrap();
+        let transaction = test_transaction(&repo);
+        let filter = ownership_filter();
+        let parent = build_tree(
+            &repo,
+            &[
+                ("outside.txt", "keep"),
+                ("source/shared.txt", "source"),
+                ("source/fallback.txt", "fallback"),
+                ("source/untouched.txt", "untouched"),
+                ("overlay/shared.txt", "overlay"),
+                ("overlay/untouched.txt", "untouched"),
+            ],
+        );
+        let filtered = apply(&transaction, filter, Rewrite::from_tree(parent))
+            .unwrap()
+            .tree_id();
+        let edited = replace_blob(&repo, &transaction, filtered, "dest/shared.txt", "edited");
+
+        let result = unapply_linear(&transaction, filter, edited, parent).unwrap();
+        let expected = build_tree(
+            &repo,
+            &[
+                ("outside.txt", "keep"),
+                ("source/shared.txt", "source"),
+                ("source/fallback.txt", "fallback"),
+                ("source/untouched.txt", "untouched"),
+                ("overlay/shared.txt", "edited"),
+                ("overlay/untouched.txt", "untouched"),
+            ],
+        );
+        assert_eq!(result, expected);
+        assert_eq!(
+            apply(&transaction, filter, Rewrite::from_tree(result))
+                .unwrap()
+                .tree_id(),
+            edited
+        );
+    }
+
+    #[test]
+    fn ownership_nested_compose_coverage_includes_overlay_sources() {
+        let td = tempfile::tempdir().unwrap();
+        let repo = gix::init_bare(td.path()).unwrap();
+        let transaction = test_transaction(&repo);
+        let filter = parse(
+            r#":[
+  :exclude[:[
+    ::overlay/
+    ::mods/:[
+      ::**/build.gradle
+      ::**/settings.gradle
+      ::**/build.gradle.kts
+      ::**/settings.gradle.kts
+    ]
+  ]]
+  mods=:[
+    :/mods:[
+      ::**/build.gradle
+      ::**/settings.gradle
+      ::**/build.gradle.kts
+      ::**/settings.gradle.kts
+    ]
+    :/overlay/mods
+  ]
+]"#,
+        )
+        .unwrap();
+        let parent = build_tree(
+            &repo,
+            &[
+                ("outside.txt", "keep"),
+                ("mods/sable/build.gradle", "original build"),
+                ("mods/sable/settings.gradle", "original settings"),
+                ("mods/sable/keep.txt", "keep"),
+                ("overlay/mods/sable/build.gradle", "overlay build"),
+                ("overlay/mods/sable/settings.gradle", "overlay settings"),
+            ],
+        );
+        let filtered = apply(&transaction, filter, Rewrite::from_tree(parent))
+            .unwrap()
+            .tree_id();
+        let edited = replace_blob(
+            &repo,
+            &transaction,
+            filtered,
+            "mods/sable/build.gradle",
+            "edited build",
+        );
+
+        let result = unapply_linear(&transaction, filter, edited, parent).unwrap();
+        let expected = build_tree(
+            &repo,
+            &[
+                ("outside.txt", "keep"),
+                ("mods/sable/build.gradle", "original build"),
+                ("mods/sable/settings.gradle", "original settings"),
+                ("mods/sable/keep.txt", "keep"),
+                ("overlay/mods/sable/build.gradle", "edited build"),
+                ("overlay/mods/sable/settings.gradle", "overlay settings"),
+            ],
+        );
+        assert_eq!(result, expected);
+        assert_eq!(
+            apply(&transaction, filter, Rewrite::from_tree(result))
+                .unwrap()
+                .tree_id(),
+            edited
+        );
+    }
+
+    #[test]
+    fn ownership_fallback_edit_preserves_overlay_source() {
+        let td = tempfile::tempdir().unwrap();
+        let repo = gix::init_bare(td.path()).unwrap();
+        let transaction = test_transaction(&repo);
+        let filter = ownership_filter();
+        let parent = build_tree(
+            &repo,
+            &[
+                ("outside.txt", "keep"),
+                ("source/shared.txt", "source"),
+                ("source/fallback.txt", "fallback"),
+                ("overlay/shared.txt", "overlay"),
+            ],
+        );
+        let filtered = apply(&transaction, filter, Rewrite::from_tree(parent))
+            .unwrap()
+            .tree_id();
+        let edited = replace_blob(&repo, &transaction, filtered, "dest/fallback.txt", "edited");
+
+        let result = unapply_linear(&transaction, filter, edited, parent).unwrap();
+        let expected = build_tree(
+            &repo,
+            &[
+                ("outside.txt", "keep"),
+                ("source/shared.txt", "source"),
+                ("source/fallback.txt", "edited"),
+                ("overlay/shared.txt", "overlay"),
+            ],
+        );
+        assert_eq!(result, expected);
+        assert_eq!(
+            apply(&transaction, filter, Rewrite::from_tree(result))
+                .unwrap()
+                .tree_id(),
+            edited
+        );
+    }
+
+    #[test]
+    fn ownership_simultaneous_disjoint_source_edits() {
+        let td = tempfile::tempdir().unwrap();
+        let repo = gix::init_bare(td.path()).unwrap();
+        let transaction = test_transaction(&repo);
+        let filter = ownership_filter();
+        let parent = build_tree(
+            &repo,
+            &[
+                ("outside.txt", "keep"),
+                ("source/shared.txt", "source"),
+                ("source/fallback.txt", "fallback"),
+                ("overlay/shared.txt", "overlay"),
+            ],
+        );
+        let filtered = apply(&transaction, filter, Rewrite::from_tree(parent))
+            .unwrap()
+            .tree_id();
+        let edited = replace_blob(
+            &repo,
+            &transaction,
+            filtered,
+            "dest/shared.txt",
+            "overlay new",
+        );
+        let edited = replace_blob(
+            &repo,
+            &transaction,
+            edited,
+            "dest/fallback.txt",
+            "fallback new",
+        );
+
+        let result = unapply_linear(&transaction, filter, edited, parent).unwrap();
+        let expected = build_tree(
+            &repo,
+            &[
+                ("outside.txt", "keep"),
+                ("source/shared.txt", "source"),
+                ("source/fallback.txt", "fallback new"),
+                ("overlay/shared.txt", "overlay new"),
+            ],
+        );
+        assert_eq!(result, expected);
+        assert_eq!(
+            apply(&transaction, filter, Rewrite::from_tree(result))
+                .unwrap()
+                .tree_id(),
+            edited
+        );
+    }
+
+    #[test]
+    fn ownership_identical_contents_route_by_path_priority() {
+        let td = tempfile::tempdir().unwrap();
+        let repo = gix::init_bare(td.path()).unwrap();
+        let transaction = test_transaction(&repo);
+        let filter = ownership_filter();
+        let parent = build_tree(
+            &repo,
+            &[
+                ("outside.txt", "keep"),
+                ("source/shared.txt", "same"),
+                ("overlay/shared.txt", "same"),
+            ],
+        );
+        let filtered = apply(&transaction, filter, Rewrite::from_tree(parent))
+            .unwrap()
+            .tree_id();
+        let edited = replace_blob(&repo, &transaction, filtered, "dest/shared.txt", "edited");
+
+        let result = unapply_linear(&transaction, filter, edited, parent).unwrap();
+        let expected = build_tree(
+            &repo,
+            &[
+                ("outside.txt", "keep"),
+                ("source/shared.txt", "same"),
+                ("overlay/shared.txt", "edited"),
+            ],
+        );
+        assert_eq!(result, expected);
+        assert_eq!(
+            apply(&transaction, filter, Rewrite::from_tree(result))
+                .unwrap()
+                .tree_id(),
+            edited
+        );
+    }
+
+    #[test]
+    fn ownership_unchanged_direct_overlap_returns_parent_identity() {
+        let td = tempfile::tempdir().unwrap();
+        let repo = gix::init_bare(td.path()).unwrap();
+        let transaction = test_transaction(&repo);
+        let filter = ownership_filter();
+        let parent = build_tree(
+            &repo,
+            &[
+                ("outside.txt", "keep"),
+                ("source/shared.txt", "source"),
+                ("overlay/shared.txt", "overlay"),
+            ],
+        );
+        let filtered = apply(&transaction, filter, Rewrite::from_tree(parent))
+            .unwrap()
+            .tree_id();
+
+        assert_eq!(
+            unapply_linear(&transaction, filter, filtered, parent).unwrap(),
+            parent
+        );
+    }
+
+    #[test]
+    fn ownership_unchanged_stored_overlap_returns_parent_identity() {
+        let td = tempfile::tempdir().unwrap();
+        let repo = gix::init_bare(td.path()).unwrap();
+        let transaction = test_transaction(&repo);
+        let filter = parse(":+filters/config").unwrap();
+        let parent = build_tree(
+            &repo,
+            &[
+                ("outside.txt", "keep"),
+                (
+                    "filters/config.josh",
+                    ":[ :/source:prefix=dest,:/overlay:prefix=dest ]",
+                ),
+                ("source/shared.txt", "source"),
+                ("overlay/shared.txt", "overlay"),
+            ],
+        );
+        let filtered = apply(&transaction, filter, Rewrite::from_tree(parent))
+            .unwrap()
+            .tree_id();
+
+        assert_eq!(
+            unapply_linear(&transaction, filter, filtered, parent).unwrap(),
+            parent
+        );
+    }
+
+    #[test]
+    fn ownership_rejects_outer_lossy_chain_without_fallback() {
+        let td = tempfile::tempdir().unwrap();
+        let repo = gix::init_bare(td.path()).unwrap();
+        let transaction = test_transaction(&repo);
+        let filter = ownership_filter().chain(parse(":replace(\"edited\":\"changed\")").unwrap());
+        let parent = build_tree(
+            &repo,
+            &[
+                ("outside.txt", "keep"),
+                ("source/shared.txt", "source"),
+                ("overlay/shared.txt", "overlay"),
+            ],
+        );
+        let filtered = apply(&transaction, filter, Rewrite::from_tree(parent))
+            .unwrap()
+            .tree_id();
+        let edited = replace_blob(&repo, &transaction, filtered, "dest/shared.txt", "edited");
+
+        let error = unapply_linear(&transaction, filter, edited, parent).unwrap_err();
+        assert!(
+            error.to_string().contains("forward validation failed"),
+            "unexpected error: {error}"
+        );
+    }
+
+    #[test]
+    fn ownership_ineligible_chain_matches_whole_chain_legacy() {
+        let td = tempfile::tempdir().unwrap();
+        let repo = gix::init_bare(td.path()).unwrap();
+        let transaction = test_transaction(&repo);
+        let filter = ownership_filter().chain(parse(":replace(\"edited\":\"changed\")").unwrap());
+        let parent = build_tree(
+            &repo,
+            &[
+                ("outside.txt", "keep"),
+                ("source/shared.txt", "source"),
+                ("overlay/shared.txt", "overlay"),
+            ],
+        );
+        let filtered = apply(&transaction, filter, Rewrite::from_tree(parent))
+            .unwrap()
+            .tree_id();
+        let edited = replace_blob(&repo, &transaction, filtered, "dest/shared.txt", "edited");
+        let added = replace_blob(&repo, &transaction, edited, "dest/added.txt", "added");
+
+        assert_eq!(
+            unapply_linear(&transaction, filter, added, parent).unwrap(),
+            unapply(&transaction, filter, added, parent, None).unwrap()
+        );
+    }
+
+    #[test]
+    fn ownership_safe_nested_chain_validates_whole_filter_roundtrip() {
+        let td = tempfile::tempdir().unwrap();
+        let repo = gix::init_bare(td.path()).unwrap();
+        let transaction = test_transaction(&repo);
+        let filter = ownership_filter().chain(Filter::new().prefix("outer"));
+        let parent = build_tree(
+            &repo,
+            &[
+                ("outside.txt", "keep"),
+                ("source/shared.txt", "source"),
+                ("overlay/shared.txt", "overlay"),
+            ],
+        );
+        let filtered = apply(&transaction, filter, Rewrite::from_tree(parent))
+            .unwrap()
+            .tree_id();
+        let edited = replace_blob(
+            &repo,
+            &transaction,
+            filtered,
+            "outer/dest/shared.txt",
+            "edited",
+        );
+
+        let result = unapply_linear(&transaction, filter, edited, parent).unwrap();
+        let expected = build_tree(
+            &repo,
+            &[
+                ("outside.txt", "keep"),
+                ("source/shared.txt", "source"),
+                ("overlay/shared.txt", "edited"),
+            ],
+        );
+        assert_eq!(result, expected);
+        assert_eq!(
+            apply(&transaction, filter, Rewrite::from_tree(result))
+                .unwrap()
+                .tree_id(),
+            edited
+        );
+    }
+
+    #[test]
+    fn ownership_ineligible_cases_keep_legacy_behavior() {
+        let td = tempfile::tempdir().unwrap();
+        let repo = gix::init_bare(td.path()).unwrap();
+        let transaction = test_transaction(&repo);
+        let filter = ownership_filter();
+        let parent = build_tree(
+            &repo,
+            &[
+                ("outside.txt", "keep"),
+                ("source/shared.txt", "source"),
+                ("overlay/shared.txt", "overlay"),
+            ],
+        );
+        let filtered = apply(&transaction, filter, Rewrite::from_tree(parent))
+            .unwrap()
+            .tree_id();
+        let edited = replace_blob(&repo, &transaction, filtered, "dest/shared.txt", "edited");
+        let legacy = unapply(&transaction, filter, edited, parent, None).unwrap();
+
+        for (lineage, synthetic) in [
+            (ReverseLineage::Unspecified, false),
+            (ReverseLineage::Merge, false),
+            (ReverseLineage::Orphan, false),
+            (ReverseLineage::Linear, true),
+        ] {
+            assert_eq!(
+                unapply_with_lineage(
+                    &transaction,
+                    filter,
+                    edited,
+                    parent,
+                    None,
+                    lineage,
+                    synthetic,
+                )
+                .unwrap(),
+                legacy
+            );
+        }
+
+        let added = replace_blob(&repo, &transaction, edited, "dest/added.txt", "added");
+        assert_eq!(
+            unapply_linear(&transaction, filter, added, parent).unwrap(),
+            unapply(&transaction, filter, added, parent, None).unwrap()
+        );
+
+        let lossy =
+            parse(":[:/source:prefix=dest,:/overlay:prefix=dest:select[::shared.txt]]").unwrap();
+        assert_eq!(
+            unapply_linear(&transaction, lossy, edited, parent).unwrap(),
+            unapply(&transaction, lossy, edited, parent, None).unwrap()
+        );
+
+        let disjoint = parse(":[:/source:prefix=one,:/overlay:prefix=two]").unwrap();
+        let disjoint_filtered = apply(&transaction, disjoint, Rewrite::from_tree(parent))
+            .unwrap()
+            .tree_id();
+        let disjoint_edited = replace_blob(
+            &repo,
+            &transaction,
+            disjoint_filtered,
+            "one/shared.txt",
+            "edited",
+        );
+        assert_eq!(
+            unapply_linear(&transaction, disjoint, disjoint_edited, parent).unwrap(),
+            unapply(&transaction, disjoint, disjoint_edited, parent, None).unwrap()
+        );
+    }
+
     struct FixedResolver(gix_hash::ObjectId);
 
     impl josh_filter::ObjectResolver for FixedResolver {
