@@ -1,5 +1,4 @@
 use anyhow::{Context, anyhow};
-use josh_filter::{ObjectKind, ObjectResolver};
 use std::collections::BTreeMap;
 use std::str::FromStr;
 
@@ -42,90 +41,6 @@ impl FromStr for ArgumentBinding {
             name: name.to_owned(),
             value: value.to_owned(),
         })
-    }
-}
-
-struct ComposeObjectResolver<'a> {
-    transaction: &'a josh_core::cache::Transaction,
-    input: gix_hash::ObjectId,
-    arguments: BTreeMap<String, gix_hash::ObjectId>,
-}
-
-impl ComposeObjectResolver<'_> {
-    fn parent(
-        &self,
-        commit_id: gix_hash::ObjectId,
-        parent_number: usize,
-        binding: &str,
-    ) -> anyhow::Result<gix_hash::ObjectId> {
-        let commit = josh_core::objects::CommitData::read(self.transaction.odb(), commit_id)
-            .with_context(|| {
-                format!("argument binding `{binding}` reached unreadable commit {commit_id}")
-            })?;
-        commit.parent_ids().nth(parent_number - 1).ok_or_else(|| {
-            anyhow!(
-                "argument binding `{binding}` has no parent {parent_number} at commit {commit_id}"
-            )
-        })
-    }
-}
-
-impl ObjectResolver for ComposeObjectResolver<'_> {
-    fn resolve(
-        &self,
-        kind: ObjectKind,
-        revision: &str,
-    ) -> anyhow::Result<Option<gix_hash::ObjectId>> {
-        let suffix_start = revision
-            .find(|c| c == '^' || c == '~')
-            .unwrap_or(revision.len());
-        let (name, mut suffixes) = revision.split_at(suffix_start);
-        let binding = if name.is_empty() { "input" } else { name };
-        let mut commit_id = if name.is_empty() {
-            self.input
-        } else if let Some(commit_id) = self.arguments.get(name) {
-            *commit_id
-        } else {
-            return Ok(None);
-        };
-
-        while !suffixes.is_empty() {
-            let operator = suffixes.as_bytes()[0] as char;
-            suffixes = &suffixes[1..];
-            let digit_count = suffixes.bytes().take_while(u8::is_ascii_digit).count();
-            let digits = &suffixes[..digit_count];
-            suffixes = &suffixes[digit_count..];
-            let count = if digits.is_empty() {
-                1
-            } else {
-                digits.parse::<usize>().context("invalid ancestry count")?
-            };
-
-            match operator {
-                '^' if count == 0 => {}
-                '^' => commit_id = self.parent(commit_id, count, binding)?,
-                '~' => {
-                    for _ in 0..count {
-                        commit_id = self.parent(commit_id, 1, binding)?;
-                    }
-                }
-                _ => unreachable!("parser only passes validated ancestry suffixes"),
-            }
-        }
-
-        match kind {
-            ObjectKind::Commit => Ok(Some(commit_id)),
-            ObjectKind::Tree => {
-                let commit =
-                    josh_core::objects::CommitData::read(self.transaction.odb(), commit_id)
-                        .with_context(|| {
-                            format!(
-                                "argument binding `{binding}` reached unreadable commit {commit_id}"
-                            )
-                        })?;
-                Ok(Some(commit.tree_id()?))
-            }
-        }
     }
 }
 
@@ -181,11 +96,8 @@ pub fn prepare_workspace(
     let source_commit = josh_core::git::resolve_snapshot_input(transaction, input_ref)
         .with_context(|| format!("failed to resolve input ref: {input_ref:?}"))?;
     let arguments = resolve_argument_bindings(transaction, bindings)?;
-    let resolver = ComposeObjectResolver {
-        transaction,
-        input: source_commit,
-        arguments,
-    };
+    let resolver = josh_core::filter::RevisionObjectResolver::new(transaction, source_commit)
+        .with_bindings(&arguments);
     let parsed_filter = josh_filter::parse_with_resolver(filter_spec, &resolver)
         .with_context(|| format!("failed to parse filter: {filter_spec:?}"))?;
     let source_tree = josh_core::objects::CommitData::read(transaction.odb(), source_commit)
@@ -216,6 +128,7 @@ pub fn prepare_workspace(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use josh_filter::{ObjectKind, ObjectResolver};
     use std::sync::Arc;
 
     fn oid(value: char) -> gix_hash::ObjectId {
@@ -324,11 +237,9 @@ mod tests {
         let second = commit(&repo, oid('c'), &[root]);
         let merge = commit(&repo, oid('d'), &[first, second]);
         let transaction = transaction(&repo);
-        let resolver = ComposeObjectResolver {
-            transaction: &transaction,
-            input: merge,
-            arguments: BTreeMap::from([("baseline".to_owned(), second)]),
-        };
+        let arguments = BTreeMap::from([("baseline".to_owned(), second)]);
+        let resolver = josh_core::filter::RevisionObjectResolver::new(&transaction, merge)
+            .with_bindings(&arguments);
 
         assert_eq!(
             resolver.resolve(ObjectKind::Commit, "").unwrap(),
@@ -389,11 +300,7 @@ mod tests {
         .unwrap();
         assert_eq!(transaction.rev_parse(&snapshot.to_string()).unwrap(), None);
 
-        let resolver = ComposeObjectResolver {
-            transaction: &transaction,
-            input: snapshot,
-            arguments: BTreeMap::new(),
-        };
+        let resolver = josh_core::filter::RevisionObjectResolver::new(&transaction, snapshot);
         assert_eq!(
             resolver.resolve(ObjectKind::Commit, "^").unwrap(),
             Some(head)

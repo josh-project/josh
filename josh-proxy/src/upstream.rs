@@ -500,10 +500,11 @@ pub fn process_repo_update(repo_update: RepoUpdate) -> anyhow::Result<String> {
             }
 
             resp.push(text.to_string());
-            let mut warnings = josh_core::filter::compute_warnings(
+            let mut warnings = josh_core::filter::compute_warnings_for_commit(
                 &transaction,
                 filter,
                 josh_core::objects::CommitData::read(transaction.odb(), push_ref.oid)?.tree_id()?,
+                push_ref.oid,
             );
 
             if !warnings.is_empty() {
