@@ -74,7 +74,7 @@ pub(crate) struct TransactionMemo {
     pub(crate) intersect: MemoMap<(ObjectId, ObjectId), ObjectId>,
     pub(crate) overlay: MemoMap<(ObjectId, ObjectId), ObjectId>,
     pub(crate) unapply: PartitionedMemoMap<ObjectId, ObjectId, ObjectId>,
-    pub(crate) legalize: MemoMap<(Filter, ObjectId), Filter>,
+    pub(crate) legalize: MemoMap<(Filter, ObjectId, Option<ObjectId>), Filter>,
     pub(crate) downstack_deps: MemoMap<ObjectId, HashSet<DownstackDep>>,
     pub(crate) merge_trees: MemoMap<(ObjectId, ObjectId, ObjectId), ObjectId>,
     pub(crate) references: PartitionedMemoMap<ObjectId, ObjectId, ObjectId>,
@@ -89,6 +89,7 @@ pub(crate) struct TransactionMemo {
     pub(crate) paths: MemoMap<(ObjectId, String), ObjectId>,
     pub(crate) invert: MemoMap<(ObjectId, String), ObjectId>,
     pub(crate) workspaces: MemoMap<ObjectId, Filter>,
+    pub(crate) contextual_workspaces: MemoMap<(ObjectId, ObjectId, Option<ObjectId>), Filter>,
     pub(crate) ancestors: MemoMap<ObjectId, HashSet<ObjectId>>,
     /// The most recent commit josh wrote as `(oid, tree_id)`. A history walk processes a commit
     /// immediately after its parent, so one slot avoids reparsing without retaining every commit.
