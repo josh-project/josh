@@ -39,9 +39,23 @@ pub fn walk2(
         input,
     );
 
+    let mut progress = transaction.progress("Scanning history");
+    if let Some(progress) = &progress {
+        progress.init(None, gix::progress::count("commits"));
+    }
+
     // The prune callback cannot propagate errors, so treat a failed lookup as "not known":
     // the walk then visits the commit and the fallible body reports the same error properly.
-    let sorted = walk.into_topo_vec(|id| transaction.known(filter, id).unwrap_or(false))?;
+    let sorted = walk.into_topo_vec(|id| {
+        if let Some(progress) = &progress {
+            progress.inc();
+        }
+        transaction.known(filter, id).unwrap_or(false)
+    })?;
+    if let Some(progress) = &mut progress {
+        progress.set_name("Filtering commits");
+        progress.init(Some(sorted.len()), gix::progress::count("commits"));
+    }
 
     let mut n_in = 0;
     let mut n_out = 0;
@@ -54,6 +68,9 @@ pub fn walk2(
         }
 
         n_in += 1;
+        if let Some(progress) = &progress {
+            progress.inc();
+        }
         if n_in % 1000 == 0 {
             log::debug!("{} commits filtered, {} written", n_in, n_out,);
         }
@@ -406,6 +423,10 @@ pub fn unapply_filter(
         odb.read_header(old_filtered_oid),
         Ok((gix_object::Kind::Commit, _))
     );
+    let mut progress = transaction.progress("Finding commits to reconstruct");
+    if let Some(progress) = &progress {
+        progress.init(None, gix::progress::count("commits"));
+    }
     let revs = if old_filtered_exists {
         // The sequence lookup computes hints on demand and is only consulted
         // when the fast-forward path cannot answer, so linear pushes never
@@ -421,9 +442,16 @@ pub fn unapply_filter(
         walk.push(new_filtered_oid)?;
         walk.into_topo_vec(|_| false)?
     };
+    if let Some(progress) = &mut progress {
+        progress.set_name("Reconstructing commits");
+        progress.init(Some(revs.len()), gix::progress::count("commits"));
+    }
 
     // Walk starting from new filtered OID, parents before children
     for &rev in revs.iter().rev() {
+        if let Some(progress) = &progress {
+            progress.inc();
+        }
         let span = tracing::span!(tracing::Level::TRACE, "walk commit", ?rev);
         let _span_guard = span.enter();
 

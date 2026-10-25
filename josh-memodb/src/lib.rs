@@ -16,3 +16,8 @@ pub use hash::PassthroughHasher;
 pub use mem_odb::MemOdb;
 pub use odb::{Bytes, Odb};
 pub use registry::FlushGuard;
+
+/// A task in the optional progress tree shared by a filter transaction and its pack jobs.
+pub type ProgressItem = gix_features::progress::prodash::tree::Item;
+/// The thread-safe root used to report concurrent filtering and packing tasks.
+pub type ProgressRoot = gix_features::progress::prodash::tree::Root;

@@ -23,7 +23,7 @@ use gix_features::threading::OwnShared;
 use gix_hash::ObjectId;
 use gix_object::{Exists, Find, FindHeader, Kind};
 
-use crate::MemOdb;
+use crate::{MemOdb, ProgressRoot};
 
 /// Decompressed objects kept per facade, so re-reading one does not decode it again. Worth
 /// ~10% of a cold filter run; a 64 MB budget measures the same, so the size is not the lever.
@@ -49,6 +49,7 @@ impl std::ops::Deref for Bytes {
 /// See the module docs. Built by `Transaction::odb()` and held for the transaction.
 pub struct Odb {
     mem: Arc<MemOdb>,
+    progress: Option<Arc<ProgressRoot>>,
     /// The repository's own objects. Handles taken from one store share its loaded pack
     /// indices, so every transaction on a repository pays for them once between them.
     disk: gix_odb::Handle,
@@ -107,6 +108,7 @@ impl Odb {
         disk_fast.refresh_never();
         Odb {
             mem,
+            progress: None,
             disk: handle(store),
             disk_fast,
             alternates: Default::default(),
@@ -116,6 +118,13 @@ impl Odb {
     /// [`Odb::new`] over the objects directory `objects_dir`, opening a store of its own.
     pub fn at(mem: Arc<MemOdb>, objects_dir: &Path) -> std::io::Result<Self> {
         Ok(Odb::new(mem, gix_odb::at(objects_dir)?.store()))
+    }
+
+    /// Attach the progress tree used by background pack jobs triggered by writes through this
+    /// facade. The shared memory store does not retain the tree; each enqueued job owns a clone.
+    pub fn with_progress(mut self, progress: Arc<ProgressRoot>) -> Self {
+        self.progress = Some(progress);
+        self
     }
 
     /// Register `path` (an objects directory) as another place to read objects from, and one
@@ -257,7 +266,8 @@ impl Odb {
         if self.mem.contains(&id) || self.in_alternate_gate(&id) {
             return;
         }
-        self.mem.write_with_id(id, kind, data);
+        self.mem
+            .write_with_id_progress(id, kind, data, self.progress.as_ref());
     }
 }
 

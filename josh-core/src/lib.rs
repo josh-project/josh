@@ -162,6 +162,14 @@ pub fn filter_refs(
     let mut errors = vec![];
 
     tracing::trace!("filter_refs");
+    let progress = if refs.len() > 1 {
+        transaction.progress("Filtering references")
+    } else {
+        None
+    };
+    if let Some(progress) = &progress {
+        progress.init(Some(refs.len()), gix::progress::count("refs"));
+    }
 
     for k in refs {
         let oid = match filter_commit(transaction, filterobj, k.1) {
@@ -178,6 +186,9 @@ pub fn filter_refs(
             }
         };
         updated.push((k.0.to_string(), oid));
+        if let Some(progress) = &progress {
+            progress.inc();
+        }
     }
 
     (updated, errors)

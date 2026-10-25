@@ -23,6 +23,8 @@ use parking_lot::{Mutex, RwLock};
 use gix_hash::ObjectId;
 use gix_object::Kind;
 
+use crate::ProgressRoot;
+
 /// Object bytes are held behind an `Arc` so a flush can snapshot them without copying: the store
 /// must keep serving reads while the flusher packs (eviction only happens once the pack is
 /// durable), so the snapshot shares the buffers instead of draining or cloning them.
@@ -141,8 +143,18 @@ impl MemOdb {
 
     /// [`MemOdb::write`] with a caller-computed content hash, trusted verbatim.
     pub fn write_with_id(self: &Arc<Self>, id: ObjectId, kind: Kind, data: &[u8]) {
+        self.write_with_id_progress(id, kind, data, None);
+    }
+
+    pub(crate) fn write_with_id_progress(
+        self: &Arc<Self>,
+        id: ObjectId,
+        kind: Kind,
+        data: &[u8],
+        progress: Option<&Arc<ProgressRoot>>,
+    ) {
         if self.insert(id, kind, data.into()) {
-            self.enqueue_chunk();
+            self.enqueue_chunk(progress.cloned());
         }
     }
 
@@ -190,13 +202,25 @@ impl MemOdb {
     /// store drains what it reads through too. Runs on the background flusher behind any queued
     /// overflow chunks; a store holding nothing skips the round trip.
     pub fn flush(self: &Arc<Self>) -> anyhow::Result<()> {
+        self.flush_inner(None)
+    }
+
+    /// Flush through the background pack worker while reporting the pack as a child of `progress`.
+    pub fn flush_with_progress(
+        self: &Arc<Self>,
+        progress: Arc<ProgressRoot>,
+    ) -> anyhow::Result<()> {
+        self.flush_inner(Some(progress))
+    }
+
+    fn flush_inner(self: &Arc<Self>, progress: Option<Arc<ProgressRoot>>) -> anyhow::Result<()> {
         if let Some(behind) = &self.read_through {
-            behind.flush()?;
+            behind.flush_inner(progress.clone())?;
         }
         if self.is_empty() {
             return Ok(());
         }
-        crate::flusher::drain(self.clone())
+        crate::flusher::drain(self.clone(), progress)
     }
 
     /// Start packing the store's current contents in the background without blocking. Best-effort:
@@ -204,27 +228,31 @@ impl MemOdb {
     /// serializes behind any queued chunk. Use this when the caller wants packing to overlap its
     /// ongoing work and has a later drain point as the durability barrier.
     pub fn pack_in_background(self: &Arc<Self>) {
-        self.enqueue_chunk();
+        self.enqueue_chunk(None);
     }
 
     /// Enqueue a best-effort background pack of this store, called from the ODB `write` path when the
     /// store overflows its size limit. `chunk_in_flight` collapses the burst of overflowing writes
     /// that follow into a single queued chunk.
-    fn enqueue_chunk(self: &Arc<Self>) {
+    fn enqueue_chunk(self: &Arc<Self>, progress: Option<Arc<ProgressRoot>>) {
         if self.chunk_in_flight.swap(true, Ordering::AcqRel) {
             return;
         }
-        crate::flusher::enqueue_chunk(self.clone());
+        crate::flusher::enqueue_chunk(self.clone(), progress);
     }
 
     /// Release the in-flight guard after a background chunk. A write can overflow after the worker
     /// snapshots the store but before it releases the guard; check the remaining size after the
     /// release so that write still schedules the next chunk. Failed packs wait for a later write or
     /// explicit drain instead of retrying in a hot loop.
-    pub(crate) fn finish_chunk(self: &Arc<Self>, packed: bool) {
+    pub(crate) fn finish_chunk(
+        self: &Arc<Self>,
+        packed: bool,
+        progress: Option<Arc<ProgressRoot>>,
+    ) {
         self.chunk_in_flight.store(false, Ordering::Release);
         if packed && self.inner.read().size > self.limit.load(Ordering::Acquire) {
-            self.enqueue_chunk();
+            self.enqueue_chunk(progress);
         }
     }
 
@@ -234,7 +262,10 @@ impl MemOdb {
     /// no repository handle involved. The snapshot shares the object buffers (`Arc`), and the
     /// objects stay in the map while the pack is written, so concurrent reads keep resolving until
     /// eviction — which happens only once the pack is on disk.
-    pub(crate) fn pack_to_disk(self: &Arc<Self>) -> anyhow::Result<()> {
+    pub(crate) fn pack_to_disk(
+        self: &Arc<Self>,
+        progress: &mut gix_features::progress::BoxedDynNestedProgress,
+    ) -> anyhow::Result<()> {
         // One packer per store at a time: the flusher's own jobs are already serialised, but the
         // process-exit flush packs inline and would otherwise snapshot and evict concurrently.
         let _packing = self.pack_lock.lock();
@@ -257,7 +288,7 @@ impl MemOdb {
                 .collect()
         };
 
-        crate::pack::write_snapshot(&self.objects_dir, &snapshot)?;
+        crate::pack::write_snapshot(&self.objects_dir, &snapshot, progress)?;
 
         // Evict exactly the snapshotted oids (now durable: packed just above, or already on disk).
         // Writes that landed after the snapshot stay buffered for the next chunk or the drain, so a
@@ -425,7 +456,9 @@ mod tests {
         assert!(!shared.contains(&own));
 
         // Packing the private store writes only its own objects.
-        private.pack_to_disk().unwrap();
+        let mut progress =
+            gix_features::progress::BoxedDynNestedProgress::new(gix_features::progress::Discard);
+        private.pack_to_disk(&mut progress).unwrap();
         assert!(disk_blob(dir.path(), own).is_some());
         assert!(disk_blob(dir.path(), behind).is_none());
         assert!(shared.contains(&behind));

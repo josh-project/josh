@@ -5,6 +5,7 @@ mod revspec;
 
 use anyhow::{Context, anyhow};
 use std::fs::read_to_string;
+use std::io::IsTerminal;
 use std::str::FromStr;
 
 fn resolve_input_ref(
@@ -28,6 +29,42 @@ fn squash_ids_filter(
     ids: &[(gix_hash::ObjectId, josh_core::filter::Filter)],
 ) -> josh_core::filter::Filter {
     josh_core::filter::to_filter(josh_core::filter::squash_to_rev(ids.iter().cloned()))
+}
+
+struct ProgressRuntime {
+    _handle: prodash::render::line::JoinHandle,
+    root: std::sync::Arc<josh_core::memodb::ProgressRoot>,
+}
+
+impl ProgressRuntime {
+    fn new(mode: &str) -> Option<Self> {
+        let stderr_is_terminal = std::io::stderr().is_terminal();
+        if mode == "never" || (mode == "auto" && !stderr_is_terminal) {
+            return None;
+        }
+
+        let root = prodash::tree::Root::new();
+        let mut options = prodash::render::line::Options::default()
+            .auto_configure(prodash::render::line::StreamKind::Stderr);
+        if mode == "always" {
+            options.output_is_terminal = true;
+            options.colored = stderr_is_terminal;
+        }
+        options.hide_cursor = false;
+        options.initial_delay = Some(std::time::Duration::from_millis(250));
+        options.frames_per_second = 4.0;
+        options.throughput = true;
+
+        let handle = prodash::render::line::render(
+            std::io::stderr(),
+            std::sync::Arc::downgrade(&root),
+            options,
+        );
+        Some(Self {
+            _handle: handle,
+            root,
+        })
+    }
 }
 
 fn make_app() -> clap::Command {
@@ -165,6 +202,14 @@ fn make_app() -> clap::Command {
                 .help("Enables distributed cache")
                 .long("distributed-cache"),
         )
+        .arg(
+            clap::Arg::new("progress")
+                .long("progress")
+                .value_name("WHEN")
+                .value_parser(["auto", "always", "never"])
+                .default_value("auto")
+                .help("Show progress on stderr: auto, always, or never"),
+        )
         .arg(clap::Arg::new("query").long("query").short('q'))
         .arg(
             clap::Arg::new("graphql")
@@ -246,7 +291,21 @@ fn search_changes(
     // Parents before children, so a commit can always reuse its parent's state.
     let mut walk = josh_core::objects::RevWalk::new(odb);
     walk.push(filtered_id)?;
-    for id in walk.into_topo_vec(|_| false)?.into_iter().rev() {
+    let mut progress = transaction.progress("Scanning search history");
+    if let Some(progress) = &progress {
+        progress.init(None, gix::progress::count("commits"));
+    }
+    let commits = walk.into_topo_vec(|_| {
+        if let Some(progress) = &progress {
+            progress.inc();
+        }
+        false
+    })?;
+    if let Some(progress) = &mut progress {
+        progress.set_name("Comparing commits");
+        progress.init(Some(commits.len()), gix::progress::count("commits"));
+    }
+    for id in commits.into_iter().rev() {
         let tree = josh_core::objects::CommitData::read(odb, id)?.tree_id()?;
         let index_tree = josh_core::filter::apply(
             transaction,
@@ -258,6 +317,9 @@ fn search_changes(
         for event in sweep.process(odb, &mut scache, id, &parents, tree, index_tree)? {
             println!("{} {} {} -> {}", id, event.path, event.before, event.after);
         }
+        if let Some(progress) = &progress {
+            progress.inc();
+        }
     }
     Ok(())
 }
@@ -268,6 +330,7 @@ fn run_filter(args: Vec<String>) -> anyhow::Result<i32> {
         println!("Version: {}", josh_core::VERSION);
         return Ok(0);
     }
+    let progress = ProgressRuntime::new(args.get_one::<String>("progress").unwrap());
     let specstr = args.get_one::<String>("filter").unwrap();
     let is_from_file = args.get_one::<String>("file").is_some();
     let specstr = args
@@ -291,9 +354,12 @@ fn run_filter(args: Vec<String>) -> anyhow::Result<i32> {
         }
     });
 
-    let mut transaction = josh_core::cache::TransactionContext::from_env(cache.clone())?
-        .with_mem_odb_limit(josh_cli::MAX_MEM_PACK_SIZE)
-        .open()?;
+    let mut transaction_context = josh_core::cache::TransactionContext::from_env(cache.clone())?
+        .with_mem_odb_limit(josh_cli::MAX_MEM_PACK_SIZE);
+    if let Some(progress) = &progress {
+        transaction_context = transaction_context.with_progress(progress.root.clone());
+    }
+    let mut transaction = transaction_context.open()?;
 
     let hook = GitNotesFilterHook {
         notes: josh_core::git::NoteReader::open(transaction.path())?,
@@ -484,7 +550,21 @@ fn run_filter(args: Vec<String>) -> anyhow::Result<i32> {
 
             let mut walk = josh_core::objects::RevWalk::new(odb);
             walk.push(filtered_id)?;
-            for id in walk.into_topo_vec(|_| false)? {
+            let mut progress = transaction.progress("Scanning search history");
+            if let Some(progress) = &progress {
+                progress.init(None, gix::progress::count("commits"));
+            }
+            let commits = walk.into_topo_vec(|_| {
+                if let Some(progress) = &progress {
+                    progress.inc();
+                }
+                false
+            })?;
+            if let Some(progress) = &mut progress {
+                progress.set_name("Searching commits");
+                progress.init(Some(commits.len()), gix::progress::count("commits"));
+            }
+            for id in commits {
                 let tree = josh_core::objects::CommitData::read(odb, id)?.tree_id()?;
                 let index_tree = josh_core::filter::apply(
                     &transaction,
@@ -509,6 +589,9 @@ fn run_filter(args: Vec<String>) -> anyhow::Result<i32> {
                     for l in r.1 {
                         println!("{}:{}:{}: {}", id, r.0, l.0, l.1);
                     }
+                }
+                if let Some(progress) = &progress {
+                    progress.inc();
                 }
             }
             return Ok(0);
@@ -687,9 +770,7 @@ fn run_filter(args: Vec<String>) -> anyhow::Result<i32> {
     std::mem::drop(finish);
 
     if let Some(query) = args.get_one::<String>("query") {
-        let transaction = josh_core::cache::TransactionContext::from_env(cache.clone())?
-            .with_mem_odb_limit(josh_cli::MAX_MEM_PACK_SIZE)
-            .open()?;
+        let transaction = transaction_context.open()?;
         let commit_id = transaction
             .resolve_ref(update_target)?
             .ok_or_else(|| anyhow!("update target '{}' not found", update_target))?;

@@ -57,7 +57,9 @@ impl Drop for FlushGuard {
 fn flush_all() {
     let stores: Vec<Arc<MemOdb>> = STORES.lock().unwrap().values().cloned().collect();
     for store in stores {
-        if let Err(e) = store.pack_to_disk() {
+        let mut progress =
+            gix_features::progress::BoxedDynNestedProgress::new(gix_features::progress::Discard);
+        if let Err(e) = store.pack_to_disk(&mut progress) {
             log::error!("failed to flush in-memory object store at exit: {e}");
         }
     }

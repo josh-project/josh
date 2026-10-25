@@ -14,8 +14,9 @@ This document describes a set of rules and conventions maintainers use in this r
 * Commit messages must not use a conventional commits prefix (e.g. no `fix:` or `feat:`)
 * Commit subject line must start with an uppercase letter and be reasonably short (around 80 characters)
 
-* Commit messages must include a `Change:` footer with an alphanumeric, dash-separated identifier
+* Non-WIP commit messages must include a `Change:` footer with an alphanumeric, dash-separated identifier
   * Example footer: `Change: flatten-invert-check`
+* WIP commit messages must not include a `Change:` footer
 
 ## Committing work
 

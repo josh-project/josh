@@ -97,6 +97,7 @@ pub struct TransactionContext {
     ref_prefix: Option<String>,
     mem_odb_limit: Option<usize>,
     ephemeral: bool,
+    progress: Option<std::sync::Arc<josh_memodb::ProgressRoot>>,
 }
 
 /// The process's opened gitoxide repositories, keyed by repository path. Opening reads
@@ -151,6 +152,7 @@ impl TransactionContext {
             ref_prefix: None,
             mem_odb_limit: None,
             ephemeral: false,
+            progress: None,
         })
     }
 
@@ -161,6 +163,7 @@ impl TransactionContext {
             ref_prefix: None,
             mem_odb_limit: None,
             ephemeral: false,
+            progress: None,
         }
     }
 
@@ -171,6 +174,12 @@ impl TransactionContext {
 
     pub fn with_mem_odb_limit(mut self, limit: usize) -> Self {
         self.mem_odb_limit = Some(limit);
+        self
+    }
+
+    /// Share one progress tree with filtering, indexing, and background object packing.
+    pub fn with_progress(mut self, progress: std::sync::Arc<josh_memodb::ProgressRoot>) -> Self {
+        self.progress = Some(progress);
         self
     }
 
@@ -193,6 +202,7 @@ impl TransactionContext {
             self.ref_prefix.as_deref(),
             self.mem_odb_limit,
             self.ephemeral,
+            self.progress.clone(),
         ))
     }
 }
@@ -245,6 +255,7 @@ pub struct Transaction {
     ephemeral: bool,
     ref_prefix: Option<String>,
     filter_hook: Option<std::sync::Arc<dyn FilterHook + Send + Sync>>,
+    progress: Option<std::sync::Arc<josh_memodb::ProgressRoot>>,
 }
 
 impl Drop for Transaction {
@@ -271,7 +282,7 @@ impl Drop for Transaction {
             )
         });
         let objects_are_durable = if publishes_object {
-            match self.mem_odb.flush() {
+            match self.flush_objects() {
                 Ok(()) => true,
                 Err(error) => {
                     log::error!("failed to flush in-memory object store: {error}");
@@ -294,6 +305,7 @@ impl Transaction {
         ref_prefix: Option<&str>,
         mem_odb_limit: Option<usize>,
         ephemeral: bool,
+        progress: Option<std::sync::Arc<josh_memodb::ProgressRoot>>,
     ) -> Transaction {
         // An ephemeral transaction must not contribute to a store that outlives it, so it
         // buffers privately and reads through to the shared one.
@@ -307,6 +319,10 @@ impl Transaction {
         // The store the repository was opened with, so pack indices are loaded once for every
         // transaction of this context.
         let odb = josh_memodb::Odb::new(mem_odb.clone(), gix_repo.objects.clone());
+        let odb = match &progress {
+            Some(progress) => odb.with_progress(progress.clone()),
+            None => odb,
+        };
 
         // Balanced in `Drop`; lets a locking backend (sled) hold its lock only while a
         // transaction is live.
@@ -335,6 +351,7 @@ impl Transaction {
             ephemeral,
             ref_prefix: ref_prefix.map(|prefix| prefix.to_owned()),
             filter_hook: None,
+            progress,
         }
     }
 
@@ -345,6 +362,7 @@ impl Transaction {
             ref_prefix: self.ref_prefix.clone(),
             mem_odb_limit: self.mem_odb_limit,
             ephemeral: self.ephemeral,
+            progress: self.progress.clone(),
         };
 
         context.open()
@@ -361,6 +379,20 @@ impl Transaction {
     /// fallback (see [`josh_memodb::Odb`]).
     pub fn odb(&self) -> &josh_memodb::Odb {
         &self.odb
+    }
+
+    /// Add a top-level task to this transaction's progress tree when reporting is enabled.
+    pub fn progress(&self, name: impl Into<String>) -> Option<josh_memodb::ProgressItem> {
+        self.progress
+            .as_ref()
+            .map(|progress| progress.add_child(name))
+    }
+
+    fn flush_objects(&self) -> anyhow::Result<()> {
+        match &self.progress {
+            Some(progress) => self.mem_odb.flush_with_progress(progress.clone()),
+            None => self.mem_odb.flush(),
+        }
     }
 
     pub(crate) fn memo(&self) -> &TransactionMemo {
@@ -412,7 +444,7 @@ impl Transaction {
     /// repository, not only what this transaction wrote.
     // TODO: remove and rework proxy git launch path to use spawn_git
     pub fn flush_mem_odb(&self) -> anyhow::Result<()> {
-        self.mem_odb.flush()?;
+        self.flush_objects()?;
         if !self.ephemeral {
             self.apply_pending_refs()?;
         }

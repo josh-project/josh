@@ -21,17 +21,22 @@ use std::sync::Arc;
 use std::sync::LazyLock;
 use std::sync::mpsc::{Sender, SyncSender, channel, sync_channel};
 
+use crate::ProgressRoot;
 use crate::mem_odb::MemOdb;
 
 /// A unit of packing work for the background worker. Each carries the store's `Arc`; the worker
 /// snapshots and packs its buffered objects.
 enum Job {
     /// Pack the store's currently-buffered objects and evict them. Best-effort; no acknowledgement.
-    Chunk { store: Arc<MemOdb> },
+    Chunk {
+        store: Arc<MemOdb>,
+        progress: Option<Arc<ProgressRoot>>,
+    },
     /// Pack and evict, then acknowledge, so a boundary caller can block until the objects are on
     /// disk.
     Drain {
         store: Arc<MemOdb>,
+        progress: Option<Arc<ProgressRoot>>,
         ack: SyncSender<Result<(), String>>,
     },
 }
@@ -51,18 +56,25 @@ impl Flusher {
             .spawn(move || {
                 while let Ok(job) = receiver.recv() {
                     match job {
-                        Job::Chunk { store } => {
-                            let packed = match store.pack_to_disk() {
+                        Job::Chunk { store, progress } => {
+                            let mut task = pack_task(progress.as_ref());
+                            let packed = match store.pack_to_disk(&mut task) {
                                 Ok(()) => true,
                                 Err(e) => {
                                     log::error!("background chunk flush failed: {e}");
                                     false
                                 }
                             };
-                            store.finish_chunk(packed);
+                            store.finish_chunk(packed, progress);
                         }
-                        Job::Drain { store, ack } => {
-                            let _ = ack.send(store.pack_to_disk().map_err(|e| e.to_string()));
+                        Job::Drain {
+                            store,
+                            progress,
+                            ack,
+                        } => {
+                            let mut task = pack_task(progress.as_ref());
+                            let _ =
+                                ack.send(store.pack_to_disk(&mut task).map_err(|e| e.to_string()));
                         }
                     }
                 }
@@ -72,19 +84,36 @@ impl Flusher {
     }
 }
 
+fn pack_task(
+    progress: Option<&Arc<ProgressRoot>>,
+) -> gix_features::progress::BoxedDynNestedProgress {
+    match progress {
+        Some(progress) => gix_features::progress::BoxedDynNestedProgress::new(
+            progress.add_child("Packing objects"),
+        ),
+        None => {
+            gix_features::progress::BoxedDynNestedProgress::new(gix_features::progress::Discard)
+        }
+    }
+}
+
 /// Enqueue a best-effort background pack of `store`. Returns immediately; if the worker is gone the
 /// request is dropped (the next overflow, or the drain at drop, retries).
-pub(crate) fn enqueue_chunk(store: Arc<MemOdb>) {
-    let _ = FLUSHER.sender.send(Job::Chunk { store });
+pub(crate) fn enqueue_chunk(store: Arc<MemOdb>, progress: Option<Arc<ProgressRoot>>) {
+    let _ = FLUSHER.sender.send(Job::Chunk { store, progress });
 }
 
 /// Pack `store` to disk and block until it is done, so the objects are durable before the caller
 /// proceeds. Any queued chunks for the same store complete first (FIFO on the single worker).
-pub(crate) fn drain(store: Arc<MemOdb>) -> anyhow::Result<()> {
+pub(crate) fn drain(store: Arc<MemOdb>, progress: Option<Arc<ProgressRoot>>) -> anyhow::Result<()> {
     let (ack_tx, ack_rx) = sync_channel::<Result<(), String>>(1);
     if FLUSHER
         .sender
-        .send(Job::Drain { store, ack: ack_tx })
+        .send(Job::Drain {
+            store,
+            progress,
+            ack: ack_tx,
+        })
         .is_err()
     {
         return Err(anyhow::anyhow!("mem-odb flusher channel disconnected"));

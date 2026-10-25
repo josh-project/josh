@@ -161,6 +161,11 @@ fn ensure_hint_cached(
     let mut walk = crate::objects::RevWalk::new(odb);
     walk.push(input)?;
 
+    let mut progress = transaction.progress("Scanning commit graph");
+    if let Some(progress) = &progress {
+        progress.init(None, gix::progress::count("commits"));
+    }
+
     // Prune ancestors that already have *both* pieces cached. Pruning on seq#
     // alone would skip commits with cached seq# but missing roots, leaving
     // their roots unpopulated.
@@ -168,6 +173,9 @@ fn ensure_hint_cached(
     // cached": the walk then visits the commit and the fallible body reports
     // the same error properly.
     let sorted = walk.into_topo_vec(|id| {
+        if let Some(progress) = &progress {
+            progress.inc();
+        }
         transaction
             .known(crate::filter::sequence_number(), id)
             .unwrap_or(false)
@@ -175,6 +183,10 @@ fn ensure_hint_cached(
                 .known(crate::filter::reachable_roots(), id)
                 .unwrap_or(false)
     })?;
+    if let Some(progress) = &mut progress {
+        progress.set_name("Indexing commit graph");
+        progress.init(Some(sorted.len()), gix::progress::count("commits"));
+    }
 
     for &oid in sorted.iter().rev() {
         let parents_hint: Vec<(u64, gix_hash::ObjectId)> = crate::git::read_parent_ids(odb, oid)?
@@ -187,6 +199,9 @@ fn ensure_hint_cached(
             .collect::<anyhow::Result<Vec<_>>>()?;
         let hint = derive_from_parents(odb, oid, &parents_hint)?;
         store_hint(transaction, oid, hint)?;
+        if let Some(progress) = &progress {
+            progress.inc();
+        }
     }
 
     try_read_cached_hint(transaction, input)?

@@ -29,6 +29,7 @@ dirs.workspace = true
 reqwest.workspace = true
 reqwest-middleware.workspace = true
 url.workspace = true
+prodash.workspace = true
 
 arboard = { version = "^3.6", default-features = false }
 

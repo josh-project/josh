@@ -431,7 +431,8 @@ the Git-style refspec and writes each result to its mapped destination. Wildcard
 and repeated `--revspec` options are supported.
 
 **Output:** single-revision mode prints the filtered commit SHA. Refspec mode prints one
-`<SHA> <destination-ref>` line per updated ref.
+`<SHA> <destination-ref>` line per updated ref. Progress is rendered on stderr when it is
+connected to a terminal, leaving stdout suitable for scripts.
 
 **Basic usage:**
 
@@ -466,5 +467,6 @@ josh-filter :/docs --revspec 'refs/heads/*:refs/filtered/heads/*'
 | `-s` | Print cache statistics |
 | `-n` | Skip loading the cache |
 | `--distributed-cache` | Enable the distributed cache backend |
+| `--progress <auto\|always\|never>` | Control progress rendering on stderr (default: `auto`) |
 | `--reverse` | Reverse-apply the filter (unapply): reconstruct upstream commits from filtered ones |
 | `--check-roundtrip` | When used with `--reverse`, verify that applying the filter to the reverse result reproduces the original commit. Exits with code 1 if the check fails. |

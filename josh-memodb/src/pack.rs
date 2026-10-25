@@ -11,6 +11,7 @@ use std::io::{Seek, Write};
 use std::path::Path;
 use std::sync::atomic::AtomicBool;
 
+use gix_features::progress::{Count, NestedProgress, Progress};
 use gix_object::Exists;
 use gix_pack::data::output;
 
@@ -29,7 +30,11 @@ pub(crate) fn objects_dir(repo: &gix::Repository) -> std::path::PathBuf {
 /// serialized single-threaded in snapshot order, and the file pair is named after the pack
 /// trailer checksum, so identical snapshots produce identical packs. Files are written via
 /// tempfile-and-rename, index last, so a concurrent reader never sees a torn pair.
-pub(crate) fn write_snapshot(objects_dir: &Path, snapshot: &Snapshot) -> anyhow::Result<()> {
+pub(crate) fn write_snapshot(
+    objects_dir: &Path,
+    snapshot: &Snapshot,
+    progress: &mut gix_features::progress::BoxedDynNestedProgress,
+) -> anyhow::Result<()> {
     // A fresh store handle per flush observes every pack written by previous flushes. Misses are
     // the expected case below, and the default refresh mode re-lists the pack directory on every
     // miss — disable it; the first lookup still loads all indices present now, and loose-object
@@ -46,6 +51,11 @@ pub(crate) fn write_snapshot(objects_dir: &Path, snapshot: &Snapshot) -> anyhow:
         return Ok(());
     }
     let num_entries = u32::try_from(to_pack.len()).context("mem-odb pack write failed")?;
+    let mut compress = progress.add_child("Compressing objects");
+    compress.init(
+        Some(to_pack.len()),
+        gix_features::progress::count("objects"),
+    );
 
     let pack_dir = objects_dir.join("pack");
     std::fs::create_dir_all(&pack_dir).context("mem-odb pack write failed")?;
@@ -75,16 +85,19 @@ pub(crate) fn write_snapshot(objects_dir: &Path, snapshot: &Snapshot) -> anyhow:
     );
     for written in &mut iter {
         written.context("mem-odb pack write failed")?;
+        compress.inc();
     }
     drop(iter);
+    drop(compress);
     spool.flush().context("mem-odb pack write failed")?;
     let mut spool = spool.into_inner().context("mem-odb pack write failed")?;
     spool.rewind().context("mem-odb pack write failed")?;
 
+    let mut index = progress.add_child("Indexing pack");
     let outcome = gix_pack::Bundle::write_to_directory(
         &mut std::io::BufReader::new(spool),
         Some(&pack_dir),
-        &mut gix_features::progress::Discard,
+        &mut index,
         &AtomicBool::new(false),
         None::<gix_object::find::Never>,
         gix_pack::bundle::write::Options {
