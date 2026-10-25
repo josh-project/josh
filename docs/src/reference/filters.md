@@ -269,6 +269,31 @@ The resulting tree will contain the contents specified by the filter in the ``.j
 Stored filters apply from the root of the repository, making them useful for configuration files that define
 filters to be applied at the repository root level.
 
+With `JOSH_EXPERIMENTAL_FEATURES=1`, stored filters and `workspace.josh` files may use
+input-relative revision object expressions in object-valued positions. The expression is
+resolved separately for each input commit:
+
+```josh
+# Replace the output with the input commit's first-parent tree.
+:$.={#^}
+```
+
+`#` selects a commit's tree, `@` selects the commit object, and `^`, `^N`, `~`, and `~N`
+follow Git's ancestry conventions. Normal filtering does not define named revision bindings,
+so a named primary can make a filter portable by falling back to the input:
+
+```josh
+:$.={#baseline|#^}
+```
+
+Here normal stored-filter evaluation selects the first-parent tree because `baseline` is
+unset. [`josh compose`](../contributing/josh-compose.md#revision-object-expressions) can bind
+`baseline` with `--arg`.
+
+Within `exclude[...]` and `select[...]`, revision expressions are resolved to the paths
+they select in the forward input tree. Reverse filtering uses that same path set, so a
+push cannot change which paths the selector protects or permits.
+
 ### Workspace **`:workspace=a`**
 Like stored filters, but with an additional "base" component that first selects the specified directory
 (called the "workspace root") before applying the filter from the ``workspace.josh`` file inside it.

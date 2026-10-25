@@ -34,10 +34,18 @@ fn object_reference_tree(
     transaction: &cache::Transaction,
     filter: Filter,
     input_tree: gix_hash::ObjectId,
+    input_commit: gix_hash::ObjectId,
 ) -> anyhow::Result<Option<gix_hash::ObjectId>> {
     let odb = transaction.odb();
     let reader = tree::read_tree(transaction, odb, input_tree)?;
-    let filter = legalize_stored(transaction, odb, filter, input_tree, &reader)?;
+    let filter = legalize_stored(
+        transaction,
+        odb,
+        filter,
+        input_tree,
+        Some(input_commit),
+        &reader,
+    )?;
     let pointer_filter = legalize_object_derefs(filter);
     if pointer_filter == filter {
         return Ok(None);
@@ -106,7 +114,9 @@ pub(super) fn append_parents(
     filtered_parents: &mut Vec<gix_hash::ObjectId>,
 ) -> anyhow::Result<bool> {
     let odb = transaction.odb();
-    let Some(references) = object_reference_tree(transaction, filter, commit.tree_id()?)? else {
+    let Some(references) =
+        object_reference_tree(transaction, filter, commit.tree_id()?, commit.id())?
+    else {
         return Ok(true);
     };
     let base_tree = history::history_flag(filter.get_meta("history").as_deref(), "embed")
@@ -115,7 +125,12 @@ pub(super) fn append_parents(
         .first_parent_id()
         .zip(parent_filter)
         .map(|(parent, parent_filter)| {
-            object_reference_tree(transaction, parent_filter, git::read_tree_id(odb, parent)?)
+            object_reference_tree(
+                transaction,
+                parent_filter,
+                git::read_tree_id(odb, parent)?,
+                parent,
+            )
         })
         .transpose()?
         .flatten();
