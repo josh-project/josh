@@ -52,7 +52,7 @@ jobs:
           fi
         done
     - name: Setup BuildX
-      uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4.3.0
+      uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
     - name: Checkout
       uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       with:
@@ -64,7 +64,7 @@ jobs:
       shell: bash
       run: .github/workflows/scripts/install-podman.sh
     - name: Install Rust toolchain
-      uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772 # stable
+      uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # stable
       with:
         toolchain: stable
     - name: Bootstrap josh binary
@@ -118,7 +118,7 @@ jobs:
       run: git bundle create "$RUNNER_TEMP/compose-results.bundle" refs/josh/compose
     - name: Upload compose results bundle
       if: success() && env.SECRETLESS != 'true'
-      uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
       with:
         name: compose-results
         path: ${{ runner.temp }}/compose-results.bundle
@@ -152,7 +152,7 @@ jobs:
         git fetch --no-tags --depth=1 origin "refs/heads/${DEFAULT_BRANCH}"
         git checkout --detach FETCH_HEAD
     - name: Install Rust toolchain
-      uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772 # stable
+      uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # stable
       with:
         toolchain: stable
     - name: Bootstrap josh binary
@@ -161,7 +161,7 @@ jobs:
         AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
       run: .github/workflows/scripts/bootstrap-josh.sh
     - name: Download compose results bundle
-      uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+      uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
       with:
         name: compose-results
         path: ${{ runner.temp }}/compose-results
