@@ -3,18 +3,19 @@
 
 use std::collections::HashMap;
 
+use josh_changes::ChangeData;
 use josh_github_graphql::connection::GithubApiConnection;
-use josh_github_graphql::operations::pull_request::PrData;
 
 use crate::display::pr_link;
-use crate::layout::{GithubChangesRefData, GITHUB_PR_DATA_PATH};
+use crate::layout::{GithubChangesRefData, GITHUB_PR_DATA_PATH, GITHUB_PR_NUMBERS_PATH};
 
-/// Store the PR data for a change: a sparse `GithubChangesRefData` carrying
-/// only the `gh/<change-id>` entry, merged into the ref.
+/// Store the generic change data and GitHub PR number in their respective
+/// `gh/` and `gh_pr_numbers/` namespaces.
 pub fn store_pr_data(
     transaction: &josh_core::cache::Transaction,
     change_id: &str,
-    data: &PrData,
+    data: &ChangeData,
+    pr_number: i64,
     scope: &josh_changes::ChangesRef,
 ) -> anyhow::Result<()> {
     let sparse = GithubChangesRefData {
@@ -29,7 +30,19 @@ pub fn store_pr_data(
         None,
         None,
     )?;
-    Ok(())
+
+    let sparse = GithubChangesRefData {
+        gh_pr_numbers: [(change_id.to_string(), pr_number)].into(),
+        ..Default::default()
+    };
+    josh_changes::write_filtered(
+        transaction,
+        scope,
+        josh_changes::namespace_filter(GITHUB_PR_NUMBERS_PATH),
+        &sparse,
+        None,
+        None,
+    )
 }
 
 /// Read the stored PR data for a change, if present. Fails when the stored
@@ -38,7 +51,7 @@ pub fn read_pr_data(
     transaction: &josh_core::cache::Transaction,
     change_id: &str,
     scope: &josh_changes::ChangesRef,
-) -> anyhow::Result<Option<PrData>> {
+) -> anyhow::Result<Option<ChangeData>> {
     let Some(mut data) = josh_changes::read_filtered::<GithubChangesRefData>(
         transaction,
         scope,
@@ -48,6 +61,23 @@ pub fn read_pr_data(
         return Ok(None);
     };
     Ok(data.gh.remove(change_id))
+}
+
+/// Read the PR number from GitHub's per-change metadata.
+pub fn read_pr_number(
+    transaction: &josh_core::cache::Transaction,
+    change_id: &str,
+    scope: &josh_changes::ChangesRef,
+) -> anyhow::Result<Option<i64>> {
+    let Some(mut data) = josh_changes::read_filtered::<GithubChangesRefData>(
+        transaction,
+        scope,
+        josh_changes::namespace_filter(GITHUB_PR_NUMBERS_PATH),
+    )?
+    else {
+        return Ok(None);
+    };
+    Ok(data.gh_pr_numbers.remove(change_id))
 }
 
 #[derive(Debug)]
@@ -336,10 +366,28 @@ pub async fn create_or_update_prs(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use josh_core::cache::{CacheStack, SledCacheBackend, TransactionContext};
     use std::str::FromStr;
 
     const TIP: &str = "1111111111111111111111111111111111111111";
     const OTHER: &str = "2222222222222222222222222222222222222222";
+
+    fn open_transaction(td: &tempfile::TempDir) -> josh_core::cache::Transaction {
+        gix::init_bare(td.path()).unwrap();
+        use std::io::Write as _;
+        std::fs::OpenOptions::new()
+            .append(true)
+            .open(td.path().join("config"))
+            .unwrap()
+            .write_all(b"\n[user]\n\tname = test\n\temail = test@example.com\n")
+            .unwrap();
+
+        let cachestack =
+            std::sync::Arc::new(CacheStack::new().with_backend(SledCacheBackend::new(td.path())));
+        TransactionContext::new(td.path(), cachestack)
+            .open()
+            .unwrap()
+    }
 
     fn pr_info(base_oid: &str) -> PrInfo {
         PrInfo {
@@ -353,6 +401,36 @@ mod tests {
 
     fn default_branch() -> (String, String) {
         ("main".to_string(), TIP.to_string())
+    }
+
+    #[test]
+    fn pr_data_and_number_roundtrip() {
+        let td = tempfile::tempdir().unwrap();
+        let transaction = open_transaction(&td);
+        let scope = josh_changes::ChangesRef::Local {
+            branch: "main".to_string(),
+        };
+        let data = ChangeData {
+            title: "A change".to_string(),
+            url: Some("https://github.com/josh-project/josh/pull/42".to_string()),
+            state: "Open".to_string(),
+            reviews: Default::default(),
+            checks: Default::default(),
+            comments: Vec::new(),
+        };
+
+        store_pr_data(&transaction, "custom-change", &data, 42, &scope).unwrap();
+
+        assert_eq!(
+            read_pr_number(&transaction, "custom-change", &scope).unwrap(),
+            Some(42)
+        );
+        let stored = read_pr_data(&transaction, "custom-change", &scope)
+            .unwrap()
+            .unwrap();
+        assert_eq!(stored.title, data.title);
+        assert_eq!(stored.url, data.url);
+        assert_eq!(stored.state, data.state);
     }
 
     #[test]

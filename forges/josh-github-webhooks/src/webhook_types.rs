@@ -1,6 +1,8 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
+use josh_changes::ReviewState;
+
 /// Common repository information shared across webhook events
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Repository {
@@ -143,54 +145,33 @@ pub struct CheckRunEvent {
     pub details: CheckRunEventDetails,
 }
 
-/// Latest state of a pull request review.
-///
-/// Serialized as a plain string (the snake_case variant name) rather than
-/// via derived enum serde: the josh-git-serde tree format represents enum
-/// variants as tree entries, and the union-merge writes on changes refs
-/// cannot retract an old variant when the state changes. A string is a
-/// same-named blob that updates overwrite cleanly. The JSON representation
-/// is identical either way.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum PullRequestReviewState {
-    Approved,
-    ChangesRequested,
-    Commented,
-    Dismissed,
+fn serialize_github_review_state<S>(state: &ReviewState, serializer: S) -> Result<S::Ok, S::Error>
+where
+    S: serde::Serializer,
+{
+    let state = match state {
+        ReviewState::Approve => "approved",
+        ReviewState::Discuss => "commented",
+        ReviewState::Revise => "changes_requested",
+        ReviewState::Dismissed => "dismissed",
+    };
+    serializer.serialize_str(state)
 }
 
-impl PullRequestReviewState {
-    pub fn as_str(&self) -> &'static str {
-        match self {
-            PullRequestReviewState::Approved => "approved",
-            PullRequestReviewState::ChangesRequested => "changes_requested",
-            PullRequestReviewState::Commented => "commented",
-            PullRequestReviewState::Dismissed => "dismissed",
-        }
-    }
-
-    pub fn from_str(s: &str) -> Option<Self> {
-        match s {
-            "approved" => Some(PullRequestReviewState::Approved),
-            "changes_requested" => Some(PullRequestReviewState::ChangesRequested),
-            "commented" => Some(PullRequestReviewState::Commented),
-            "dismissed" => Some(PullRequestReviewState::Dismissed),
-            _ => None,
-        }
-    }
-}
-
-impl Serialize for PullRequestReviewState {
-    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        serializer.serialize_str(self.as_str())
-    }
-}
-
-impl<'de> Deserialize<'de> for PullRequestReviewState {
-    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        let s = String::deserialize(deserializer)?;
-        PullRequestReviewState::from_str(&s)
-            .ok_or_else(|| serde::de::Error::custom(format!("unknown review state: {}", s)))
+fn deserialize_github_review_state<'de, D>(deserializer: D) -> Result<ReviewState, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let state = String::deserialize(deserializer)?;
+    match state.as_str() {
+        "approved" => Ok(ReviewState::Approve),
+        "commented" => Ok(ReviewState::Discuss),
+        "changes_requested" => Ok(ReviewState::Revise),
+        "dismissed" => Ok(ReviewState::Dismissed),
+        _ => Err(serde::de::Error::unknown_variant(
+            &state,
+            &["approved", "commented", "changes_requested", "dismissed"],
+        )),
     }
 }
 
@@ -201,7 +182,11 @@ pub struct PullRequestReview {
     pub body: Option<String>,
     pub commit_id: String,
     pub submitted_at: DateTime<Utc>,
-    pub state: PullRequestReviewState,
+    #[serde(
+        serialize_with = "serialize_github_review_state",
+        deserialize_with = "deserialize_github_review_state"
+    )]
+    pub state: ReviewState,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
