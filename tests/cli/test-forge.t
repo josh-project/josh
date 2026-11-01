@@ -148,3 +148,39 @@ and maintainers can be removed.
       └── change%2F1/
           └── alice
               ╵  approved
+
+Publish the test forge as a plain branch, with no @changes/@base/@heads ref
+split and no PRs. Set up a bare remote and a clone with two changes.
+
+  $ cd ${TESTTMP}
+  $ git init -q --bare upstream
+  $ git init -q seed
+  $ cd seed
+  $ mkdir sub1
+  $ echo contents1 > sub1/file1
+  $ git add sub1
+  $ git commit -q -m "add file1"
+  $ git remote add origin ${TESTTMP}/upstream
+  $ git push -q origin master
+  $ cd ..
+
+  $ josh clone ${TESTTMP}/upstream :/sub1 w2 --forge test > /dev/null 2>&1
+  $ cd w2
+  $ git config user.email "josh@example.com"
+  $ git config user.name "Josh"
+
+  $ echo aaa > fileA
+  $ git add fileA
+  $ printf "A change\n\nChange: alpha" | git commit -q -F -
+  $ echo bbb > fileB
+  $ git add fileB
+  $ printf "B change\n\nChange: beta" | git commit -q -F -
+
+  $ josh changes publish
+  updated master (bb282e9..6ce5921)
+
+The remote has the branch and nothing else.
+
+  $ git ls-remote ${TESTTMP}/upstream
+  6ce5921e36a027e55bd6b6496e0ea532cea0df02\tHEAD (escaped)
+  6ce5921e36a027e55bd6b6496e0ea532cea0df02\trefs/heads/master (escaped)
