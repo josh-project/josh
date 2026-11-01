@@ -9,6 +9,7 @@ pub use josh_core::trailers::{commit_change_meta, parse_change_meta};
 mod change;
 mod comments;
 pub mod layout;
+mod publish_mode;
 mod refs;
 mod revisions;
 mod stacked;
@@ -19,6 +20,7 @@ pub mod remote_config;
 
 pub use change::*;
 pub use comments::*;
+pub use publish_mode::*;
 pub use refs::*;
 pub use revisions::*;
 pub use stacked::*;
