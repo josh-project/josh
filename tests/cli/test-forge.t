@@ -1,6 +1,7 @@
 The test forge is a test-suite-only forge variant: `--forge test` round-trips
 through remote and link config like any other forge, but it is never guessed
-from a URL.
+from a URL. `josh changes sync` pulls its server-side state (written by
+`josh forge`) into the changes refs like GitHub data.
 
   $ export TESTTMP=${PWD}
 
@@ -48,6 +49,15 @@ A link records the test forge the same way (links are experimental).
 
   $ josh link list | sed "s|${TESTTMP}|\${TESTTMP}|g"
   remote\t${TESTTMP}/remote\trefs/heads/master\ttest\t:/sub1 (escaped)
+
+Sync works against a test-forge remote; with nothing published there is
+nothing to do.
+
+  $ echo x > file
+  $ git add file
+  $ git commit -q -m x
+  $ josh changes sync --remote origin
+  No published changes found on the test forge.
 
 The hidden `josh forge` command writes the test forge's server-side state
 (CI checks, reviews, maintainers, admission rules) into a standalone ref in
@@ -149,8 +159,9 @@ and maintainers can be removed.
           └── alice
               ╵  approved
 
-Publish the test forge as a plain branch, with no @changes/@base/@heads ref
-split and no PRs. Set up a bare remote and a clone with two changes.
+Sync from a test-forge remote: published changes plus the forge state written
+by `josh forge` land in the `test/` and `test_admission/` namespaces of the
+remote's changes ref. Set up a bare remote and a clone with two changes.
 
   $ cd ${TESTTMP}
   $ git init -q --bare upstream
@@ -176,6 +187,9 @@ split and no PRs. Set up a bare remote and a clone with two changes.
   $ git add fileB
   $ printf "B change\n\nChange: beta" | git commit -q -F -
 
+The test forge is push-based: publish pushes the branch as-is, with no
+@changes/@base/@heads ref split and no PRs.
+
   $ josh changes publish
   updated master (bb282e9..6ce5921)
 
@@ -184,3 +198,164 @@ The remote has the branch and nothing else.
   $ git ls-remote ${TESTTMP}/upstream
   6ce5921e36a027e55bd6b6496e0ea532cea0df02\tHEAD (escaped)
   6ce5921e36a027e55bd6b6496e0ea532cea0df02\trefs/heads/master (escaped)
+
+Sync with no forge state written yet: succeeds with empty state. Changes are
+discovered by walking the fetched branch's commits for Change: trailers.
+
+  $ josh changes sync --remote origin
+  Found 2 published changes on the test forge.
+
+The changes ref holds a `test/<change-id>` entry per published change (the
+`gh/` layout's analogue) and a `test_admission/` subtree for the branch.
+Integer fields of the shared PrData/AdmissionData structs are little-endian
+binary blobs, so assert structure with --no-contents and spot-check contents
+with cat-file.
+
+  $ git-tree-pretty --no-contents refs/josh/remotes/origin/changes/master
+  .
+  ├── test/
+  │   ├── alpha/
+  │   │   ├── additions
+  │   │   ├── author
+  │   │   ├── base_ref_name
+  │   │   ├── body
+  │   │   ├── changed_files
+  │   │   ├── checks/
+  │   │   ├── created_at
+  │   │   ├── deletions
+  │   │   ├── head_ref_name
+  │   │   ├── reviews/
+  │   │   ├── state
+  │   │   ├── title
+  │   │   └── updated_at
+  │   └── beta/
+  │       ├── additions
+  │       ├── author
+  │       ├── base_ref_name
+  │       ├── body
+  │       ├── changed_files
+  │       ├── checks/
+  │       ├── created_at
+  │       ├── deletions
+  │       ├── head_ref_name
+  │       ├── reviews/
+  │       ├── state
+  │       ├── title
+  │       └── updated_at
+  └── test_admission/
+      ├── fetched_at
+      ├── maintainers/
+      ├── required_approvals
+      └── required_checks/
+
+The stored fields are commit-derived, and the PR-specific fields of
+`ChangeData` (number, url, draft/merge state) are absent entirely -- the
+test forge has no values for them, and `None` is not stored. Being
+push-based, the head is simply the branch.
+
+  $ for p in title state author base_ref_name head_ref_name created_at; do printf "%s: " "$p"; git cat-file blob "refs/josh/remotes/origin/changes/master:test/alpha/$p"; echo; done
+  title: A change
+  state: Open
+  author: josh@example.com
+  base_ref_name: master
+  head_ref_name: master
+  created_at: 2005-04-07T22:13:13Z
+
+  $ git ls-tree refs/josh/remotes/origin/changes/master:test/alpha/ | grep -cE "number|url|is_draft|merged" || true
+  0
+
+Now write forge state and sync again: checks keyed by the change's head
+commit (alpha has one, beta has none), reviews by change-id, the maintainer
+set, and the branch's admission rules.
+
+  $ alpha_oid=$(git -C ${TESTTMP}/upstream rev-parse master~1)
+  $ josh forge --remote origin maintainer add alice
+  Added maintainer 'alice'
+  $ josh forge --remote origin check set $alpha_oid build success | sed "s|$alpha_oid|OID|"
+  Set check 'build' on OID to success
+  $ josh forge --remote origin review alpha alice approved
+  Recorded review by alice on change 'alpha': approved
+  $ josh forge --remote origin review beta alice changes_requested
+  Recorded review by alice on change 'beta': changes_requested
+  $ josh forge --remote origin admission set --branch master --require-check build --required-approvals 1
+  Set admission for branch 'master': required checks [build], required approvals 1
+
+  $ josh changes sync --remote origin
+  Found 2 published changes on the test forge.
+
+The fetched forge-state ref lands inside the remote's namespace.
+
+  $ git rev-parse --verify -q refs/josh/remotes/origin/forges/test > /dev/null && echo present
+  present
+
+  $ git-tree-pretty --no-contents refs/josh/remotes/origin/changes/master
+  .
+  ├── test/
+  │   ├── alpha/
+  │   │   ├── additions
+  │   │   ├── author
+  │   │   ├── base_ref_name
+  │   │   ├── body
+  │   │   ├── changed_files
+  │   │   ├── checks/
+  │   │   │   └── build
+  │   │   ├── created_at
+  │   │   ├── deletions
+  │   │   ├── head_ref_name
+  │   │   ├── reviews/
+  │   │   │   └── alice
+  │   │   ├── state
+  │   │   ├── title
+  │   │   └── updated_at
+  │   └── beta/
+  │       ├── additions
+  │       ├── author
+  │       ├── base_ref_name
+  │       ├── body
+  │       ├── changed_files
+  │       ├── checks/
+  │       ├── created_at
+  │       ├── deletions
+  │       ├── head_ref_name
+  │       ├── reviews/
+  │       │   └── alice
+  │       ├── state
+  │       ├── title
+  │       └── updated_at
+  └── test_admission/
+      ├── fetched_at
+      ├── maintainers/
+      │   └── alice/
+      ├── required_approvals
+      └── required_checks/
+          └── build/
+              └── context
+
+  $ git cat-file blob refs/josh/remotes/origin/changes/master:test/alpha/reviews/alice
+  approved (no-eol)
+  $ git cat-file blob refs/josh/remotes/origin/changes/master:test/alpha/checks/build
+  success (no-eol)
+  $ git cat-file blob refs/josh/remotes/origin/changes/master:test/beta/reviews/alice
+  changes_requested (no-eol)
+  $ git cat-file blob refs/josh/remotes/origin/changes/master:test_admission/required_checks/build/context
+  build (no-eol)
+
+required_approvals round-trips from the forge state's decimal string into
+AdmissionData's little-endian u32; fetched_at follows JOSH_COMMIT_TIME.
+
+  $ git cat-file blob refs/josh/remotes/origin/changes/master:test_admission/required_approvals | od -An -tu1 | tr -d ' \n'; echo
+  1000
+  $ git cat-file blob refs/josh/remotes/origin/changes/master:test_admission/fetched_at | od -An -tu1 | tr -d ' \n'; echo
+  00000000
+
+--push has no test-forge meaning; --clean rebuilds the changes ref.
+
+  $ josh changes sync --remote origin --push
+  Error: --push is not supported for the test forge
+  --push is not supported for the test forge
+  [1]
+
+  $ josh changes sync --remote origin --clean
+  Found 2 published changes on the test forge.
+  $ git cat-file blob refs/josh/remotes/origin/changes/master:test/alpha/checks/build
+  success (no-eol)
