@@ -7,12 +7,12 @@
 
 use std::collections::HashMap;
 
+use josh_changes::ChangeData;
 use josh_changes::VoteData;
-use josh_github_graphql::operations::pull_request::PrData;
 use serde::{Deserialize, Serialize};
 
-use crate::admission::AdmissionData;
 use crate::SyncFingerprint;
+use josh_changes::AdmissionData;
 
 pub const GITHUB_COMMENT_NODE_IDS_PATH: &str = "gh_comment_node_ids";
 pub const GITHUB_VOTE_NODE_IDS_PATH: &str = "gh_vote_node_ids";
@@ -25,6 +25,9 @@ pub const GITHUB_ADMISSION_PATH: &str = "gh_admission";
 
 /// Path of the stored pull-request data namespace.
 pub const GITHUB_PR_DATA_PATH: &str = "gh";
+
+/// Path of the GitHub-only change-id → PR number mapping.
+pub const GITHUB_PR_NUMBERS_PATH: &str = "gh_pr_numbers";
 
 /// local comment hash → GitHub GraphQL node id.
 pub type CommentNodeIds = HashMap<String, String>;
@@ -39,7 +42,10 @@ pub type VoteNodeIds = HashMap<String, VoteData>;
 pub type VoteNodeIdsByChange = HashMap<String, VoteNodeIds>;
 
 /// change id → cached PR metadata (`gh/`).
-pub type PrDataByChange = HashMap<String, PrData>;
+pub type ChangeDataByChange = HashMap<String, ChangeData>;
+
+/// change id → GitHub PR number (`gh_pr_numbers/`).
+pub type PrNumbersByChange = HashMap<String, i64>;
 
 /// change id → sync cache (`gh_cache/`).
 pub type CacheByChange = HashMap<String, SyncCache>;
@@ -58,7 +64,9 @@ pub struct GithubChangesRefData {
     #[serde(default)]
     pub gh_vote_node_ids: VoteNodeIdsByChange,
     #[serde(default)]
-    pub gh: PrDataByChange,
+    pub gh: ChangeDataByChange,
+    #[serde(default)]
+    pub gh_pr_numbers: PrNumbersByChange,
     #[serde(default)]
     pub gh_cache: CacheByChange,
     #[serde(default)]

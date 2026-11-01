@@ -10,7 +10,7 @@
 use anyhow::{Context, anyhow};
 use clap::Subcommand;
 
-use josh_test_changes::{CheckState, PullRequestReviewState};
+use josh_changes::{CheckState, ReviewState};
 
 const CHECK_STATES: [&str; 8] = [
     "pending",
@@ -23,7 +23,7 @@ const CHECK_STATES: [&str; 8] = [
     "action_required",
 ];
 
-const REVIEW_STATES: [&str; 4] = ["approved", "changes_requested", "commented", "dismissed"];
+const REVIEW_STATES: [&str; 4] = ["approve", "discuss", "revise", "dismissed"];
 
 #[derive(Debug, clap::Parser)]
 pub struct ForgeArgs {
@@ -190,7 +190,7 @@ pub fn handle_forge(
             }
         },
         ForgeCommand::Review(review_args) => {
-            let state = PullRequestReviewState::from_str(&review_args.state).ok_or_else(|| {
+            let state = ReviewState::from_str(&review_args.state).ok_or_else(|| {
                 anyhow!(
                     "unknown review state '{}' (valid: {})",
                     review_args.state,
