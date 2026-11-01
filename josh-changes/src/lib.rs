@@ -6,7 +6,9 @@
 
 pub use josh_core::trailers::{commit_change_meta, parse_change_meta};
 
+mod admission;
 mod change;
+mod change_data;
 mod comments;
 pub mod layout;
 mod publish_mode;
@@ -18,7 +20,9 @@ mod votes;
 
 pub mod remote_config;
 
+pub use admission::*;
 pub use change::*;
+pub use change_data::*;
 pub use comments::*;
 pub use publish_mode::*;
 pub use refs::*;

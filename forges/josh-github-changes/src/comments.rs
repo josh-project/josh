@@ -4,13 +4,13 @@
 
 use std::collections::HashMap;
 
+use josh_changes::ChangeData;
 use josh_core::cache::Transaction;
 use josh_github_graphql::connection::GithubApiConnection;
-use josh_github_graphql::operations::pull_request::PrData;
 
 /// Convert fetched GitHub PR comments into the forge-neutral shape
 /// `josh_changes::store_fetched_comments` consumes.
-pub fn fetched_comments(pr_data: &PrData) -> Vec<josh_changes::FetchedComment> {
+pub fn fetched_comments(pr_data: &ChangeData) -> Vec<josh_changes::FetchedComment> {
     pr_data
         .comments
         .iter()
