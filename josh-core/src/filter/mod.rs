@@ -4,7 +4,7 @@ use gix_object::bstr::BString;
 pub use josh_filter::check_experimental_features_enabled;
 pub use josh_filter::experimental_features_enabled;
 
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::path::Path;
 use std::str::FromStr;
 
@@ -14,7 +14,7 @@ pub use josh_filter::filter::index;
 pub use josh_filter::filter::reachable_roots;
 pub use josh_filter::filter::sequence_number;
 pub use josh_filter::filter::squash_to_rev;
-pub use josh_filter::flang::parse::{get_comments, parse};
+pub use josh_filter::flang::parse::{ObjectKind, ObjectResolver, get_comments, parse};
 pub use josh_filter::opt;
 pub use josh_filter::opt::invert;
 pub use josh_filter::persist::{peel_filter, peel_op, to_filter, to_op, to_ops};
@@ -24,6 +24,102 @@ pub use josh_filter::{as_file, pretty, spec};
 mod object_deref;
 pub mod text;
 pub mod tree;
+/// Resolves contextual revision expressions relative to one input commit.
+///
+/// Named bindings are optional. Without them, normal stored filters can use
+/// input-relative expressions while named primaries remain unset and may fall
+/// back to an input-relative arm.
+pub struct RevisionObjectResolver<'a> {
+    transaction: &'a cache::Transaction,
+    input: gix_hash::ObjectId,
+    bindings: Option<&'a BTreeMap<String, gix_hash::ObjectId>>,
+}
+
+impl<'a> RevisionObjectResolver<'a> {
+    pub fn new(transaction: &'a cache::Transaction, input: gix_hash::ObjectId) -> Self {
+        Self {
+            transaction,
+            input,
+            bindings: None,
+        }
+    }
+
+    pub fn with_bindings(mut self, bindings: &'a BTreeMap<String, gix_hash::ObjectId>) -> Self {
+        self.bindings = Some(bindings);
+        self
+    }
+
+    fn parent(
+        &self,
+        commit_id: gix_hash::ObjectId,
+        parent_number: usize,
+        binding: &str,
+    ) -> anyhow::Result<gix_hash::ObjectId> {
+        let commit =
+            objects::CommitData::read(self.transaction.odb(), commit_id).with_context(|| {
+                format!("revision `{binding}` reached unreadable commit {commit_id}")
+            })?;
+        commit.parent_ids().nth(parent_number - 1).ok_or_else(|| {
+            anyhow!("revision `{binding}` has no parent {parent_number} at commit {commit_id}")
+        })
+    }
+}
+
+impl ObjectResolver for RevisionObjectResolver<'_> {
+    fn resolve(
+        &self,
+        kind: ObjectKind,
+        revision: &str,
+    ) -> anyhow::Result<Option<gix_hash::ObjectId>> {
+        let suffix_start = revision
+            .find(|c| c == '^' || c == '~')
+            .unwrap_or(revision.len());
+        let (name, mut suffixes) = revision.split_at(suffix_start);
+        let binding = if name.is_empty() { "input" } else { name };
+        let mut commit_id = if name.is_empty() {
+            self.input
+        } else if let Some(commit_id) = self.bindings.and_then(|bindings| bindings.get(name)) {
+            *commit_id
+        } else {
+            return Ok(None);
+        };
+
+        while !suffixes.is_empty() {
+            let operator = suffixes.as_bytes()[0] as char;
+            suffixes = &suffixes[1..];
+            let digit_count = suffixes.bytes().take_while(u8::is_ascii_digit).count();
+            let digits = &suffixes[..digit_count];
+            suffixes = &suffixes[digit_count..];
+            let count = if digits.is_empty() {
+                1
+            } else {
+                digits.parse::<usize>().context("invalid ancestry count")?
+            };
+
+            match operator {
+                '^' if count == 0 => {}
+                '^' => commit_id = self.parent(commit_id, count, binding)?,
+                '~' => {
+                    for _ in 0..count {
+                        commit_id = self.parent(commit_id, 1, binding)?;
+                    }
+                }
+                _ => unreachable!("parser only passes validated ancestry suffixes"),
+            }
+        }
+
+        match kind {
+            ObjectKind::Commit => Ok(Some(commit_id)),
+            ObjectKind::Tree => {
+                let commit = objects::CommitData::read(self.transaction.odb(), commit_id)
+                    .with_context(|| {
+                        format!("revision `{binding}` reached unreadable commit {commit_id}")
+                    })?;
+                Ok(Some(commit.tree_id()?))
+            }
+        }
+    }
+}
 
 pub fn as_tree(
     transaction: &cache::Transaction,
@@ -280,6 +376,7 @@ fn get_workspace(
     transaction: &cache::Transaction,
     odb: &josh_memodb::Odb,
     tree: gix_hash::ObjectId,
+    input_commit: Option<gix_hash::ObjectId>,
     reader: &tree::TreeReader,
     path: &Path,
 ) -> Filter {
@@ -289,7 +386,14 @@ fn get_workspace(
     compose(&[
         wsj_file,
         compose(&[
-            get_filter(transaction, odb, tree, reader, &path.join("workspace.josh")),
+            get_filter(
+                transaction,
+                odb,
+                tree,
+                input_commit,
+                reader,
+                &path.join("workspace.josh"),
+            ),
             base,
         ]),
     ])
@@ -299,6 +403,7 @@ fn get_stored(
     transaction: &cache::Transaction,
     odb: &josh_memodb::Odb,
     tree: gix_hash::ObjectId,
+    input_commit: Option<gix_hash::ObjectId>,
     reader: &tree::TreeReader,
     path: &Path,
 ) -> Filter {
@@ -306,7 +411,7 @@ fn get_stored(
     let sj_file = Filter::new().file(stored_path.clone());
     compose(&[
         sj_file,
-        get_filter(transaction, odb, tree, reader, &stored_path),
+        get_filter(transaction, odb, tree, input_commit, reader, &stored_path),
     ])
 }
 
@@ -340,6 +445,7 @@ fn get_filter(
     transaction: &cache::Transaction,
     odb: &josh_memodb::Odb,
     tree: gix_hash::ObjectId,
+    input_commit: Option<gix_hash::ObjectId>,
     reader: &tree::TreeReader,
     path: &Path,
 ) -> Filter {
@@ -350,23 +456,46 @@ fn get_filter(
             return to_filter(Op::Empty);
         }
     };
-
     if let Some(f) = transaction.memo().workspaces.get(&ws_id) {
+        return f;
+    }
+
+    let cache_key = (ws_id, tree, input_commit);
+    if let Some(f) = transaction.memo().contextual_workspaces.get(&cache_key) {
+        return f;
+    }
+
+    let ws_blob = tree::blob_text(odb, ws_id);
+    let parsed = parse(&ws_blob);
+    let context_free = parsed
+        .as_ref()
+        .is_ok_and(|filter| !needs_legalization(*filter));
+    let f = match (parsed, input_commit) {
+        (Ok(f), _) => f,
+        (Err(_), Some(input_commit)) => {
+            let resolver = RevisionObjectResolver::new(transaction, input_commit);
+            josh_filter::parse_with_resolver(&ws_blob, &resolver)
+                .unwrap_or_else(|_| to_filter(Op::Empty))
+        }
+        (Err(_), None) => to_filter(Op::Empty),
+    };
+    let f = legalize_stored(transaction, odb, f, tree, input_commit, reader)
+        .unwrap_or_else(|_| to_filter(Op::Empty));
+    let f = if invert(f).is_ok() {
         f
     } else {
-        let ws_blob = tree::blob_text(odb, ws_id);
-        let f = parse(&ws_blob).unwrap_or_else(|_| to_filter(Op::Empty));
-        let f = legalize_stored(transaction, odb, f, tree, reader)
-            .unwrap_or_else(|_| to_filter(Op::Empty));
+        to_filter(Op::Empty)
+    };
 
-        let f = if invert(f).is_ok() {
-            f
-        } else {
-            to_filter(Op::Empty)
-        };
+    if context_free {
         transaction.memo().workspaces.insert(ws_id, f);
-        f
+    } else {
+        transaction
+            .memo()
+            .contextual_workspaces
+            .insert(cache_key, f);
     }
+    f
 }
 
 fn needs_repository_resolution(filter: Filter) -> bool {
@@ -831,14 +960,22 @@ pub fn apply_to_commit2(
                 }
             }
 
-            let commit_filter = get_workspace(transaction, odb, tree, &tree_reader, ws_path);
+            let commit_filter = get_workspace(
+                transaction,
+                odb,
+                tree,
+                Some(commit.id()),
+                &tree_reader,
+                ws_path,
+            );
 
             let parent_filters = commit
                 .parent_ids()
                 .map(|parent| {
                     let tree_id = git::read_tree_id(odb, parent)?;
                     let reader = tree::read_tree(transaction, odb, tree_id)?;
-                    let pcw = get_workspace(transaction, odb, tree_id, &reader, ws_path);
+                    let pcw =
+                        get_workspace(transaction, odb, tree_id, Some(parent), &reader, ws_path);
                     Ok((parent, pcw))
                 })
                 .collect::<anyhow::Result<Vec<_>>>()?;
@@ -848,14 +985,21 @@ pub fn apply_to_commit2(
         Op::Stored(s_path) => {
             let tree = commit.tree_id()?;
             let tree_reader = tree::read_tree(transaction, odb, tree)?;
-            let commit_filter = get_stored(transaction, odb, tree, &tree_reader, s_path);
+            let commit_filter = get_stored(
+                transaction,
+                odb,
+                tree,
+                Some(commit.id()),
+                &tree_reader,
+                s_path,
+            );
 
             let parent_filters = commit
                 .parent_ids()
                 .map(|parent| {
                     let tree_id = git::read_tree_id(odb, parent)?;
                     let reader = tree::read_tree(transaction, odb, tree_id)?;
-                    let pcs = get_stored(transaction, odb, tree_id, &reader, s_path);
+                    let pcs = get_stored(transaction, odb, tree_id, Some(parent), &reader, s_path);
                     Ok((parent, pcs))
                 })
                 .collect::<anyhow::Result<Vec<_>>>()?;
@@ -1237,13 +1381,17 @@ fn apply_impl(
             // below would fold it to Op::Empty), and every probe shares the one parse.
             let tree = x.tree_id();
             let tree_reader = tree::read_tree(transaction, odb, tree)?;
-            let f = get_workspace(transaction, odb, tree, &tree_reader, path);
+            let input_commit =
+                (x.commit != gix_hash::ObjectId::null(gix_hash::Kind::Sha1)).then_some(x.commit);
+            let f = get_workspace(transaction, odb, tree, input_commit, &tree_reader, path);
             apply_impl(transaction, odb, f, x)
         }
         Op::Stored(path) => {
             let tree = x.tree_id();
             let tree_reader = tree::read_tree(transaction, odb, tree)?;
-            let f = get_stored(transaction, odb, tree, &tree_reader, path);
+            let input_commit =
+                (x.commit != gix_hash::ObjectId::null(gix_hash::Kind::Sha1)).then_some(x.commit);
+            let f = get_stored(transaction, odb, tree, input_commit, &tree_reader, path);
             apply_impl(transaction, odb, f, x)
         }
         Op::Starlark(path, subfilter) => {
@@ -1507,17 +1655,19 @@ fn unapply_per_rev_filter(
             parent_tree,
         )?));
     }
+    let parent_commit = commits.map(|(_, parent)| parent);
 
     match op {
         Op::Workspace(path) => {
             let odb = transaction.odb();
-            let tree = pre_process_tree(transaction, tree)?;
+            let tree = pre_process_tree(transaction, tree, parent_commit)?;
             let tree_reader = tree::read_tree(transaction, odb, tree)?;
             let parent_reader = tree::read_tree(transaction, odb, parent_tree)?;
             let workspace = get_filter(
                 transaction,
                 odb,
-                tree,
+                parent_tree,
+                parent_commit,
                 &tree_reader,
                 Path::new("workspace.josh"),
             );
@@ -1525,6 +1675,7 @@ fn unapply_per_rev_filter(
                 transaction,
                 odb,
                 parent_tree,
+                parent_commit,
                 &parent_reader,
                 &path.join("workspace.josh"),
             );
@@ -1550,9 +1701,22 @@ fn unapply_per_rev_filter(
             let stored_path = path.with_added_extension("josh");
             let tree_reader = tree::read_tree(transaction, odb, tree)?;
             let parent_reader = tree::read_tree(transaction, odb, parent_tree)?;
-            let stored = get_filter(transaction, odb, tree, &tree_reader, &stored_path);
-            let original_stored =
-                get_filter(transaction, odb, parent_tree, &parent_reader, &stored_path);
+            let stored = get_filter(
+                transaction,
+                odb,
+                parent_tree,
+                parent_commit,
+                &tree_reader,
+                &stored_path,
+            );
+            let original_stored = get_filter(
+                transaction,
+                odb,
+                parent_tree,
+                parent_commit,
+                &parent_reader,
+                &stored_path,
+            );
 
             let sj_file = Filter::new().file(stored_path.clone());
             let filter = compose(&[sj_file, stored]);
@@ -1593,11 +1757,17 @@ fn unapply_per_rev_filter(
 fn pre_process_tree(
     transaction: &cache::Transaction,
     tree: gix_hash::ObjectId,
+    input_commit: Option<gix_hash::ObjectId>,
 ) -> anyhow::Result<gix_hash::ObjectId> {
     let odb = transaction.odb();
     let path = Path::new("workspace.josh");
     let ws_file = tree::get_blob(transaction, odb, tree, path);
-    let parsed = filter::parse(&ws_file)?;
+    let parsed = if let Some(input_commit) = input_commit {
+        let resolver = RevisionObjectResolver::new(transaction, input_commit);
+        josh_filter::parse_with_resolver(&ws_file, &resolver)?
+    } else {
+        filter::parse(&ws_file)?
+    };
 
     if invert(parsed).is_err() {
         return Err(anyhow!("Invalid workspace: not reversible"));
@@ -1622,16 +1792,46 @@ fn pre_process_tree(
     Ok(tree)
 }
 
-/// Compute the warnings (filters not matching anything) for the filter applied to the tree
+/// Compute warnings for a filter applied directly to a tree.
 pub fn compute_warnings(
     transaction: &cache::Transaction,
     filter: Filter,
     tree: gix_hash::ObjectId,
 ) -> Vec<String> {
+    compute_warnings_with_commit(transaction, filter, tree, None)
+}
+
+/// Compute warnings for a filter applied to a commit.
+///
+/// Stored and workspace filters receive the commit context needed to lower
+/// input-relative revision object expressions.
+pub fn compute_warnings_for_commit(
+    transaction: &cache::Transaction,
+    filter: Filter,
+    tree: gix_hash::ObjectId,
+    commit: gix_hash::ObjectId,
+) -> Vec<String> {
+    compute_warnings_with_commit(transaction, filter, tree, Some(commit))
+}
+
+fn compute_warnings_with_commit(
+    transaction: &cache::Transaction,
+    filter: Filter,
+    tree: gix_hash::ObjectId,
+    input_commit: Option<gix_hash::ObjectId>,
+) -> Vec<String> {
     let mut warnings = Vec::new();
     let mut filter = filter;
 
     let odb = transaction.odb();
+    let parse_filter = |spec: &str| {
+        if let Some(input_commit) = input_commit {
+            let resolver = RevisionObjectResolver::new(transaction, input_commit);
+            josh_filter::parse_with_resolver(spec, &resolver)
+        } else {
+            parse(spec)
+        }
+    };
 
     if let Op::Workspace(path) = to_op(filter) {
         let workspace_filter = &tree::get_blob(
@@ -1640,7 +1840,7 @@ pub fn compute_warnings(
             tree,
             &path.join(Path::new("workspace.josh")),
         );
-        if let Ok(res) = parse(workspace_filter) {
+        if let Ok(res) = parse_filter(workspace_filter) {
             filter = res;
         } else {
             warnings.push("couldn't parse workspace\n".to_string());
@@ -1651,7 +1851,7 @@ pub fn compute_warnings(
     if let Op::Stored(path) = to_op(filter) {
         let stored_path = path.with_added_extension("josh");
         let stored_filter = &tree::get_blob(transaction, odb, tree, &stored_path);
-        if let Ok(res) = parse(stored_filter) {
+        if let Ok(res) = parse_filter(stored_filter) {
             filter = res;
         } else {
             warnings.push("couldn't parse stored\n".to_string());
@@ -1743,8 +1943,57 @@ where
     }
 }
 
+fn contains_oid_insert(f: Filter) -> bool {
+    match to_op(f) {
+        Op::Insert(_, InsertContent::Oid(_)) => true,
+        Op::Compose(filters) | Op::Chain(filters) => filters.into_iter().any(contains_oid_insert),
+        Op::Rev(filters) => filters
+            .into_iter()
+            .any(|(_, filter)| contains_oid_insert(filter)),
+        Op::Subtract(a, b) => contains_oid_insert(a) || contains_oid_insert(b),
+        Op::Exclude(filter)
+        | Op::Select(filter)
+        | Op::Pin(filter)
+        | Op::TreeId(_, filter)
+        | Op::Meta(_, filter)
+        | Op::Unapply(_, filter)
+        | Op::Starlark(_, filter) => contains_oid_insert(filter),
+        _ => false,
+    }
+}
+
+fn legalize_selector(
+    transaction: &cache::Transaction,
+    selector: Filter,
+    forward_input: gix_hash::ObjectId,
+) -> anyhow::Result<Filter> {
+    if !contains_oid_insert(selector) {
+        return Ok(selector);
+    }
+
+    // An object insertion is generative and therefore has no inverse. Freeze its selected
+    // paths while the forward input is available so Exclude/Select remain symmetric on push.
+
+    let selected = apply(transaction, selector, Rewrite::from_tree(forward_input))?.tree_id();
+    let mut paths = Vec::new();
+    objects::walk_tree_preorder(transaction.odb(), selected, &mut |parent, entry| {
+        if !entry.mode.is_tree() {
+            let name = std::str::from_utf8(entry.filename)?;
+            let path = if parent.is_empty() {
+                name.into()
+            } else {
+                Path::new(parent).join(name)
+            };
+            paths.push(Filter::new().file(path));
+        }
+        Ok(())
+    })?;
+    Ok(compose(&paths))
+}
+
 fn needs_legalization(f: Filter) -> bool {
     match to_op(f) {
+        Op::Insert(_, InsertContent::Oid(_)) => true,
         Op::Stored(_) | Op::Starlark(_, _) => true,
         Op::Compose(filters) | Op::Chain(filters) => filters.iter().any(|&f| needs_legalization(f)),
         Op::Subtract(a, b) => needs_legalization(a) || needs_legalization(b),
@@ -1759,24 +2008,26 @@ fn legalize_stored(
     odb: &josh_memodb::Odb,
     f: Filter,
     tree: gix_hash::ObjectId,
+    input_commit: Option<gix_hash::ObjectId>,
     reader: &tree::TreeReader,
 ) -> anyhow::Result<Filter> {
     if !needs_legalization(f) {
         return Ok(f);
     }
 
-    if let Some(f) = t.memo().legalize.get(&(f, tree)) {
+    let cache_key = (f, tree, input_commit);
+    if let Some(f) = t.memo().legalize.get(&cache_key) {
         return Ok(f);
     }
 
     // Break cycles while repository-backed filters recursively legalize one another.
-    t.memo().legalize.insert((f, tree), Filter::new().empty());
+    t.memo().legalize.insert(cache_key, Filter::new().empty());
 
     let r = match to_op(f) {
         Op::Compose(f) => {
             let f = f
                 .into_iter()
-                .map(|f| legalize_stored(t, odb, f, tree, reader))
+                .map(|f| legalize_stored(t, odb, f, tree, input_commit, reader))
                 .collect::<anyhow::Result<Vec<_>>>()?;
             to_filter(Op::Compose(f))
         }
@@ -1788,10 +2039,10 @@ fn legalize_stored(
                 // trees; those need their own read+parse (the caller's parse only covers
                 // `tree`).
                 let legalized = if current_tree == tree {
-                    legalize_stored(t, odb, *filter, tree, reader)?
+                    legalize_stored(t, odb, *filter, tree, input_commit, reader)?
                 } else {
                     let current_parsed = tree::read_tree(t, odb, current_tree)?;
-                    legalize_stored(t, odb, *filter, current_tree, &current_parsed)?
+                    legalize_stored(t, odb, *filter, current_tree, input_commit, &current_parsed)?
                 };
                 result.push(legalized);
                 // Only compute the intermediate tree if a subsequent element still needs
@@ -1806,29 +2057,46 @@ fn legalize_stored(
             to_filter(Op::Chain(result))
         }
         Op::Subtract(a, b) => to_filter(Op::Subtract(
-            legalize_stored(t, odb, a, tree, reader)?,
-            legalize_stored(t, odb, b, tree, reader)?,
+            legalize_stored(t, odb, a, tree, input_commit, reader)?,
+            legalize_stored(t, odb, b, tree, input_commit, reader)?,
         )),
-        Op::Exclude(f) => to_filter(Op::Exclude(legalize_stored(t, odb, f, tree, reader)?)),
-        Op::Select(f) => to_filter(Op::Select(legalize_stored(t, odb, f, tree, reader)?)),
-        Op::Meta(meta, f) => to_filter(Op::Meta(meta, legalize_stored(t, odb, f, tree, reader)?)),
-        Op::Pin(f) => to_filter(Op::Pin(legalize_stored(t, odb, f, tree, reader)?)),
-        Op::Stored(path) => get_stored(t, odb, tree, reader, &path),
+        Op::Exclude(f) => {
+            let f = legalize_stored(t, odb, f, tree, input_commit, reader)?;
+            to_filter(Op::Exclude(legalize_selector(t, f, tree)?))
+        }
+        Op::Select(f) => {
+            let f = legalize_stored(t, odb, f, tree, input_commit, reader)?;
+            to_filter(Op::Select(legalize_selector(t, f, tree)?))
+        }
+        Op::Meta(meta, f) => to_filter(Op::Meta(
+            meta,
+            legalize_stored(t, odb, f, tree, input_commit, reader)?,
+        )),
+        Op::Pin(f) => to_filter(Op::Pin(legalize_stored(
+            t,
+            odb,
+            f,
+            tree,
+            input_commit,
+            reader,
+        )?)),
+        Op::Stored(path) => get_stored(t, odb, tree, input_commit, reader, &path),
         Op::Starlark(path, sub) => get_starlark(
             t,
             odb,
             tree,
             reader,
             &path,
-            legalize_stored(t, odb, sub, tree, reader)?,
+            legalize_stored(t, odb, sub, tree, input_commit, reader)?,
         ),
-        Op::TreeId(path, f) => {
-            to_filter(Op::TreeId(path, legalize_stored(t, odb, f, tree, reader)?))
-        }
+        Op::TreeId(path, f) => to_filter(Op::TreeId(
+            path,
+            legalize_stored(t, odb, f, tree, input_commit, reader)?,
+        )),
         _ => f,
     };
 
-    t.memo().legalize.insert((f, tree), r);
+    t.memo().legalize.insert(cache_key, r);
 
     Ok(r)
 }
@@ -2804,6 +3072,126 @@ mod tests {
     }
 
     #[test]
+    fn normal_stored_filter_resolves_input_relative_fallback() {
+        if !experimental_features_enabled() {
+            return;
+        }
+        let td = tempfile::tempdir().unwrap();
+        let repo = gix::init_bare(td.path()).unwrap();
+        let parent_tree = build_tree(&repo, &[("selected", "parent")]);
+        let parent = write_commit(&repo, parent_tree, &[], "parent");
+        let current_tree = build_tree(
+            &repo,
+            &[
+                ("selected", "current"),
+                ("defs/parent.josh", ":$.={#baseline|#^}\n"),
+            ],
+        );
+        let current = write_commit(&repo, current_tree, &[parent], "current");
+        let transaction = test_transaction(&repo);
+        assert!(
+            compute_warnings_for_commit(
+                &transaction,
+                Filter::new().stored("defs/parent"),
+                current_tree,
+                current,
+            )
+            .is_empty()
+        );
+
+        let filtered =
+            apply_to_commit(Filter::new().stored("defs/parent"), current, &transaction).unwrap();
+        let filtered_tree = objects::CommitData::read(transaction.odb(), filtered)
+            .unwrap()
+            .tree_id()
+            .unwrap();
+
+        assert_eq!(
+            tree::get_blob(
+                &transaction,
+                transaction.odb(),
+                filtered_tree,
+                Path::new("selected"),
+            ),
+            "parent"
+        );
+        assert_eq!(
+            tree::get_blob(
+                &transaction,
+                transaction.odb(),
+                filtered_tree,
+                Path::new("defs/parent.josh"),
+            ),
+            ":$.={#baseline|#^}\n"
+        );
+    }
+
+    #[test]
+    fn reverse_stored_filter_resolves_selectors_against_forward_input() {
+        if !experimental_features_enabled() {
+            return;
+        }
+        for definition in [
+            "a = :/sub1:exclude[:$.={#}:/sub1::file1]\n",
+            "a = :/sub1:select[:$.={#}:/sub1::file4]\n",
+        ] {
+            let td = tempfile::tempdir().unwrap();
+            let repo = gix::init_bare(td.path()).unwrap();
+            let parent_tree = build_tree(
+                &repo,
+                &[
+                    ("sub1/file1", "hidden"),
+                    ("sub1/file4", "visible"),
+                    ("st/config.josh", definition),
+                ],
+            );
+            let parent = write_commit(&repo, parent_tree, &[], "parent");
+            let transaction = test_transaction(&repo);
+            let stored = Filter::new().stored("st/config");
+            let filtered_parent = apply_to_commit(stored, parent, &transaction).unwrap();
+            let filtered_tree = build_tree(
+                &repo,
+                &[
+                    ("a/file1", "attempted overwrite"),
+                    ("a/file4", "edited"),
+                    ("st/config.josh", definition),
+                ],
+            );
+            let filtered = write_commit(&repo, filtered_tree, &[filtered_parent], "edit");
+
+            let reversed = unapply(
+                &transaction,
+                stored,
+                filtered_tree,
+                parent_tree,
+                Some((filtered, parent)),
+            )
+            .unwrap();
+
+            assert_eq!(
+                tree::get_blob(
+                    &transaction,
+                    transaction.odb(),
+                    reversed,
+                    Path::new("sub1/file1"),
+                ),
+                "hidden",
+                "{definition}"
+            );
+            assert_eq!(
+                tree::get_blob(
+                    &transaction,
+                    transaction.odb(),
+                    reversed,
+                    Path::new("sub1/file4"),
+                ),
+                "edited",
+                "{definition}"
+            );
+        }
+    }
+
+    #[test]
     fn contextual_resolution_handles_stored_workspace_and_nested_definitions() {
         if !experimental_features_enabled() {
             return;
@@ -2892,6 +3280,13 @@ mod tests {
         .unwrap()
         .oid;
         assert!(transaction.memo().workspaces.get(&blob).is_none());
+        assert!(
+            transaction
+                .memo()
+                .contextual_workspaces
+                .get(&(blob, source_tree, None))
+                .is_none()
+        );
 
         let resolver = FixedResolver(build_tree(&repo, &[("selected", "baseline")]));
         let parser = |spec: &str| josh_filter::parse_with_resolver(spec, &resolver);
@@ -2906,6 +3301,13 @@ mod tests {
         assert!(error.contains("defs/context-only.josh"));
         assert!(error.contains("undefined revision variable `missing`"));
         assert!(transaction.memo().workspaces.get(&blob).is_none());
+        assert!(
+            transaction
+                .memo()
+                .contextual_workspaces
+                .get(&(blob, source_tree, None))
+                .is_none()
+        );
     }
 
     #[test]
@@ -2946,6 +3348,7 @@ mod tests {
             &transaction,
             transaction.odb(),
             source_tree,
+            None,
             &reader,
             Path::new("defs/static"),
         );

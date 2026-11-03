@@ -432,10 +432,15 @@ impl Revision {
         let transaction = context.transaction.lock().unwrap();
         let commit = CommitData::read(transaction.odb(), self.commit_id)?;
 
-        let warnings = filter::compute_warnings(&transaction, self.filter, commit.tree_id()?)
-            .into_iter()
-            .map(|text| Warning { text })
-            .collect();
+        let warnings = filter::compute_warnings_for_commit(
+            &transaction,
+            self.filter,
+            commit.tree_id()?,
+            self.commit_id,
+        )
+        .into_iter()
+        .map(|text| Warning { text })
+        .collect();
 
         Ok(Some(warnings))
     }
