@@ -32,8 +32,8 @@
       "nanos": 0
     },
     "cache_read_hit_duration": {
-      "secs": 18,
-      "nanos": 443828750
+      "secs": 40,
+      "nanos": 600972964
     },
     "compilations": 0,
     "compiler_write_duration": {
@@ -42,12 +42,12 @@
     },
     "compile_fails": 3,
     "not_cached": {
-      "missing input": 2,
       "missing emit": 1,
+      "crate-type": 18,
       "-": 1,
       "-o": 3,
-      "incremental": 1,
-      "crate-type": 18
+      "missing input": 2,
+      "incremental": 1
     },
     "dist_compiles": {},
     "dist_errors": 0
