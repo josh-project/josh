@@ -5,9 +5,10 @@
 use anyhow::{anyhow, Context};
 use std::str::FromStr;
 
+use josh_changes::ChangeData;
 use josh_core::git::normalize_repo_path;
 use josh_github_graphql::connection::GithubApiConnection;
-use josh_github_graphql::operations::pull_request::{PrData, PrSummary};
+use josh_github_graphql::operations::pull_request::PrSummary;
 
 use crate::cache::CachePolicy;
 use crate::connection::{api_connection_hint, make_api_connection};
@@ -76,17 +77,10 @@ pub async fn sync(
             let repo_path = normalize_repo_path(transaction.path());
             let remote_config = josh_changes::remote_config::read_remote_config(&repo_path, remote)
                 .with_context(|| format!("Failed to read remote config for '{}'", remote))?;
-            match remote_config.forge {
-                Some(josh_changes::remote_config::Forge::Github) => {
-                    sync_from_github(transaction, remote, branch, &remote_config.url, opts).await
-                }
-                Some(josh_changes::remote_config::Forge::Test) => {
-                    Err(anyhow!("sync is not yet supported for the test forge"))
-                }
-                Some(josh_changes::remote_config::Forge::Gerrit) | None => {
-                    Err(anyhow!("sync is only supported for GitHub remotes"))
-                }
+            if remote_config.forge != Some(josh_changes::remote_config::Forge::Github) {
+                return Err(anyhow!("sync is only supported for GitHub remotes"));
             }
+            sync_from_github(transaction, remote, branch, &remote_config.url, opts).await
         }
     }
 }
@@ -257,7 +251,7 @@ async fn sync_admission_data(
         .get_admission_requirements(ctx.owner, ctx.repo_name, branch)
         .await?;
 
-    let data = crate::AdmissionData {
+    let data = josh_changes::AdmissionData {
         fetched_at: now,
         maintainers: maintainers.into_iter().map(|login| (login, ())).collect(),
         required_checks: requirements
@@ -594,7 +588,7 @@ struct PrMeta {
     target: gix_hash::ObjectId,
     /// Resolved change base for change-id'd heads; `None` for synthetic merges.
     change_base: Option<gix_hash::ObjectId>,
-    pr_data: josh_github_graphql::operations::pull_request::PrData,
+    pr_data: ChangeData,
 }
 
 /// A local change whose PR is absent from the open list, awaiting a closure
@@ -682,7 +676,7 @@ impl GithubSyncCtx<'_> {
     async fn fetch_gc_states(
         &self,
         candidates: Vec<GcCandidate>,
-    ) -> Vec<(GcCandidate, anyhow::Result<PrData>)> {
+    ) -> Vec<(GcCandidate, anyhow::Result<ChangeData>)> {
         let mut states = Vec::with_capacity(candidates.len());
         for candidate in candidates {
             let state = self
@@ -699,7 +693,7 @@ impl GithubSyncCtx<'_> {
     /// happen here; outcomes are tracked in `stats`.
     fn apply_gc(
         &self,
-        states: Vec<(GcCandidate, anyhow::Result<PrData>)>,
+        states: Vec<(GcCandidate, anyhow::Result<ChangeData>)>,
         stats: &mut SyncStats,
     ) -> anyhow::Result<()> {
         for (candidate, state) in states {
@@ -940,9 +934,10 @@ fn resolve_pr_number(
 
     // Custom Change-Id; read the PR number from stored PR data. A corrupt or
     // schema-drifted blob is reported instead of silently dropping the change
-    // from GC.
+    // from GC. GitHub always stores a number; a missing one means no PR was
+    // associated, so the change drops out of GC like a read miss.
     match crate::read_pr_data(transaction, change_id, remote_scope) {
-        Ok(Some(data)) => Some(data.number),
+        Ok(Some(data)) => data.number,
         Ok(None) => None,
         Err(e) => {
             eprintln!(

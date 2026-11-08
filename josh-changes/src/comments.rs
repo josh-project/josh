@@ -274,7 +274,7 @@ pub fn delete_outbox_comments(
 /// the outbox subtree of `scope`, plus the forge IDs of already-posted
 /// comments so a publisher can thread replies.
 ///
-/// Constructed by forge crates (e.g. `josh_github_changes::pending_comments`),
+/// Constructed by forge crates (e.g. the GitHub sync's `pending_comments`),
 /// which combine [`read_comments`] with their forge-ID tracking.
 pub struct PendingComments {
     /// Outbox comments with no forge ID mapping yet.
@@ -302,8 +302,8 @@ pub struct FetchedComment {
 ///
 /// Recording which local hash maps to which forge ID (so the comment is
 /// tracked as already posted) and dropping outbox entries observed in the
-/// fetch are the caller's job; see `josh_github_changes::record_fetched_comments`
-/// for the GitHub composition.
+/// fetch are the caller's job; see the GitHub sync's
+/// `record_fetched_comments` for that composition.
 pub fn store_fetched_comments(
     transaction: &Transaction,
     change: &Change,
