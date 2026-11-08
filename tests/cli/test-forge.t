@@ -205,48 +205,57 @@ discovered by walking the fetched branch's commits for Change: trailers.
   $ josh changes sync --remote origin
   Found 2 published changes on the test forge.
 
-The changes ref holds a `test/<change-id>` entry per published change (the
-`gh/` layout's analogue) and a `test_admission/` subtree for the branch.
-Integer fields of the shared PrData/AdmissionData structs are little-endian
-binary blobs, so assert structure with --no-contents and spot-check contents
-with cat-file.
+The changes ref holds a `test/<change-id>` entry per discovered change (the
+`gh/` layout's analogue) plus the `diffs/` entries `josh changes list`
+enumerates. With no forge state there is no `test_admission/` subtree, so
+mergeability reads degrade to "unknown". Integer fields of the shared
+PrData/AdmissionData structs are little-endian binary blobs, so assert
+structure with --no-contents and spot-check contents with cat-file.
 
   $ git-tree-pretty --no-contents refs/josh/remotes/origin/changes/master
   .
-  ├── test/
+  ├── diffs/
   │   ├── alpha/
-  │   │   ├── additions
-  │   │   ├── author
-  │   │   ├── base_ref_name
-  │   │   ├── body
-  │   │   ├── changed_files
-  │   │   ├── checks/
-  │   │   ├── created_at
-  │   │   ├── deletions
-  │   │   ├── head_ref_name
-  │   │   ├── reviews/
-  │   │   ├── state
-  │   │   ├── title
-  │   │   └── updated_at
+  │   │   ├── base
+  │   │   └── commit
   │   └── beta/
-  │       ├── additions
-  │       ├── author
-  │       ├── base_ref_name
-  │       ├── body
-  │       ├── changed_files
-  │       ├── checks/
-  │       ├── created_at
-  │       ├── deletions
-  │       ├── head_ref_name
-  │       ├── reviews/
-  │       ├── state
-  │       ├── title
-  │       └── updated_at
-  └── test_admission/
-      ├── fetched_at
-      ├── maintainers/
-      ├── required_approvals
-      └── required_checks/
+  │       ├── base
+  │       └── commit
+  └── test/
+      ├── alpha/
+      │   ├── additions
+      │   ├── author
+      │   ├── base_ref_name
+      │   ├── body
+      │   ├── changed_files
+      │   ├── checks/
+      │   ├── created_at
+      │   ├── deletions
+      │   ├── head_ref_name
+      │   ├── reviews/
+      │   ├── state
+      │   ├── title
+      │   └── updated_at
+      └── beta/
+          ├── additions
+          ├── author
+          ├── base_ref_name
+          ├── body
+          ├── changed_files
+          ├── checks/
+          ├── created_at
+          ├── deletions
+          ├── head_ref_name
+          ├── reviews/
+          ├── state
+          ├── title
+          └── updated_at
+
+  $ josh changes list --remote origin
+  Changes on remote 'origin' [master]:
+  
+  6ce5921  beta   D=  1  C=  0  V=      M=-    B change
+  2dba34e  alpha  D=  0  C=  0  V=      M=-    A change
 
 The stored fields are commit-derived, and the PR-specific fields of
 `ChangeData` (number, url, draft/merge state) are absent entirely -- the
@@ -288,48 +297,15 @@ The fetched forge-state ref lands inside the remote's namespace.
   $ git rev-parse --verify -q refs/josh/remotes/origin/forges/test > /dev/null && echo present
   present
 
-  $ git-tree-pretty --no-contents refs/josh/remotes/origin/changes/master
+  $ git-tree-pretty --no-contents refs/josh/remotes/origin/changes/master:test_admission
   .
-  ├── test/
-  │   ├── alpha/
-  │   │   ├── additions
-  │   │   ├── author
-  │   │   ├── base_ref_name
-  │   │   ├── body
-  │   │   ├── changed_files
-  │   │   ├── checks/
-  │   │   │   └── build
-  │   │   ├── created_at
-  │   │   ├── deletions
-  │   │   ├── head_ref_name
-  │   │   ├── reviews/
-  │   │   │   └── alice
-  │   │   ├── state
-  │   │   ├── title
-  │   │   └── updated_at
-  │   └── beta/
-  │       ├── additions
-  │       ├── author
-  │       ├── base_ref_name
-  │       ├── body
-  │       ├── changed_files
-  │       ├── checks/
-  │       ├── created_at
-  │       ├── deletions
-  │       ├── head_ref_name
-  │       ├── reviews/
-  │       │   └── alice
-  │       ├── state
-  │       ├── title
-  │       └── updated_at
-  └── test_admission/
-      ├── fetched_at
-      ├── maintainers/
-      │   └── alice/
-      ├── required_approvals
-      └── required_checks/
-          └── build/
-              └── context
+  ├── fetched_at
+  ├── maintainers/
+  │   └── alice/
+  ├── required_approvals
+  └── required_checks/
+      └── build/
+          └── context
 
   $ git cat-file blob refs/josh/remotes/origin/changes/master:test/alpha/reviews/alice
   approved (no-eol)
@@ -348,6 +324,102 @@ AdmissionData's little-endian u32; fetched_at follows JOSH_COMMIT_TIME.
   $ git cat-file blob refs/josh/remotes/origin/changes/master:test_admission/fetched_at | od -An -tu1 | tr -d ' \n'; echo
   00000000
 
+The read path evaluates the synced state: alpha is green and approved by a
+maintainer, so it is admissible; beta's maintainer changes-requested blocks
+it (and its missing required check shows too).
+
+  $ josh changes list --remote origin
+  Changes on remote 'origin' [master]:
+  
+  6ce5921  beta   D=  1  C=  0  V=      M=no   B change
+  2dba34e  alpha  D=  0  C=  0  V=      M=yes  A change
+
+  $ josh changes show --remote origin alpha
+  Change-Id: alpha
+  Commit:    2dba34e818f8ff3ab993b867b4495f9be2f7e5ab
+  Author:    josh@example.com
+  Date:      2005-04-07 22:13
+  PR:        A change [Open]
+  Admission: admissible
+    approved by: alice
+  
+  Subject:   A change
+  
+  Files (1, +1 / -0):
+    +1    -0     sub1/fileA
+  
+  Comments (0):
+
+  $ josh changes show --remote origin beta
+  Change-Id: beta
+  Commit:    6ce5921e36a027e55bd6b6496e0ea532cea0df02
+  Author:    josh@example.com
+  Date:      2005-04-07 22:13
+  PR:        B change [Open]
+  Admission: not admissible
+    changes requested by: alice
+    unmet checks: build
+  
+  Subject:   B change
+  
+  Files (1, +1 / -0):
+    +1    -0     sub1/fileB
+  
+  Comments (0):
+
+A required check the change does not have blocks admission even with the
+maintainer's approval; sync fully rewrites the test_admission/ subtree (the
+dropped "build" requirement does not linger).
+
+  $ josh forge --remote origin admission set --branch master --require-check test
+  Set admission for branch 'master': required checks [test], required approvals 0
+  $ josh changes sync --remote origin
+  Found 2 published changes on the test forge.
+  $ josh changes show --remote origin alpha | sed -n 5,9p
+  PR:        A change [Open]
+  Admission: not admissible
+    approved by: alice
+    unmet checks: test
+  
+
+A non-maintainer's approval does not count: with alice's review downgraded
+to a comment, bob's approval changes nothing.
+
+  $ josh forge --remote origin review alpha alice commented
+  Recorded review by alice on change 'alpha': commented
+  $ josh forge --remote origin review alpha bob approved
+  Recorded review by bob on change 'alpha': approved
+  $ josh forge --remote origin admission set --branch master --require-check build --required-approvals 1
+  Set admission for branch 'master': required checks [build], required approvals 1
+  $ josh changes sync --remote origin
+  Found 2 published changes on the test forge.
+  $ josh changes show --remote origin alpha | sed -n 5,7p
+  PR:        A change [Open]
+  Admission: not admissible
+  
+  $ josh changes list --remote origin
+  Changes on remote 'origin' [master]:
+  
+  6ce5921  beta   D=  1  C=  0  V=      M=no   B change
+  2dba34e  alpha  D=  0  C=  0  V=      M=no   A change
+
+Without admission data the read path falls back to the review/check
+rollups, exactly like the GitHub path.
+
+  $ new_root=$(git ls-tree refs/josh/remotes/origin/changes/master | grep -v $'\ttest_admission$' | git mktree)
+  $ new_commit=$(git commit-tree "$new_root" -p refs/josh/remotes/origin/changes/master -m "drop test_admission")
+  $ git update-ref refs/josh/remotes/origin/changes/master "$new_commit"
+  $ josh changes show --remote origin alpha | sed -n 5,8p
+  PR:        A change [Open]
+  Review:    Approved
+  Checks:    Success
+  
+  $ josh changes list --remote origin
+  Changes on remote 'origin' [master]:
+  
+  6ce5921  beta   D=  1  C=  0  V=      M=-    B change
+  2dba34e  alpha  D=  0  C=  0  V=      M=-    A change
+
 --push has no test-forge meaning; --clean rebuilds the changes ref.
 
   $ josh changes sync --remote origin --push
@@ -357,5 +429,7 @@ AdmissionData's little-endian u32; fetched_at follows JOSH_COMMIT_TIME.
 
   $ josh changes sync --remote origin --clean
   Found 2 published changes on the test forge.
-  $ git cat-file blob refs/josh/remotes/origin/changes/master:test/alpha/checks/build
-  success (no-eol)
+  $ josh changes show --remote origin alpha | sed -n 5,7p
+  PR:        A change [Open]
+  Admission: not admissible
+  
