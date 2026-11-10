@@ -9,4 +9,5 @@ pub mod link;
 pub mod pull;
 pub mod push;
 pub mod scope;
+pub mod submodules;
 pub mod sync;

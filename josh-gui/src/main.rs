@@ -74,9 +74,16 @@ async fn run_sync(scope: josh_changes::ChangesRef) -> anyhow::Result<()> {
             )?),
     );
     let transaction = josh_core::cache::TransactionContext::new(&paths.git_dir, cache).open()?;
+    let remote_config = match &scope {
+        josh_changes::ChangesRef::Remote { remote, .. } => Some(
+            josh_changes::remote_config::read_remote_config(&paths.git_dir, remote)?,
+        ),
+        josh_changes::ChangesRef::Local { .. } => None,
+    };
     josh_github_changes::sync::sync(
         &transaction,
         &scope,
+        remote_config.as_ref(),
         josh_github_changes::sync::SyncOptions::default(),
     )
     .await?;

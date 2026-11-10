@@ -255,6 +255,86 @@ impl ChangesRef {
     }
 }
 
+pub const SUPER_REF: &str = "refs/josh/super";
+
+/// Refs owned by the worktree-centric store.
+///
+/// Keep the spelling of these refs here so store, cache, and publication code
+/// pass semantic components instead of formatting paths in place.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub enum JoshRef {
+    RemoteHead {
+        remote: String,
+        branch: String,
+    },
+    FilteredHead {
+        filter_chain: String,
+        branch: String,
+    },
+    ChangeRetention {
+        remote: String,
+        branch: String,
+    },
+    Cache {
+        version: String,
+        key: String,
+    },
+    Submodule {
+        name: String,
+    },
+}
+
+impl JoshRef {
+    pub fn remote_head(remote: impl Into<String>, branch: impl Into<String>) -> Self {
+        Self::RemoteHead {
+            remote: remote.into(),
+            branch: branch.into(),
+        }
+    }
+
+    pub fn filtered_head(filter_chain: impl Into<String>, branch: impl Into<String>) -> Self {
+        Self::FilteredHead {
+            filter_chain: filter_chain.into(),
+            branch: branch.into(),
+        }
+    }
+
+    pub fn change_retention(remote: impl Into<String>, branch: impl Into<String>) -> Self {
+        Self::ChangeRetention {
+            remote: remote.into(),
+            branch: branch.into(),
+        }
+    }
+
+    pub fn cache(version: impl Into<String>, key: impl Into<String>) -> Self {
+        Self::Cache {
+            version: version.into(),
+            key: key.into(),
+        }
+    }
+
+    pub fn ref_name(&self) -> String {
+        match self {
+            Self::RemoteHead { remote, branch } => {
+                format!("refs/josh/remotes/{remote}/heads/{branch}")
+            }
+            Self::FilteredHead {
+                filter_chain,
+                branch,
+            } => format!("refs/josh/filtered/{filter_chain}/heads/{branch}"),
+            Self::ChangeRetention { remote, branch } => {
+                format!("refs/josh/retention/{remote}/changes/{branch}")
+            }
+            Self::Cache { version, key } => format!("refs/josh/cache/{version}/{key}"),
+            Self::Submodule { name } => format!("refs/josh/submodules/{name}"),
+        }
+    }
+}
+
+pub const LOCAL_CHANGES_REF_PREFIX: &str = "refs/josh/changes/";
+pub const REMOTE_REF_PREFIX: &str = "refs/josh/remotes/";
+pub const FILTERED_REF_PREFIX: &str = "refs/josh/filtered/";
+
 /// Return the changes ref's target OID, if it exists.
 pub fn read_ref_oid(
     transaction: &josh_core::cache::Transaction,
@@ -283,17 +363,17 @@ pub fn all_changes_refs(
 ) -> anyhow::Result<Vec<ChangesRef>> {
     let mut locals: Vec<String> = Vec::new();
     let mut remotes: Vec<(String, String)> = Vec::new();
-    transaction.for_each_ref_prefixed("refs/josh/changes/", |name, _| {
-        let branch = &name["refs/josh/changes/".len()..];
+    transaction.for_each_ref_prefixed(LOCAL_CHANGES_REF_PREFIX, |name, _| {
+        let branch = &name[LOCAL_CHANGES_REF_PREFIX.len()..];
         if !branch.is_empty() {
             locals.push(branch.to_string());
         }
         Ok(())
     })?;
-    transaction.for_each_ref_prefixed("refs/josh/remotes/", |name, _| {
+    transaction.for_each_ref_prefixed(REMOTE_REF_PREFIX, |name, _| {
         // `<remote>/changes/<branch>` -- branch may contain `/`, so split
         // on the literal `/changes/` separator.
-        let rest = &name["refs/josh/remotes/".len()..];
+        let rest = &name[REMOTE_REF_PREFIX.len()..];
         if let Some((remote, branch)) = rest.split_once("/changes/") {
             if !remote.is_empty() && !branch.is_empty() {
                 remotes.push((remote.to_string(), branch.to_string()));
@@ -414,6 +494,30 @@ mod tests {
         assert_eq!(
             StackedRef::parse("refs/heads/@heads/master/josh@example.com/extra"),
             None
+        );
+    }
+
+    #[test]
+    fn josh_refs_render_nested_branches() {
+        assert_eq!(
+            JoshRef::remote_head("origin", "feature/topic").ref_name(),
+            "refs/josh/remotes/origin/heads/feature/topic"
+        );
+        assert_eq!(
+            JoshRef::filtered_head("third/second/first", "feature/topic").ref_name(),
+            "refs/josh/filtered/third/second/first/heads/feature/topic"
+        );
+        assert_eq!(
+            JoshRef::change_retention("origin", "feature/topic").ref_name(),
+            "refs/josh/retention/origin/changes/feature/topic"
+        );
+        assert_eq!(JoshRef::cache("4", "*").ref_name(), "refs/josh/cache/4/*");
+        assert_eq!(
+            JoshRef::Submodule {
+                name: "dependency".to_owned(),
+            }
+            .ref_name(),
+            "refs/josh/submodules/dependency"
         );
     }
 }

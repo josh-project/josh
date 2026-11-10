@@ -24,7 +24,7 @@ impl std::fmt::Display for GerritMode {
 /// Meta keys that configure the remote itself rather than the filter semantics.
 pub const TRANSPORT_META_KEYS: &[&str] = &["url", "fetch", "forge", "push", "gerrit-mode"];
 
-/// Resolved remote transport and filter configuration.
+#[derive(Debug, Clone)]
 pub struct RemoteConfig {
     pub url: String,
     pub ref_spec: String,
@@ -43,11 +43,62 @@ impl RemoteConfig {
     }
 }
 
-/// Use the common Git directory so linked worktrees share remote configuration.
-fn remotes_dir(repo_path: &std::path::Path) -> anyhow::Result<std::path::PathBuf> {
-    let repo = gix::open(repo_path)
-        .with_context(|| format!("Failed to open repository at {}", repo_path.display()))?;
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct StoredRemote {
+    pub url: String,
+    pub fetch: String,
+    pub namespace: String,
+    pub mount: std::path::PathBuf,
+    pub forge: Option<String>,
+    pub push_url: Option<String>,
+    pub gerrit_mode: Option<String>,
+    #[serde(default)]
+    pub head: Option<String>,
+}
 
+impl StoredRemote {
+    pub fn remote_config(&self) -> anyhow::Result<RemoteConfig> {
+        let forge = match self.forge.as_deref() {
+            Some("github") => Some(Forge::Github),
+            Some("gerrit") => Some(Forge::Gerrit),
+            Some("test") => Some(Forge::Test),
+            Some(forge) => return Err(anyhow!("Unsupported stored forge '{forge}'")),
+            None => None,
+        };
+        let gerrit_mode = match self.gerrit_mode.as_deref() {
+            Some("independent") => Some(GerritMode::Independent),
+            Some("stack") => Some(GerritMode::Stack),
+            Some(mode) => return Err(anyhow!("Unsupported stored Gerrit mode '{mode}'")),
+            None => None,
+        };
+        let filter = josh_core::filter::spec(josh_core::filter::to_filter(
+            josh_core::filter::Op::Subdir(self.mount.clone()),
+        ));
+        build_remote_config(
+            &self.url,
+            &filter,
+            &self.fetch,
+            forge,
+            self.push_url.as_deref(),
+            gerrit_mode,
+        )
+    }
+}
+
+fn open_repository(path: &std::path::Path) -> anyhow::Result<gix::Repository> {
+    gix::open_opts(path, gix::open::Options::isolated().strict_config(true))
+        .with_context(|| format!("Failed to open repository at {}", path.display()))
+}
+
+/// Resolve remote configuration through a linked repository to its josh store.
+fn remotes_dir(repo_path: &std::path::Path) -> anyhow::Result<std::path::PathBuf> {
+    let repo = open_repository(repo_path)?;
+    if let Some(store) = config_string(&repo, "josh.store")? {
+        let store_git_dir = std::path::Path::new(&store).join(".josh");
+        let store_repo = open_repository(&store_git_dir)
+            .with_context(|| format!("Failed to open josh store at {store}"))?;
+        return Ok(store_repo.common_dir().join("josh").join("remotes"));
+    }
     Ok(repo.common_dir().join("josh").join("remotes"))
 }
 
@@ -66,8 +117,8 @@ pub fn migrate_legacy_config(
     repo_path: &std::path::Path,
     remote_name: &str,
 ) -> anyhow::Result<RemoteConfig> {
-    let repo =
-        gix::open(repo_path).context("Failed to open repository for legacy config migration")?;
+    let repo = open_repository(repo_path)
+        .context("Failed to open repository for legacy config migration")?;
 
     let url = match config_string(&repo, &format!("josh-remote.{}.url", remote_name))? {
         Some(url) => url,
@@ -89,40 +140,11 @@ pub fn migrate_legacy_config(
     let fetch = config_string(&repo, &format!("josh-remote.{}.fetch", remote_name))?
         .with_context(|| format!("Legacy config missing fetch for remote '{}'", remote_name))?;
 
-    write_remote_config(
-        repo_path,
-        remote_name,
-        &url,
-        &filter_str,
-        &fetch,
-        None,
-        None,
-        None,
-    )
-    .context("Failed to migrate legacy config to new format")?;
-
-    let filter_obj = josh_core::filter::parse(&filter_str)
-        .with_context(|| format!("Failed to parse filter '{}'", filter_str))?;
-
-    let filter_with_meta = filter_obj.with_meta("url", &url).with_meta("fetch", &fetch);
-
-    log::info!(
-        "Migrated remote '{}' from legacy git config to new file format",
-        remote_name
-    );
-
-    Ok(RemoteConfig {
-        url,
-        ref_spec: fetch,
-        filter_with_meta,
-        forge: None,
-        push_url: None,
-        gerrit_mode: GerritMode::default(),
-    })
+    build_remote_config(&url, &filter_str, &fetch, None, None, None)
 }
 
-/// Read a remote config, migrating legacy Git config when needed.
-pub fn read_remote_config(
+/// Read remote configuration from a clone that predates authoritative superhistory.
+pub fn read_legacy_remote_config(
     repo_path: &std::path::Path,
     remote_name: &str,
 ) -> anyhow::Result<RemoteConfig> {
@@ -185,31 +207,57 @@ pub fn read_remote_config(
     })
 }
 
-/// Persist remote configuration under the repository's common Git directory.
-#[allow(clippy::too_many_arguments)]
-pub fn write_remote_config(
+fn store_git_dir(repo_path: &std::path::Path) -> anyhow::Result<std::path::PathBuf> {
+    let repo = open_repository(repo_path)?;
+    if let Some(store) = config_string(&repo, "josh.store")? {
+        return Ok(std::path::Path::new(&store).join(".josh"));
+    }
+    Ok(repo.common_dir().to_owned())
+}
+
+/// Read authoritative remote configuration from `refs/josh/super`.
+pub fn read_remote_config(
     repo_path: &std::path::Path,
     remote_name: &str,
+) -> anyhow::Result<RemoteConfig> {
+    let git_dir = store_git_dir(repo_path)?;
+    let transaction = josh_core::cache::TransactionContext::new(
+        &git_dir,
+        std::sync::Arc::new(josh_core::cache::CacheStack::new()),
+    )
+    .open()?;
+    let super_oid = transaction
+        .resolve_ref(crate::refs::SUPER_REF)?
+        .context("Josh store has no synthetic superhistory")?;
+    let super_tree =
+        josh_core::objects::CommitData::read(transaction.odb(), super_oid)?.tree_id()?;
+    let path = std::path::Path::new("store")
+        .join("remotes")
+        .join(josh_git_serde::encode_key(remote_name));
+    let remote_tree = josh_core::filter::tree::get_path_entry(
+        &transaction,
+        transaction.odb(),
+        super_tree,
+        &path,
+    )?
+    .filter(|entry| entry.mode.is_tree())
+    .with_context(|| format!("Unknown remote '{remote_name}'"))?;
+    let value = josh_git_serde::from_tree_oid(transaction.odb(), remote_tree.oid)?;
+    let stored: StoredRemote = josh_git_serde::from_value(&value)?;
+    stored.remote_config()
+}
+
+#[allow(clippy::too_many_arguments)]
+pub fn build_remote_config(
     url: &str,
     filter: &str,
     fetch: &str,
     forge: Option<Forge>,
     push_url: Option<&str>,
     gerrit_mode: Option<GerritMode>,
-) -> anyhow::Result<()> {
-    let remotes_dir = remotes_dir(repo_path)?;
-
-    std::fs::create_dir_all(&remotes_dir).with_context(|| {
-        format!(
-            "Failed to create remotes directory: {}",
-            remotes_dir.display()
-        )
-    })?;
-
+) -> anyhow::Result<RemoteConfig> {
     let filter_obj = josh_core::filter::parse(filter)
         .with_context(|| format!("Failed to parse filter '{}'", filter))?;
-
-    // Reject transport metadata instead of silently overwriting it.
     for key in TRANSPORT_META_KEYS {
         if filter_obj.get_meta(key).is_some() {
             return Err(anyhow!(
@@ -218,30 +266,22 @@ pub fn write_remote_config(
             ));
         }
     }
-
     let mut filter_with_meta = filter_obj.with_meta("url", url).with_meta("fetch", fetch);
-
     if let Some(forge) = forge {
         filter_with_meta = filter_with_meta.with_meta("forge", forge.to_string());
     }
-
     if let Some(push_url) = push_url {
         filter_with_meta = filter_with_meta.with_meta("push", push_url);
     }
-
     if let Some(gerrit_mode) = gerrit_mode {
         filter_with_meta = filter_with_meta.with_meta("gerrit-mode", gerrit_mode.to_string());
     }
-
-    let content = josh_core::filter::as_file(filter_with_meta, 0);
-
-    let remote_file = remotes_dir.join(format!("{}.josh", remote_name));
-    std::fs::write(&remote_file, content).with_context(|| {
-        format!(
-            "Failed to write remote config file: {}",
-            remote_file.display()
-        )
-    })?;
-
-    Ok(())
+    Ok(RemoteConfig {
+        url: url.to_owned(),
+        ref_spec: fetch.to_owned(),
+        filter_with_meta,
+        forge,
+        push_url: push_url.map(ToOwned::to_owned),
+        gerrit_mode: gerrit_mode.unwrap_or_default(),
+    })
 }

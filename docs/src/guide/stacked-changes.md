@@ -178,14 +178,14 @@ retarget and promote the next PR in the stack from draft to ready for review.
 
 If you cannot push to the target repository, point Josh at your own fork as a separate
 push destination while still opening all pull requests against the target. Configure the
-fork when adding the remote:
+fork when cloning:
 
 ```shell
-josh clone https://github.com/UPSTREAM/repo :/ work --push-url https://github.com/ME/repo
+josh clone https://github.com/UPSTREAM/repo checkout \
+    --push-url https://github.com/ME/repo
 ```
 
-(or `josh remote add <name> <upstream-url> <filter> --push-url <fork-url>` for an existing
-repository). `josh changes publish` then pushes the `@changes/…` refs to your fork, and
+`josh changes publish` then pushes the `@changes/…` refs to your fork and
 opens each pull request against the upstream repository with a cross-fork head
 (`ME:@changes/…`).
 
@@ -200,7 +200,7 @@ automatically once they merge and you re-publish.
 Select the Gerrit forge when cloning (it cannot be auto-detected from the URL):
 
 ```shell
-josh clone https://gerrit.example.com/repo :/ work --forge gerrit
+josh clone https://gerrit.example.com/repo checkout --forge gerrit
 ```
 
 `josh changes publish` then pushes to Gerrit's magic ref `refs/for/<branch>`, where the
