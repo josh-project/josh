@@ -14,6 +14,7 @@ strfmt = "0.2.5"
 
 anyhow.workspace = true
 juniper.workspace = true
+nonempty.workspace = true
 gix-hash.workspace = true
 gix-object.workspace = true
 regex.workspace = true

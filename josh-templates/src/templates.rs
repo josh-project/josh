@@ -83,7 +83,7 @@ impl GraphQLHelper {
             None,
             &josh_graphql::graphql::commit_schema(self.commit_id),
             &variables,
-            &josh_graphql::context(transaction, transaction_mirror),
+            &josh_graphql::context(transaction, transaction_mirror, false),
         )?;
 
         let j = serde_json::to_string(&res)?;
@@ -199,7 +199,7 @@ pub fn render(
                 None,
                 &josh_graphql::commit_schema(commit_id),
                 &variables,
-                &josh_graphql::context(transaction, transaction_mirror),
+                &josh_graphql::context(transaction, transaction_mirror, false),
             )?;
 
             let j = serde_json::to_string_pretty(&res)?;
