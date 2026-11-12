@@ -108,6 +108,10 @@ async fn fetch_needed(
                 &josh_core::to_ns(&upstream_repo)
             )))?;
 
+            if let Ok(oid) = gix_hash::ObjectId::from_hex(cache_ref.as_bytes()) {
+                return Ok(transaction.odb().contains(oid).then_some(oid));
+            }
+
             transaction.resolve_ref(&transaction.refname(&cache_ref))
         })
     };
@@ -576,13 +580,14 @@ pub fn push_head_url(
     )?;
     // Flush before the external `git push` below reads these objects from disk.
     transaction.flush_mem_odb()?;
-    let (stdout, stderr, status) = run_git_with_auth(
+    let push_result = run_git_with_auth(
         transaction.path(),
         &cmd,
         remote_auth,
         Some(alternate.to_owned()),
-    )?;
+    );
     transaction.delete_ref(&push_temp_ref, josh_core::cache::Expected::Any)?;
+    let (stdout, stderr, status) = push_result?;
 
     tracing::debug!(
         stdout = %stdout,

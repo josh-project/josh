@@ -145,6 +145,11 @@ pub fn fetch_refs_from_url(
     let specs: Vec<_> = refs_prefixes
         .iter()
         .map(|r| {
+            // Objects fetched by SHA stay in the ODB without a ref, so do not create one per SHA
+            if gix_hash::ObjectId::from_hex(r.as_bytes()).is_ok() {
+                return r.to_owned();
+            }
+
             format!(
                 "+{}:refs/josh/upstream/{}/{}",
                 &r,

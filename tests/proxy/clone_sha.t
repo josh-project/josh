@@ -127,7 +127,6 @@ Check (2) and (3) but with a branch ref
   |       |   `-- upstream
   |       |       `-- real_repo.git
   |       |           |-- HEAD
-  |       |           |-- bb282e9cdc1b972fffd08fd21eead43bc0c83cb8
   |       |           `-- refs
   |       |               `-- heads
   |       |                   |-- branch-1
@@ -147,5 +146,5 @@ Check (2) and (3) but with a branch ref
           |-- namespaces
           `-- tags
   
-  36 directories, 23 files
+  36 directories, 22 files
 
