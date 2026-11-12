@@ -3,6 +3,7 @@
 use anyhow::anyhow;
 use josh_core::filter::Rewrite;
 use josh_core::filter::tree;
+use josh_core::git::HeadRef;
 use josh_core::objects;
 use josh_core::objects::CommitData;
 use josh_core::{cache, filter, history};
@@ -895,25 +896,32 @@ enum FetchRequestResult {
 }
 
 #[derive(Default)]
+struct FetchStateInner {
+    requested: std::collections::BTreeSet<HeadRef>,
+    completed: bool,
+}
+
+#[derive(Default)]
 pub struct FetchState {
-    inner: std::sync::Mutex<(bool, bool)>,
+    inner: std::sync::Mutex<FetchStateInner>,
 }
 
 impl FetchState {
-    fn request(&self) -> FetchRequestResult {
-        let (requested, completed) = &mut *self.inner.lock().unwrap();
-        if *completed {
+    fn request(&self, head_ref: HeadRef) -> FetchRequestResult {
+        let inner = &mut *self.inner.lock().unwrap();
+        if inner.completed {
             return FetchRequestResult::AlreadyCompleted;
         }
 
-        *requested = true;
+        inner.requested.insert(head_ref);
         FetchRequestResult::Requested
     }
 
-    pub fn complete(&self) -> bool {
-        let (requested, completed) = &mut *self.inner.lock().unwrap();
-        *completed = true;
-        *requested
+    /// Returns the requested refs, if any, and marks the fetch as completed.
+    pub fn complete(&self) -> Option<nonempty::NonEmpty<HeadRef>> {
+        let inner = &mut *self.inner.lock().unwrap();
+        inner.completed = true;
+        nonempty::NonEmpty::collect(std::mem::take(&mut inner.requested))
     }
 }
 
@@ -924,10 +932,22 @@ pub struct Context {
         std::sync::Mutex<std::collections::HashMap<std::path::PathBuf, Vec<String>>>,
     >,
     pub to_push: ToPushSet,
+    /// False for local repos that have no upstream to fetch from.
+    pub fetch_available: bool,
     pub fetch_state: FetchState,
 }
 
 impl juniper::Context for Context {}
+
+impl Context {
+    fn request_fetch(&self, head_ref: HeadRef) -> FetchRequestResult {
+        if !self.fetch_available {
+            return FetchRequestResult::AlreadyCompleted;
+        }
+
+        self.fetch_state.request(head_ref)
+    }
+}
 
 pub struct Repository {
     name: String,
@@ -1013,7 +1033,7 @@ impl RevMut {
 #[graphql_object(context = Context)]
 impl RepositoryMut {
     fn rev(at: String, filter: Option<String>, context: &Context) -> FieldResult<RevMut> {
-        if context.fetch_state.request() != FetchRequestResult::AlreadyCompleted {
+        if context.request_fetch(HeadRef::Implicit) != FetchRequestResult::AlreadyCompleted {
             return Err(anyhow!("rev(): fetch needed").into());
         }
 
@@ -1039,7 +1059,7 @@ impl Repository {
     }
 
     fn refs(&self, context: &Context, pattern: Option<String>) -> FieldResult<Vec<Reference>> {
-        if context.fetch_state.request() != FetchRequestResult::AlreadyCompleted {
+        if context.request_fetch(HeadRef::Implicit) != FetchRequestResult::AlreadyCompleted {
             return Err(anyhow!("refs(): fetch needed").into());
         }
 
@@ -1081,7 +1101,15 @@ impl Repository {
                 None
             };
 
-            if oid.is_none() && context.fetch_state.request() == FetchRequestResult::Requested {
+            let head_ref = match oid {
+                None => Some(HeadRef::Implicit),
+                Some((id, false)) => Some(HeadRef::ExplicitSha(at.clone(), id)),
+                Some((_, true)) => None,
+            };
+
+            if let Some(head_ref) = head_ref
+                && context.request_fetch(head_ref) == FetchRequestResult::Requested
+            {
                 return Err(anyhow!("rev(): fetch needed").into());
             }
 
@@ -1114,12 +1142,17 @@ josh_core::regex_parsed!(
     [reference]
 );
 
-pub fn context(transaction: cache::Transaction, transaction_mirror: cache::Transaction) -> Context {
+pub fn context(
+    transaction: cache::Transaction,
+    transaction_mirror: cache::Transaction,
+    fetch_available: bool,
+) -> Context {
     Context {
         transaction_mirror: std::sync::Arc::new(std::sync::Mutex::new(transaction_mirror)),
         transaction: std::sync::Arc::new(std::sync::Mutex::new(transaction)),
         meta_add: std::sync::Arc::new(std::sync::Mutex::new(Default::default())),
         to_push: std::sync::Arc::new(std::sync::Mutex::new(Default::default())),
+        fetch_available,
         fetch_state: FetchState::default(),
     }
 }

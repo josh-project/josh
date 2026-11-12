@@ -98,7 +98,7 @@ async fn run_polling(serv: Arc<JoshProxyService>) -> anyhow::Result<()> {
                 &upstream_repo,
                 &remote_auth,
                 url.clone(),
-                None,
+                &nonempty::nonempty![josh_core::git::HeadRef::Implicit],
                 None,
                 true,
             )

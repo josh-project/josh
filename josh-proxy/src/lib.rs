@@ -137,32 +137,17 @@ impl FetchError {
 
 pub fn fetch_refs_from_url(
     path: &std::path::Path,
-    upstream_repo: &str,
     url: &str,
-    refs_prefixes: &[String],
+    refspecs: &[String],
     remote_auth: &RemoteAuth,
 ) -> Result<(), RetryableError<FetchError>> {
-    let specs: Vec<_> = refs_prefixes
-        .iter()
-        .map(|r| {
-            // Objects fetched by SHA stay in the ODB without a ref, so do not create one per SHA
-            if gix_hash::ObjectId::from_hex(r.as_bytes()).is_ok() {
-                return r.to_owned();
-            }
-
-            format!(
-                "+{}:refs/josh/upstream/{}/{}",
-                &r,
-                josh_core::to_ns(upstream_repo),
-                &r
-            )
-        })
-        .collect();
-
     let cmd = ["git", "fetch", "--prune", "--no-tags", url]
         .map(str::to_owned)
         .to_vec();
-    let cmd = cmd.into_iter().chain(specs).collect::<Vec<_>>();
+    let cmd = cmd
+        .into_iter()
+        .chain(refspecs.iter().cloned())
+        .collect::<Vec<_>>();
     let cmd = cmd.iter().map(|s| s as &str).collect::<Vec<&str>>();
 
     tracing::info!("fetch_refs_from_url {:?} {:?} {:?}", cmd, path, "");

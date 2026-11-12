@@ -12,6 +12,7 @@ use crate::{FetchError, FilteredRepoUrl, TmpGitNamespace, cli, run_git_with_auth
 
 use josh_core;
 use josh_core::cache::{CacheStack, TransactionContext};
+use josh_core::git::HeadRef;
 use josh_graphql::graphql;
 use josh_rpc::calls::RequestedCommand;
 
@@ -902,48 +903,6 @@ async fn serve_namespace(
     }
 }
 
-#[derive(Clone, Debug)]
-pub enum HeadRef {
-    ExplicitHead,
-    ExplicitRef(String),
-    ExplicitSha(String, gix_hash::ObjectId),
-    Implicit,
-}
-
-impl HeadRef {
-    // Sometimes we don't care about whether it's implicit or explicit
-    fn get(&self) -> &str {
-        match self {
-            HeadRef::ExplicitRef(r) => r,
-            HeadRef::ExplicitHead | HeadRef::Implicit => "HEAD",
-            HeadRef::ExplicitSha(sha, _) => sha,
-        }
-    }
-}
-
-impl FromStr for HeadRef {
-    type Err = anyhow::Error;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        let result = s.trim_start_matches(['@', '^']);
-
-        let result = match result {
-            "" => HeadRef::Implicit,
-            "HEAD" => HeadRef::ExplicitHead,
-            r if r.starts_with("refs/") => HeadRef::ExplicitRef(r.into()),
-            r => {
-                if let Ok(oid) = gix_hash::ObjectId::from_str(&r) {
-                    HeadRef::ExplicitSha(r.to_string(), oid)
-                } else {
-                    return Err(anyhow!("failed to parse ref"));
-                }
-            }
-        };
-
-        Ok(result)
-    }
-}
-
 fn make_repo_update(
     remote_url: &str,
     serv: Arc<JoshProxyService>,
@@ -1036,7 +995,7 @@ async fn handle_serve_namespace(
         &repo,
         &remote_auth,
         remote_url.to_owned(),
-        Some(head_ref.get()),
+        &nonempty::nonempty![head_ref.clone()],
         resolved_ref.as_deref(),
         false,
     )
@@ -1182,7 +1141,7 @@ async fn upstream_fetch_middleware(
         &upstream_repo,
         &remote_auth,
         remote_url.clone(),
-        Some(headref.get()),
+        &nonempty::nonempty![headref.clone()],
         None,
         false,
     )
@@ -1450,7 +1409,7 @@ async fn handle_graphql(
             .unwrap(),
     )?;
 
-    let context = Arc::new(graphql::context(transaction, transaction_mirror));
+    let context = Arc::new(graphql::context(transaction, transaction_mirror, true));
     let root_node = Arc::new(graphql::repo_schema(
         format!(
             "/{}",
@@ -1467,15 +1426,13 @@ async fn handle_graphql(
         let res = parsed.execute(&root_node, &context).await;
 
         // Some queries will need a fetch
-        if !context.fetch_state.complete() {
-            res
-        } else {
+        if let Some(head_refs) = context.fetch_state.complete() {
             match crate::upstream::fetch_upstream(
                 serv.clone(),
                 upstream_repo,
                 &remote_auth,
                 remote_url.to_owned(),
-                Some("HEAD"),
+                &head_refs,
                 None,
                 false,
             )
@@ -1496,6 +1453,8 @@ async fn handle_graphql(
             };
 
             parsed.execute(&root_node, &context).await
+        } else {
+            res
         }
     };
 

@@ -59,6 +59,7 @@ josh-changes.workspace = true
 josh-gerrit-changes.workspace = true
 josh-rpc.workspace = true
 josh-core.workspace = true
+nonempty.workspace = true
 josh-templates.workspace = true
 josh-graphql.workspace = true
 

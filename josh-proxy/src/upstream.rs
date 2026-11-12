@@ -7,6 +7,7 @@ use std::str::FromStr;
 
 use josh_changes::{PushMode, build_to_push};
 use josh_core::cache::{CacheStack, TransactionContext};
+use josh_core::git::HeadRef;
 use josh_gerrit_changes::baseref_and_options;
 
 use std::path::PathBuf;
@@ -77,7 +78,7 @@ async fn fetch_needed(
     remote_url: &str,
     upstream_repo: &str,
     force: bool,
-    head_ref: Option<&str>,
+    head_refs: &nonempty::NonEmpty<HeadRef>,
     head_ref_resolved: Option<&str>,
 ) -> Result<bool, FetchError> {
     let fetch_timer_ok = {
@@ -97,8 +98,8 @@ async fn fetch_needed(
         }
     };
 
-    let resolve_cache_ref = |cache_ref: &str| {
-        let cache_ref = cache_ref.to_string();
+    let resolve_cache_ref = |head_ref: &HeadRef| {
+        let head_ref = head_ref.clone();
         let upstream_repo = upstream_repo.to_string();
         let service = service.clone();
 
@@ -108,28 +109,31 @@ async fn fetch_needed(
                 &josh_core::to_ns(&upstream_repo)
             )))?;
 
-            if let Ok(oid) = gix_hash::ObjectId::from_hex(cache_ref.as_bytes()) {
+            if let HeadRef::ExplicitSha(_, oid) = head_ref {
                 return Ok(transaction.odb().contains(oid).then_some(oid));
             }
 
-            transaction.resolve_ref(&transaction.refname(&cache_ref))
+            transaction.resolve_ref(&transaction.refname(head_ref.get()))
         })
     };
 
-    match (force, fetch_timer_ok, head_ref, head_ref_resolved) {
-        (false, true, None, _) => return Ok(false),
-        (false, true, Some(head_ref), _) => {
-            if (resolve_cache_ref(head_ref)
-                .await?
-                .map_err(FetchError::from_anyhow)?)
-            .is_some()
-            {
-                tracing::trace!("cache ref resolved");
-                return Ok(false);
+    match (force, fetch_timer_ok, head_refs, head_ref_resolved) {
+        (false, true, head_refs, _) => {
+            for head_ref in head_refs {
+                if resolve_cache_ref(head_ref)
+                    .await?
+                    .map_err(FetchError::from_anyhow)?
+                    .is_none()
+                {
+                    return Ok(true);
+                }
             }
+
+            tracing::trace!("cache ref resolved");
+            return Ok(false);
         }
-        (false, false, Some(head_ref), Some(head_ref_resolved)) => {
-            if let Some(oid) = resolve_cache_ref(head_ref)
+        (false, false, head_refs, Some(head_ref_resolved)) if head_refs.tail.is_empty() => {
+            if let Some(oid) = resolve_cache_ref(&head_refs.head)
                 .await?
                 .map_err(FetchError::from_anyhow)?
                 && oid.to_string() == head_ref_resolved
@@ -150,27 +154,30 @@ pub async fn fetch_upstream(
     upstream_repo: &str,
     remote_auth: &RemoteAuth,
     remote_url: String,
-    head_ref: Option<&str>,
+    head_refs: &nonempty::NonEmpty<HeadRef>,
     head_ref_resolved: Option<&str>,
     force: bool,
 ) -> Result<(), FetchError> {
     let upstream_repo = upstream_repo.to_owned();
-    let refs_to_fetch = match head_ref {
-        Some(head_ref) if head_ref != "HEAD" && !head_ref.starts_with("refs/heads/") => {
-            vec![
-                "HEAD*",
-                "refs/josh/*",
-                "refs/heads/*",
-                "refs/tags/*",
-                head_ref,
-            ]
-        }
-        _ => {
-            vec!["HEAD*", "refs/josh/*", "refs/heads/*", "refs/tags/*"]
-        }
+    let to_mirror_ref = |r: &str| {
+        format!(
+            "+{}:refs/josh/upstream/{}/{}",
+            r,
+            josh_core::to_ns(&upstream_repo),
+            r
+        )
     };
-
-    let refs_to_fetch: Vec<_> = refs_to_fetch.iter().map(|x| x.to_string()).collect();
+    let refspecs: Vec<String> = ["HEAD*", "refs/josh/*", "refs/heads/*", "refs/tags/*"]
+        .into_iter()
+        .map(to_mirror_ref)
+        .chain(head_refs.iter().filter_map(|head_ref| match head_ref {
+            HeadRef::ExplicitHead | HeadRef::Implicit => None,
+            HeadRef::ExplicitRef(r) if r.starts_with("refs/heads/") => None,
+            HeadRef::ExplicitRef(r) => Some(to_mirror_ref(r)),
+            // Objects fetched by SHA stay in the ODB without a ref, so do not create one per SHA
+            HeadRef::ExplicitSha(sha, _) => Some(sha.clone()),
+        }))
+        .collect();
 
     // Check if we really need to fetch before locking the semaphore. This avoids
     // A "no fetch" case waiting for some already running fetch just to do nothing.
@@ -179,7 +186,7 @@ pub async fn fetch_upstream(
         &remote_url,
         &upstream_repo,
         force,
-        head_ref,
+        head_refs,
         head_ref_resolved,
     )
     .await?
@@ -218,7 +225,7 @@ pub async fn fetch_upstream(
             &remote_url,
             &upstream_repo,
             force,
-            head_ref,
+            head_refs,
             head_ref_resolved,
         )
         .await?
@@ -230,20 +237,13 @@ pub async fn fetch_upstream(
             let span = tracing::span!(tracing::Level::INFO, "fetch_refs_from_url");
 
             let mirror_path = service.repo_path.join("mirror");
-            let upstream_repo = upstream_repo.clone();
             let remote_url = remote_url.clone();
             let remote_auth = remote_auth.clone();
-            let refs_to_fetch = refs_to_fetch.clone();
+            let refspecs = refspecs.clone();
 
             tokio::task::spawn_blocking(move || {
                 let _span_guard = span.enter();
-                crate::fetch_refs_from_url(
-                    &mirror_path,
-                    &upstream_repo,
-                    &remote_url,
-                    &refs_to_fetch,
-                    &remote_auth,
-                )
+                crate::fetch_refs_from_url(&mirror_path, &remote_url, &refspecs, &remote_auth)
             })
             .await?
         };
@@ -271,6 +271,15 @@ pub async fn fetch_upstream(
                 .insert(upstream_repo.clone(), hres);
         }
 
+        // Set the timer before the permit is released so the next waiter sees a fresh fetch.
+        if fetch_result.is_ok() {
+            service
+                .fetch_timers
+                .write()
+                .unwrap()
+                .insert(remote_url.clone(), std::time::Instant::now());
+        }
+
         std::mem::drop(permit);
 
         match &fetch_result {
@@ -280,15 +289,6 @@ pub async fn fetch_upstream(
             }
             _ => break,
         }
-    }
-
-    let fetch_timers = service.fetch_timers.clone();
-
-    if fetch_result.is_ok() {
-        fetch_timers
-            .write()
-            .unwrap()
-            .insert(remote_url.clone(), std::time::Instant::now());
     }
 
     match (fetch_result, remote_auth) {
