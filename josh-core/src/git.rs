@@ -533,6 +533,48 @@ pub fn read_tree_id(
     Ok(gix_object::CommitRefIter::from_bytes(&bytes, gix_hash::Kind::Sha1).tree_id()?)
 }
 
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub enum HeadRef {
+    ExplicitHead,
+    ExplicitRef(String),
+    ExplicitSha(String, gix_hash::ObjectId),
+    Implicit,
+}
+
+impl HeadRef {
+    // Sometimes we don't care about whether it's implicit or explicit
+    pub fn get(&self) -> &str {
+        match self {
+            HeadRef::ExplicitRef(r) => r,
+            HeadRef::ExplicitHead | HeadRef::Implicit => "HEAD",
+            HeadRef::ExplicitSha(sha, _) => sha,
+        }
+    }
+}
+
+impl FromStr for HeadRef {
+    type Err = anyhow::Error;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let result = s.trim_start_matches(['@', '^']);
+
+        let result = match result {
+            "" => HeadRef::Implicit,
+            "HEAD" => HeadRef::ExplicitHead,
+            r if r.starts_with("refs/") => HeadRef::ExplicitRef(r.into()),
+            r => {
+                if let Ok(oid) = gix_hash::ObjectId::from_str(&r) {
+                    HeadRef::ExplicitSha(r.to_string(), oid)
+                } else {
+                    return Err(anyhow!("failed to parse ref"));
+                }
+            }
+        };
+
+        Ok(result)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     fn signature() -> gix_actor::Signature {
