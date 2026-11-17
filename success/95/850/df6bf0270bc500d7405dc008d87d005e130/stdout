@@ -1,0 +1,73 @@
+{
+  "stats": {
+    "compile_requests": 1150,
+    "requests_unsupported_compiler": 0,
+    "requests_not_compile": 5,
+    "requests_not_cacheable": 185,
+    "requests_executed": 960,
+    "cache_errors": {
+      "counts": {},
+      "adv_counts": {}
+    },
+    "cache_hits": {
+      "counts": {
+        "C/C++": 3,
+        "Rust": 188
+      },
+      "adv_counts": {
+        "rust": 188,
+        "c [gcc]": 3
+      }
+    },
+    "cache_misses": {
+      "counts": {
+        "Rust": 395,
+        "C/C++": 255,
+        "Assembler": 115
+      },
+      "adv_counts": {
+        "rust": 395,
+        "assemblerToPreprocess [gcc]": 115,
+        "c [gcc]": 255
+      }
+    },
+    "cache_timeouts": 0,
+    "cache_read_errors": 0,
+    "non_cacheable_compilations": 0,
+    "forced_recaches": 0,
+    "cache_write_errors": 0,
+    "cache_writes": 765,
+    "cache_write_duration": {
+      "secs": 412,
+      "nanos": 407835828
+    },
+    "cache_read_hit_duration": {
+      "secs": 53,
+      "nanos": 864340665
+    },
+    "compilations": 765,
+    "compiler_write_duration": {
+      "secs": 801,
+      "nanos": 415444803
+    },
+    "compile_fails": 4,
+    "not_cached": {
+      "-o": 3,
+      "crate-type": 152,
+      "-E": 1,
+      "missing emit": 1,
+      "missing input": 7,
+      "-": 4,
+      "incremental": 17
+    },
+    "dist_compiles": {},
+    "dist_errors": 0
+  },
+  "cache_location": "s3, name: josh-project-cache, prefix: /",
+  "cache_size": null,
+  "max_cache_size": null,
+  "use_preprocessor_cache_mode": false,
+  "version": "0.14.0",
+  "basedirs": []
+}
+sccache: confirmed S3-backed cache
