@@ -5,6 +5,16 @@ This document describes a set of rules and conventions maintainers use in this r
 * PRs in this repo are kept to one commit only. Iterations on the PR
   should be folded into existing commit by amending.
 
+## Publishing changes
+
+* Always publish a new change or update an existing change with `josh changes publish`.
+  Do not use `git push`, `josh push`, or `gh pr create` to publish review changes.
+* When updating an existing PR, fold the work into its single commit with
+  `git commit --amend` before republishing. Use `--force` with
+  `josh changes publish` when the amended or rebased change requires a
+  non-fast-forward update.
+* Follow the `.agents/skills/publish-changes/SKILL.md` workflow for publication.
+
 ## Commit message conventions
 
 * Use an `Assisted-By:` footer (not `Co-Authored-By:`) to attribute LLM/agent involvement in commits
