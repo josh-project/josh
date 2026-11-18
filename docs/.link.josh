@@ -1,0 +1,8 @@
+:~(
+    commit="6b581fc980e21bd304d6ca0ee5457346867e6780"
+    mode="snapshot"
+    remote="https://github.com/josh-project/josh-docs.git"
+    target="HEAD"
+)[
+    :/
+]
