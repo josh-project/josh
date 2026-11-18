@@ -1,11 +1,49 @@
 """Building the josh binaries under test."""
 
+import json
+import subprocess
+import urllib.request
 from pathlib import Path
 
 from bench.git import fetch_repo
 from bench.shell import run
 
 JOSH_REMOTE = "https://github.com/josh-project/josh"
+GITHUB_LATEST_RELEASE = (
+    "https://api.github.com/repos/josh-project/josh/releases/latest"
+)
+
+
+def latest_josh_release() -> tuple[str, str]:
+    """Return the latest published release tag and its peeled commit SHA."""
+    request = urllib.request.Request(
+        GITHUB_LATEST_RELEASE,
+        headers={
+            "Accept": "application/vnd.github+json",
+            "User-Agent": "josh-history-rewrite-benchmark",
+        },
+    )
+    with urllib.request.urlopen(request, timeout=30) as response:
+        tag = json.load(response)["tag_name"]
+
+    refs = subprocess.run(
+        [
+            "git",
+            "ls-remote",
+            JOSH_REMOTE,
+            f"refs/tags/{tag}",
+            f"refs/tags/{tag}^{{}}",
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.splitlines()
+    if not refs:
+        raise RuntimeError(f"latest Josh release tag {tag!r} was not found")
+
+    peeled = [line for line in refs if line.endswith("^{}")]
+    commit = (peeled or refs)[-1].split()[0]
+    return tag, commit
 
 
 def _build_josh(commit: str, target_dir: str | Path, bins: tuple[str, ...]) -> Path:
@@ -26,6 +64,12 @@ def build_josh_filter(commit: str, target_dir: str | Path) -> Path:
     Returns the path to the compiled `josh-filter` binary.
     """
     return _build_josh(commit, target_dir, ("josh-filter",)) / "josh-filter"
+
+
+def build_latest_josh_filter(target_dir: str | Path) -> tuple[Path, str, str]:
+    """Build josh-filter from the latest published Josh release."""
+    tag, commit = latest_josh_release()
+    return build_josh_filter(commit, target_dir), tag, commit
 
 
 def build_josh_proxy(commit: str, target_dir: str | Path) -> dict[str, Path]:

@@ -9,6 +9,7 @@ version = "0.1.0"
 select-folders = "python -m bench select-folders"
 rust-lang = "python -m bench rust-lang"
 rustc-josh-sync = "python -m bench rustc-josh-sync"
+history-rewrites = "python -m bench history-rewrites"
 
 [dependencies]
 python = ">=3.14.6,<3.15"
@@ -16,6 +17,11 @@ git-filter-repo = ">=2.47.0,<3"
 git = ">=2.55.0,<3"
 copybara = ">=20260713,<20260714"
 quantiphy = ">=2.22.1,<3"
+c-compiler = ">=1.11,<2"
+libiconv = ">=1.18,<2"
+openssl = ">=3.5,<4"
+pkg-config = ">=0.29,<1"
+rust = ">=1.95,<1.96"
 
 [pypi-dependencies]
 altair = ">=6.2.2, <7"
