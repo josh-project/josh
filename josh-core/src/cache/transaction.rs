@@ -111,6 +111,10 @@ static GIX_REPOS: LazyLock<
     RwLock<HashMap<std::path::PathBuf, std::sync::Arc<gix::ThreadSafeRepository>>>,
 > = LazyLock::new(Default::default);
 
+/// Fixed pack-index capacity for every shared store. The proxy derives its overlay housekeeping
+/// threshold from this value so maintenance starts before the capacity is exhausted.
+pub const GIX_PACK_SLOTS: u16 = 4096;
+
 fn shared_gix_repo(
     path: &std::path::Path,
 ) -> anyhow::Result<std::sync::Arc<gix::ThreadSafeRepository>> {
@@ -126,7 +130,8 @@ fn shared_gix_repo(
     // Object-database environment overrides must not affect a transaction opened for an
     // explicit path. System, user and repository configuration plus identity environment
     // variables remain available to configuration and identity queries.
-    let mut options = gix::open::Options::isolated();
+    let mut options = gix::open::Options::isolated()
+        .object_store_slots(gix::odb::store::init::Slots::Given(GIX_PACK_SLOTS));
     options.permissions.config = gix::open::permissions::Config::all();
     options.permissions.config.env = false;
     options.permissions.env.xdg_config_home = gix::sec::Permission::Allow;

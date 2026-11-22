@@ -168,6 +168,7 @@ pub struct JoshProxyService {
     pub filter_permits: Arc<tokio::sync::Semaphore>,
     pub poll: Polls,
     pub io_thread_tx: Option<tokio::sync::mpsc::UnboundedSender<IoCleanup>>,
+    pub housekeeping_request: Option<crate::housekeeping::ThrottledRequest>,
     pub http_retry: usize,
 }
 
@@ -183,6 +184,7 @@ pub fn make_service(
     filter_prefix: Option<String>,
     git_capabilities: Option<GitCapabilities>,
     io_thread_tx: Option<tokio::sync::mpsc::UnboundedSender<IoCleanup>>,
+    housekeeping_request: Option<crate::housekeeping::ThrottledRequest>,
     http_retry: Option<usize>,
 ) -> anyhow::Result<Arc<JoshProxyService>> {
     let cache = Arc::new(cache.unwrap_or_default());
@@ -233,6 +235,7 @@ pub fn make_service(
         filter_permits: Arc::new(tokio::sync::Semaphore::new(10)),
         poll: Default::default(),
         io_thread_tx,
+        housekeeping_request,
         http_retry: http_retry.unwrap_or(3),
     }))
 }
@@ -546,6 +549,7 @@ pub struct NamespacedRefs {
     ns: Arc<TmpGitNamespace>,
     refs: Vec<(String, gix_hash::ObjectId)>,
     head_symref: (String, String),
+    housekeeping_request: Option<crate::housekeeping::ThrottledRequest>,
 }
 
 impl NamespacedRefs {
@@ -567,6 +571,10 @@ impl NamespacedRefs {
 
         // Flush before the `git http-backend` subprocess serves these objects from disk.
         self.transaction.flush_mem_odb()?;
+
+        if let Some(housekeeping_request) = self.housekeeping_request {
+            housekeeping_request.repack_if_needed();
+        }
 
         Ok(())
     }
@@ -675,6 +683,7 @@ async fn filter_to_namespace(
             transaction: t2,
             refs: namespaced_refs,
             head_symref,
+            housekeeping_request: service.housekeeping_request.clone(),
         })
     })
     .await??;
