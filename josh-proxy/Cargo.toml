@@ -65,6 +65,7 @@ josh-graphql.workspace = true
 
 [dev-dependencies]
 anyhow.workspace = true
+rand.workspace = true
 
 [features]
 
