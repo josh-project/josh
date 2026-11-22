@@ -1,5 +1,4 @@
 use anyhow::{Context, anyhow};
-use josh_core::cache::CacheStack;
 use josh_proxy::service::{JoshProxyService, make_service};
 use josh_proxy::upstream::{RemoteAuth, RepoUpdate};
 use josh_proxy::{FetchError, TmpGitNamespace};
@@ -117,24 +116,6 @@ async fn run_polling(serv: Arc<JoshProxyService>) -> anyhow::Result<()> {
     }
 }
 
-async fn run_housekeeping(local: std::path::PathBuf, gc: bool) -> anyhow::Result<()> {
-    let mut i: usize = 0;
-    let cache = std::sync::Arc::new(CacheStack::default());
-
-    loop {
-        let local = local.clone();
-        let cache = cache.clone();
-
-        tokio::task::spawn_blocking(move || {
-            let do_gc = (i % 60 == 0) && gc;
-            josh_proxy::housekeeping::run(&local, cache, do_gc)
-        })
-        .await??;
-        tokio::time::sleep(tokio::time::Duration::from_secs(60)).await;
-        i += 1;
-    }
-}
-
 fn io_thread(mut rx: tokio::sync::mpsc::UnboundedReceiver<josh_proxy::service::IoCleanup>) {
     use josh_proxy::service::IoCleanup;
 
@@ -153,6 +134,8 @@ async fn run_proxy(args: josh_proxy::cli::Args) -> anyhow::Result<i32> {
 
     let (io_thread_tx, io_thread_rx) = tokio::sync::mpsc::unbounded_channel();
     let io_thread = tokio::task::spawn_blocking(move || io_thread(io_thread_rx));
+    let (housekeeping, housekeeping_request) =
+        josh_proxy::housekeeping::Actor::new(local.clone(), args.gc);
 
     josh_proxy::service::create_repo(&local, None)?;
     // The proxy serves many concurrent transactions and should keep the cache hot rather than
@@ -166,6 +149,9 @@ async fn run_proxy(args: josh_proxy::cli::Args) -> anyhow::Result<i32> {
         .require_auth(args.require_auth)
         .cache_duration(args.cache_duration)
         .io_thread_tx(io_thread_tx)
+        .maybe_housekeeping_request(
+            (args.gc && !args.no_background).then_some(housekeeping_request),
+        )
         .maybe_filter_prefix(args.filter_prefix)
         .maybe_poll_user(args.poll_user)
         .http_retry(args.http_retry)
@@ -190,7 +176,7 @@ async fn run_proxy(args: josh_proxy::cli::Args) -> anyhow::Result<i32> {
         );
     } else {
         tokio::select!(
-            r = run_housekeeping(local, args.gc) => eprintln!("run_housekeeping exited: {:?}", r),
+            r = housekeeping.run() => eprintln!("run_housekeeping exited: {:?}", r),
             r = run_polling(proxy_service.clone()) => eprintln!("run_polling exited: {:?}", r),
             r = server_future => eprintln!("http server exited: {:?}", r),
             _ = shutdown_signal(shutdown_tx) => eprintln!("shutdown requested"),
