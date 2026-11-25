@@ -7,8 +7,8 @@
    Compiling josh-filter v26.8.28 (/worktree/josh-filter)
    Compiling josh-github-auth v26.8.28 (/worktree/forges/josh-github-auth)
    Compiling josh-starlark v26.8.28 (/worktree/josh-starlark)
-   Compiling josh-core v26.8.28 (/worktree/josh-core)
    Compiling josh-github-keyring v26.8.28 (/worktree/forges/josh-github-keyring)
+   Compiling josh-core v26.8.28 (/worktree/josh-core)
    Compiling axum-cgi v26.8.28 (/worktree/axum-cgi)
    Compiling josh-rpc v26.8.28 (/worktree/josh-rpc)
    Compiling josh-ssh-shell v26.8.28 (/worktree/josh-ssh-shell)
@@ -33,4 +33,4 @@
    Compiling josh-cli v26.8.28 (/worktree/josh-cli)
    Compiling josh-proxy v26.8.28 (/worktree/josh-proxy)
    Compiling josh-cq-test-components v26.8.28 (/worktree/cq/josh-cq-test-components)
-    Finished `dev` profile [unoptimized + debuginfo] target(s) in 1m 40s
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 1m 43s

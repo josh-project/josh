@@ -11,42 +11,46 @@
     },
     "cache_hits": {
       "counts": {
-        "Rust": 130
+        "Rust": 125
       },
       "adv_counts": {
-        "rust": 130
+        "rust": 125
       }
     },
     "cache_misses": {
-      "counts": {},
-      "adv_counts": {}
+      "counts": {
+        "Rust": 5
+      },
+      "adv_counts": {
+        "rust": 5
+      }
     },
     "cache_timeouts": 0,
     "cache_read_errors": 0,
     "non_cacheable_compilations": 0,
     "forced_recaches": 0,
     "cache_write_errors": 0,
-    "cache_writes": 0,
+    "cache_writes": 5,
     "cache_write_duration": {
-      "secs": 0,
-      "nanos": 0
+      "secs": 6,
+      "nanos": 25664753
     },
     "cache_read_hit_duration": {
-      "secs": 35,
-      "nanos": 385991397
+      "secs": 12,
+      "nanos": 501940993
     },
-    "compilations": 0,
+    "compilations": 5,
     "compiler_write_duration": {
-      "secs": 0,
-      "nanos": 0
+      "secs": 21,
+      "nanos": 937931620
     },
     "compile_fails": 3,
     "not_cached": {
       "crate-type": 18,
-      "-o": 3,
-      "incremental": 1,
       "missing emit": 1,
       "missing input": 2,
+      "incremental": 1,
+      "-o": 3,
       "-": 1
     },
     "dist_compiles": {},
