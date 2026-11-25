@@ -11,7 +11,7 @@ repository = "https://github.com/josh-project/josh"
 
 [dependencies]
 starlark = "0.14.2"
-allocative = "0.3"
+allocative = "0.4"
 
 anyhow.workspace = true
 
