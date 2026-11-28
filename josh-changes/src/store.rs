@@ -365,6 +365,26 @@ pub fn store_diff_data(
     )
 }
 
+/// The paths [`delete_change`] removes for a change: the change's entry
+/// under every core namespace (diffs, votes, comments, and their outbox
+/// counterparts) plus any caller-supplied forge namespaces in
+/// `extra_namespaces`. Exposed so callers can fold per-change deletions into
+/// a single [`delete_filtered`] call of their own.
+pub fn change_paths(change_id: &str, extra_namespaces: &[&str]) -> Vec<std::path::PathBuf> {
+    let encoded = encode_change_id_path(change_id);
+    let core = [
+        DIFFS_PATH,
+        CommentNamespace::Default.path(),
+        CommentNamespace::Outbox.path(),
+        VoteNamespace::Default.path(),
+        VoteNamespace::Outbox.path(),
+    ];
+    core.into_iter()
+        .chain(extra_namespaces.iter().copied())
+        .map(|prefix| std::path::Path::new(prefix).join(&encoded))
+        .collect()
+}
+
 /// Delete all stored data for a change from the given changes ref: the
 /// change's entry under every core namespace (diffs, votes, comments, and
 /// their outbox counterparts) plus any caller-supplied forge namespaces in
@@ -375,20 +395,11 @@ pub fn delete_change(
     scope: &ChangesRef,
     extra_namespaces: &[&str],
 ) -> anyhow::Result<()> {
-    let encoded = encode_change_id_path(change_id);
-    let core = [
-        DIFFS_PATH,
-        CommentNamespace::Default.path(),
-        CommentNamespace::Outbox.path(),
-        VoteNamespace::Default.path(),
-        VoteNamespace::Outbox.path(),
-    ];
-    let paths: Vec<std::path::PathBuf> = core
-        .into_iter()
-        .chain(extra_namespaces.iter().copied())
-        .map(|prefix| std::path::Path::new(prefix).join(&encoded))
-        .collect();
-    delete_filtered(transaction, &paths, scope)?;
+    delete_filtered(
+        transaction,
+        &change_paths(change_id, extra_namespaces),
+        scope,
+    )?;
     Ok(())
 }
 
